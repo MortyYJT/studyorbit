@@ -22,5 +22,10 @@ export const GradeProjectionSchema = z.object({
 export type GradeProjection = z.infer<typeof GradeProjectionSchema>;
 
 export function projectGrade(course: Course, assessments: readonly Assessment[], band: GradeBand): GradeProjection {
+  // TODO(human): implement per specs/domain-model "Grade projection" (decision #34).
+  // 1. gradedWeight / earned / currentAverage from items that have a score (earned = weight * score / 100).
+  // 2. need: unavailable checks in order nothing_graded -> no_final -> final_graded.
+  // 3. Ungraded non-final items score currentAverage; solve for the final score that reaches GRADE_BANDS[band].
+  // 4. raw > 100 -> unreachable; final.hurdleMin -> max(raw, hurdleMin) with setByHurdle; else raw <= 0 -> secured.
   throw new Error('TODO(human)');
 }
