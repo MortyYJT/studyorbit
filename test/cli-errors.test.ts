@@ -32,3 +32,15 @@ it.each([
   expect(process.exitCode).toBe(status);
   expect(stderr).toHaveBeenCalledWith(expect.stringContaining(message));
 });
+
+
+it.each([1, 2])('prints browser choice recovery and exits %s', async status => {
+  vi.resetModules();
+  const { BrowserChoiceError } = await import('../src/capture/browser.js');
+  const { capture } = await import('../src/capture/command.js');
+  vi.mocked(capture).mockRejectedValueOnce(new BrowserChoiceError('Set COURSEWORK_BROWSER to msedge, chrome, chromium.', status));
+  const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+  await import('../src/cli.js');
+  expect(process.exitCode).toBe(status);
+  expect(stderr).toHaveBeenCalledWith('Set COURSEWORK_BROWSER to msedge, chrome, chromium.');
+});
