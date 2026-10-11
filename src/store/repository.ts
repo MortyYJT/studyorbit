@@ -1,3 +1,4 @@
+import type { ReconcileScope } from '../sync/reconciliation.js';
 import type { Module, Course, Assessment, SourceItem, Task, Change, Run } from '../domain/schemas.js';
 
 /** Callers supply change content; the store owns sequence allocation. */
@@ -32,6 +33,7 @@ export interface Repository {
   loadChange(seq: number): Change | undefined;
   saveBatch(batch: SaveBatch): Change[];
   /** Exclusive lower bound, returned in ascending sequence order. */
-  listChangesSince(seq: number): Change[];
+  listChangesSince(seq: number, limit?: number): Change[];
+  reconcile(scopes: readonly ReconcileScope[], at: string): Change[];
   close(): void;
 }
