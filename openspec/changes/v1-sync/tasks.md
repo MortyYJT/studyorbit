@@ -16,11 +16,11 @@ Scope: bounded spike harness and synthetic tests, safe local structure-evidence 
 
 Scope: `src/domain/schemas.ts`, `src/store/migrations/`, schema/upgrade tests and reconciled domain/local-store specs. Do not change unrelated domain entities. Acceptance: domain-model and local-store migration scenarios.
 
-- [ ] 2.1 Write failing schema tests accepting canvas/ed/manual and rejecting ical; remove `ical` from `SourceItem.platform` in `src/domain/schemas.ts` and apply the domain-model delta in the same implementation increment. Preserve other enum values/fields and record green output.
-- [ ] 2.2 Write failing tests for created/updated/deleted before/after requirements, generic operation mapping of historical specialized events and store-owned seq; implement only the Change refinement described by #59, retaining entity refs/timestamps/snapshots.
-- [ ] 2.3 Write failing tests for measured nonnegative Run pages/requests/failures/coverage, safe per-source scope outcomes, required new-sync metrics and historical Run compatibility; implement design-approved ledger validation without invented backfill, costs or new coursework entities.
-- [ ] 2.4 Write failing synthetic migration tests preserving current entities/runs/event seq, `changes` → `change_event`, idempotent upgrades, higher-version refusal and rollback on failure. Include legacy iCal detection before any change: stop for an owner retention/removal decision, never silently delete/relabel. Implement the ordered atomic migration and non-destructive recovery guidance.
-- [ ] 2.5 Run targeted green tests, fresh-context review, `bash .claude/check.sh` and diff/privacy checks; list any model/storage need beyond section 7 as an open question before implementing it.
+- [x] 2.1 Write failing schema tests accepting canvas/ed/manual and rejecting ical; remove `ical` from `SourceItem.platform` in `src/domain/schemas.ts` and apply the domain-model delta in the same implementation increment. Preserve other enum values/fields and record green output.
+- [x] 2.2 Write failing tests for created/updated/deleted before/after requirements, generic operation mapping of historical specialized events and store-owned seq; implement only the Change refinement described by #59, retaining entity refs/timestamps/snapshots.
+- [x] 2.3 Write failing tests for measured nonnegative Run pages/requests/failures/coverage, safe per-source scope outcomes, required new-sync metrics and historical Run compatibility; implement design-approved ledger validation without invented backfill, costs or new coursework entities.
+- [x] 2.4 Write failing synthetic migration tests preserving current entities/runs/event seq, `changes` → `change_event`, idempotent upgrades, higher-version refusal and rollback on failure. Include legacy iCal detection before any change: stop for an owner retention/removal decision, never silently delete/relabel. Implement the ordered atomic migration and non-destructive recovery guidance.
+- [x] 2.5 Run targeted green tests, fresh-context review, `bash .claude/check.sh` and diff/privacy checks; list any model/storage need beyond section 7 as an open question before implementing it.
 
 ## 3. Canvas JSON adapter and normalization (issue C)
 

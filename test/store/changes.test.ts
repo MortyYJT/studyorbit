@@ -60,7 +60,7 @@ it('records changes in the same transaction as the entities that caused them', (
 it('rolls back entities and earlier changes when a later change is invalid without consuming seq', () => {
   const store = open();
   store.recordChange(input);
-  const invalid: ChangeInput = { ...input, kind: 'deadline.changed', before: undefined };
+  const invalid: ChangeInput = { ...input, kind: 'updated', before: undefined };
   expect(() => store.saveBatch({ tasks: [synthetic.task], changes: [input, invalid] })).toThrow();
   expect(store.loadTask(synthetic.task.id)).toBeUndefined();
   expect(store.listChangesSince(0).map(change => change.seq)).toEqual([1]);
@@ -92,9 +92,9 @@ it('validates changes when loading and listing persisted records', () => {
   store.recordChange(input);
   store.close();
   const bytes = readFileSync(path);
-  const offset = bytes.indexOf(Buffer.from('"kind":"item.added"'));
+  const offset = bytes.indexOf(Buffer.from('"kind":"created"'));
   expect(offset).toBeGreaterThan(-1);
-  bytes.write('"kind":"bad.value!"', offset);
+  bytes.write('"kind":"invalid"', offset);
   writeFileSync(path, bytes);
   const reopened = open(path);
   expect(() => reopened.loadChange(1)).toThrow();
