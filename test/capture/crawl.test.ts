@@ -23,13 +23,13 @@ it('detects another origin or login prefix, including ports and schemes', () => 
   expect(CRAWL_CAP).toBe(300);
 });
 
-function fixture(config: { links?: Record<string, string[]>; fail?: Record<string, string>; statuses?: Record<string, number>; redirect?: Record<string, string>; idle?: string } = {}) {
-  let time = Date.parse('2026-10-11T10:08:17Z'); let url = `${origin}/courses`; const starts: number[] = []; const ends: number[] = [];
+function fixture(config: { links?: Record<string, string[]>; fail?: Record<string, string>; statuses?: Record<string, number>; redirect?: Record<string, string>; idle?: string; uncommitted?: boolean } = {}) {
+  let time = Date.parse('2026-10-11T10:08:17Z'); let url = 'about:blank'; const starts: number[] = []; const ends: number[] = [];
   const page = {
     url: () => url,
     goto: vi.fn(async (target: string, options: unknown) => {
       expect(options).toEqual({ waitUntil: 'load', timeout: 30000 }); starts.push(time); time += 25;
-      url = config.redirect?.[target] ?? target;
+      if (!config.uncommitted) url = config.redirect?.[target] ?? target;
       if (config.fail?.[target]) throw new Error(config.fail[target]);
       return { status: () => config.statuses?.[target] ?? 200 };
     }),
@@ -124,4 +124,40 @@ it('browser close during hidden-tab creation writes aborted instead of completed
   f.context.openHiddenPage.mockImplementationOnce(async () => { controller.abort(); throw new Error('browser closed'); });
   expect(await runCrawl(f.context, `${origin}/courses`, { ...f.options, signal: controller.signal })).toMatchObject({ saved: 0, failed: 0, status: 'aborted' });
   expect(f.writeSummary).toHaveBeenCalledWith(expect.objectContaining({ status: 'aborted' }));
+});
+
+it.each(['net::ERR_NAME_NOT_RESOLVED', 'net::ERR_CONNECTION_REFUSED'])('uncommitted first navigation %s counts as a failure without requesting sign-in', async error => {
+  const f = fixture({ uncommitted: true, fail: { [`${origin}/courses`]: error } });
+  const result = await runCrawl(f.context, `${origin}/courses`, f.options);
+  expect(result).toMatchObject({ status: 'completed', saved: 0, failed: 1, failedUrls: [`${origin}/courses`] });
+  expect(f.page.goto).toHaveBeenCalledOnce(); expect(f.save).not.toHaveBeenCalled();
+  expect(f.writeSummary).toHaveBeenCalledWith(result);
+  expect(f.log.mock.calls.flat().join(' ')).not.toMatch(/sign in again/i);
+});
+it.each(['https://sso.example/signin', `${origin}/login/saml`])('committed redirect to %s still signs out when navigation throws', async target => {
+  const f = fixture({ redirect: { [`${origin}/courses`]: target }, fail: { [`${origin}/courses`]: 'navigation failed' } });
+  expect(await runCrawl(f.context, `${origin}/courses`, f.options)).toMatchObject({ status: 'signedOut', saved: 0, failed: 0 });
+  expect(f.save).not.toHaveBeenCalled(); expect(f.page.goto).toHaveBeenCalledOnce();
+});
+it.each(['redirect', 'redirect error', 'uncommitted error', 'readiness redirect'])('cancellation during %s takes priority after the current load settles', async outcome => {
+  const controller = new AbortController();
+  const f = fixture({
+    redirect: outcome === 'redirect' || outcome === 'redirect error' || outcome === 'readiness redirect' ? { [`${origin}/courses`]: `${origin}/login/saml` } : undefined,
+    fail: outcome.includes('error') ? { [`${origin}/courses`]: 'navigation failed' } : undefined,
+    uncommitted: outcome === 'uncommitted error',
+  });
+  if (outcome === 'readiness redirect') {
+    let ready = false;
+    f.page.url = () => ready ? `${origin}/login/saml` : `${origin}/courses`;
+    f.page.waitForLoadState.mockImplementationOnce(async () => { controller.abort(); ready = true; });
+  } else {
+    const navigate = f.page.goto.getMockImplementation()!;
+    f.page.goto.mockImplementationOnce(async (target, options) => { controller.abort(); return navigate(target, options); });
+  }
+  const result = await runCrawl(f.context, `${origin}/courses`, { ...f.options, signal: controller.signal });
+  expect(result).toMatchObject({ status: 'aborted', saved: 0, failed: outcome === 'uncommitted error' ? 1 : 0,
+    failedUrls: outcome === 'uncommitted error' ? [`${origin}/courses`] : [] });
+  expect(f.page.goto).toHaveBeenCalledOnce(); expect(f.page.close).toHaveBeenCalledOnce();
+  expect(f.writeSummary).toHaveBeenCalledWith(result); expect(f.save).not.toHaveBeenCalled();
+  expect(f.log.mock.calls.flat().join(' ')).not.toMatch(/sign in again/i);
 });
