@@ -84,3 +84,18 @@ it.each(['⊤ ∨ ⊥ = ⊤.', '⊤∨⊥=⊤', 'It is.', '!!!'])('rejects copie
   expect(() => validateCitedAnswers([proposal], [q], [question, symbolic])).toThrow(/citation/i);
   expect(validateCitedAnswers([{ ...proposal, citations: [citation, { ...answer.citations[1], quote: sourceText }], statements: [{ field: 'answer', text, kind: 'material', sourceItemId: material.sourceItemId }, answer.statements[1]] }], [q], [question, symbolic])[0]?.evidence).toBe('course-material');
 });
+it.each([
+  'The notes say the due date falls on the last weekday.',
+  'According to the slides, the due date is the last weekday.',
+  '课件里说截止日期是最后一个工作日。',
+])('rejects reasoning that attributes a claim to course material without a material citation: %s', text => {
+  const deadline = { ...material, text: 'The quiz deadline is Friday.' };
+  const proposal = { questionRef: q, answer: 'Friday.', rationale: text, citations: [citation],
+    statements: [{ field: 'answer', text: 'Friday.', kind: 'reasoning' }, { field: 'rationale', text, kind: 'reasoning' }] };
+  expect(() => validateCitedAnswers([proposal], [q], [question, deadline])).toThrow(/citation/i);
+});
+it('accepts a statement backed by one of several materials that contain the same sentence', () => {
+  const copy = { ...material, sourceItemId: 'synthetic-material-copy', locator: 'page:3', page: 3 };
+  const cited = { ...answer, citations: [...answer.citations, { sourceItemId: copy.sourceItemId, quote: 'Parity is "even or odd".', locator: 'page:3' }] };
+  expect(validateCitedAnswers([cited], [q], [question, material, copy])[0]).toMatchObject({ evidence: 'course-material' });
+});

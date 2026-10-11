@@ -59,6 +59,10 @@ function quoteOffset(source: string, quote: string): { offset: number; end: numb
   if (projected !== normalized || !positions[index] || !positions[index + wanted.length - 1]) return mismatch();
   return { offset: positions[index].start, end: positions[index + wanted.length - 1].end };
 }
+const MATERIAL_SOURCE = String.raw`(?:notes?|slides?|lectures?|readings?|textbook|handouts?|(?:course\s+)?materials?|lecturer|tutor)`;
+const MATERIAL_ATTRIBUTION = new RegExp(String.raw`\b(?:the\s+)?${MATERIAL_SOURCE}\s+(?:say|says|said|state[sd]?|show[sn]?|mention(?:s|ed)?|note[sd]?|indicate[sd]?|explain(?:s|ed)?)\b`
+  + String.raw`|\baccording\s+to\s+(?:the\s+)?${MATERIAL_SOURCE}\b`
+  + '|(?:课件|讲义|笔记|课程材料|幻灯片|教材|讲座)(?:里|中|上)?(?:说|提到|写|指出|讲)|根据(?:课件|讲义|笔记|课程材料|幻灯片|教材|讲座)', 'iu');
 export function validateCitedAnswers(input: unknown, questions: readonly string[], trusted: readonly TrustedSource[]) {
   const result = z.array(answerSchema).min(1).max(300).safeParse(input);
   const sourceResult = z.array(trustedSourceSchema).safeParse(trusted);
@@ -74,11 +78,23 @@ export function validateCitedAnswers(input: unknown, questions: readonly string[
       return { ...citation, ...offsets, sourceHash: hash(source.text), ...(source.page ? { page: source.page } : {}) };
     });
     if (!answer.citations.some(c => { const source = sources.get(c.sourceItemId); return source?.kind === 'question' && source.questionRef === answer.questionRef && source.sourceItemId === answer.questionRef; })) return mismatch();
+    // A material statement may declare any cited material that contains the matched fragment,
+    // so a sentence duplicated across materials does not have to name every copy.
+    const supports = (statement: { kind: string; sourceItemId?: string }, source: TrustedSource, fragment: string) => {
+      if (statement.kind !== 'material' || !statement.sourceItemId) return false;
+      if (statement.sourceItemId === source.sourceItemId) return true;
+      const declared = sources.get(statement.sourceItemId);
+      return declared?.kind === 'material' && answer.citations.some(c => c.sourceItemId === declared.sourceItemId)
+        && !!materialSurface(fragment) && materialSurface(declared.text).includes(materialSurface(fragment));
+    };
     const materialIds = new Set<string>();
     for (const field of ['answer', 'rationale'] as const) {
       const statements = answer.statements.filter(s => s.field === field);
       if (statements.map(s => s.text).join('') !== answer[field]) return mismatch();
       for (const statement of statements) {
+        // Paraphrase cannot be detected deterministically, but an explicit attribution to
+        // course material ("the notes say", "根据课件") must carry a material citation.
+        if (statement.kind !== 'material' && MATERIAL_ATTRIBUTION.test(statement.text)) return mismatch();
         if (statement.kind !== 'material') continue;
         const source = sources.get(statement.sourceItemId);
         if (source?.kind !== 'material' || !answer.citations.some(c => c.sourceItemId === source.sourceItemId)) return mismatch();
@@ -102,7 +118,7 @@ export function validateCitedAnswers(input: unknown, questions: readonly string[
           for (const statement of statements) {
             const end = start + statement.text.length;
             if (matching.some(segment => segment.start < end && segment.end > start)
-              && (statement.kind !== 'material' || statement.sourceItemId !== source.sourceItemId)) return mismatch();
+              && !supports(statement, source, fragment)) return mismatch();
             start = end;
           }
         }
