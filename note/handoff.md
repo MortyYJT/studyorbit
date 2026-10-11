@@ -1,54 +1,43 @@
 # 交接
 
-> 单文件，只写当前状态，覆盖而不追加。信任之前先对照 `git status` 和 `git log`。
-> 背景：`note/product/vision.md`、`note/product/roadmap.md`、`note/decisions.md`（#1–#54）。
+> 单文件，只写当前状态，覆盖而不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
+> 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#79）、`note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-11 深夜，`main` 在 `1b7a6f2`（PR #32 合并后）再加本交接 PR
-- **项目：** `coursework`：以课业为核心的个人行动中心；定位「让通用 agent 能可靠读写墨大课业数据的工具层和运行时」（#29）
-- **OpenSpec change：**
-  - `capture-selection-ed`：任务 1.x（issue A）、2.x（issue B）已合并并勾选；3.1–3.6（issue C）在分支 `codex/ed-capture` 上，尚未开 PR；3.7–3.10 未做。
-  - `v1-foundation`（M0）：代码全部合并；5.5 未勾（缺「登录最长能保持多久」）。
+- **最后更新：** 2026-10-12 晚。仓库已转**私有**（#78）。设计文档在分支 `claude/v1-technical-design`（PR 见 `gh pr list`）。
+- **模式：全自动调度（#79）。** 用户在睡觉 / 不在线，只在必须决策时打断。
 
-## 本会话完成（有证据）
-- **Issue A #28 → PR #29 合并**（`c366b63`）：`src/capture/` 下 discovery、discovery-adapters、limiter、selection-store、picker、selection-resolver，测试在 `test/capture/`。Claude 本地检查 34 files / 210 passed / 2 skipped；Codex 只读审查 1 轮 ready；CI 绿。
-  - Claude 对照本机真实 `/courses` 快照的**结构**（不复制内容）核实：当前注册在 `table#my_courses_table`；12 行里学期列是「2026 Semester 2」×5、「默认学期」×6、「Course Term」×1；**3 行未发布课程没有链接**，Codex 初版会因此把整个 Canvas 判为不可用，已改为跳过并计数。
-- **Issue B #30 → PR #32 合并**（`1b7a6f2`）：`crawl.ts` 只爬选定课程、重定向最终 URL 每次运行只存一份、共享限速。审查 2 轮：第 1 轮 P2（快照去重吞掉了列表页的链接发现，公告详情永远不抓）已修；第 2 轮 ready；CI 绿；227 passed。
-- **Issue C #31（进行中）**：分支 `codex/ed-capture` 已推送，最新 `5c1fde4`（含 merge main）。3.1–3.6：ed-transport、ed-snapshot、ed-capture、command/session/cli 接线。Claude 本地检查 39 files / 290 passed / 2 skipped。
-  - 审查第 1 轮 changes needed，4 处已修（`5c1fde4`）：Ed discovery 改走页面内过滤的 transport；对象键里的令牌也删掉；Ed 启动导航用 `page.route` 拦截跨源重定向（因此给浏览器启动加了 `serviceWorkers: 'block'`）；picker 输出改写到输出流（`readline.Interface.write()` 会写进**输入**流）并把课程行清成单行。
-  - **第 2 轮审查还没跑**：Codex 额度用完，2026-10-12 02:31 恢复。
+## 调度员守则（新会话第一件事读这里）
+1. **心跳**：每完成一步就 `date +%s > ~/.coursework-dispatcher-heartbeat`。每小时的看门狗定时任务看到心跳超过 45 分钟没更新，才会拉起新的调度员；心跳是新的就直接退出。所以长时间等待（等 Codex、等 CI）时也要定期刷新心跳。
+2. **分工**：Codex 负责实现、写规格、做审查（只读、新上下文）；Claude 子会话（Agent 工具）是 Codex 没额度时的后备；dsh 在 PR 合并后出题，异步进行、不阻塞。Claude 只做调度、检查、提交、推送、合并。按 `.claude/skills/dispatch/SKILL.md` 和 `AGENTS.md` 走。
+3. **自己做决定**：文档没覆盖的选择，按推荐项自己定，记进 `decisions.md`（决定人写「Claude（自主，待用户复核）」），并列进本文件的「早上给用户看」一节。
+4. **必须停下等用户的**：改红线、加预批清单外的依赖、对 Canvas/Ed 的写操作或真实提交、登录 / MFA、删除数据、花钱。遇到时把事项写进「等用户」一节，然后**继续做别的**，不要空等。
+5. **Codex 额度**：报错里有 usage limit 和恢复时间。恢复时间在 5 小时以内的是 5 小时额度，只等待，期间做 Claude 能做的事或改用子会话；恢复时间超过 5 小时或明确写 weekly 的是**每周额度**，才用重置卡。优先让 Codex 自己重置（用户已开启）；不行再用 computer use 在 Codex 应用里点**免费的**重置卡，只要屏幕上出现价格、付款、升级套餐就立即停下。computer use 的授权弹窗没人点时，就等每周额度自动恢复。
+6. **Claude 额度**：用完会话会直接停住，由看门狗在额度恢复后接着跑。所以本文件要随时保持最新：每合并一个 PR 就更新一次。
+7. **并行**：最多 3 条 Codex 线，各用独立 clone（`../unimelb-coursework-agent-<topic>`）；不切主 checkout 的分支。
 
-## 下一步（按顺序）
-1. 在 clone `../unimelb-coursework-agent-ed-capture`（分支 `codex/ed-capture`）对 `1b7a6f2..HEAD` 跑 Codex 只读审查第 2 轮（重点核对 `5c1fde4` 的 4 处修复，尤其 `ed-transport.ts` 的 `bootstrap()`：`route.fetch` 是否带浏览器 cookie、逐跳重定向是否都计入限速）。ready 后勾 3.1–3.6，开 PR（`Refs #31`，不关 issue），CI 绿后合并。
-2. 派 3.7–3.8（B 已合并，把真实 Canvas runner 接进 orchestration；集成测试；`openspec validate capture-selection-ed --strict`），关 #31。
-3. 用户实测 3.9（登录 + MFA，顺便测「登录最长能保持多久」补 5.5），再先归档 `v1-foundation`、后归档 `capture-selection-ed`。
-4. dsh 测验：PR #29、#32（以及之前欠的 Stage 3 / PR #22）。本会话没排：dispatch 要在主 checkout 切 `dsh/quiz-*` 分支，和「多会话共用主 checkout」冲突；下个会话先确认主 checkout 没有其他会话在用再排。
-5. 起草 M1（`v1-sync`）。
+## 工作队列（按顺序；能并行的并行）
+1. **设计文档 PR**：Codex 只读审查文档一致性 → CI 绿 → 合并（#48）。
+2. **S0 `capture-selection-ed`**：在 `../unimelb-coursework-agent-ed-capture`（`codex/ed-capture`，最新 `5c1fde4`）对 `1b7a6f2..HEAD` 跑第 2 轮审查（重点核对 `ed-transport.ts` 的 `bootstrap()`：`route.fetch` 是否带 cookie、逐跳重定向是否都计入限速）→ 勾 3.1–3.6 → PR（`Refs #31`）→ 合并（分支里有 merge commit，用 `--squash`）。然后派 3.7–3.8。
+3. **Q1 `ed-quiz-assist`**（截止 **10/25**，最晚 10/23 给用户实测）：Codex 按设计文档第 6 节写 OpenSpec change → 审查、合并 → 用合成夹具实现：读 quiz、存答案提案、Playwright 填页面（不点提交）、记录提交请求（去掉令牌）。真实结构检查要用已登录的 profile：试一次，`AUTH_EXPIRED` 就进「等用户」。
+4. **M1 `v1-sync`**：写 change → 实现（合成夹具）。Canvas `/api/v1` 实测要登录态，处理方式同上。
+5. **M2 `v1-protocol`** → schema 合并后，同步、协议、界面三条线并行（M3 先接假数据）。
+6. 每合并一个 PR 就排 dsh 出题（先确认主 checkout 没有别的会话在用）。欠：PR #29、#32、Stage 3 / PR #22。
 
-## 本会话统计（简历证据用）
-- 派发 issue 3 个（#28、#30、#31）；合并 PR 2 个（#29、#32）
-- 审查发现：A 0（另有 Claude 自查 1 个真实数据 bug + 测试位置）；B 1（P2）；C 4（2×P1、2×P2）
-- 返工轮次：A 1、B 1、C 1（未完）
-- 派发到合并：A、B 各约半小时（按提交时间估，未精确计时）
+## 等用户（醒来后）
+- 看设计文档 PR，以及下面「早上给用户看」里的自主决定。
+- 登录 + MFA（S0 的 3.9、Q1 的真实结构检查、M1 的 Canvas 实测都要用）；顺便测「登录能保持多久」，补 `v1-foundation` 5.5。
+- 10/23 前在真实 quiz 上跑 Q1：看答案 → 自己点提交。
+
+## 早上给用户看（调度员自主做的决定，逐条追加）
+- （空）
 
 ## 运行与验证
-- `npm ci && npm run check`（= `.claude/check.sh` = CI）；`npm run build` → `dist/cli.js`
-- 原型预览：`.claude/launch.json` 的 `ui-prototype`（端口 4317）
+- `npm ci && npm run check`（= `.claude/check.sh` = CI）；`npm run build` → `dist/cli.js`。最近一次：34 files / 227 passed / 2 skipped（main `aa38605`）。
 
-## 陷阱
-- **Codex 额度会用完**：用完时 `codex exec` 中途退出、不写 `-o` 报告，工作区留半成品；看 `.log` 末尾的 `usage limit`。
-- **`codex exec resume --last` 可能接上同目录里更晚的审查会话**：返工改用新的 `codex exec` 并把发现原文贴进去。
-- **Codex 偏爱把测试放 `src/`**：vitest 只收 `test/**/*.test.ts`，`tsconfig.build.json` 会把 `src/**` 全编进 `dist`。派活时写明测试放 `test/`。
-- **Codex 会自审并声称「独立审查 ready」**：不算数，必须另起只读会话。
-- **多个会话共用主 checkout**：只在独立 clone 里工作，不切主 checkout 的分支，不用 `commit -a`。
-- **删远端分支被 `guard.sh` 拦**：作废的 `claude/ed-capture-findings` 等用户在 GitHub 网页删（不删也没影响）。
-- **分支里有 merge commit 时 `--rebase` 合并会失败**：用 `--squash`（`codex/ed-capture` 现在就有 merge commit）。
-- **不让用户写代码**（#42）：不用 TODO(human) / Learn by Doing，学习交给 dsh 测验（讲解用 Java 类比）。
-- **Codex 不能提交**（#40）；后台运行要 `< /dev/null`；沙箱没网络，实地数据由 Claude 查（只看结构，不复制内容）。
-- **dsh headless 的进程名不含 `dsh headless`**：等待时按 PID。
-- **不要 force-push**：已推送分支要同步 main 时用 merge。
-- **合并规则**（#48）：审查「可以合并」+ 最新提交的 CI 绿 → Claude 合并。
-- **仓库公开**：夹具只用合成数据；真实课程代码、课程 id、同学姓名、快照、profile 只在 `.local/`。
-- **个人邮箱已进公开历史**（#9、#11）：只有开 GitHub 邮箱隐私设置能根治。
-- **额度**：Claude Pro。每完成一个里程碑就交接、开新对话。
-- **模板**：用户的通用 AI 开发模板里 `repo-template/AGENTS.md` 第 54 行还是 Session hygiene 的原版，等用户回「同步」再改成 PR #11 的修正版。
-- 用户本人的理由还空着：#6、#9、#15–18、#23、#27、#29、#53。
+## 陷阱（沿用）
+- Codex 不能提交（#40），沙箱没网络，后台运行要 `< /dev/null`；测试必须放 `test/`；Codex 自审不算审查。
+- `codex exec resume --last` 可能接错会话，返工用新的 `codex exec` 并贴上发现原文。
+- 私有仓库没有分支保护：只靠本地 `guard.sh` 守住 main，绝不直接推 main、不 force-push。
+- 夹具只用合成数据；真实课程、快照、profile 只在 `.local/`。
+- 不让用户写代码（#42）；讲解用 Java 类比。
+- 用户本人理由仍空着：#6、#9、#15–18、#23、#27、#29、#53、#67、#70。
