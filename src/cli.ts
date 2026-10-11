@@ -13,6 +13,8 @@ const program = new Command()
   .description('Manage cited coursework tasks')
   .version(version);
 
+program.command('quiz').description('Read selected Ed quiz questions');
+
 program.command('capture')
   .description('Sign in manually and save local page snapshots')
   .option('--crawl', 'Run one selected-course capture')
@@ -35,4 +37,7 @@ program.command('capture')
     }
   });
 
-await program.parseAsync();
+if (process.argv[2] === 'quiz') {
+  const { parseQuizCLI } = await import('./quiz/cli.js');
+  await parseQuizCLI(process.argv.slice(2));
+} else await program.parseAsync();
