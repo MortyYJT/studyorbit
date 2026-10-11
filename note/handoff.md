@@ -3,7 +3,7 @@
 > 单文件，只写当前状态，覆盖而不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#84）、`note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-12 上午，调度员（会话 585cc3fa）。本轮合并：#40、#41、#42、#45、#47、#49、#49（Q1 issue B）。
+- **最后更新：** 2026-10-12 上午，调度员（会话 585cc3fa）。本轮合并：#40、#41、#42、#45、#47、#49、#51、#51（M1 issue D）。
 - **模式：全自动调度（#79）。** 用户在睡觉 / 不在线，只在必须决策时打断。
 
 ## 调度员守则（新会话第一件事读这里）
@@ -18,18 +18,20 @@
 8. **控制上下文（用户 2026-10-12 要求）**：每次派给 Codex / 子会话的活只有一个 issue 那么大，提示词自包含，结果写进 `-o` 报告文件；调度员只读报告和需要的几行，绝不读整份日志。调度员自己的上下文变大时：更新本文件并推送 → `echo 0 > ~/.coursework-dispatcher-heartbeat` → 用 `run_scheduled_task` 立即运行 `coursework-dispatcher-watchdog`（它会接手当调度员）→ 归档旧会话，不用问用户。
 
 ## 正在跑的 Codex（`pgrep -fl "[c]odex exec"` 核对；报告在 `/Users/yu-junteng/.coursework-dispatcher-reports/`）
-- **M1 issue D**（#48）：已提交推送到 `codex/v1-sync-ed`（`613bce3`），新上下文审查中，报告 `codex-review-m1-D.md`；通过后开 PR。
+- **Q1 issue C**（#50，终端审阅）：clone `../unimelb-coursework-agent-quiz-assist`，分支 `codex/quiz-review`，报告 `codex-q1-C.md`。
+- **M1 issue F**（#52，比对/对账/游标，用假输入）：clone `../unimelb-coursework-agent-sync`，分支 `codex/v1-sync-reconcile`，报告 `codex-m1-F.md`。
 报告目录：报告都在 `/Users/yu-junteng/.coursework-dispatcher-reports/`。
 交付流程：`git restore note/handoff.md`（如果被改了）→ 自己跑 check、读 diff → 用公开身份提交 → 新上下文 Codex 只读审查 → PR → CI 绿 → 合并（`--rebase`；有多次修复提交的用 `--squash`）。
 
 ## 工作队列（按顺序；能并行的并行）
 1. **S0 `capture-selection-ed`**：3.1–3.8 已合并（#36、#41）。3.9 要用户登录实测；3.10 归档等 3.9。
-2. **Q1 `ed-quiz-assist`**（截止 **10/25**，最晚 10/23 给用户实测）：A（#42）、B（#49）已合并。下一步 C（终端审阅）→ D → E。检查点：B 10/16，C 10/18，D 10/20，E 和结构检查 10/22。
-3. **M1 `v1-sync`**：change（#40）和 1.1 合成探针（#45）已合并。1.2 真实探针要用户登录；**C（Canvas 适配器）按 tasks 要等 1.2 实测通过才开**。B（schema/迁移）已合并（#47）。D（Ed 规范化/脱敏）已派并在审查（#48）。之后查 E（私有 PDF）等不依赖 1.2 的组。
+2. **Q1 `ed-quiz-assist`**（截止 **10/25**，最晚 10/23 给用户实测）：A（#42）、B（#49）已合并；C 进行中（#50）→ D → E。检查点：B 10/16，C 10/18，D 10/20，E 和结构检查 10/22。
+3. **M1 `v1-sync`**：change（#40）和 1.1 合成探针（#45）已合并。1.2 真实探针要用户登录；**C（Canvas 适配器）按 tasks 要等 1.2 实测通过才开**。B（schema/迁移）已合并（#47）。D（Ed 规范化/脱敏）已合并（#51）。F 进行中（#52）。**E（私有 PDF）卡住**：要装预批依赖 `unpdf@1.8.1`（#74），`npm install` 被 auto 模式分类器拦下（Untrusted Code Integration），见「等用户」。G 要等 C–F，H 要等 D–G。
 4. **M2 `v1-protocol`** → schema 合并后，同步、协议、界面三条线并行（M3 先接假数据）。
-5. dsh 出题欠：PR #29、#32、#35、#36、#40、#41、#42、#45、#47、#49、Stage 3 / PR #22（等用户定方式）。
+5. dsh 出题欠：PR #29、#32、#35、#36、#40、#41、#42、#45、#47、#49、#51、Stage 3 / PR #22（等用户定方式）。
 
 ## 等用户（醒来后）
+- **装 `unpdf`**：M1 issue E 需要预批依赖 `unpdf`（#74，MIT），`npm install --save-exact unpdf@1.8.1` 被分类器拦下，没绕过。你在 `../unimelb-coursework-agent-sync` 里自己跑一次（或明确批准我跑），然后调度员开 E。
 - **权限**：auto 模式分类器拦下了「往 `.claude/settings.local.json` 加白名单」（Self-Modification），我没有绕过。看门狗第 1 步已改成 `bash /Users/yu-junteng/.coursework-dispatcher-age.sh`；它第一次运行时弹窗，请点「始终允许」，之后就记在任务上了。
 - 看下面「早上给用户看」里的自主决定。
 - 登录 + MFA（S0 的 3.9、Q1 的真实结构检查、M1 的 Canvas 实测都要用）；顺便测「登录能保持多久」，补 `v1-foundation` 5.5。
