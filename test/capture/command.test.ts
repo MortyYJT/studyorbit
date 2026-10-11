@@ -37,7 +37,7 @@ async function terminal(f: ReturnType<typeof setup>) {
 it('launches detected Edge headed, records it, lists commands and releases the lock on q', async () => {
   const f = setup(); await terminal(f); const running = capture();
   await vi.waitFor(() => expect(f.log).toHaveBeenCalled()); f.input.write('q\n'); await running;
-  expect(chromium.launchPersistentContext).toHaveBeenCalledWith(join(f.home, 'profiles/default'), { headless: false, channel: 'msedge' });
+  expect(chromium.launchPersistentContext).toHaveBeenCalledWith(join(f.home, 'profiles/default'), { headless: false, handleSIGINT: false, handleSIGTERM: false, channel: 'msedge' });
   expect(JSON.parse(readFileSync(join(f.home, 'profiles/default/coursework-browser.json'), 'utf8'))).toEqual({ browser: 'msedge' });
   expect(f.log.mock.calls[0][0]).toMatch(/s.*c.*q/); expect(existsSync(join(f.home, 'profiles/default.lock'))).toBe(false);
 });

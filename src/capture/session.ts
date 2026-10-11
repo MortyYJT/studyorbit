@@ -28,7 +28,7 @@ export async function confirmBundledBrowser(
   }
 }
 export function launchSettings(home: string, browser: CaptureBrowser) {
-  return { profile: join(home, 'profiles', 'default'), options: { headless: false, ...(browser === 'chromium' ? {} : { channel: browser }) } };
+  return { profile: join(home, 'profiles', 'default'), options: { headless: false, handleSIGINT: false, handleSIGTERM: false, ...(browser === 'chromium' ? {} : { channel: browser }) } };
 }
 
 export async function activePage<P extends CapturePage>(context: Pick<CaptureContext<P>, 'pages'>): Promise<P | undefined> {

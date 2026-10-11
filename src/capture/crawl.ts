@@ -41,7 +41,9 @@ export function fixedPages(origin: string, ids: string[]): string[] {
 }
 export function isSignedOut(raw: string, origin: string): boolean {
   const url = new URL(raw);
-  return url.origin !== origin || url.pathname.startsWith('/login');
+  // Blank and browser error pages are not committed sign-in redirects.
+  return ['http:', 'https:'].includes(url.protocol)
+    && (url.origin !== origin || url.pathname.startsWith('/login'));
 }
 export interface CrawlPage {
   url(): string;
@@ -140,6 +142,8 @@ export async function runCrawl<P extends CrawlPage>(
   } finally {
     try { await page?.close(); } catch { /* The browser may already have closed. */ }
     options.onTab?.(undefined);
+    // Settle the current load and its counts before cancellation wins over any exit reason.
+    if (options.signal?.aborted) summary.status = 'aborted';
     summary.durationMs = clock.now() - started;
     await (options.writeSummary ?? writeCrawlSummary)(summary);
     if (summary.status === 'signedOut') options.log('Canvas session expired. Sign in again.');

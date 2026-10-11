@@ -9,7 +9,7 @@ function fakePage(focused = false) {
 }
 it('start capture explains manual sign-in and uses the headed persistent profile', () => {
   expect(launchSettings('/synthetic/home', 'chrome')).toEqual({
-    profile: '/synthetic/home/profiles/default', options: { headless: false, channel: 'chrome' },
+    profile: '/synthetic/home/profiles/default', options: { headless: false, handleSIGINT: false, handleSIGTERM: false, channel: 'chrome' },
   });
 });
 it('s saves the focused tab, q closes the context, and no form APIs are needed', async () => {
@@ -115,4 +115,8 @@ it('failed crawl is handled without an unhandled rejection and a later c can sta
   async function* lines() { yield 'c'; await vi.waitFor(() => expect(log).toHaveBeenCalledWith('Unable to complete the crawl.')); yield 'c'; yield 'q'; }
   await captureSession({ pages: () => [fakePage(true)], close: async () => {} }, lines(), vi.fn(), log, { crawl });
   expect(crawl).toHaveBeenCalledTimes(2);
+});
+
+it.each(['msedge', 'chrome', 'chromium'] as const)('%s leaves signal handling to capture so in-flight work can finish', browser => {
+  expect(launchSettings('/synthetic/home', browser).options).toMatchObject({ handleSIGINT: false, handleSIGTERM: false });
 });
