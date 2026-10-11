@@ -17,10 +17,10 @@ const selection: CaptureSelection = { version: 1, courses: [
 ] };
 const homes: string[] = [];
 afterEach(() => { homes.splice(0).forEach(home => rmSync(home, { recursive: true, force: true })); vi.unstubAllEnvs(); });
-function fixture({ canvasExpired = false, edExpired = false, first = false, many = false, redirects = false, canvasFailure = false, canvasLoginUrl = `${CANVAS_ORIGIN}/login`, canvasNavigationError = false } = {}) {
+function fixture({ canvasExpired = false, edExpired = false, first = false, many = false, redirects = false, canvasFailure = false, canvasLoginUrl = `${CANVAS_ORIGIN}/login`, canvasNavigationError = false, firstSaveFailure = false } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'orchestration-synthetic-')); homes.push(home); vi.stubEnv('COURSEWORK_HOME', home);
   let snapshotBarrier: Promise<void> | undefined; let finishSnapshot: (() => void) | undefined;
-  const navigations: string[] = []; const reads: string[] = []; const saves: string[] = [];
+  const navigations: string[] = []; const reads: string[] = []; const saves: string[] = []; let failedOnce = false;
   const canvasPage = () => {
     let url = `${CANVAS_ORIGIN}/courses/101`;
     return { url: () => url, isClosed: () => false, close: vi.fn(async () => {}),
@@ -29,7 +29,10 @@ function fixture({ canvasExpired = false, edExpired = false, first = false, many
       evaluate: async (expression: string) => expression.includes('my_courses_table')
         ? [{ id: '101', name: 'Synthetic Course', term: 'Synthetic', unpublished: false }]
         : expression.includes('querySelectorAll') ? many ? Array.from({ length: 292 }, (_, i) => `/courses/101/assignments/${i + 1}`) : [] : true,
-      title: async () => 'Synthetic', content: async () => { saves.push(url); await snapshotBarrier; return '<p>Synthetic</p>'; },
+      title: async () => 'Synthetic', content: async () => {
+        if (firstSaveFailure && !failedOnce) { failedOnce = true; throw Error('synthetic snapshot failure'); }
+        saves.push(url); await snapshotBarrier; return '<p>Synthetic</p>';
+      },
       screenshot: async () => Buffer.from('synthetic'), viewportSize: () => null,
     };
   };
@@ -105,6 +108,13 @@ it('first selection shares 300 attempts across real discovery, Canvas and Ed wit
   expect(f.reads.filter(endpoint => endpoint === '/api/user')).toHaveLength(1);
   expect(f.data().sources).toMatchObject([{ source: 'canvas', status: 'completed', attempted: 296 }, { source: 'ed', status: 'capReached', attempted: 2 }]);
   expect(f.data().capReached).toBe(true);
+});
+it('a failed Canvas discovery snapshot is counted and does not stop Ed or the summary', async () => {
+  const f = fixture({ first: true, firstSaveFailure: true }); await capture({ isTTY: true, crawl: true }, f.dependencies);
+  expect(f.data()).toMatchObject({ discoverySaved: { canvas: 0, ed: 1 }, discoveryFailed: { canvas: 1 } });
+  expect(f.data().sources[1]).toMatchObject({ source: 'ed', status: 'completed' });
+  expect(f.data().failed).toBeGreaterThanOrEqual(1);
+  expect(f.summaries()[0]).toEqual(f.data());
 });
 it('foreground Ed still allows interactive capture through an eligible Canvas tab', async () => {
   const f = fixture(); await capture({ isTTY: true, crawl: true }, f.dependencies);

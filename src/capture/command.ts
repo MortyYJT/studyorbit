@@ -94,8 +94,8 @@ export async function capture(options: CaptureOptions = {}, dependencies: Captur
     context.once('close', stop);
     if (cancellation.signal.aborted) return;
     const sessionContext = { pages: () => context!.pages().filter(page => !hidden.has(page)), close: async () => {} };
-    type RunState = { started: number; discoverySaved: { canvas: number; ed: number }; limiter: CaptureLimiter; resolution: SelectionResolution; canvasPage?: Page; edPage?: Page };
-    const newState = (): RunState => ({ started: Date.now(), discoverySaved: { canvas: 0, ed: 0 }, limiter: dependencies.limiter?.() ?? new RequestLimiter(), resolution: { status: 'cancelled' } });
+    type RunState = { started: number; discoverySaved: { canvas: number; ed: number }; discoveryFailed: { canvas: number }; limiter: CaptureLimiter; resolution: SelectionResolution; canvasPage?: Page; edPage?: Page };
+    const newState = (): RunState => ({ started: Date.now(), discoverySaved: { canvas: 0, ed: 0 }, discoveryFailed: { canvas: 0 }, limiter: dependencies.limiter?.() ?? new RequestLimiter(), resolution: { status: 'cancelled' } });
     const canvasActive = () => activePage({ pages: () => sessionContext.pages().filter(page => crawlOrigin(page.url())) });
     const hiddenPage = async (): Promise<Page | undefined> => {
       const anchor = await activePage(sessionContext);
@@ -126,7 +126,11 @@ export async function capture(options: CaptureOptions = {}, dependencies: Captur
                   return response;
                 },
               }, { get attempts() { return state.limiter.attempts; }, attempt: operation => operation() }, signal);
-              if (result.status === 'available') { await saveSnapshot(page); state.discoverySaved.canvas++; }
+              if (result.status === 'available') {
+                // A failed discovery snapshot is counted; it must not stop Ed or the unified summary.
+                try { await saveSnapshot(page); state.discoverySaved.canvas++; }
+                catch (error) { if (signal.aborted) throw error; state.discoveryFailed.canvas++; }
+              }
               return result;
             }, signal);
           }
@@ -228,7 +232,7 @@ export async function capture(options: CaptureOptions = {}, dependencies: Captur
         const status: CrawlSummary['status'] = signal.aborted ? 'aborted' : capReached ? 'capReached' : canvas.status === 'signedOut' ? 'signedOut' : 'completed';
         const summary = { startedAt: new Date(state.started).toISOString(), durationMs: Date.now() - state.started,
           saved: canvas.saved + ed.saved + state.discoverySaved.canvas + state.discoverySaved.ed,
-          failed: canvas.failed + ed.failed, status, failedUrls,
+          failed: canvas.failed + ed.failed + state.discoveryFailed.canvas, status, failedUrls,
           failedUrlsOmitted: (canvasDetails?.failedUrls.length ?? 0) - failedUrls.length, attempted: state.limiter.attempts,
           capReached,
           aborted: signal.aborted, sources: [counts(canvas), counts(ed)],
@@ -239,7 +243,7 @@ export async function capture(options: CaptureOptions = {}, dependencies: Captur
             gaps: canvasGaps, gapsOmitted: (canvasDetails?.gaps.length ?? 0) - canvasGaps.length },
           edGaps, edGapsOmitted: ed.gaps.length - edGaps.length,
           discoveryGaps: state.resolution.gaps.map(gap => ({ source: gap.source, code: gap.status === 'unavailable' ? gap.error.code : 'SOURCE_UNAVAILABLE' })),
-          missing: state.resolution.missing.length, discoverySaved: state.discoverySaved };
+          missing: state.resolution.missing.length, discoverySaved: state.discoverySaved, discoveryFailed: state.discoveryFailed };
         await writeCrawlSummary(summary);
         return ok('capture', summary);
       } finally { await closeHidden(); }
