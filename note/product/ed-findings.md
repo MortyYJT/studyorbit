@@ -19,6 +19,12 @@
 ## 隐私
 - 讨论帖列表里有同学的真实姓名（非匿名帖），存进 `.local/` 可以，进模型前必须去掉（红线）。
 
+## 鉴权和课程列表（2026-10-11 第二次核实，只看状态码和字段名）
+- **只带 cookie 不够**：页面里同源 `fetch('/api/user')` 返回 401。Ed 的网页把登录后拿到的会话令牌存在 `localStorage` 的 `authToken:<region>`（AU 区是 `authToken:au`），每次请求放进 `x-token` 请求头；带上后返回 200。用 `Authorization: Bearer` 返回 400。
+  - 这个令牌是 Ed 登录后发给浏览器的会话令牌，不是用户自建的 API 令牌（红线禁止的是后者）。实现时代码在页面里读取并附加它：不打印、不写日志、不存进快照、不返回给模型。
+- **课程列表在 `GET /api/user`**：顶层字段 `courses`、`realms`、`user`、`push_key`、`push_subscriptions`、`time`；`courses[]` 每项是 `{course, role, lab, last_active}`，`course` 有 `id`、`code`、`name`、`year`、`session`、`status`。本学期 3 门课都是 `year` 2026 + `session` "Semester 2" + `status` "active"，可以作为「当前学期」的依据。
+  - 这个响应里还有用户本人的信息和推送订阅（`user`、`push_key`、`push_subscriptions`），**不能原样存成快照**，只存 `courses`（去掉 `role.digest` 这类个人设置也可以）。
+- **不带 `view` 也能读**：`GET /api/lessons/{id}` 不带 `view=1` 返回 200。
+
 ## 未核实
-- 接口的鉴权方式（请求头里的 token 名称）没看；在页面里同源 `fetch` 能否直接带上会话，要在实现时验证。
 - 登录会话能保持多久、是否触发 MFA（5.5 要记录）：本次没测。
