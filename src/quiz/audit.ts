@@ -4,18 +4,20 @@ import { CourseworkError, retryable } from '../protocol/errors.js';
 import { run, type Envelope } from '../protocol/envelope.js';
 import { QuizFiles } from './files.js';
 export const assessmentRefSchema = z.string().regex(/^ed:[1-9]\d{0,15}:[1-9]\d{0,15}$/);
-const auditSchema = z.strictObject({ version: z.literal(1), operation: z.enum(['read', 'policy', 'grant', 'prerequisites', 'proposal']),
+const auditSchema = z.strictObject({ version: z.literal(1), operation: z.enum(['read', 'policy', 'grant', 'prerequisites', 'proposal', 'review']),
   phase: z.enum(['intent', 'outcome', 'denial']), at: z.iso.datetime(), runId: z.uuid(),
   assessmentRef: assessmentRefSchema.optional(), revision: z.uuid().optional(), policyRef: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   grantRef: z.string().regex(/^[a-f0-9]{64}$/).optional(), code: z.enum(['OK', ...Object.keys(retryable) as (keyof typeof retryable)[]]),
+  reviewStatus: z.enum(['approved', 'rejected', 'cancelled', 'timed-out']).optional(),
 });
 export type AuditOperation = z.infer<typeof auditSchema>['operation'];
-export type AuditRefs = Pick<z.infer<typeof auditSchema>, 'assessmentRef' | 'revision' | 'policyRef' | 'grantRef'>;
+export type AuditRefs = Pick<z.infer<typeof auditSchema>, 'assessmentRef' | 'revision' | 'policyRef' | 'grantRef' | 'reviewStatus'>;
 export class AuditTrail {
   constructor(private readonly append: (line: string) => Promise<void> = line => new QuizFiles().append('audit', line)) {}
   async record(operation: AuditOperation, phase: z.infer<typeof auditSchema>['phase'], runId: string, code: z.infer<typeof auditSchema>['code'], refs: AuditRefs = {}): Promise<void> {
     try {
       if (operation === 'read' && Object.keys(refs).some(key => key !== 'assessmentRef')) throw new Error('Invalid read metadata');
+      if (operation !== 'review' && refs.reviewStatus !== undefined) throw new Error('Invalid review metadata');
       await this.append(JSON.stringify(auditSchema.parse({ version: 1, operation, phase, at: new Date().toISOString(), runId, code, ...refs })) + '\n');
     }
     catch { throw new CourseworkError('INTERNAL', 'Quiz auditing is unavailable; inspect local state before retrying.'); }
