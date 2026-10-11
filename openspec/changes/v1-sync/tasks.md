@@ -41,6 +41,8 @@ Depends on B and merged/reconciled S0. Scope: Ed sync adapter and reusable redac
 - [x] 4.4 Write failing tests for malformed rules/unsafe source withholding, bounded safe diagnostics and no agent bypass/model call/raw fallback. Implement validation and apply the boundary to both Canvas and Ed normalized outputs, retaining private raw snapshots only.
 - [x] 4.5 Run targeted green tests, fresh-context review, `bash .claude/check.sh` and diff/privacy checks; leave unverified no-view/quiz shapes as explicit coverage gaps.
 
+Review remediation (2026-10-12): task 4.3 regressions first failed (13 failures for whitespace/contact/Unicode safety, then 4 for numeric contact aliases). Canonical literal matching now handles whitespace and NFKC consistently, harvests known email/phone fields and rejects unverifiable phones with `SOURCE_UNAVAILABLE`. Synthetic Ed tests check both source text and citation quotes. Targeted sync: 55 passed; fresh-context read-only review: ready to merge within this remediation scope; `bash .claude/check.sh`: 53 files passed, 483 tests passed, 2 skipped; build, strict OpenSpec validation and diff checks passed. Live course data remains unverified; remaining M1 tasks and archive are unchanged.
+
 ## 5. Private PDFs and per-page source evidence (issue E)
 
 Depends on B/D and resource-link discovery contracts from C/D (fake links suffice before integration). Scope: material downloader/extractor, pre-approved unpdf dependency/lockfile and wholly synthetic PDF tests; no new domain entity. Acceptance: all course-materials scenarios.

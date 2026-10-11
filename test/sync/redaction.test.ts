@@ -3,6 +3,56 @@ import { createRedactor } from '../../src/sync/redaction.js';
 import { syncEd } from '../../src/sync/ed-adapter.js';
 import { selected } from '../quiz/synthetic.js';
 import { fixture, reader, time } from './synthetic.js';
+it.each(['phone_number', 'phoneNumber', 'mobile', 'telephone'])('4.3 harvests explicit contact field %s before publishing', async field => {
+  const bodies = fixture();
+  bodies['/api/courses/7/threads?limit=30&sort=new'] = { threads: [{ id: 41, title: 'Synthetic contact', content: '61 (400) 000-000', author: { [field]: 61400000000 } }] };
+  const result = await syncEd({ selection: selected, transport: reader(bodies), fetchedAt: time });
+  const source = result.sources.find(s => s.externalId === 'thread:41')!;
+  expect(source.text).toBe('title: Synthetic contact\ncontent: [redacted]');
+  expect(result.citations.find(c => c.sourceItemId === source.id)?.quote).toBe(source.text);
+});
+it('4.3 shares canonical whitespace across names, staff exceptions and owner rules', () => {
+  const redactor = createRedactor({ author: { name: 'Synthetic  Staff', email: 'staff@example.invalid' }, people: [{ name: 'Synthetic  Person-Z' }] },
+    { staffNames: ['Ｓynthetic Staff'], ownerRules: ['Ｐrivate  tag'] });
+  expect(redactor.text('Synthetic\nStaff staff@example.invalid Synthetic\nPerson-Z Private\ntag')).toBe('Synthetic\nStaff [redacted] [redacted] [redacted]');
+});
+it('4.3 redacts eleven-digit numbers even without a harvested phone field', () => {
+  expect(createRedactor([]).text('Contact 61400000000')).toBe('Contact [redacted]');
+});
+it.each(['Synthetic  Person-Z', 'Synthetic\nPerson-Z', 'Synthetic\r\n\tPerson-Z'])('4.3 redacts name whitespace variants in sources and citations: %j', async variant => {
+  const bodies = fixture();
+  bodies['/api/courses/7/threads?limit=30&sort=new'] = { threads: [{ id: 41, title: variant, content: variant, author: { name: 'Synthetic Person-Z' } }] };
+  const result = await syncEd({ selection: selected, transport: reader(bodies), fetchedAt: time });
+  const source = result.sources.find(s => s.externalId === 'thread:41')!;
+  expect(source).toBeDefined();
+  expect(source.title).toBe('[redacted]');
+  expect(source.text).not.toContain('Person-Z');
+  expect(result.citations.find(c => c.sourceItemId === source.id)?.quote).toBe(source.text);
+});
+it.each(['61400000000', '+61 400 000 000', '61 (400) 000-000', '６１４００００００００'])('4.3 redacts known numeric phones and their text representations: %j', async phone => {
+  const bodies = fixture();
+  bodies['/api/courses/7/threads?limit=30&sort=new'] = { threads: [{ id: 41, title: phone, content: phone, author: { name: 'Synthetic Staff', phone: 61400000000 } }] };
+  const result = await syncEd({ selection: selected, transport: reader(bodies), fetchedAt: time, rules: { staffNames: ['Synthetic Staff'] } });
+  const source = result.sources.find(s => s.externalId === 'thread:41')!;
+  expect(source.title).toBe('[redacted]');
+  expect(source.text).toBe('title: [redacted]\ncontent: [redacted]');
+  expect(result.citations.find(c => c.sourceItemId === source.id)?.quote).toBe(source.text);
+});
+it('4.3 canonicalizes owner rules before matching text and decoded URLs', async () => {
+  const rules = { ownerRules: ['Ｐrivate-tag'] };
+  expect(createRedactor([], rules).text('https://edstem.org/%EF%BC%B0rivate-tag')).not.toContain('Private-tag');
+  const bodies = fixture();
+  bodies['/api/courses/7/threads?limit=30&sort=new'] = { threads: [{ id: 41, title: 'Private-tag', content: 'Ｐrivate-tag' }] };
+  const result = await syncEd({ selection: selected, transport: reader(bodies), fetchedAt: time, rules });
+  const source = result.sources.find(s => s.externalId === 'thread:41')!;
+  expect(source.title).toBe('[redacted]');
+  expect(result.citations.find(c => c.sourceItemId === source.id)?.quote).toBe('title: [redacted]\ncontent: [redacted]');
+});
+it.each([null, {}, ['61400000000'], true, 61400000000.5, 'call-private-sentinel'])('4.3 withholds the scope when a known phone cannot be validated: %j', async phone => {
+  const bodies = fixture();
+  bodies['/api/courses/7/resources'] = { resources: [{ id: 51, title: 'Synthetic resource', author: { phone } }] };
+  await expect(syncEd({ selection: selected, transport: reader(bodies), fetchedAt: time })).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE', message: 'Normalized source withheld by privacy validation.' });
+});
 it('4.3 harvests nested names across the entire scope before text, title and encoded URL redaction', () => {
   const scope = [{ title: 'Synthetic Person-Z', url: 'https://edstem.org/Synthetic%20Person-Z' },
     { children: [{ authors: [{ display_name: 'Synthetic Person-Z' }], people: [{ name: '测试同学甲' }] }] }];
