@@ -320,7 +320,7 @@ snapshotPath(
 
 **B5.** 阅读 `src/protocol/envelope.ts` 和 `src/protocol/errors.ts`。回答：
 
-1. 执行 `await run('get', () => { throw new Error('/Users/me/secret/token.txt'); })`，返回的信封里 `ok`、`error.code`、`error.message`、`error.retryable` 分别是什么？`error.next` 存在吗？
+1. 执行 `await run('get', () => { throw new Error('/home/example/secret/token.txt'); })`，返回的信封里 `ok`、`error.code`、`error.message`、`error.retryable` 分别是什么？`error.next` 存在吗？
 2. 执行 `new CourseworkError('AUTH_EXPIRED', 'Session expired.', 'Sign in automatically.')`，这个错误的 `next` 是什么？是谁把它改成这样的、为什么？
 3. `error.message` 里会不会出现那串路径？是哪一段代码保证的？
 
