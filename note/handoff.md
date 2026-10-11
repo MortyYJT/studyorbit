@@ -1,9 +1,9 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖而不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#83）、`note/product/roadmap.md`。
+> 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#84）、`note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-12 上午，调度员（会话 585cc3fa）。本轮合并：#40、#41、#42、#45、#47、#47（M1 schema/迁移）。
+- **最后更新：** 2026-10-12 上午，调度员（会话 585cc3fa）。本轮合并：#40、#41、#42、#45、#47、#49、#49（Q1 issue B）。
 - **模式：全自动调度（#79）。** 用户在睡觉 / 不在线，只在必须决策时打断。
 
 ## 调度员守则（新会话第一件事读这里）
@@ -18,16 +18,16 @@
 8. **控制上下文（用户 2026-10-12 要求）**：每次派给 Codex / 子会话的活只有一个 issue 那么大，提示词自包含，结果写进 `-o` 报告文件；调度员只读报告和需要的几行，绝不读整份日志。调度员自己的上下文变大时：更新本文件并推送 → `echo 0 > ~/.coursework-dispatcher-heartbeat` → 用 `run_scheduled_task` 立即运行 `coursework-dispatcher-watchdog`（它会接手当调度员）→ 归档旧会话，不用问用户。
 
 ## 正在跑的 Codex（`pgrep -fl "[c]odex exec"` 核对；报告在 `/Users/yu-junteng/.coursework-dispatcher-reports/`）
-- **Q1 issue B**（#43）：已提交推送到 `codex/quiz-policy`（`58158ac`），新上下文审查进行中，报告 `codex-review-q1-B.md`；通过后开 PR。
+- **M1 issue D**（#48）：已提交推送到 `codex/v1-sync-ed`（`613bce3`），新上下文审查中，报告 `codex-review-m1-D.md`；通过后开 PR。
 报告目录：报告都在 `/Users/yu-junteng/.coursework-dispatcher-reports/`。
 交付流程：`git restore note/handoff.md`（如果被改了）→ 自己跑 check、读 diff → 用公开身份提交 → 新上下文 Codex 只读审查 → PR → CI 绿 → 合并（`--rebase`；有多次修复提交的用 `--squash`）。
 
 ## 工作队列（按顺序；能并行的并行）
 1. **S0 `capture-selection-ed`**：3.1–3.8 已合并（#36、#41）。3.9 要用户登录实测；3.10 归档等 3.9。
-2. **Q1 `ed-quiz-assist`**（截止 **10/25**，最晚 10/23 给用户实测）：A 已合并（#42）。B 已派（#43，见上）；之后 C → D → E。检查点：B 10/16，C 10/18，D 10/20，E 和结构检查 10/22。
-3. **M1 `v1-sync`**：change（#40）和 1.1 合成探针（#45）已合并。1.2 真实探针要用户登录；**C（Canvas 适配器）按 tasks 要等 1.2 实测通过才开**。B（schema/迁移）已合并（#47）。下一步：查 tasks.md 里 D（Ed 规范化/脱敏）、E 的依赖，开不依赖 1.2 的组。
+2. **Q1 `ed-quiz-assist`**（截止 **10/25**，最晚 10/23 给用户实测）：A（#42）、B（#49）已合并。下一步 C（终端审阅）→ D → E。检查点：B 10/16，C 10/18，D 10/20，E 和结构检查 10/22。
+3. **M1 `v1-sync`**：change（#40）和 1.1 合成探针（#45）已合并。1.2 真实探针要用户登录；**C（Canvas 适配器）按 tasks 要等 1.2 实测通过才开**。B（schema/迁移）已合并（#47）。D（Ed 规范化/脱敏）已派并在审查（#48）。之后查 E（私有 PDF）等不依赖 1.2 的组。
 4. **M2 `v1-protocol`** → schema 合并后，同步、协议、界面三条线并行（M3 先接假数据）。
-5. dsh 出题欠：PR #29、#32、#35、#36、#40、#41、#42、#45、#47、Stage 3 / PR #22（等用户定方式）。
+5. dsh 出题欠：PR #29、#32、#35、#36、#40、#41、#42、#45、#47、#49、Stage 3 / PR #22（等用户定方式）。
 
 ## 等用户（醒来后）
 - **权限**：auto 模式分类器拦下了「往 `.claude/settings.local.json` 加白名单」（Self-Modification），我没有绕过。看门狗第 1 步已改成 `bash /Users/yu-junteng/.coursework-dispatcher-age.sh`；它第一次运行时弹窗，请点「始终允许」，之后就记在任务上了。
@@ -45,6 +45,7 @@
 ## 早上给用户看（调度员自主做的决定，逐条追加）
 - #81：Q1 凭据赋值整项不输出；带标签学号脱敏；**不带标签的 6–7 位纯数字不脱敏**（避免改坏数学题，剩余风险见 decisions）。
 - #82：S0 发现页快照保存失败只计数，不中断 Ed 和摘要。
+- #84：Q1 引用校验：明说「课件说……」必须带材料引用；不带出处的改写识别不出来，标成证据局限后接受。
 - #83：M1 迁移时允许最小修改 `sqlite.ts` 的表名（`changes` → `change_event`），不加兼容视图。
 - 两个 PR 都是两轮 Codex 审查后由我修最后一处并合并（#41、#42），按 #49。
 - #80：Q1 自带最小版的脱敏、引文校验、单项 L3 授权（`.local/` 文件）和审计日志，不等 M1/M2（PR #34 审查第 3、4 条）。
