@@ -109,6 +109,9 @@ export async function runCrawl<P extends CrawlPage>(
   const selectedKeys = new Set(selected.map(courseKey));
   const savedUrls = new Set<string>();
   const plan = (discovery: DiscoveryResult) => {
+    if (discovery.source === 'canvas' && discovery.status === 'unavailable' && discovery.error.code === 'AUTH_EXPIRED') {
+      summary.status = 'signedOut'; return [];
+    }
     if (discovery.source !== 'canvas' || discovery.status !== 'available') { summary.gaps.push({ code: 'SOURCE_UNAVAILABLE' }); return []; }
     summary.skipped += discovery.skipped;
     const available = new Set(discovery.courses.map(courseKey));
@@ -141,6 +144,10 @@ export async function runCrawl<P extends CrawlPage>(
   try {
     page = await context.openHiddenPage();
     options.onTab?.(page);
+    // Discovery may have already committed a sign-in redirect before the picker finished.
+    if (summary.status === 'signedOut' && isSignedOut(page.url(), origin)) {
+      summary.redirects.push({ requestedUrl: listing, finalUrl: normalizeCanvasUrl(page.url()), alreadySaved: false });
+    }
     while (queue.length || details.length) {
       const target = queue.shift() ?? details.shift()!;
       let redirectRecorded = false;

@@ -58,6 +58,10 @@ export async function captureSession<P extends CapturePage>(
     for await (const line of commands) {
       const command = line.trim().toLowerCase();
       if (command === 'q' || cancellation.signal.aborted) break;
+      if (command === 'r' || command === '--reselect') {
+        log(crawling ? 'Reselection is unavailable while a crawl is running.' : 'Run coursework capture --reselect to change course selection.');
+        continue;
+      }
       if (command === 'c') {
         if (crawling) { log('a crawl is already running'); continue; }
         if (options.runCapture) {
