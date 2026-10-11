@@ -1,0 +1,59 @@
+import { afterEach, expect, it } from 'vitest';
+import { mkdtemp, realpath, readFile, stat, symlink, writeFile, mkdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { QuizFiles } from '../../src/quiz/files.js';
+const directories: string[] = [];
+afterEach(async () => { for (const dir of directories.splice(0)) await rm(dir, { recursive: true, force: true }); });
+async function setup() { const root = await realpath(await mkdtemp(join(tmpdir(), 'quiz-files-'))); directories.push(root); return { root, files: new QuizFiles(root) }; }
+it('writes atomic private records and appends rather than replacing audit', async () => {
+  const { root, files } = await setup();
+  await files.write('proposal-synthetic', { revision: 1 }); await files.write('proposal-synthetic', { revision: 2 });
+  expect(await files.read('proposal-synthetic')).toEqual({ revision: 2 });
+  await files.append('audit', '{"code":"OK"}\n'); await files.append('audit', '{"code":"INVALID_INPUT"}\n');
+  expect(await readFile(join(root, 'quiz', 'audit.jsonl'), 'utf8')).toBe('{"code":"OK"}\n{"code":"INVALID_INPUT"}\n');
+  expect((await stat(join(root, 'quiz'))).mode & 0o777).toBe(0o700);
+  expect((await stat(join(root, 'quiz', 'proposal-synthetic.json'))).mode & 0o777).toBe(0o600);
+  expect((await stat(join(root, 'quiz', 'audit.jsonl'))).mode & 0o777).toBe(0o600);
+});
+it.each(['../outside', 'ed:7:11', '/absolute', 'a/b', '.'])('rejects malformed filename %s', async name => {
+  const { files } = await setup(); await expect(files.write(name, {})).rejects.toThrow();
+});
+it('rejects directory, ancestor, record and audit symlink escapes', async () => {
+  const { root, files } = await setup(); const outside = join(root, 'outside'); await mkdir(outside);
+  await symlink(outside, join(root, 'quiz')); await expect(files.write('proposal-synthetic', {})).rejects.toThrow();
+  await rm(join(root, 'quiz')); await mkdir(join(root, 'quiz'), { mode: 0o700 });
+  await writeFile(join(outside, 'victim'), 'preserved');
+  await symlink(join(outside, 'victim'), join(root, 'quiz', 'proposal-synthetic.json'));
+  await expect(files.write('proposal-synthetic', {})).rejects.toThrow();
+  await symlink(join(outside, 'victim'), join(root, 'quiz', 'audit.jsonl')); await expect(files.append('audit', 'unsafe')).rejects.toThrow();
+  expect(await readFile(join(outside, 'victim'), 'utf8')).toBe('preserved');
+  await symlink(outside, join(root, 'alias')); await expect(new QuizFiles(join(root, 'alias', 'child')).write('test', {})).rejects.toThrow();
+});
+it('exclusive mutations reject competing writers and preserve previous revision on failure', async () => {
+  const { files } = await setup(); await files.write('proposal-synthetic', { revision: 1 });
+  await files.exclusive(async () => {
+    await expect(files.exclusive(async () => files.write('proposal-synthetic', { revision: 2 }))).rejects.toThrow();
+  });
+  expect(await files.read('proposal-synthetic')).toEqual({ revision: 1 });
+  await files.exclusive(async () => files.write('proposal-synthetic', { revision: 3 }));
+  expect(await files.read('proposal-synthetic')).toEqual({ revision: 3 });
+});
+it('repairs permissions before reading an existing owner record', async () => {
+  const { root, files } = await setup(); await files.write('private-record', { synthetic: true });
+  const { chmod } = await import('node:fs/promises'); const path = join(root, 'quiz', 'private-record.json');
+  await chmod(path, 0o644); expect(await files.read('private-record')).toEqual({ synthetic: true });
+  expect((await stat(path)).mode & 0o777).toBe(0o600);
+});
+it('uses ignored local default or private external override and rejects repository source directories', async () => {
+  const { packageRoot } = await import('../../src/config/data-dir.js');
+  const { vi } = await import('vitest');
+  const { root } = await setup();
+  vi.stubEnv('COURSEWORK_HOME', '');
+  try {
+    expect(new QuizFiles().root).toBe(join(packageRoot(), '.local'));
+    expect(await readFile(join(packageRoot(), '.gitignore'), 'utf8')).toMatch(/^\.local\/$/m);
+    vi.stubEnv('COURSEWORK_HOME', root); expect(new QuizFiles().root).toBe(root);
+    expect(() => new QuizFiles(join(packageRoot(), 'src'))).toThrow();
+  } finally { vi.unstubAllEnvs(); }
+});

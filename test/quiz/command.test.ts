@@ -1,3 +1,4 @@
+import { AuditTrail } from '../../src/quiz/audit.js';
 import { expect, it, vi } from 'vitest';
 import { readQuiz, quizReadCommand, type QuizReadDependencies } from '../../src/quiz/read/command.js';
 import { parseQuizCLI } from '../../src/quiz/cli.js';
@@ -8,7 +9,7 @@ const setup = (prompt = 'Explain parity.') => {
   const bodies = [{ lessons: [{ id: 11, kind: 'attempt' }] }, { lesson: { id: 11, slides: [{ id: 21 }] } },
     { slide: { id: 21, questions: [{ id: 31, type: 'text', prompt }, { id: 32, type: 'text', prompt: 'Explain odd numbers.' }] } }];
   const transport = { read: vi.fn(async () => ({ kind: 'json' as const, status: 200, body: bodies.shift() })) };
-  const dependencies: QuizReadDependencies = { store: { load: async () => ({ status: 'valid', selection: selected }), save: async () => {} },
+  const dependencies: QuizReadDependencies = { audit: new AuditTrail(async () => {}), store: { load: async () => ({ status: 'valid', selection: selected }), save: async () => {} },
     openSession: vi.fn(async () => ({ transport, close })) };
   return { dependencies, transport, close };
 };
