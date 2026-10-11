@@ -16,20 +16,16 @@ The schemas SHALL contain at least these fields (ids are non-empty strings; time
 - Module: `id`, `name`, `glyph`, `auto` (fed by coursework sources).
 - Course: `id`, `moduleId`, `code`, `name`, `term`, `assessmentsComplete` (the user or a sync confirmed the assessment list is final).
 - Assessment: `id`, `courseId`, `name`, `kind`, `weight`, `score?`, `due?`, `hurdleMin?`, `isFinal`, `status` (`not_started` | `in_progress` | `submitted` | `graded`).
-- SourceItem: `id`, `platform` (`canvas` | `ed` | `manual`), `externalId`, `courseId?`, `kind` (`assignment` | `announcement` | `material` | `post` | `event`), `title`, `url?`, `text` (already redacted), `contentHash`, `fetchedAt`.
+- SourceItem: `id`, `platform` (`canvas` | `ed` | `ical` | `manual`), `externalId`, `courseId?`, `kind` (`assignment` | `announcement` | `material` | `post` | `event`), `title`, `url?`, `text` (already redacted), `contentHash`, `fetchedAt`.
 - Citation: `sourceItemId`, `quote`, `locator`.
 - Step: `title`, `estimateMinutes`, `done`, `citations` (array, may be empty only for manual tasks).
 - Task: `id`, `moduleId`, `courseId?`, `assessmentId?`, `title`, `source` (`coursework` | `manual`), `due?`, `repeat?` (`daily` | `weekly`), `steps`.
-- Change: `seq`, `kind` (`created` | `updated` | `deleted`), `entity` (`course` | `assessment` | `source_item` | `task`), `entityId`, `before?`, `after?`, `at`.
-- Run: `id`, `command`, `startedAt`, `endedAt`, `steps`, `outcome` (`ok` | `error`), `errorCode?`, `costUsd?`; measured runs carry `pages`, `requests`, `failures`, `coverage` as a complete optional group for historical/non-sync compatibility. New M1 sync finalization requires all four measurements through `SyncRunSchema`.
+- Change: `seq`, `kind`, `entity` (`course` | `assessment` | `source_item` | `task`), `entityId`, `before?`, `after?`, `at`.
+- Run: `id`, `command`, `startedAt`, `endedAt`, `steps`, `outcome` (`ok` | `error`), `errorCode?`, `costUsd?`.
 
 #### Scenario: Unknown enum value
 - **WHEN** a SourceItem with `platform: "moodle"` is parsed
 - **THEN** parsing fails and the error names the `platform` path
-
-#### Scenario: iCal removed
-- **WHEN** SourceItems with `platform: "ical"` and each of `canvas`, `ed`, `manual` are parsed
-- **THEN** iCal fails at `platform` and all three supported providers pass when their remaining fields are valid
 
 ### Requirement: Modules are user-defined and delivery-type
 A Module SHALL have an id, a name, a glyph, and a flag saying whether it is fed automatically by coursework sources. Module progress SHALL equal completed steps divided by all steps of its non-recurring tasks (decision #31).
@@ -97,23 +93,12 @@ A Task SHALL belong to a Module, optionally to a Course and an Assessment, and S
 - **THEN** validation fails
 
 ### Requirement: Changes and runs are recorded
-A Change SHALL record its kind (`created`, `updated`, `deleted`) and the affected entity. `created` MUST have `after` and no `before`; `deleted` MUST have `before` and no `after`; `updated` MUST have both. Its positive integer `seq` is assigned by the store (see `local-store`). Migration maps historical specialized kinds to these operations while preserving seq, references, timestamps and snapshots. A Run SHALL record the command, start and end time, step count, outcome, and an optional cost reported by the caller.
+A Change SHALL record its kind (`item.added`, `item.removed`, `content.changed`, `deadline.changed`, `grade.changed`) and the affected entity. `item.added` MUST have `after` and no `before`; `item.removed` MUST have `before` and no `after`; every `*.changed` kind MUST have both. Its `seq` is assigned by the store (see `local-store`). A Run SHALL record the command, start and end time, step count, outcome, and an optional cost reported by the caller.
 
 #### Scenario: Change without before or after
-- **WHEN** an `updated` change lacks `before`, or a `created` change has a `before`
+- **WHEN** a `deadline.changed` change lacks `before`, or an `item.added` change has a `before`
 - **THEN** validation fails
 
 #### Scenario: Several unavailable reasons
 - **WHEN** a course has nothing graded and no final
 - **THEN** the need is `unavailable` with reason `nothing_graded`
-
-### Requirement: Run measurements validate operational coverage
-M1 pages/requests/failures SHALL be nonnegative integer measurements. Per-source coverage SHALL use validated provider and scope references, attempted/completed/skipped/failed/not-started counts and sanitized gap/outcome codes. Coverage SHALL remain operational data within Run, not new coursework entities or permission grants. `RunSchema` SHALL remain the read/compatibility validator, including historical `command: sync` records. `SyncRunSchema` SHALL validate new finalization with `command: sync` and all four required measurement fields. Optional historical measurements, when present, SHALL form a complete group; none SHALL be backfilled.
-
-Each coverage entry SHALL be a strict operational record: `provider` (`canvas` | `ed`), an opaque lowercase 64-hex `scopeRef` generated from the provider-qualified scope, `collection`, nonnegative integer `planned`, `attempted`, `completed`, `skipped`, `failed`, `notStarted`, and `codes`. Canvas collections are `assignments`, `assignment_groups`, `submissions`, `modules`, `files`, `materials`; Ed collections are `courses`, `lessons`, `attempts`, `slides`, `threads`, `resources`, `materials`. Codes SHALL be existing protocol error codes or the local coverage outcomes `CANCELED`, `INCOMPLETE`, `UNSUPPORTED`, `SKIPPED`, `NOT_STARTED`; these local outcomes do not extend the protocol error vocabulary. Coverage SHALL reject unknown fields, raw URLs, course titles, names, quotes and free-form errors. Schema validation cannot prove measurements are actual; the sync lifecycle is responsible for counting operations.
-
-New sync finalization SHALL require the measurements; successful HTTP reads alone MUST NOT imply complete normalized coverage. All metrics SHALL reflect actual operations without personal data or invented costs.
-
-#### Scenario: Invalid metrics
-- **WHEN** a synthetic M1 Run has negative/nonintegral counts, unsafe coverage or missing required sync measurements
-- **THEN** finalization is refused by validation rather than storing false metrics
