@@ -54,7 +54,11 @@ export function normalizeQuiz(payload: QuizPayload): QuizReadData {
     let text = value.normalize('NFKC');
     // Markup, control characters and credential markers cannot be safely interpreted as plain text.
     if (/[<>\u0000-\u0008\u000b-\u001f\u007f]|authToken|x-token|authorization|\b(?:password|csrf|access_token)\b/i.test(text)) throw sourceUnavailable();
+    // Credential assignments (`token: …`, `api_key=…`, `Bearer …`) fail closed; the bare word "token" stays allowed.
+    if (/\b(?:token|api[_-]?key|secret|session[_-]?id|cookie)\s*[:=]|\bbearer\s+\S/i.test(text)) throw sourceUnavailable();
     for (const pattern of identityPatterns) text = text.replace(pattern, '[redacted]');
+    // Labelled student numbers (6+ digits) are redacted even without a structured identity field.
+    text = text.replace(/\b((?:student\s*(?:number|no\.?|id)|id)\s*[:#]?\s*)\d{6,}\b/giu, '$1[redacted]');
     text = text.split(/(\s+)/u).map(part => part.includes('@') ? '[redacted]' : part).join('')
       .replace(/(?:\+?\d[\d ()-]{6,}\d)/g, '[redacted]');
     // Later replacements must not reintroduce a known identity (even in the marker).

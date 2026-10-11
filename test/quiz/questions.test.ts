@@ -52,6 +52,28 @@ it.each([
   expect(() => normalizeQuiz(payload([{ ...question, prompt: 'synthetic_peer_42 and 7654321 explain parity.' }], { author })))
     .toThrowError(expect.objectContaining({ code: 'SOURCE_UNAVAILABLE' }));
 });
+it.each([
+  'Student number 7654321 explains parity.',
+  'ID: 765432 explains parity.',
+])('redacts student numbers in free text without a structured identity field: %s', prompt => {
+  const result = normalizeQuiz(payload([{ ...question, prompt }]));
+  expect(JSON.stringify(result)).not.toMatch(/7654321|765432/);
+});
+it('keeps ordinary numbers that are not labelled as identifiers', () => {
+  expect(normalizeQuiz(payload([{ ...question, prompt: 'Is 100000 even?' }])).questions[0]).toMatchObject({ prompt: 'Is 100000 even?' });
+});
+it.each([
+  ['prompt', 'Use token: synthetic-secret-value to solve this.'],
+  ['prompt', 'api_key=synthetic-secret-value'],
+  ['prompt', 'Authorization uses Bearer synthetic-secret-value'],
+  ['option', 'secret = synthetic-secret-value'],
+])('withholds credential-shaped text in the %s', (where, text) => {
+  const q = where === 'prompt' ? { ...question, prompt: text } : { ...question, options: [{ id: 1, text }, { id: 2, text: '3' }] };
+  expect(() => normalizeQuiz(payload([q]))).toThrowError(expect.objectContaining({ code: 'SOURCE_UNAVAILABLE' }));
+});
+it('does not treat the word token in course content as a credential', () => {
+  expect(normalizeQuiz(payload([{ ...question, prompt: 'How many tokens does the lexer emit?' }])).questions[0]).toMatchObject({ supported: true });
+});
 it('withholds text when the redaction marker would reproduce a known username', () => {
   expect(() => normalizeQuiz(payload([{ ...question, prompt: 'redacted explains parity.' }], { author: { username: 'redacted' } })))
     .toThrowError(expect.objectContaining({ code: 'SOURCE_UNAVAILABLE' }));
