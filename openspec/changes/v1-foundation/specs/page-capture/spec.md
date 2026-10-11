@@ -28,3 +28,29 @@ Capture SHALL hold an exclusive lock file at `<data dir>/profiles/default.lock` 
 #### Scenario: Stale lock
 - **WHEN** the lock file names a process id that no longer exists
 - **THEN** a new capture removes the lock and starts
+
+### Requirement: Choose the browser
+`coursework capture` SHALL accept `--browser chrome|msedge` (default `chrome`) and launch that installed browser channel on the same persistent profile. An unknown value MUST exit with status 2 and list the allowed values. The bundled-Chromium fallback still applies only after asking.
+
+#### Scenario: Edge
+- **WHEN** the user runs `coursework capture --browser msedge`
+- **THEN** the persistent profile opens in the installed Microsoft Edge
+
+### Requirement: Crawl Canvas after sign-in
+While capture runs, the terminal command `c` SHALL crawl the Canvas site of the active tab and save each visited page as a snapshot (same format as a manual save). The crawl SHALL open its own tab, visit `/courses`, take every course link of the form `/courses/<id>` on that page, and for each course visit `assignments`, `announcements`, `grades`, and `assignments/syllabus`, plus every assignment page (`/courses/<id>/assignments/<id>`) and announcement page (`/courses/<id>/discussion_topics/<id>`) linked from them. It MUST only navigate with GET page loads on the same origin, MUST NOT click, type, or submit anything, MUST wait at least one second between page loads, and MUST stop after 300 pages. If a page load ends on another origin (for example a sign-in page), the crawl SHALL stop, keep what it saved, and tell the user to sign in again. At the end it SHALL print and write a summary (`crawl-<timestamp>.json` under `<data dir>/snapshots/<host>/`) with pages saved, pages failed, and duration. Ed is not crawled; it stays manual.
+
+#### Scenario: Crawl a signed-in Canvas
+- **WHEN** the active tab is on a signed-in Canvas site and the user enters `c`
+- **THEN** snapshots appear for the course list, each course's assignments, announcements, grades, and syllabus pages, and each linked assignment and announcement, and a summary file records the counts and duration
+
+#### Scenario: Session expired mid-crawl
+- **WHEN** a page load is redirected to another origin
+- **THEN** the crawl stops, earlier snapshots remain, and the terminal tells the user to sign in again
+
+#### Scenario: Not on Canvas
+- **WHEN** the active tab is not on a Canvas course site and the user enters `c`
+- **THEN** nothing is crawled and the terminal says to open Canvas first
+
+#### Scenario: Page cap
+- **WHEN** the crawl plan reaches 300 pages
+- **THEN** the crawl stops and the summary says the cap was reached
