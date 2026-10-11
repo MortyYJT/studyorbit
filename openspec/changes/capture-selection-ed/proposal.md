@@ -4,7 +4,7 @@ The current Canvas crawl includes unrelated courses and saves duplicate course-h
 
 ## What Changes
 
-- On the first `c`, discover current-term Canvas and Ed courses, let the user tick them in the terminal, and persist their selection in the local data directory. Reuse it and provide explicit reselection (#50, #54).
+- On the first `c`, discover current-term Canvas courses and active Ed courses (grouped by term), let the user tick them in the terminal, and persist their selection in the local data directory. Reuse it and provide explicit reselection (#50, #54).
 - Crawl selected courses only; allow non-interactive capture using stored selection and return a clear agent-envelope error if selection is absent.
 - Save each final Canvas URL once per crawl and record disabled-tab redirects in the summary, retaining the safety constraints from #43–#47.
 - Capture Ed's own same-origin GET JSON responses for course discovery, lessons, assignment lessons and slides, bounded thread lists, and resources, using the browser profile's login (#52, #53). Never send `view=1`.
@@ -14,7 +14,7 @@ The current Canvas crawl includes unrelated courses and saves duplicate course-h
 
 ### New Capabilities
 
-- `course-selection`: current-term discovery, terminal selection, local persistence, reselection, and no-TTY behavior.
+- `course-selection`: course discovery (Canvas current term, Ed active by term), terminal selection, local persistence, reselection, and no-TTY behavior.
 - `ed-capture`: bounded same-origin JSON snapshots, session authentication, partial outcomes, and privacy boundaries.
 
 ### Modified Capabilities
