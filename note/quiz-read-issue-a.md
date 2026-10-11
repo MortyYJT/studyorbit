@@ -97,3 +97,17 @@ feat(quiz): validate and redact question sources before agent exposure
 feat(quiz): expose bounded quiz read envelopes through the CLI
 - Reuse managed-profile lifecycle and fail closed pending real-read prerequisites.
 ```
+
+## 隐私审查修复（2026-10-12，基线 `5d590ab`）
+
+修复任务 1.3 的三项 P1：收集人员 username 与结构化 student_number（含安全整数），
+在题干、选项及引文中脱敏；已知中文姓名匹配连续文本。身份字段格式不安全或替换后仍有
+已知标识时返回 `SOURCE_UNAVAILABLE`，不输出原文。无新依赖或领域/storage schema 修改。
+
+- TDD：新增身份回归先红，`questions.test.ts` 为 8 failed / 21 passed；修复后 29 passed。
+- 脱敏标记碰撞回归先红，1 failed / 29 passed；补回残留检查后 `test/quiz` 为 5 files / 60 passed。
+- fresh-context 只读子代理复审：ready to merge；独立执行 `questions.test.ts` 为 30 passed。
+- `bash .claude/check.sh`：exit 0，44 files passed；356 passed / 2 skipped（358）。
+- `git diff --check` 通过；未提交，`note/handoff.md` 未修改；仅验证合成数据，未运行真实 Ed。
+
+建议提交：`fix(quiz): redact known usernames, student numbers and Chinese names`。

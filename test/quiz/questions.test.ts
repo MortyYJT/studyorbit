@@ -30,6 +30,32 @@ it('collects identities across lesson and slide boundaries', () => {
   input.lesson = { ...input.lesson, people: [{ name: 'Synthetic Peer' }] } as typeof input.lesson;
   expect(JSON.stringify(normalizeQuiz(input))).not.toContain('Synthetic Peer');
 });
+it.each([
+  { author: { username: 'synthetic_peer_42' }, prompt: 'synthetic_peer_42 explains parity.', expected: '[redacted] explains parity.' },
+  { author: { student_number: '7654321' }, prompt: 'Student number 7654321 explains parity.', expected: 'Student number [redacted] explains parity.' },
+  { author: { name: '张三' }, prompt: '同学张三解释了奇偶性。', expected: '同学[redacted]解释了奇偶性。' },
+  { author: { studentNumber: 7654321 }, prompt: 'Student number 7654321 explains parity.', expected: 'Student number [redacted] explains parity.' },
+  { author: { username: 'synthetic.peer+42' }, prompt: 'synthetic.peer+42 explains parity.', expected: '[redacted] explains parity.' },
+  { author: { username: 'ｓｙｎｔｈｅｔｉｃ_peer_42' }, prompt: 'SYNTHETIC_peer_42 explains parity.', expected: '[redacted] explains parity.' },
+])('redacts known person identifiers in prompts, options and source text: $author', ({ author, prompt, expected }) => {
+  const result = normalizeQuiz(payload([{ ...question, prompt, options: [{ id: 1, text: prompt }, { id: 2, text: 'None.' }] }],
+    { nested: [{ people: [author] }] }));
+  expect(result.questions[0]).toMatchObject({ prompt: expected, options: [{ id: '1', text: expected }, { id: '2', text: 'None.' }] });
+  expect(result.sources[0].text).toBe(`${expected}\n1: ${expected}\n2: None.`);
+});
+it.each([
+  { username: { value: 'synthetic_peer_42' } },
+  { username: ['synthetic_peer_42'] },
+  { student_number: { value: '7654321' } },
+  { student_number: 7654321.5 },
+])('withholds person identifiers whose format cannot be safely interpreted: %j', author => {
+  expect(() => normalizeQuiz(payload([{ ...question, prompt: 'synthetic_peer_42 and 7654321 explain parity.' }], { author })))
+    .toThrowError(expect.objectContaining({ code: 'SOURCE_UNAVAILABLE' }));
+});
+it('withholds text when the redaction marker would reproduce a known username', () => {
+  expect(() => normalizeQuiz(payload([{ ...question, prompt: 'redacted explains parity.' }], { author: { username: 'redacted' } })))
+    .toThrowError(expect.objectContaining({ code: 'SOURCE_UNAVAILABLE' }));
+});
 it('marks recognized unknown widgets without exporting their unverified fields', () => {
   const result = normalizeQuiz(payload([{ id: 31, type: 'unknown-private-widget', prompt: 'private-sentinel', solution: 'private-sentinel' }]));
   expect(result.questions).toEqual([{ ref: 'ed:7:11:21:31', type: 'unsupported', supported: false }]);
