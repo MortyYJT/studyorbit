@@ -1,3 +1,6 @@
+import { z } from 'zod';
+import { diffEntity, syncSchemas, invalidSync, type SyncValue } from '../sync/diff.js';
+import { validateScopes, assertScopeMember, canDeleteScope, type ReconcileScope } from '../sync/reconciliation.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -75,9 +78,47 @@ export class SqliteRepository implements Repository {
     return persisted;
   }
 
-  listChangesSince(seq: number): Change[] {
-    return this.db.prepare('SELECT json FROM change_event WHERE seq > ? ORDER BY seq ASC').all(seq)
+  listChangesSince(seq: number, limit?: number): Change[] {
+    if (!Number.isSafeInteger(seq) || seq < 0 || limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)) throw invalidSync();
+    return this.db.prepare('SELECT json FROM change_event WHERE seq > ? ORDER BY seq ASC LIMIT ?').all(seq, limit ?? -1)
       .map(row => ChangeSchema.parse(JSON.parse(row.json as string)));
+  }
+
+  /** Comparison is performed after acquiring the writer lock, never against a stale pre-read. */
+  reconcile(input: readonly ReconcileScope[], at: string): Change[] {
+    const scopes = validateScopes(input);
+    if (!z.iso.datetime({ offset: true }).safeParse(at).success) throw invalidSync();
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const events: Change[] = [];
+      for (const scope of scopes) {
+        if (!scope.coverage.selected || !scope.coverage.normalizationComplete
+          || scope.coverage.codes.some(code => code !== 'INCOMPLETE')) continue;
+        const table = { course: 'courses', assessment: 'assessments', source_item: 'source_items' }[scope.entity];
+        const incoming = new Map(scope.values.map(value => [value.id, value]));
+        for (const id of scope.ownedIds) {
+          const before = this.load<SyncValue>(table, 'id', id, syncSchemas[scope.entity]) as SyncValue | undefined;
+          if (before) assertScopeMember(scope, before);
+          const after = incoming.get(id);
+          if (!after && !canDeleteScope(scope.collection, scope.coverage)) continue;
+          const change = diffEntity(scope.entity, before, after, at, scope.fields);
+          if (!change) continue;
+          if (change.kind === 'deleted') this.db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
+          else {
+            const value = change.after as SyncValue;
+            if (scope.entity === 'course') this.write(table, CourseSchema, value as Course, ['moduleId']);
+            else if (scope.entity === 'assessment') this.write(table, AssessmentSchema, value as Assessment, ['courseId']);
+            else this.write(table, SourceItemSchema, value as SourceItem, ['platform', 'externalId', 'courseId']);
+          }
+          events.push(this.appendChange(change));
+        }
+      }
+      this.db.exec('COMMIT');
+      return events;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   saveBatch(batch: SaveBatch): Change[] {

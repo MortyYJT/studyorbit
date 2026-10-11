@@ -57,11 +57,11 @@ Depends on B/D and resource-link discovery contracts from C/D (fake links suffic
 
 Depends on B; use fake normalized inputs/coverage from C–E. Scope: pure diff, repository reconciliation/cursor methods and synthetic database tests. Acceptance: all sync-changes scenarios and local-store atomicity.
 
-- [ ] 6.1 Write failing tests for created/updated/deleted, simultaneous field changes, optional-field removal and no-op semantic equivalence despite fetchedAt/JSON ordering; implement field-by-field comparison of canonical redacted adapter-owned fields, one updated event with complete before/after evidence.
-- [ ] 6.2 Write failing tests for complete-scope removal versus partial pagination, first-page threads, skipped endpoints, auth/cap/cancel, normalization/PDF failure and deselection; implement completeness-gated deletion without touching manual/owner-owned entities.
-- [ ] 6.3 Write failing in-memory/reopened SQLite tests for atomic compare/upsert/delete/event append, rollback on validation/insertion failure, two-writer duplicate prevention, unchanged cursor for no-op/rollback and monotonic committed seq across restart/entity removal. Implement repository transactions; keep all SQL in `src/store/`.
-- [ ] 6.4 Write failing tests for exclusive ascending cursor reads, bounded paging, empty next-cursor stability, invalid cursors and an event larger than 64 KiB with no skipped event/cursor advance. Implement the reusable validated changes handler; CLI wiring waits for G, registry/MCP/HTTP waits for M2.
-- [ ] 6.5 Run targeted green tests, fresh-context review, `bash .claude/check.sh` and diff/privacy checks; provide cursor/migration evidence without rebuilding/resetting live data.
+- [x] 6.1 Write failing tests for created/updated/deleted, simultaneous field changes, optional-field removal and no-op semantic equivalence despite fetchedAt/JSON ordering; implement field-by-field comparison of canonical redacted adapter-owned fields, one updated event with complete before/after evidence.
+- [x] 6.2 Write failing tests for complete-scope removal versus partial pagination, first-page threads, skipped endpoints, auth/cap/cancel, normalization/PDF failure and deselection; implement completeness-gated deletion without touching manual/owner-owned entities.
+- [x] 6.3 Write failing in-memory/reopened SQLite tests for atomic compare/upsert/delete/event append, rollback on validation/insertion failure, two-writer duplicate prevention, unchanged cursor for no-op/rollback and monotonic committed seq across restart/entity removal. Implement repository transactions; keep all SQL in `src/store/`.
+- [x] 6.4 Write failing tests for exclusive ascending cursor reads, bounded paging, empty next-cursor stability, invalid cursors and an event larger than 64 KiB with no skipped event/cursor advance. Implement the reusable validated changes handler; CLI wiring waits for G, registry/MCP/HTTP waits for M2.
+- [x] 6.5 Run targeted green tests, fresh-context review, `bash .claude/check.sh` and diff/privacy checks; provide cursor/migration evidence without rebuilding/resetting live data.
 
 ## 7. Measured run ledger and thin CLI integration (issue G)
 
