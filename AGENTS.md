@@ -45,13 +45,13 @@ Roles: OpenSpec owns *what* we build and the current-truth specs. Superpowers ow
 ## Git
 
 - Follow [CONTRIBUTING.md](CONTRIBUTING.md) for branches, commits, and pull requests.
-- Work on `<agent>/<topic>` branches (your agent's prefix, per [CONTRIBUTING.md](CONTRIBUTING.md)) and open a pull request into `main`. Claude merges per "Agents and human gates". Never push to `main`, force-push, or rewrite pushed history.
+- Implementing agents work on `<agent>/<topic>` branches (your agent's prefix, per [CONTRIBUTING.md](CONTRIBUTING.md)); Claude pushes and opens the pull request into `main` and merges per "Agents and human gates". Never push to `main`, force-push, or rewrite pushed history.
 
 ## Session continuity
 
 - At the start of a session, read `note/handoff.md` if it exists, and check it against `git status` and `git log` before trusting it.
 - Before ending a session, or when the user asks for a handoff, overwrite `note/handoff.md` (format in the guidelines, "Communication and documentation").
-- Session hygiene: after each milestone, when the context window is getting heavy, or when the work moves to an unrelated task, overwrite `note/handoff.md` (current state, next steps, open questions, conventions) and commit it on the current `<agent>/<topic>` branch (never on `main`). Then offer the user a fresh session whose opening prompt points to that file, and archive the old session once the user has started the new one. Tell the user in one line at most.
+- Session hygiene: after each milestone, when the context window is getting heavy, or when the work moves to an unrelated task, the agent updates `note/handoff.md` (current state, next steps, open questions, conventions); Claude commits it on the current `<agent>/<topic>` branch (never on `main`; Codex never commits, decision #40). Then offer the user a fresh session whose opening prompt points to that file, and archive the old session once the user has started the new one. Tell the user in one line at most.
 
 ## Read before the relevant task
 
