@@ -3,7 +3,7 @@
 > 单文件，只写当前状态，覆盖而不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#84）、`note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-12 上午，调度员（会话 585cc3fa）。本轮合并：#40、#41、#42、#45、#47、#49、#51、#53、#53（Q1 issue C）。PR #54（M1 F）CI 中，绿了就合并。
+- **最后更新：** 2026-10-12 上午，调度员（会话 585cc3fa）。本轮合并：#40、#41、#42、#45、#47、#49、#51、#53、#54、#54（M1 issue F）。
 - **模式：全自动调度（#79）。** 用户在睡觉 / 不在线，只在必须决策时打断。
 
 ## 调度员守则（新会话第一件事读这里）
@@ -19,16 +19,15 @@
 
 ## 正在跑的 Codex（`pgrep -fl "[c]odex exec"` 核对；报告在 `/Users/yu-junteng/.coursework-dispatcher-reports/`）
 - **Codex 5 小时额度又用完，13:11 恢复。** 期间审查改由 Claude 子会话（Agent 工具，只读）做。
-- **M1 issue F**（#52）：PR #54 已开，两轮审查完成（第二轮子会话，最后一处我修了），CI 绿后合并。
 报告目录：报告都在 `/Users/yu-junteng/.coursework-dispatcher-reports/`。
 交付流程：`git restore note/handoff.md`（如果被改了）→ 自己跑 check、读 diff → 用公开身份提交 → 新上下文 Codex 只读审查 → PR → CI 绿 → 合并（`--rebase`；有多次修复提交的用 `--squash`）。
 
 ## 工作队列（按顺序；能并行的并行）
 1. **S0 `capture-selection-ed`**：3.1–3.8 已合并（#36、#41）。3.9 要用户登录实测；3.10 归档等 3.9。
 2. **Q1 `ed-quiz-assist`**（截止 **10/25**，最晚 10/23 给用户实测）：A（#42）、B（#49）、C（#53）已合并。下一步 D（L3 页面填写 + 被动观察用户提交，tasks 第 4 组）→ E。Codex 13:11 恢复后派 D。检查点：B 10/16，C 10/18，D 10/20，E 和结构检查 10/22。
-3. **M1 `v1-sync`**：change（#40）和 1.1 合成探针（#45）已合并。1.2 真实探针要用户登录；**C（Canvas 适配器）按 tasks 要等 1.2 实测通过才开**。B（schema/迁移）已合并（#47）。D（Ed 规范化/脱敏）已合并（#51）。F 在 PR #54。**E（私有 PDF）卡住**：要装预批依赖 `unpdf@1.8.1`（#74），`npm install` 被 auto 模式分类器拦下（Untrusted Code Integration），见「等用户」。G 要等 C–F，H 要等 D–G。
+3. **M1 `v1-sync`**：change（#40）和 1.1 合成探针（#45）已合并。1.2 真实探针要用户登录；**C（Canvas 适配器）按 tasks 要等 1.2 实测通过才开**。B（schema/迁移）已合并（#47）。D（Ed 规范化/脱敏）已合并（#51）。F 已合并（#54）。**E（私有 PDF）卡住**：要装预批依赖 `unpdf@1.8.1`（#74），`npm install` 被 auto 模式分类器拦下（Untrusted Code Integration），见「等用户」。G 要等 C–F，H 要等 D–G。
 4. **M2 `v1-protocol`** → schema 合并后，同步、协议、界面三条线并行（M3 先接假数据）。
-5. dsh 出题欠：PR #29、#32、#35、#36、#40、#41、#42、#45、#47、#49、#51、#53、Stage 3 / PR #22（等用户定方式）。
+5. dsh 出题欠：PR #29、#32、#35、#36、#40、#41、#42、#45、#47、#49、#51、#53、#54、Stage 3 / PR #22（等用户定方式）。
 
 ## 等用户（醒来后）
 - **装 `unpdf`**：M1 issue E 需要预批依赖 `unpdf`（#74，MIT），`npm install --save-exact unpdf@1.8.1` 被分类器拦下，没绕过。你在 `../unimelb-coursework-agent-sync` 里自己跑一次（或明确批准我跑），然后调度员开 E。
