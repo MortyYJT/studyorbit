@@ -1,7 +1,7 @@
 # 路线图
 
 按依赖顺序做。每一项在开工前要有一个对应的 OpenSpec change（`openspec/changes/<id>`），规格在开工前一刻才写，不一次写完。
-技术细节以 `docs/engineering/v1-technical-design.md` 为准（决策 #55–#76）。
+技术细节以 `docs/engineering/v1-technical-design.md` 为准（决策 #55–#77；iCal 已去掉，#77）。
 
 > 2026-10-12 修订：不设日期（#67，推翻 #32 的 10/15）；复习功能提前进第一版（#70）；做 L4（#56，推翻 #3）；Notion 挪到第二版（#71）；新增 Q1 真实 quiz 场景（#75）。每个里程碑结束给用户一份验收清单（#68）。
 
@@ -12,7 +12,7 @@
 | M0 | 基建 | Node 24 + TS 脚手架、vitest、zod、`node:sqlite` 仓储；`check.sh` 和 CI；浏览器抓取 | 代码已合并，差 5.5 实测后归档 | `v1-foundation` |
 | S0 | 选课 + Ed 抓取 | 只爬选定课程；Ed JSON 抓取 | 进行中（issue C 待第 2 轮审查） | `capture-selection-ed` |
 | Q1 | 第一个真实 quiz | Ed quiz（10/25 截止）：读题 → agent 作答 → 终端审核 → Playwright 填页面 → **用户点提交**，同时记录 Ed 的提交请求。前提：仓库已转私有，课程 AI 政策已记录 | 未开始 | `ed-quiz-assist` |
-| M1 | 取数与同步 | Canvas `/api/v1`（先实测）+ Ed + iCal + 课件 PDF 文字；规范化、去个人信息、变化事件、`Run` 账本 | 未开始 | `v1-sync` |
+| M1 | 取数与同步 | Canvas `/api/v1`（先实测）+ Ed + 课件 PDF 文字；规范化、去个人信息、变化事件、`Run` 账本 | 未开始 | `v1-sync` |
 | M2 | agent 协议 | 一张命令注册表生成 CLI / MCP / HTTP；读接口；带引文核对的写接口（拆解、复习笔记、练习题、quiz 答案）；课程 AI 政策、授权和审计日志 | 未开始 | `v1-protocol` |
 | M3 | 界面 | 月历 / 周视图、任务、模块、成绩推算、EDF 排程、学习页、答案审核与提交确认、聊天窗口（先实测 Hermes 接口） | 未开始 | `v1-ui` |
 | M4 | 主动循环 | Hermes 挂 MCP + 技能；定时同步、推送；考前自动整理复习；L4 走 Ed 提交接口（默认确认） | 未开始 | `v1-loop` |
