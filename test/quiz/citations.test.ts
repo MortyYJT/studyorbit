@@ -48,3 +48,39 @@ it('short copied material statements also require declared material support', ()
   const a = { ...answer, answer: short.text, citations: [citation], statements: [{ field: 'answer', text: short.text, kind: 'reasoning' }, answer.statements[1]] };
   expect(() => validateCitedAnswers([a], [q], [question, short])).toThrow(/citation/i);
 });
+
+it.each(['Parity is even or odd', 'PARITY: is\n even / or — odd!', "Parity is even’or’odd", 'Even or odd is the parity.', 'Parity can be even.', 'Parity is even or odd; this follows from my calculation.'])('rejects undeclared meaningful material overlap: %s', text => {
+  for (const field of ['answer', 'rationale'] as const) {
+    const otherField = field === 'answer' ? 'rationale' : 'answer';
+    const proposal = { ...answer, [field]: text, [otherField]: 'My calculation.', citations: [citation], statements: [
+      { field, text, kind: 'reasoning' },
+      { field: otherField, text: 'My calculation.', kind: 'reasoning' },
+    ] };
+    expect(() => validateCitedAnswers([proposal], [q], sources)).toThrow(/citation/i);
+  }
+});
+it('cannot hide material reuse by splitting statements or declaring unrelated material in the same field', () => {
+  for (const statements of [
+    [{ field: 'answer', text: 'Parity is ', kind: 'reasoning' }, { field: 'answer', text: 'even or odd', kind: 'reasoning' }],
+    [{ field: 'answer', text: 'Parity is even or odd', kind: 'reasoning' }, { field: 'answer', text: ' By definition.', kind: 'material', sourceItemId: material.sourceItemId }],
+  ]) {
+    const proposal = { ...answer, answer: statements.map(s => s.text).join(''), statements: [...statements, answer.statements[1]] };
+    expect(() => validateCitedAnswers([proposal], [q], sources)).toThrow(/citation/i);
+  }
+});
+it('accepts normalized material reuse when the actual statement declares and cites that material', () => {
+  const text = 'Even or odd is the PARITY';
+  expect(validateCitedAnswers([{ ...answer, answer: text, statements: [{ ...answer.statements[0], text }, answer.statements[1]] }], [q], sources)[0]?.evidence).toBe('course-material');
+});
+it('does not infer material reuse from common grammatical words alone', () => {
+  const text = 'This is my calculation or my deduction.';
+  expect(validateCitedAnswers([{ ...answer, answer: text, citations: [citation], statements: [{ field: 'answer', text, kind: 'reasoning' }, answer.statements[1]] }], [q], sources)[0]?.evidence).toBe('prompt-only');
+});
+
+it.each(['⊤ ∨ ⊥ = ⊤.', '⊤∨⊥=⊤', 'It is.', '!!!'])('rejects copied symbolic or otherwise ambiguous material: %s', text => {
+  const sourceText = text.startsWith('⊤') ? '⊤ ∨ ⊥ = ⊤.' : text;
+  const symbolic = { ...material, text: sourceText };
+  const proposal = { ...answer, answer: text, citations: [citation], statements: [{ field: 'answer', text, kind: 'reasoning' }, answer.statements[1]] };
+  expect(() => validateCitedAnswers([proposal], [q], [question, symbolic])).toThrow(/citation/i);
+  expect(validateCitedAnswers([{ ...proposal, citations: [citation, { ...answer.citations[1], quote: sourceText }], statements: [{ field: 'answer', text, kind: 'material', sourceItemId: material.sourceItemId }, answer.statements[1]] }], [q], [question, symbolic])[0]?.evidence).toBe('course-material');
+});

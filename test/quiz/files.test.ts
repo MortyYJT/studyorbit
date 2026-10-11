@@ -57,3 +57,20 @@ it('uses ignored local default or private external override and rejects reposito
     expect(() => new QuizFiles(join(packageRoot(), 'src'))).toThrow();
   } finally { vi.unstubAllEnvs(); }
 });
+
+it.each(['..quiz-private', '..quiz-private/nested', '...', '.local-private', '.local/../..quiz-private'])('rejects repository-private lookalike directory %s, including environment overrides', async name => {
+  const { packageRoot } = await import('../../src/config/data-dir.js');
+  const { vi } = await import('vitest');
+  const root = join(packageRoot(), name);
+  expect(() => new QuizFiles(root)).toThrow(/unavailable/i);
+  vi.stubEnv('COURSEWORK_HOME', root);
+  try { expect(() => new QuizFiles()).toThrow(/unavailable/i); }
+  finally { vi.unstubAllEnvs(); }
+});
+it('allows .local descendants and genuinely external parent-segment paths', async () => {
+  const { packageRoot } = await import('../../src/config/data-dir.js');
+  expect(new QuizFiles(join(packageRoot(), '.local', 'nested')).root).toBe(join(packageRoot(), '.local', 'nested'));
+  const outside = join(packageRoot(), '..', '..quiz-private');
+  expect(new QuizFiles(outside).root).toBe(outside);
+  expect(() => new QuizFiles(packageRoot())).toThrow();
+});

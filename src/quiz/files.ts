@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, rename, unlink, chmod, readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { dirname, join, resolve, relative, isAbsolute } from 'node:path';
+import { dirname, join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { packageRoot } from '../config/data-dir.js';
 import { CourseworkError } from '../protocol/errors.js';
 import { localId } from './policy.js';
@@ -12,7 +12,8 @@ export class QuizFiles {
   constructor(root?: string) {
     this.root = resolve(root ?? (process.env.COURSEWORK_HOME?.trim() || join(packageRoot(), '.local')));
     const inRepository = relative(packageRoot(), this.root);
-    if (!isAbsolute(inRepository) && !inRepository.startsWith('..') && inRepository !== '.local' && !inRepository.startsWith('.local/')) throw unavailable();
+    const outsideRepository = isAbsolute(inRepository) || inRepository === '..' || inRepository.startsWith(`..${sep}`);
+    if (!outsideRepository && inRepository !== '.local' && !inRepository.startsWith(`.local${sep}`)) throw unavailable();
   }
   private async directory(): Promise<string> {
     const paths: string[] = []; let path = join(this.root, 'quiz');

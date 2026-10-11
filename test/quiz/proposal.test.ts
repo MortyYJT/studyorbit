@@ -152,3 +152,28 @@ it('post-write ledger failure returns a clean failure envelope and reports uncer
   expect(result).not.toHaveProperty('data'); expect(JSON.stringify(result)).not.toContain('SECRET-SENTINEL');
   expect(await f.files.read(`proposal-${hash(binding.assessmentId)}`)).toBeDefined();
 });
+
+it.each(['answer', 'rationale'] as const)('normalized undeclared material in %s preserves the accepted revision and safe ledger', async field => {
+  const f = await setup(); await authorize(f); await proposeQuiz(f.input, f.dependencies);
+  const name = `proposal-${hash(binding.assessmentId)}`;
+  const before = await f.files.read(name);
+  const material = { version: 1, course: '7', redacted: true, source: { sourceItemId: 'synthetic-material', kind: 'material', text: 'Parity is even or odd.', locator: 'page:2', page: 2 } };
+  await f.files.write(`material-${hash(material.source.sourceItemId)}`, material);
+  for (const text of ['Parity is even or odd', 'PARITY: is\n even / or odd!', 'Even or odd is the parity.', 'Parity can be even.']) {
+    const a = { ...answer, [field]: text, statements: answer.statements.map(s => s.field === field ? { ...s, text } : s) };
+    expect(await proposeQuiz({ ...f.input, answers: [a] }, f.dependencies)).toMatchObject({ ok: false, error: { code: 'CITATION_MISMATCH' } });
+    expect(await f.files.read(name)).toEqual(before);
+  }
+  const ledger = await readFile(join(f.root, 'quiz', 'runs.jsonl'), 'utf8');
+  expect(ledger).toContain('CITATION_MISMATCH'); expect(ledger).not.toMatch(/Parity|PARITY|even or odd/);
+});
+
+it('symbolic material copied as reasoning preserves the accepted revision on rejection', async () => {
+  const f = await setup(); await authorize(f); await proposeQuiz(f.input, f.dependencies);
+  const name = `proposal-${hash(binding.assessmentId)}`; const before = await f.files.read(name);
+  const source = { sourceItemId: 'synthetic-symbols', kind: 'material', text: '⊤ ∨ ⊥ = ⊤.', locator: 'page:2', page: 2 };
+  await f.files.write(`material-${hash(source.sourceItemId)}`, { version: 1, course: '7', redacted: true, source });
+  const a = { ...answer, answer: source.text, statements: [{ field: 'answer', text: source.text, kind: 'reasoning' }, answer.statements[1]] };
+  expect(await proposeQuiz({ ...f.input, answers: [a] }, f.dependencies)).toMatchObject({ ok: false, error: { code: 'CITATION_MISMATCH' } });
+  expect(await f.files.read(name)).toEqual(before);
+});
