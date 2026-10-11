@@ -1,7 +1,7 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖而不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#82）、`note/product/roadmap.md`。
+> 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#83）、`note/product/roadmap.md`。
 
 - **最后更新：** 2026-10-12 清晨，调度员（会话 585cc3fa）。本轮合并：#40 M1 change、#41 S0 3.7–3.8、#42 Q1 issue A、#45 M1 1.1 探针（合成部分）。
 - **模式：全自动调度（#79）。** 用户在睡觉 / 不在线，只在必须决策时打断。
@@ -18,8 +18,9 @@
 8. **控制上下文（用户 2026-10-12 要求）**：每次派给 Codex / 子会话的活只有一个 issue 那么大，提示词自包含，结果写进 `-o` 报告文件；调度员只读报告和需要的几行，绝不读整份日志。调度员自己的上下文变大时：更新本文件并推送 → `echo 0 > ~/.coursework-dispatcher-heartbeat` → 用 `run_scheduled_task` 立即运行 `coursework-dispatcher-watchdog`（它会接手当调度员）→ 归档旧会话，不用问用户。
 
 ## 正在跑的 Codex（`pgrep -fl "[c]odex exec"` 核对；报告在 `/Users/yu-junteng/.coursework-dispatcher-reports/`）
-- **Q1 issue B**（#43，tasks 2.1–2.5）：clone `../unimelb-coursework-agent-quiz-assist`，分支 `codex/quiz-policy`，报告 `codex-q1-B.md`。
-- **M1 issue B**（#46，tasks 2.1–2.5 schema/迁移）：clone `../unimelb-coursework-agent-sync`，分支 `codex/v1-sync-schema`，报告 `codex-m1-B.md`。
+- **Codex 5 小时额度用完，08:08 恢复（只等待，不用重置卡）。** 恢复后重派这两条：
+- **Q1 issue B**（#43，tasks 2.1–2.5）：clone `../unimelb-coursework-agent-quiz-assist`，分支 `codex/quiz-policy`。**工作区里已有半成品**（policy/audit/citations/proposals/files 和测试，有 2 个测试是红的）；重派时告诉 Codex 从现有工作区接着做，报告 `codex-q1-B.md`。
+- **M1 issue B**（#46，tasks 2.1–2.5 schema/迁移）：clone `../unimelb-coursework-agent-sync`，分支 `codex/v1-sync-schema`。Codex 因为范围问题停下了，没改任何文件；按 #83 重派，允许最小修改 `src/store/sqlite.ts` 的表名，报告 `codex-m1-B.md`。
 报告目录：报告都在 `/Users/yu-junteng/.coursework-dispatcher-reports/`。
 交付流程：`git restore note/handoff.md`（如果被改了）→ 自己跑 check、读 diff → 用公开身份提交 → 新上下文 Codex 只读审查 → PR → CI 绿 → 合并（`--rebase`；有多次修复提交的用 `--squash`）。
 
@@ -46,6 +47,7 @@
 ## 早上给用户看（调度员自主做的决定，逐条追加）
 - #81：Q1 凭据赋值整项不输出；带标签学号脱敏；**不带标签的 6–7 位纯数字不脱敏**（避免改坏数学题，剩余风险见 decisions）。
 - #82：S0 发现页快照保存失败只计数，不中断 Ed 和摘要。
+- #83：M1 迁移时允许最小修改 `sqlite.ts` 的表名（`changes` → `change_event`），不加兼容视图。
 - 两个 PR 都是两轮 Codex 审查后由我修最后一处并合并（#41、#42），按 #49。
 - #80：Q1 自带最小版的脱敏、引文校验、单项 L3 授权（`.local/` 文件）和审计日志，不等 M1/M2（PR #34 审查第 3、4 条）。
 - #80：`SourceItem.platform` 里的 `ical` 由 M1 删除，不在纯文档 PR 里改代码（审查第 2 条）。
