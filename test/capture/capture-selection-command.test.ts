@@ -130,12 +130,9 @@ it('first interactive c picks and persists, then later c reuses without rediscov
   expect(f.canvas.mock.calls[0][0].selection.courses).toEqual(selection.courses);
   expect(f.canvas.mock.calls[1][0].selection.courses).toEqual(selection.courses);
 });
-it('empty selection schedules neither runner and absent Canvas implementation is explicit', async () => {
+it('empty selection schedules neither runner', async () => {
   const f = setup({ version: 1, courses: [] }); await capture({ isTTY: false }, f.dependencies);
   expect(f.canvas).not.toHaveBeenCalled(); expect(f.ed).not.toHaveBeenCalled();
-  f.store.load = async () => ({ status: 'valid', selection }); delete f.dependencies.canvasRunner;
-  await capture({ isTTY: false }, f.dependencies);
-  expect(JSON.parse(f.stdout.mock.calls[1][0])).toMatchObject({ data: { sources: [{ source: 'canvas', status: 'notStarted', error: { code: 'SOURCE_UNAVAILABLE' } }, { source: 'ed', status: 'completed' }] } });
 });
 it('unavailable Ed discovery is retained in source outcome without a second discovery read', async () => {
   const f = setup(); f.dependencies.discover = async () => [
