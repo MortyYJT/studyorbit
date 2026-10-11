@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: User-driven capture in a headed browser
-`coursework capture` SHALL open a visible Playwright browser on the persistent profile at `<data dir>/profiles/<browser>` (data directory as defined in `local-store`; `<browser>` is `chrome`, `msedge`, or `chromium` for the bundled fallback, see "Choose the browser"). The user SHALL sign in and navigate by hand, except during a crawl started with `c` (see "Crawl Canvas after sign-in"). The tool MUST NOT read, type, store, or log passwords or one-time codes.
+`coursework capture` SHALL open a visible Playwright browser on the persistent profile at `<data dir>/profiles/default` (data directory as defined in `local-store`) in the browser chosen by "Detect the browser". The user SHALL sign in and navigate by hand, except during a crawl started with `c` (see "Crawl Canvas after sign-in"). A model never sees or types passwords. `capture` itself MUST NOT read, type, store, or log passwords or one-time codes; terminal sign-in (`coursework login`) is out of scope here and planned for M1 (decision #46).
 
 #### Scenario: Start capture
 - **WHEN** the user runs `coursework capture`
@@ -19,7 +19,7 @@ While capture runs, the user SHALL be able to save the current page with a termi
 - **THEN** a test confirms git ignores `.local/snapshots/`
 
 ### Requirement: One process per browser profile
-Capture SHALL hold an exclusive lock file at `<data dir>/profiles/<browser>.lock` containing its process id while running, and remove it on exit. `capture` is a human-facing command, not an agent command: a second process using the same profile MUST exit with status 3 and print that the profile is locked by the named process id. The lock module SHALL throw `CourseworkError` with code `LOCKED`, so agent-facing commands that need the profile later get a `LOCKED` envelope. A lock left by a dead process SHALL be cleared automatically.
+Capture SHALL hold an exclusive lock file at `<data dir>/profiles/default.lock` containing its process id while running, and remove it on exit. `capture` is a human-facing command, not an agent command: a second process using the same profile MUST exit with status 3 and print that the profile is locked by the named process id. The lock module SHALL throw `CourseworkError` with code `LOCKED`, so agent-facing commands that need the profile later get a `LOCKED` envelope. A lock left by a dead process SHALL be cleared automatically.
 
 #### Scenario: Second capture
 - **WHEN** a capture is running and the user starts another
@@ -29,16 +29,24 @@ Capture SHALL hold an exclusive lock file at `<data dir>/profiles/<browser>.lock
 - **WHEN** the lock file names a process id that no longer exists
 - **THEN** a new capture removes the lock and starts
 
-### Requirement: Choose the browser
-`coursework capture` SHALL accept `--browser chrome|msedge` (default `chrome`) and launch that installed browser channel. Each browser SHALL use its own profile directory `<data dir>/profiles/<browser>` and lock `<data dir>/profiles/<browser>.lock`; Chrome and Edge never share a profile, so switching browsers means signing in again. An unknown value MUST exit with status 2 and list the allowed values. The bundled-Chromium fallback still applies only after asking (also when the chosen browser is not installed) and uses its own `chromium` profile and lock.
+### Requirement: Detect the browser
+`coursework capture` SHALL pick the browser itself, with no command-line option: Microsoft Edge if installed, otherwise Google Chrome; if neither is installed it SHALL ask on the terminal before using Playwright's bundled Chromium (no TTY: exit with an error, never download). A browser counts as installed when its channel's standard executable exists for the platform. The environment variable `COURSEWORK_BROWSER=msedge|chrome` overrides detection; any other value MUST exit with status 2 and list the allowed values. On first launch the tool SHALL record the browser (`msedge`, `chrome`, or `chromium`) in `<data dir>/profiles/default/coursework-browser.json`. If a later run picks a different browser than the recorded one, it MUST NOT launch and SHALL exit with an error naming both browsers and telling the user to set `COURSEWORK_BROWSER` to the recorded one, or to remove the profile and sign in again. The profile and lock paths do not change (decision #45).
 
-#### Scenario: Edge
-- **WHEN** the user runs `coursework capture --browser msedge`
-- **THEN** the installed Microsoft Edge opens on `<data dir>/profiles/msedge`
+#### Scenario: Edge preferred
+- **WHEN** Edge and Chrome are both installed and no profile exists
+- **THEN** capture opens Edge and records `msedge` in the profile
 
-#### Scenario: Unknown browser
-- **WHEN** the user runs `coursework capture --browser firefox`
-- **THEN** the command exits with status 2 and lists `chrome` and `msedge`
+#### Scenario: Browser changed
+- **WHEN** the profile records `chrome` and detection now picks `msedge`
+- **THEN** capture exits without launching, naming both browsers and how to recover
+
+#### Scenario: Override
+- **WHEN** `COURSEWORK_BROWSER=chrome` is set and the profile records `chrome`
+- **THEN** capture opens Chrome even if Edge is installed
+
+#### Scenario: Neither installed
+- **WHEN** neither Edge nor Chrome is installed
+- **THEN** capture asks before using bundled Chromium, and records `chromium` if the user agrees
 
 ### Requirement: Crawl Canvas after sign-in
 While capture runs, the terminal command `c` SHALL crawl the Canvas site of the active tab (the most recently focused tab, as for `s`) and save each loaded page as a snapshot in the same format as a manual save.
