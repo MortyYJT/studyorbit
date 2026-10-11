@@ -93,6 +93,16 @@ Terminal review SHALL display the target assessment/questions, all proposed answ
 - **WHEN** review runs without a TTY, is rejected or canceled, or receives no explicit approval
 - **THEN** no approval is recorded and filling remains blocked
 
+#### Scenario: Cancellation during approval persistence
+- **WHEN** cancellation occurs while approval is being prepared for storage, before durable activation
+- **THEN** no usable approval remains and reviewed-revision preflight refuses filling
+- **AND** cancellation after durable activation does not retroactively cancel the saved approval
+
+#### Scenario: Approval persistence and completion audit ordering
+- **WHEN** an owner confirms approval of the displayed revision
+- **THEN** confirmation intent is audited before activation and an `OK`/`approved` outcome is appended only after the exact approval is durably saved
+- **AND** a failed save produces no successful approval outcome and its failure event does not claim an approved review status
+
 #### Scenario: Proposal changed after review
 - **WHEN** the proposal, source or question/page/attempt identity changes after approval
 - **THEN** fill returns `CONFLICT` without mutation and asks for a fresh read/review

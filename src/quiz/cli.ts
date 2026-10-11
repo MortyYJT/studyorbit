@@ -5,11 +5,20 @@ import { run } from '../protocol/envelope.js';
 import { Command } from 'commander';
 import { fail, ok } from '../protocol/envelope.js';
 import { quizReadCommand, readQuiz, type QuizReadDependencies } from './read/command.js';
-export async function parseQuizCLI(args: string[], dependencies: QuizReadDependencies & QuizWriteDependencies = {}): Promise<void> {
+import { reviewQuiz, type QuizReviewDependencies } from './review.js';
+export async function parseQuizCLI(args: string[], dependencies: QuizReadDependencies & QuizWriteDependencies & QuizReviewDependencies = {}): Promise<void> {
   const output = dependencies.stdout ?? console.log;
   const program = new Command().name('coursework').exitOverride().configureOutput({ writeOut: () => {}, writeErr: () => {} });
   let ran = false;
   const quiz = program.command('quiz').description('Read selected Ed quiz questions');
+  quiz.command('review').description('Review an exact private proposal revision in an owner terminal')
+    .requiredOption('--assessment <id>', 'Local assessment id').requiredOption('--revision <uuid>', 'Exact proposal revision')
+    .requiredOption('--page <id>', 'Explicit page identity for later fill preflight').option('--attempt <id>', 'Attempt identity when exposed')
+    .action(async (options: { assessment: string; revision: string; page: string; attempt?: string }) => {
+      ran = true;
+      output(JSON.stringify(await reviewQuiz({ assessmentId: options.assessment, revision: options.revision,
+        page: { pageId: options.page, ...(options.attempt ? { attemptId: options.attempt } : {}) } }, dependencies)));
+    });
   quiz.command('read').description('Return one bounded model-safe envelope')
     .option('--course <id>', 'Selected Ed course id').option('--lesson <id>', 'Discovered attempt lesson id')
     .option('--question <ref>', 'Narrow to an exact question reference (repeatable)', (value: string, previous: string[]) => [...previous, value], [])
@@ -42,6 +51,10 @@ export async function parseQuizCLI(args: string[], dependencies: QuizReadDepende
     if (ran) throw error; // Output sink failures must never cause a second stdout envelope.
     const help = (error as { code?: string }).code === 'commander.helpDisplayed';
     const name = args[0] === 'quiz' ? args[1] : undefined;
+    if (name === 'review') {
+      output(JSON.stringify(help ? ok('quiz.review', { usage: 'coursework quiz review --assessment <id> --revision <uuid> --page <id> [--attempt <id>]' }) : await reviewQuiz(undefined, dependencies)));
+      return;
+    }
     const writeCommand = (['policy', 'grant', 'prerequisites', 'propose'] as const).find(command => command === name);
     if (writeCommand) {
       output(JSON.stringify(help ? ok(`quiz.${writeCommand}`, { usage: `coursework quiz ${writeCommand} --input <path>` })

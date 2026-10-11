@@ -107,6 +107,14 @@ changes, new question structure or a changed page/attempt identity invalidate ap
 Approval is not a grant and a grant is not approval. Agent writes pass validating handlers; no direct
 DB writes. Rejected: implicit acceptance on timeout or stdin from an agent (not owner review).
 
+Approval persistence keeps the record pending during asynchronous preparation. The private file
+writer checks cancellation immediately before a synchronous rename and parent-directory sync,
+with no event-loop yield until durable activation. Cancellation before this boundary leaves no
+usable approval; cancellation after it does not undo completed consent. Review appends confirmation
+intent before activation and completion only after the save succeeds. Failed saves must not label
+failure outcomes as approved. Completion-audit failures invalidate approval under the same local
+mutation lock and return a sanitized error rather than success.
+
 Append-only private audit records cover successful and failed quiz reads, policy/grant decisions,
 proposal acceptance/rejection, review, attempted/denied/successful/partial fill and observation
 outcome, with timestamp, run id,

@@ -42,10 +42,10 @@ Acceptance maps to policy/grant, cited proposals and append-only audit scenarios
 Depends on B. Scope: terminal review module/CLI and `test/quiz/` fake-TTY tests; no browser filling yet.
 Acceptance maps to explicit terminal approval, cancellation/non-TTY and stale-revision scenarios.
 
-- [ ] 3.1 Write failing TTY tests for displaying every question/answer/rationale/citation locator, target identity and unsupported/prompt-only evidence indicators; implement `coursework quiz review` for a specific proposal revision.
-- [ ] 3.2 Write failing tests for explicit approval/rejection, cancellation/timeout, non-TTY denial, audit failure, approval bound to proposal/source identity and no implicit grant/policy changes; implement approval persistence and safe review outcomes.
-- [ ] 3.3 Write failing tests for edited proposal, changed source/question/page/attempt identities and concurrent replacement invalidating review with `CONFLICT`; implement the reusable reviewed-revision preflight contract for D.
-- [ ] 3.4 Run targeted green tests, fresh-context review against terminal review scenarios, `bash .claude/check.sh` and diff/privacy checks; provide Claude outputs for issue C without committing.
+- [x] 3.1 Write failing TTY tests for displaying every question/answer/rationale/citation locator, target identity and unsupported/prompt-only evidence indicators; implement `coursework quiz review` for a specific proposal revision.
+- [x] 3.2 Write failing tests for explicit approval/rejection, cancellation/timeout, non-TTY denial, audit failure, approval bound to proposal/source identity and no implicit grant/policy changes; implement approval persistence and safe review outcomes.
+- [x] 3.3 Write failing tests for edited proposal, changed source/question/page/attempt identities and concurrent replacement invalidating review with `CONFLICT`; implement the reusable reviewed-revision preflight contract for D.
+- [x] 3.4 Run targeted green tests, fresh-context review against terminal review scenarios, `bash .claude/check.sh` and diff/privacy checks; provide Claude outputs for issue C without committing.
 
 ## 4. L3 page fill and passive owner-submission observation (issue D)
 
