@@ -46,7 +46,7 @@ The first interactive `c` in `coursework capture` SHALL let the user tick discov
 - **THEN** the prior file stays unchanged and no course-specific crawl begins
 
 ### Requirement: Non-interactive capture uses stored selection and agent envelopes
-`coursework capture --crawl` SHALL execute one capture run without the terminal command loop. Without a TTY, plain `coursework capture` SHALL use that same one-shot path. It SHALL use stored selection and never prompt. Missing or invalid selection SHALL yield a `coursework.agent/v1` failure envelope with code `INVALID_INPUT` and an interactive-selection recovery hint before browser launch or network reads. Non-TTY `--reselect` SHALL return `INVALID_INPUT` without overwriting the file. Stdout SHALL contain one bounded envelope only; raw snapshots SHALL never be envelope data.
+`coursework capture --crawl` SHALL execute one capture run without the terminal command loop. Without a TTY, plain `coursework capture` SHALL use that same one-shot path. With a valid stored selection it SHALL use it and never prompt. With a TTY and no valid stored selection, `--crawl` SHALL first run the same terminal picker as the first interactive `c`, then crawl the confirmed selection. Without a TTY it SHALL never prompt; missing or invalid selection SHALL yield a `coursework.agent/v1` failure envelope with code `INVALID_INPUT` and an interactive-selection recovery hint before browser launch or network reads. Non-TTY `--reselect` SHALL return `INVALID_INPUT` without overwriting the file. Stdout SHALL contain one bounded envelope only; raw snapshots SHALL never be envelope data.
 
 #### Scenario: Agent without selection
 - **GIVEN** no TTY and no valid saved selection
@@ -57,6 +57,11 @@ The first interactive `c` in `coursework capture` SHALL let the user tick discov
 - **GIVEN** no TTY, a valid saved selection and usable logged-in profile
 - **WHEN** an agent invokes capture
 - **THEN** one selected-course run completes and returns an envelope with bounded counts and per-source outcomes without prompting
+
+#### Scenario: One-shot crawl at a terminal without selection
+- **GIVEN** a TTY and no valid saved selection
+- **WHEN** the user runs `coursework capture --crawl`
+- **THEN** the terminal picker runs first, the confirmed selection is saved, and one selected-course run follows
 
 #### Scenario: Agent requests reselection
 - **GIVEN** no TTY and an existing selection
