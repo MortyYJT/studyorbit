@@ -3,7 +3,7 @@
 > 单文件，只写当前状态，覆盖而不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#83）、`note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-12 清晨，调度员（会话 585cc3fa）。本轮合并：#40 M1 change、#41 S0 3.7–3.8、#42 Q1 issue A、#45 M1 1.1 探针（合成部分）。
+- **最后更新：** 2026-10-12 上午，调度员（会话 585cc3fa）。本轮合并：#40、#41、#42、#45、#47、#47（M1 schema/迁移）。
 - **模式：全自动调度（#79）。** 用户在睡觉 / 不在线，只在必须决策时打断。
 
 ## 调度员守则（新会话第一件事读这里）
@@ -18,18 +18,16 @@
 8. **控制上下文（用户 2026-10-12 要求）**：每次派给 Codex / 子会话的活只有一个 issue 那么大，提示词自包含，结果写进 `-o` 报告文件；调度员只读报告和需要的几行，绝不读整份日志。调度员自己的上下文变大时：更新本文件并推送 → `echo 0 > ~/.coursework-dispatcher-heartbeat` → 用 `run_scheduled_task` 立即运行 `coursework-dispatcher-watchdog`（它会接手当调度员）→ 归档旧会话，不用问用户。
 
 ## 正在跑的 Codex（`pgrep -fl "[c]odex exec"` 核对；报告在 `/Users/yu-junteng/.coursework-dispatcher-reports/`）
-- **Codex 5 小时额度用完，08:08 恢复（只等待，不用重置卡）。** 恢复后重派这两条：
-- **Q1 issue B**（#43，tasks 2.1–2.5）：clone `../unimelb-coursework-agent-quiz-assist`，分支 `codex/quiz-policy`。**工作区里已有半成品**（policy/audit/citations/proposals/files 和测试，有 2 个测试是红的）；重派时告诉 Codex 从现有工作区接着做，报告 `codex-q1-B.md`。
-- **M1 issue B**（#46，tasks 2.1–2.5 schema/迁移）：clone `../unimelb-coursework-agent-sync`，分支 `codex/v1-sync-schema`。Codex 因为范围问题停下了，没改任何文件；按 #83 重派，允许最小修改 `src/store/sqlite.ts` 的表名，报告 `codex-m1-B.md`。
+- **Q1 issue B**（#43）：已提交推送到 `codex/quiz-policy`（`58158ac`），新上下文审查进行中，报告 `codex-review-q1-B.md`；通过后开 PR。
 报告目录：报告都在 `/Users/yu-junteng/.coursework-dispatcher-reports/`。
 交付流程：`git restore note/handoff.md`（如果被改了）→ 自己跑 check、读 diff → 用公开身份提交 → 新上下文 Codex 只读审查 → PR → CI 绿 → 合并（`--rebase`；有多次修复提交的用 `--squash`）。
 
 ## 工作队列（按顺序；能并行的并行）
 1. **S0 `capture-selection-ed`**：3.1–3.8 已合并（#36、#41）。3.9 要用户登录实测；3.10 归档等 3.9。
 2. **Q1 `ed-quiz-assist`**（截止 **10/25**，最晚 10/23 给用户实测）：A 已合并（#42）。B 已派（#43，见上）；之后 C → D → E。检查点：B 10/16，C 10/18，D 10/20，E 和结构检查 10/22。
-3. **M1 `v1-sync`**：change（#40）和 1.1 合成探针（#45）已合并。1.2 真实探针要用户登录；**C（Canvas 适配器）按 tasks 要等 1.2 实测通过才开**。B（schema）已派（#46）；B 之后可开 D（Ed 规范化/脱敏）、E 等不依赖 1.2 的组。
+3. **M1 `v1-sync`**：change（#40）和 1.1 合成探针（#45）已合并。1.2 真实探针要用户登录；**C（Canvas 适配器）按 tasks 要等 1.2 实测通过才开**。B（schema/迁移）已合并（#47）。下一步：查 tasks.md 里 D（Ed 规范化/脱敏）、E 的依赖，开不依赖 1.2 的组。
 4. **M2 `v1-protocol`** → schema 合并后，同步、协议、界面三条线并行（M3 先接假数据）。
-5. dsh 出题欠：PR #29、#32、#35、#36、#40、#41、#42、#45、Stage 3 / PR #22（等用户定方式）。
+5. dsh 出题欠：PR #29、#32、#35、#36、#40、#41、#42、#45、#47、Stage 3 / PR #22（等用户定方式）。
 
 ## 等用户（醒来后）
 - **权限**：auto 模式分类器拦下了「往 `.claude/settings.local.json` 加白名单」（Self-Modification），我没有绕过。看门狗第 1 步已改成 `bash /Users/yu-junteng/.coursework-dispatcher-age.sh`；它第一次运行时弹窗，请点「始终允许」，之后就记在任务上了。
