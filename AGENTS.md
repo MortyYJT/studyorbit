@@ -69,7 +69,7 @@ Do not load the whole guidelines file for small edits. Read only the listed sect
 
 ## Project-specific (fill in per project)
 
-- **What this is:** `coursework`, a local tool layer and web UI that syncs University of Melbourne coursework from Canvas, Ed and iCal into one model, reports changes, plans the week, prepares revision material, and lets an external agent assist with or complete assessments under graded, audited autonomy.
+- **What this is:** `coursework`, a local tool layer and web UI that syncs University of Melbourne coursework from Canvas and Ed into one model, reports changes, plans the week, prepares revision material, and lets an external agent assist with or complete assessments under graded, audited autonomy.
 - **Stack and commands:** Node 24 + strict TypeScript, npm, vitest, zod, commander, Playwright, `node:sqlite`; full stack and pre-approved dependencies in [docs/engineering/v1-technical-design.md](docs/engineering/v1-technical-design.md) (the standing v1 reference; read it before any milestone work). install `npm ci`, build `npm run build`, check `bash .claude/check.sh` (= `npm run check`, the same command CI runs).
 - **Domain red lines:**
   - Data access: no self-issued Canvas tokens (forbidden by the university). Use a logged-in Playwright profile or manual PDF upload (iCal dropped, #77). A model never sees or types passwords. The user may type their password into a masked, TTY-only `coursework login` prompt; deterministic code fills it into the university sign-in page on the managed profile, keeps it only in memory, and never logs, stores, or returns it. Without a TTY (agent calls), nothing prompts and the command returns `AUTH_EXPIRED`. MFA stays with the user.
