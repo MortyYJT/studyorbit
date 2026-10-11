@@ -7,6 +7,7 @@ vi.mock('commander', () => ({
     name() { return this; }
     description() { return this; }
     version() { return this; }
+    option() { return this; }
     command() { return this; }
     action(handler: () => Promise<void>) { this.handler = handler; return this; }
     async parseAsync() { await this.handler?.(); }
