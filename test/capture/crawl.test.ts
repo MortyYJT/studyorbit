@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { crawlOrigin, courseLinks, detailLinks, fixedPages, isSignedOut, CRAWL_CAP, runCrawl } from '../../src/capture/crawl.js';
+import { RequestLimiter } from '../../src/capture/limiter.js';
 const origin = 'https://canvas.lms.unimelb.edu.au';
 // Synthetic rendered DOM substitute; no course data or browser is used.
 function hrefs(html: string): string[] { return [...html.matchAll(/href="([^"]*)"/g)].map(match => match[1]); }
@@ -34,13 +35,14 @@ function fixture(config: { links?: Record<string, string[]>; fail?: Record<strin
       return { status: () => config.statuses?.[target] ?? 200 };
     }),
     waitForLoadState: vi.fn(async () => { time += 10; if (config.idle) throw Object.assign(new Error('idle'), { name: config.idle }); }),
-    evaluate: vi.fn(async () => config.links?.[url] ?? []),
+    evaluate: vi.fn(async () => url === `${origin}/courses` ? courseLinks(config.links?.[url] ?? [], url).map(id => ({ id, name: 'Synthetic course', term: 'Synthetic term', unpublished: false })) : config.links?.[url] ?? []),
     close: vi.fn(async () => {}),
   };
   const context = { openHiddenPage: vi.fn(async () => page) };
   const save = vi.fn(async () => { time += 50; ends.push(time); return '/synthetic/snapshot'; });
   const writeSummary = vi.fn(async () => {}); const log = vi.fn();
-  const options = { save, clock: { now: () => time, sleep: vi.fn(async (ms: number) => { time += ms; }) }, writeSummary, log };
+  const selection = { version: 1 as const, courses: Array.from({ length: 100 }, (_, i) => ({ source: 'canvas' as const, origin, id: String(91000 + i), term: { label: 'Synthetic term' } })) };
+  const options = { selection, save, clock: { now: () => time, sleep: vi.fn(async (ms: number) => { time += ms; }) }, writeSummary, log };
   return { page, context, starts, ends, options, writeSummary, log, save };
 }
 it('crawls fixed pages for all courses before details, with hidden tab and snapshot-inclusive spacing', async () => {
@@ -51,7 +53,7 @@ it('crawls fixed pages for all courses before details, with hidden tab and snaps
   } });
   const summary = await runCrawl(f.context, `${origin}/courses/91001`, f.options);
   expect(f.page.goto.mock.calls.map(call => call[0])).toEqual([`${origin}/courses`, ...fixedPages(origin, ['91001', '91002']), `${origin}/courses/91001/assignments/81001`, `${origin}/courses/91002/discussion_topics/71002`]);
-  expect(summary).toEqual({ startedAt: '2026-10-11T10:08:17.000Z', durationMs: 10935, saved: 11, failed: 0, status: 'completed', failedUrls: [] });
+  expect(summary).toMatchObject({ startedAt: '2026-10-11T10:08:17.000Z', durationMs: 10935, saved: 11, failed: 0, status: 'completed', failedUrls: [] });
   f.starts.slice(1).forEach((start, i) => expect(start - f.ends[i]).toBeGreaterThanOrEqual(1000));
   expect(f.context.openHiddenPage).toHaveBeenCalledOnce(); expect(f.page.close).toHaveBeenCalledOnce(); expect(f.writeSummary).toHaveBeenCalledWith(summary);
 });
@@ -115,7 +117,7 @@ it('snapshot failure counts as a failed URL with no retry', async () => {
 });
 it('DOM read failure is reported and remaining fixed pages continue', async () => {
   const f = fixture({ links: { [`${origin}/courses`]: ['/courses/91001'] } });
-  f.page.evaluate.mockResolvedValueOnce(['/courses/91001']).mockRejectedValueOnce(new Error('DOM unavailable'));
+  f.page.evaluate.mockResolvedValueOnce([{ id: '91001', name: 'Synthetic course', term: 'Synthetic term', unpublished: false }]).mockRejectedValueOnce(new Error('DOM unavailable'));
   expect(await runCrawl(f.context, `${origin}/courses`, f.options)).toMatchObject({ saved: 4, failed: 1, failedUrls: [`${origin}/courses/91001/assignments`], status: 'completed' });
   expect(f.page.goto).toHaveBeenCalledTimes(5);
 });
@@ -160,4 +162,162 @@ it.each(['redirect', 'redirect error', 'uncommitted error', 'readiness redirect'
   expect(f.page.goto).toHaveBeenCalledOnce(); expect(f.page.close).toHaveBeenCalledOnce();
   expect(f.writeSummary).toHaveBeenCalledWith(result); expect(f.save).not.toHaveBeenCalled();
   expect(f.log.mock.calls.flat().join(' ')).not.toMatch(/sign in again/i);
+});
+
+// Task 2.1: source-qualified selection and discovery reuse.
+it('queues only selected Canvas courses in discovery order and reports missing ids', async () => {
+  const f = fixture({ links: {
+    [`${origin}/courses`]: ['/courses/91002', '/courses/91001', '/courses/91003'],
+    [`${origin}/courses/91001/assignments`]: ['/courses/91001/assignments/81001', '/courses/91003/assignments/81002'],
+  } });
+  const courses = f.options.selection.courses.filter(c => ['91001', '91002', '91099'].includes(c.id));
+  const result = await runCrawl(f.context, `${origin}/courses`, { ...f.options, selection: { version: 1, courses: [
+    ...courses, { source: 'ed', origin: 'https://edstem.org', id: '91003', term: { label: 'Synthetic', year: 2026, session: 'S2' } },
+  ] } });
+  expect(f.page.goto.mock.calls.map(c => c[0])).toEqual([`${origin}/courses`, ...fixedPages(origin, ['91002', '91001']), `${origin}/courses/91001/assignments/81001`]);
+  expect(result).toMatchObject({ missingIds: ['91099'] });
+});
+it('reuses available discovery and never refetches the listing', async () => {
+  const f = fixture();
+  const result = await runCrawl(f.context, `${origin}/courses`, { ...f.options, discovery: {
+    source: 'canvas', status: 'available', skipped: 0, courses: [{ ...f.options.selection.courses[1], name: 'Synthetic' }],
+  } });
+  expect(f.page.goto.mock.calls.map(c => c[0])).toEqual(fixedPages(origin, ['91001']));
+  expect(result).toMatchObject({ saved: 4 });
+});
+it('empty selection schedules no course-specific reads', async () => {
+  const f = fixture({ links: { [`${origin}/courses`]: ['/courses/91001'] } });
+  await runCrawl(f.context, `${origin}/courses`, { ...f.options, selection: { version: 1, courses: [] } });
+  expect(f.page.goto.mock.calls.map(c => c[0])).toEqual([`${origin}/courses`]);
+});
+// Task 2.2: final URL deduplication and redirect identity.
+it('saves normalized redirected homes once per run without expanding home links', async () => {
+  const home = `${origin}/courses/91001`;
+  const f = fixture({ links: {
+    [`${origin}/courses`]: [home],
+    [`${home}/?private=synthetic#part`]: [`${home}/assignments/81001`],
+  }, redirect: {
+    [`${home}/assignments`]: `${home}/?private=synthetic#part`,
+    [`${home}/assignments/syllabus`]: `https://synthetic:synthetic@canvas.lms.unimelb.edu.au/courses/91001#part`,
+  } });
+  const result = await runCrawl(f.context, `${origin}/courses`, f.options);
+  expect(result).toMatchObject({ saved: 4, failed: 0, redirects: [
+    { requestedUrl: `${home}/assignments`, finalUrl: home, alreadySaved: false },
+    { requestedUrl: `${home}/assignments/syllabus`, finalUrl: home, alreadySaved: true },
+  ] });
+  expect(f.page.goto).toHaveBeenCalledTimes(5);
+  expect(f.page.evaluate).toHaveBeenCalledTimes(2); // discovery and announcements, never home
+  expect(f.save).toHaveBeenCalledTimes(4);
+  await runCrawl(f.context, `${origin}/courses`, f.options);
+  expect(f.save).toHaveBeenCalledTimes(8); // dedup state is local to each run
+});
+// Task 2.3: failed writes must not poison deduplication; unselected redirects stay private.
+it('allows a later home save after the first redirected write fails', async () => {
+  const home = `${origin}/courses/91001`;
+  const f = fixture({ links: { [`${origin}/courses`]: [home] }, redirect: {
+    [`${home}/assignments`]: home, [`${home}/assignments/syllabus`]: home,
+  } });
+  f.save.mockResolvedValueOnce('/synthetic/listing').mockRejectedValueOnce(new Error('Synthetic write failure'));
+  expect(await runCrawl(f.context, `${origin}/courses`, f.options)).toMatchObject({ saved: 4, failed: 1, redirects: [
+    { requestedUrl: `${home}/assignments`, finalUrl: home, alreadySaved: false },
+    { requestedUrl: `${home}/assignments/syllabus`, finalUrl: home, alreadySaved: false },
+  ] });
+  expect(f.save).toHaveBeenCalledTimes(5);
+});
+it('records unselected redirects without saving or expanding them', async () => {
+  const other = `${origin}/courses/91002/assignments`;
+  const f = fixture({ links: { [`${origin}/courses`]: ['/courses/91001', '/courses/91002'], [other]: ['/courses/91002/assignments/81002'] },
+    redirect: { [`${origin}/courses/91001/assignments`]: other } });
+  const result = await runCrawl(f.context, `${origin}/courses`, { ...f.options,
+    selection: { version: 1, courses: [f.options.selection.courses[1]] } });
+  expect(result).toMatchObject({ saved: 4, failed: 0, redirects: [{ requestedUrl: `${origin}/courses/91001/assignments`, finalUrl: other, alreadySaved: false }] });
+  expect(f.page.evaluate).toHaveBeenCalledTimes(2);
+  expect(f.save).toHaveBeenCalledTimes(4); expect(f.page.goto).toHaveBeenCalledTimes(5);
+});
+
+// Task 2.4: the injected run-wide limiter owns every navigation.
+it('charges discovery, failed loads and duplicate redirects to the same limiter', async () => {
+  const home = `${origin}/courses/91001`;
+  const f = fixture({ links: { [`${origin}/courses`]: [home] }, redirect: {
+    [`${home}/assignments`]: home, [`${home}/assignments/syllabus`]: home,
+  }, statuses: { [`${home}/grades`]: 429 } });
+  const limiter = new RequestLimiter(f.options.clock);
+  await limiter.attempt(async () => {}); // synthetic Ed/discovery attempt
+  expect(await runCrawl(f.context, `${origin}/courses`, { ...f.options, limiter })).toMatchObject({ saved: 3, failed: 1 });
+  expect(limiter.attempts).toBe(6); expect(f.page.goto).toHaveBeenCalledTimes(5);
+  expect(f.starts[0]).toBeGreaterThanOrEqual(Date.parse('2026-10-11T10:08:18Z'));
+});
+it('never starts navigation number 301 after another provider consumes the budget', async () => {
+  const f = fixture({ links: { [`${origin}/courses`]: ['/courses/91001'] } });
+  const limiter = new RequestLimiter(f.options.clock);
+  for (let i = 0; i < 299; i++) await limiter.attempt(async () => {});
+  expect(await runCrawl(f.context, `${origin}/courses`, { ...f.options, limiter })).toMatchObject({ status: 'capReached', saved: 1 });
+  expect(limiter.attempts).toBe(300); expect(f.page.goto).toHaveBeenCalledOnce();
+});
+it('counts the in-flight cancelled attempt and waits for its write before closing', async () => {
+  const f = fixture(); const controller = new AbortController();
+  const limiter = new RequestLimiter(f.options.clock);
+  f.save.mockImplementationOnce(async () => { controller.abort(); return '/synthetic/snapshot'; });
+  expect(await runCrawl(f.context, `${origin}/courses`, { ...f.options, limiter, signal: controller.signal })).toMatchObject({ status: 'aborted', saved: 1 });
+  expect(limiter.attempts).toBe(1); expect(f.page.close).toHaveBeenCalledOnce();
+});
+it('cancelled spacing consumes no additional attempt', async () => {
+  const f = fixture({ links: { [`${origin}/courses`]: ['/courses/91001'] } }); const controller = new AbortController();
+  const limiter = new RequestLimiter(f.options.clock);
+  f.options.clock.sleep.mockImplementationOnce(async () => { controller.abort(); });
+  expect(await runCrawl(f.context, `${origin}/courses`, { ...f.options, limiter, signal: controller.signal })).toMatchObject({ status: 'aborted' });
+  expect(limiter.attempts).toBe(1); expect(f.page.goto).toHaveBeenCalledOnce();
+});
+// Task 2.5: bounded, content-free Canvas outcomes for orchestration.
+it('returns sanitized counts, redirect pairs and coverage gaps without content or error messages', async () => {
+  const home = `${origin}/courses/91001`;
+  const f = fixture({ links: { [`${origin}/courses`]: [home] }, redirect: {
+    [`${home}/assignments`]: `https://synthetic:synthetic@canvas.lms.unimelb.edu.au/courses/91002/?secret=synthetic#private`,
+  }, statuses: { [`${home}/grades`]: 503 } });
+  const result = await runCrawl(f.context, `${origin}/courses`, { ...f.options, selection: { version: 1, courses: [f.options.selection.courses[1], f.options.selection.courses[99]] } });
+  expect(result).toMatchObject({ source: 'canvas', attempted: 5, saved: 3, failed: 1, skipped: 1, duplicates: 0, discoveryReused: false,
+    missingIds: ['91099'], gaps: [{ code: 'UNSELECTED_REDIRECT', url: `${origin}/courses/91002` }],
+    redirects: [{ requestedUrl: `${home}/assignments`, finalUrl: `${origin}/courses/91002`, alreadySaved: false }],
+  });
+  expect(JSON.stringify(result)).not.toMatch(/secret|private|synthetic|name|html|headers|token/i);
+  expect(f.log.mock.calls.flat().join(' ')).not.toMatch(/secret|private|synthetic/i);
+});
+it('reuses unavailable Canvas discovery as a gap without requesting courses or assuming missing ids', async () => {
+  const f = fixture();
+  const result = await runCrawl(f.context, `${origin}/courses`, { ...f.options,
+    discovery: { source: 'canvas', status: 'unavailable', error: new Error('Synthetic private body') as never } });
+  expect(result).toMatchObject({ status: 'completed', attempted: 0, saved: 0, failed: 0, discoveryReused: true, missingIds: [], gaps: [{ code: 'SOURCE_UNAVAILABLE' }] });
+  expect(f.page.goto).not.toHaveBeenCalled(); expect(JSON.stringify(result)).not.toContain('Synthetic private body');
+});
+it('records sanitized signed-out redirects including when navigation throws', async () => {
+  const f = fixture({ redirect: { [`${origin}/courses`]: 'https://synthetic:synthetic@sso.example/signin?secret=synthetic#private' },
+    fail: { [`${origin}/courses`]: 'Synthetic private body' } });
+  expect(await runCrawl(f.context, `${origin}/courses`, f.options)).toMatchObject({ source: 'canvas', attempted: 1, status: 'signedOut', saved: 0, failed: 0,
+    redirects: [{ requestedUrl: `${origin}/courses`, finalUrl: 'https://sso.example/signin', alreadySaved: false }] });
+  expect(f.log.mock.calls.flat().join(' ')).not.toMatch(/synthetic|secret|private/i);
+});
+it('does not invent redirects for cancellation before a queued navigation starts', async () => {
+  const f = fixture({ links: { [`${origin}/courses`]: ['/courses/91001'] } });
+  const controller = new AbortController();
+  f.options.clock.sleep.mockImplementationOnce(async () => { controller.abort(); });
+  expect(await runCrawl(f.context, `${origin}/courses`, { ...f.options, signal: controller.signal })).toMatchObject({ attempted: 1, redirects: [], status: 'aborted' });
+});
+it('does not report the previous committed page as a redirect after an uncommitted failure', async () => {
+  const f = fixture({ links: { [`${origin}/courses`]: ['/courses/91001'] } });
+  const navigate = f.page.goto.getMockImplementation()!;
+  // Reused discovery avoids the listing; grades fails without replacing the announcements page.
+  f.page.goto.mockImplementation(async (target, options) => {
+    if (target.endsWith('/grades')) throw new Error('Synthetic DNS failure');
+    return navigate(target, options);
+  });
+  const result = await runCrawl(f.context, `${origin}/courses`, { ...f.options, discovery: {
+    source: 'canvas', status: 'available', skipped: 0, courses: [{ ...f.options.selection.courses[1], name: 'Synthetic' }],
+  } });
+  expect(result).toMatchObject({ failed: 1, redirects: [] });
+});
+it('keeps discovery navigation on the fixed Canvas origin including its scheme and port', async () => {
+  const f = fixture();
+  const alternate = 'http://canvas.lms.unimelb.edu.au:8443';
+  await runCrawl(f.context, `${alternate}/courses`, f.options);
+  expect(f.page.goto.mock.calls.map(c => c[0])).toEqual([`${alternate}/courses`]);
 });
