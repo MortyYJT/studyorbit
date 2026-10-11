@@ -17,14 +17,14 @@ const selection: CaptureSelection = { version: 1, courses: [
 ] };
 const homes: string[] = [];
 afterEach(() => { homes.splice(0).forEach(home => rmSync(home, { recursive: true, force: true })); vi.unstubAllEnvs(); });
-function fixture({ canvasExpired = false, edExpired = false, first = false, many = false, redirects = false, canvasFailure = false } = {}) {
+function fixture({ canvasExpired = false, edExpired = false, first = false, many = false, redirects = false, canvasFailure = false, canvasLoginUrl = `${CANVAS_ORIGIN}/login`, canvasNavigationError = false } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'orchestration-synthetic-')); homes.push(home); vi.stubEnv('COURSEWORK_HOME', home);
   let snapshotBarrier: Promise<void> | undefined; let finishSnapshot: (() => void) | undefined;
   const navigations: string[] = []; const reads: string[] = []; const saves: string[] = [];
   const canvasPage = () => {
     let url = `${CANVAS_ORIGIN}/courses/101`;
     return { url: () => url, isClosed: () => false, close: vi.fn(async () => {}),
-      goto: async (target: string) => { navigations.push(target); if (canvasFailure && target.endsWith('/grades')) throw Error('synthetic failure'); url = canvasExpired ? `${CANVAS_ORIGIN}/login` : redirects && target !== `${CANVAS_ORIGIN}/courses` ? `${CANVAS_ORIGIN}/courses/101/?synthetic_secret=hidden#private` : target; return { status: () => 200 }; },
+      goto: async (target: string) => { navigations.push(target); if (canvasFailure && target.endsWith('/grades')) throw Error('synthetic failure'); url = canvasExpired ? canvasLoginUrl : redirects && target !== `${CANVAS_ORIGIN}/courses` ? `${CANVAS_ORIGIN}/courses/101/?synthetic_secret=hidden#private` : target; if (canvasNavigationError) throw Error('synthetic navigation failure'); return { status: () => 200 }; },
       waitForLoadState: async () => {},
       evaluate: async (expression: string) => expression.includes('my_courses_table')
         ? [{ id: '101', name: 'Synthetic Course', term: 'Synthetic', unpublished: false }]
@@ -69,6 +69,33 @@ it('Canvas expiry continues Ed and projects Canvas AUTH_EXPIRED', async () => {
   const f = fixture({ canvasExpired: true }); await capture({ isTTY: false }, f.dependencies);
   expect(f.data().sources).toMatchObject([{ source: 'canvas', status: 'signedOut', error: { code: 'AUTH_EXPIRED' } }, { source: 'ed', status: 'completed', saved: 4 }]);
   expect(f.navigations).toHaveLength(1); expect(f.reads).toHaveLength(4);
+});
+it.each([false, true])('external SSO redirects survive the unified summary with navigation error=%s', async canvasNavigationError => {
+  const f = fixture({ canvasExpired: true, canvasNavigationError,
+    canvasLoginUrl: 'https://synthetic-user:synthetic-password@sso.example/signin?synthetic_secret=hidden#private' });
+  await capture({ isTTY: false }, f.dependencies);
+  expect(f.data()).toMatchObject({ status: 'signedOut', canvas: { redirectsOmitted: 0, redirects: [
+    { requestedUrl: `${CANVAS_ORIGIN}/courses`, finalUrl: 'https://sso.example/signin', alreadySaved: false },
+  ] } });
+  expect(f.summaries()[0]).toEqual(f.data());
+  expect(JSON.stringify(f.data())).not.toMatch(/synthetic-user|synthetic-password|synthetic_secret|#private/);
+});
+it.each([`${CANVAS_ORIGIN}/login/saml`, 'https://sso.example/signin'])('expired Canvas discovery at %s survives reselection and continues Ed', async canvasLoginUrl => {
+  const f = fixture({ first: true, canvasExpired: true, canvasLoginUrl });
+  f.dependencies.store!.load = async () => ({ status: 'valid', selection });
+  await capture({ isTTY: true, crawl: true, reselect: true }, { ...f.dependencies,
+    terminal: () => Object.assign(new EventEmitter(), { output: { write: vi.fn() }, question: async () => 'done', close: vi.fn(), async *[Symbol.asyncIterator]() {} }) as never,
+  });
+  expect(f.data()).toMatchObject({ status: 'signedOut', sources: [
+    { source: 'canvas', status: 'signedOut', attempted: 0, error: { code: 'AUTH_EXPIRED', next: expect.stringMatching(/sign in again/i) } },
+    { source: 'ed', status: 'completed', saved: 3 },
+  ], discoveryGaps: [{ source: 'canvas', code: 'AUTH_EXPIRED' }], canvas: { discoveryReused: true, redirects: [
+    { requestedUrl: `${CANVAS_ORIGIN}/courses`, finalUrl: canvasLoginUrl, alreadySaved: false },
+  ] } });
+  expect(f.navigations).toEqual([`${CANVAS_ORIGIN}/courses`]);
+  expect(f.reads).toEqual(['/api/user', '/api/courses/202/lessons', '/api/courses/202/threads?limit=30&sort=new', '/api/courses/202/resources']);
+  expect(f.saves).toEqual([]);
+  expect(f.summaries()[0]).toEqual(f.data());
 });
 it('first selection shares 300 attempts across real discovery, Canvas and Ed without repeating discovery', async () => {
   const f = fixture({ first: true, many: true }); await capture({ isTTY: true, crawl: true }, f.dependencies);

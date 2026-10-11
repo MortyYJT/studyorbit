@@ -208,7 +208,12 @@ export async function capture(options: CaptureOptions = {}, dependencies: Captur
           catch { return undefined; }
         };
         const redirects = (canvasDetails?.redirects ?? []).flatMap(pair => {
-          const requestedUrl = safeCanvasUrl(pair.requestedUrl); const finalUrl = safeCanvasUrl(pair.finalUrl);
+          const requestedUrl = safeCanvasUrl(pair.requestedUrl);
+          let finalUrl: string | undefined;
+          try {
+            const url = normalizeCanvasUrl(pair.finalUrl);
+            if (['http:', 'https:'].includes(new URL(url).protocol)) finalUrl = url;
+          } catch { /* Invalid final URLs cannot be reported as redirects. */ }
           return requestedUrl && finalUrl ? [{ requestedUrl, finalUrl, alreadySaved: pair.alreadySaved }] : [];
         }).slice(0, 30);
         const canvasGaps = (canvasDetails?.gaps ?? []).flatMap(gap => {

@@ -62,3 +62,47 @@ test(capture): record orchestration verification evidence
 - Cover authentication isolation, shared limits and shutdown with synthetic integration data
 - Record strict validation, privacy checks and live verification gaps
 ```
+
+## 2026-10-12 新上下文审查返工：登录过期与外部重定向
+
+基线：`384ec04`；分支：`codex/ed-orchestration`。范围限于两个 P2 发现，不修改 handoff，也不提交。
+
+- Canvas 发现阶段跳转到 `/login` 或外部 HTTP(S) 登录页时保留 `AUTH_EXPIRED`；导航抛错但 URL 已改变时也保留认证过期结果。
+- crawl 复用过期发现时保留 `signedOut`，记录已经发生的 `/courses` 重定向，不再次导航；统一摘要保留重新登录提示，Ed 继续。
+- 重定向的 requested URL 仍限制 Canvas 同源；final URL 允许外部 HTTP(S)，移除凭据、查询、片段和等价尾斜杠后报告。
+- 新增 4 项合成编排回归测试：普通／抛错导航的外部 SSO 摘要、同源／外部登录页的重新选择。打印数据与落盘摘要一致，外部凭据不进入摘要。
+
+TDD 红阶段：`npx vitest run test/capture/orchestration.test.ts` 得到 `4 failed | 16 passed (20)`；失败分别确认外部 URL 对被丢弃，以及重新选择后 `AUTH_EXPIRED`／`signedOut` 被降为 `SOURCE_UNAVAILABLE`／`completed`。
+
+绿阶段与验证（均 exit 0）：
+
+```text
+npx vitest run test/capture/orchestration.test.ts test/capture/crawl.test.ts test/capture/discovery-adapters.test.ts
+Test Files  3 passed (3)
+Tests       72 passed (72)
+
+bash .claude/check.sh
+> tsc --noEmit && vitest run
+Test Files  40 passed (40)
+Tests       316 passed | 2 skipped (318)
+
+npm run build
+> tsc -p tsconfig.build.json
+
+openspec validate capture-selection-ed --strict
+Change 'capture-selection-ed' is valid
+```
+
+已有两个 SQLite 占位测试仍跳过。本轮未做真实浏览器／网络验收，3.9 与归档前置条件仍未完成。
+
+独立新上下文只读复审结论：`ready to merge`，无正确性／规格缺口；审查者独立运行 `bash .claude/check.sh`，同样得到 40 个文件通过、316 项通过、2 项跳过。`git diff --check` 通过；所有新增测试数据均为合成数据，未引入真实身份、课程或认证材料。
+
+建议提交：
+
+```text
+fix(capture): preserve discovery auth expiry and SSO redirects
+
+- Retain signed-out discovery outcomes and login hints during reselection
+- Include sanitized external final URLs in unified redirect summaries
+- Cover both review findings with failing-first orchestration tests
+```

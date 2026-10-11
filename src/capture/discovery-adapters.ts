@@ -11,9 +11,15 @@ function stopped(error: unknown): void {
   if (error instanceof CourseworkError && error.code === 'LIMIT_EXCEEDED' || error instanceof Error && error.name === 'AbortError') throw error;
 }
 export async function discoverCanvas(page: DiscoveryPage, limiter: CaptureLimiter, signal?: AbortSignal): Promise<DiscoveryResult> {
+  const previousUrl = page.url();
+  const signedOut = () => {
+    const url = new URL(page.url());
+    return ['http:', 'https:'].includes(url.protocol) && (url.origin !== CANVAS_ORIGIN || url.pathname.startsWith('/login'));
+  };
   try {
     return await limiter.attempt(async () => {
       const response = await page.goto(`${CANVAS_ORIGIN}/courses`, { waitUntil: 'load', timeout: 30000 }) as { status(): number } | null;
+      if (signedOut()) return unavailable('canvas', 'AUTH_EXPIRED');
       if (new URL(page.url()).origin !== CANVAS_ORIGIN || new URL(page.url()).pathname !== '/courses' || response && response.status() >= 400) return unavailable('canvas');
       const rows = await page.evaluate<{ id: string; name: string; term: string; unpublished: boolean }[] | null>(`(() => {
         const table = document.querySelector('table#my_courses_table');
@@ -34,7 +40,10 @@ export async function discoverCanvas(page: DiscoveryPage, limiter: CaptureLimite
       })()`);
       return normalizeCanvasCourses(rows);
     }, signal);
-  } catch (error) { stopped(error); return unavailable('canvas'); }
+  } catch (error) {
+    stopped(error);
+    return unavailable('canvas', page.url() !== previousUrl && signedOut() ? 'AUTH_EXPIRED' : 'SOURCE_UNAVAILABLE');
+  }
 }
 /** The callback may write a local raw courses-only snapshot; it must not expose it to a model. */
 export async function discoverEd(page: DiscoveryPage, limiter: CaptureLimiter,
