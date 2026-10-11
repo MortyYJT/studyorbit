@@ -29,7 +29,7 @@ it('creates a fresh database with every migration applied and its version record
       tasks: [synthetic.task], runs: [synthetic.run] });
     expect(store.listChangesSince(0)).toEqual([]);
   } finally { store.close(); }
-  expect(version(file)).toBe(1);
+  expect(version(file)).toBe(2);
 });
 
 it('does not reapply migrations or modify an up-to-date database', () => {
@@ -49,9 +49,9 @@ it('refuses a newer database naming both versions and leaves the file unchanged'
   const first = new SqliteRepository(file);
   first.saveTask(synthetic.task);
   first.close();
-  setVersion(file, 2);
+  setVersion(file, 3);
   const before = readFileSync(file);
-  expect(() => new SqliteRepository(file)).toThrow(/version 2.*version 1/);
+  expect(() => new SqliteRepository(file)).toThrow(/version 3.*version 2/);
   expect(readFileSync(file)).toEqual(before);
 });
 

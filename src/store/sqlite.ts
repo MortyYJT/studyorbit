@@ -58,25 +58,25 @@ export class SqliteRepository implements Repository {
   loadTask(id: string): Task | undefined { return this.load('tasks', 'id', id, TaskSchema); }
   recordRun(value: Run): void { this.saveBatch({ runs: [value] }); }
   loadRun(id: string): Run | undefined { return this.load('runs', 'id', id, RunSchema); }
-  loadChange(seq: number): Change | undefined { return this.load('changes', 'seq', seq, ChangeSchema); }
+  loadChange(seq: number): Change | undefined { return this.load('change_event', 'seq', seq, ChangeSchema); }
 
   recordChange(value: ChangeInput): Change {
     return this.saveBatch({ changes: [value] })[0];
   }
 
   private appendChange(input: ChangeInput): Change {
-    const largest = this.db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM changes').get()!.seq as number;
+    const largest = this.db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM change_event').get()!.seq as number;
     const change = ChangeSchema.parse({ ...input, seq: largest + 1 });
     const json = JSON.stringify(change);
     // Unknown before/after payloads must still satisfy the schema after JSON encoding.
     const persisted = ChangeSchema.parse(JSON.parse(json));
-    this.db.prepare('INSERT INTO changes (seq, entity, entityId, at, json) VALUES (?, ?, ?, ?, ?)')
+    this.db.prepare('INSERT INTO change_event (seq, entity, entityId, at, json) VALUES (?, ?, ?, ?, ?)')
       .run(persisted.seq, persisted.entity, persisted.entityId, persisted.at, json);
     return persisted;
   }
 
   listChangesSince(seq: number): Change[] {
-    return this.db.prepare('SELECT json FROM changes WHERE seq > ? ORDER BY seq ASC').all(seq)
+    return this.db.prepare('SELECT json FROM change_event WHERE seq > ? ORDER BY seq ASC').all(seq)
       .map(row => ChangeSchema.parse(JSON.parse(row.json as string)));
   }
 

@@ -38,3 +38,7 @@ M1 migrations SHALL retain ordered migration/version checks and historical entit
 #### Scenario: Compatible upgrade
 - **WHEN** a synthetic database has supported providers, historical runs and specialized change kinds
 - **THEN** migration preserves entities, runs and seq values without fabricating coverage or dropping history
+
+#### Scenario: Non-destructive recovery
+- **WHEN** upgrade stops for unsupported iCal or invalid historical events
+- **THEN** guidance tells the owner to preserve a private backup and decide retention/removal or inspect history, without resetting the database, relabeling sources or automatically downgrading
