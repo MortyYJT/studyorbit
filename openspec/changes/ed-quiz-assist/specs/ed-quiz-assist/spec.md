@@ -56,10 +56,10 @@ The system SHALL use a recorded per-course allowed/prohibited/owner-attested AI 
 - **THEN** the gate is evaluated against current records and a newly unauthorized fill performs no page mutation
 
 ### Requirement: Store checked cited proposals privately
-Validated command handlers SHALL accept external-agent answer proposals tied to an assessment and stable question references, with answer, rationale and nonempty source-text citations for each answer. They MUST NOT call a model. Each citation SHALL resolve trusted redacted local source text and match after NFKC normalization and whitespace/quote unification, with validated locator and source offset (page for PDFs) retained as local metadata. Missing/mismatched quotes SHALL reject the write with `CITATION_MISMATCH` and a safe run-ledger entry. Prompt-only provenance SHALL be visibly distinguished from supporting course-material evidence without claiming correctness. Proposals SHALL be versioned and stored atomically with owner-only permissions under the private local data directory (default `.local/`), excluding traversal/symlink escapes. Existing domain schemas and SQLite schema MUST remain unchanged; unmet model needs SHALL be open questions, not implemented extensions.
+Validated command handlers SHALL accept external-agent answer proposals tied to an assessment and stable question references, with answer, rationale and source-text citations for each answer. Every answer proposal SHALL cite the specific question it answers. Every statement drawn from course material in the answer or rationale SHALL cite that material; a question citation alone MUST NOT satisfy this material-evidence requirement. They MUST NOT call a model. Each citation SHALL resolve trusted redacted local source text and match after NFKC normalization and whitespace/quote unification, with validated locator and source offset (page for PDFs) retained as local metadata. Missing required question/material citations or mismatched quotes SHALL reject the write with `CITATION_MISMATCH` and a safe run-ledger entry. Prompt-only provenance SHALL be visibly distinguished from supporting course-material evidence without claiming correctness. Proposals SHALL be versioned and stored atomically with owner-only permissions under the private local data directory (default `.local/`), excluding traversal/symlink escapes. Existing domain schemas and SQLite schema MUST remain unchanged; unmet model needs SHALL be open questions, not implemented extensions.
 
 #### Scenario: Valid proposal
-- **WHEN** a granted synthetic non-exam proposal contains valid question references and quotes matching trusted local sources after normalization
+- **WHEN** a granted synthetic non-exam proposal cites each answered question and the material for every course-material statement in its answers/rationale, with quotes matching trusted local sources after normalization
 - **THEN** its revision, answers, rationale, existing Citation fields and validation metadata are saved privately and acknowledged through a bounded envelope
 
 #### Scenario: Fabricated or mismatched evidence
@@ -67,8 +67,16 @@ Validated command handlers SHALL accept external-agent answer proposals tied to 
 - **THEN** the proposal is rejected, no accepted revision replaces the old one, and the run ledger records a sanitized citation failure
 
 #### Scenario: Prompt provenance alone
-- **WHEN** an answer cites only the question prompt and no supporting course material
+- **WHEN** an answer cites only its question prompt, makes no statement drawn from course material in its answer/rationale and has no supporting course material
 - **THEN** review explicitly identifies that evidence limitation and does not label the answer verified correct
+
+#### Scenario: Citation to another source only
+- **WHEN** a synthetic answer proposal has a valid matching citation to another question or course-material source but no citation to the specific question it answers
+- **THEN** validation rejects the proposal with `CITATION_MISMATCH`, preserves the previous accepted revision and records a safe citation-failure event
+
+#### Scenario: Material statement covered only by the question citation
+- **WHEN** a synthetic answer proposal cites its question but a statement drawn from course material in its answer or rationale has no citation to that material
+- **THEN** validation rejects the proposal with `CITATION_MISMATCH`, preserves the previous accepted revision and records a safe citation-failure event rather than accepting prompt-only provenance as material evidence
 
 #### Scenario: Unsafe local write
 - **WHEN** a proposal has malformed references, attempts path traversal/symlink escape or cannot be written atomically
@@ -104,12 +112,22 @@ Playwright SHALL fill only explicitly approved supported answers on an already-o
 - **WHEN** a control fails after an earlier approved answer was changed
 - **THEN** further filling stops, the changed/failed targets are reported and audited, and the owner is asked to inspect the page before manual submission
 
-### Requirement: Audit authorization and mutations append-only
-Private append-only auditing SHALL record policy/grant decisions, proposal acceptance/rejection, review, attempted/denied/successful/partial fill and submission-observation outcomes, with safe timestamp/run/assessment/revision/policy/grant references. Audit output MUST exclude tokens, auth headers, personal data and answer/source text. Mutation intent SHALL be appended before changes; unavailable audit storage SHALL deny mutation/fill. Completion SHALL be recorded separately; audit failure after a page mutation SHALL stop further actions and report the uncertain outcome.
+### Requirement: Audit reads, authorization and mutations append-only
+Private append-only auditing SHALL record successful and failed quiz reads, policy/grant decisions, proposal acceptance/rejection, review, attempted/denied/successful/partial fill and submission-observation outcomes, with safe timestamp/run/assessment/revision/policy/grant references as applicable. Read events SHALL contain only safe timestamp/run metadata, a validated assessment reference when available and a sanitized outcome code; invalid or unresolved target input MUST NOT be echoed as an assessment reference. Audit output MUST exclude question text, tokens, auth headers, personal data and answer/source text, including raw payloads and exception messages on failures. Mutation intent SHALL be appended before changes; unavailable audit storage SHALL deny mutation/fill. Completion SHALL be recorded separately; audit failure after a page mutation SHALL stop further actions and report the uncertain outcome.
 
 #### Scenario: Audited workflow
-- **WHEN** policy/grant, proposal, review and fill operations run
-- **THEN** attributable append-only events link each operation to its run and assessment without replacing prior events or recording answer values
+- **WHEN** quiz read, policy/grant, proposal, review and fill operations run
+- **THEN** attributable append-only events link each operation to its run and validated assessment when available, without replacing prior events or recording answer values
+
+#### Scenario: Successful read audit
+- **WHEN** a selected synthetic quiz read succeeds
+- **THEN** an append-only success event records only safe timestamp/run metadata, its validated assessment reference and outcome code
+- **AND** question/options/source text, personal-data sentinels, tokens and auth headers do not appear in the event
+
+#### Scenario: Failed read audit
+- **WHEN** a synthetic quiz read fails through invalid target input, expired authentication, transport failure, unsafe/malformed source data or an output limit
+- **THEN** an append-only failure event records only safe timestamp/run metadata, a validated assessment reference if available and a sanitized outcome code
+- **AND** unvalidated target input, raw payloads/exception messages, question text, personal-data sentinels, tokens and auth headers do not appear in the event
 
 #### Scenario: Audit storage unavailable
 - **WHEN** the pre-mutation audit append fails

@@ -73,8 +73,13 @@ not text supplied by the proposing agent. Normalize NFKC, whitespace and quotes 
 section 7; reject unmatched or fabricated locators/offsets with `CITATION_MISMATCH` and record a
 safe failure in the run ledger.
 
-Each answer proposal includes an assessment/question reference, answer, rationale and nonempty
-citations to source text. Citing the question establishes provenance, not evidence of correctness;
+Each answer proposal includes an assessment/question reference, answer and rationale, and must cite
+the specific question it answers. Every statement drawn from course material in the answer or
+rationale must cite that material. Validate both obligations, not just a nonempty matching citation:
+reject a citation only to another question/material source with no answered-question citation, and
+reject a material statement supported only by the question citation, with `CITATION_MISMATCH`, a
+safe failure event and no replacement of the accepted revision. Citing the question establishes
+provenance, not evidence of correctness; prompt-only proposals with no course-material statements
 show a lack of supporting course material explicitly to the reviewer. No command invents a source
 or correctness claim. Unsupported answers remain unfillable. Rejected: new quiz database entities
 or extending the existing Assessment/Citation schemas (outside scope); accepting caller-provided
@@ -102,11 +107,16 @@ changes, new question structure or a changed page/attempt identity invalidate ap
 Approval is not a grant and a grant is not approval. Agent writes pass validating handlers; no direct
 DB writes. Rejected: implicit acceptance on timeout or stdin from an agent (not owner review).
 
-Append-only private audit records cover policy/grant decisions, proposal acceptance/rejection,
-review, attempted/denied/successful/partial fill and observation outcome, with timestamp, run id,
-assessment reference, proposal revision, policy/grant reference and outcome. Keep answer values,
-source quotes and personal data out of audit messages. Append intent before mutation; if audit
-cannot be written, do not mutate or fill. Record completion/partial results; an audit failure after
+Append-only private audit records cover successful and failed quiz reads, policy/grant decisions,
+proposal acceptance/rejection, review, attempted/denied/successful/partial fill and observation
+outcome, with timestamp, run id,
+assessment reference, proposal revision, policy/grant reference and outcome as applicable. Read
+events contain only safe timestamp/run metadata, a validated assessment reference when available
+and a sanitized outcome code, including invalid-target, authentication, transport, source-validation
+and output-limit failures. Never echo unvalidated target input, raw payloads or exception messages.
+Keep question text, answer values, source quotes, tokens/auth headers and personal data out of audit
+messages. Append intent before mutation; if audit cannot be written, do not mutate or fill.
+Record completion/partial results; an audit failure after
 a DOM mutation stops further actions and reports uncertain outcome rather than claiming success.
 
 ### 4. Fill only the owner's already-open quiz and passively observe submission
