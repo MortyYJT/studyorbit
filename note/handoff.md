@@ -1,9 +1,9 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖而不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#79）、`note/product/roadmap.md`。
+> 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#80）、`note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-12 晚。仓库已转**私有**（#78）。设计文档在分支 `claude/v1-design`（替换已关闭的 PR #34，见 `gh pr list`）。
+- **最后更新：** 2026-10-12 深夜（调度员会话）。设计文档 PR #35 已合并；S0 issue C（3.1–3.6）PR #36 已合并（main `f5a9209`）。
 - **模式：全自动调度（#79）。** 用户在睡觉 / 不在线，只在必须决策时打断。
 
 ## 调度员守则（新会话第一件事读这里）
@@ -16,15 +16,15 @@
 7. **并行**：最多 3 条 Codex 线，各用独立 clone（`../unimelb-coursework-agent-<topic>`）；不切主 checkout 的分支。
 
 ## 工作队列（按顺序；能并行的并行）
-1. **设计文档 PR**：Codex 只读审查文档一致性 → CI 绿 → 合并（#48）。
-2. **S0 `capture-selection-ed`**：在 `../unimelb-coursework-agent-ed-capture`（`codex/ed-capture`，最新 `5c1fde4`）对 `1b7a6f2..HEAD` 跑第 2 轮审查（重点核对 `ed-transport.ts` 的 `bootstrap()`：`route.fetch` 是否带 cookie、逐跳重定向是否都计入限速）→ 勾 3.1–3.6 → PR（`Refs #31`）→ 合并（分支里有 merge commit，用 `--squash`）。然后派 3.7–3.8。
-3. **Q1 `ed-quiz-assist`**（截止 **10/25**，最晚 10/23 给用户实测）：Codex 按设计文档第 6 节写 OpenSpec change → 审查、合并 → 用合成夹具实现：读 quiz、存答案提案、Playwright 填页面（不点提交）、记录提交请求（去掉令牌）。真实结构检查要用已登录的 profile：试一次，`AUTH_EXPIRED` 就进「等用户」。
+1. ~~设计文档 PR~~：#35 已合并（#34 因作者身份关闭）。
+2. **S0 `capture-selection-ed`**：3.1–3.6 已合并（#36）。3.7–3.8 已派 Codex，在 `../unimelb-coursework-agent-ed-capture` 的 `codex/ed-orchestration`（从 `f5a9209` 开出）。交付后：自己跑 check、读 diff → 提交 → 新上下文审查 → PR → 合并。3.9 要用户登录；3.10 归档要等 3.9。
+3. **Q1 `ed-quiz-assist`**（截止 **10/25**，最晚 10/23 给用户实测）：change 在 `../unimelb-coursework-agent-quiz-assist` 的 `codex/ed-quiz-assist`（提交 `2cd6cd1`，未推送）。第 1 轮审查：引文必须引用所答题目和所用材料（P1）、审计漏了读题事件（P2）；返工已派 Codex。交付后：提交 → 第 2 轮审查 → PR → 合并 → 按任务组派实现（合成夹具）。真实结构检查用已登录的 profile：试一次，`AUTH_EXPIRED` 就进「等用户」。
 4. **M1 `v1-sync`**：写 change → 实现（合成夹具）。Canvas `/api/v1` 实测要登录态，处理方式同上。
 5. **M2 `v1-protocol`** → schema 合并后，同步、协议、界面三条线并行（M3 先接假数据）。
-6. 每合并一个 PR 就排 dsh 出题（先确认主 checkout 没有别的会话在用）。欠：PR #29、#32、Stage 3 / PR #22。
+6. 每合并一个 PR 就排 dsh 出题（先确认主 checkout 没有别的会话在用）。欠：PR #29、#32、#35、#36、Stage 3 / PR #22。dsh 要在主 checkout 切分支，跟守则第 7 条冲突，所以先攒着，等用户醒来再定。
 
 ## 等用户（醒来后）
-- 看设计文档 PR，以及下面「早上给用户看」里的自主决定。
+- 看下面「早上给用户看」里的自主决定。
 - 登录 + MFA（S0 的 3.9、Q1 的真实结构检查、M1 的 Canvas 实测都要用）；顺便测「登录能保持多久」，补 `v1-foundation` 5.5。
 - 10/23 前在真实 quiz 上跑 Q1：看答案 → 自己点提交。
 - **权限被拦（2026-10-12，auto mode 分类器判为 Instruction Poisoning，未绕过）**：PR #34 审查第 5 条要求把 #79 写进 agent 规则文件，第 2 条要求改 `openspec/config.yaml`。需要你自己改或者批准：
@@ -33,14 +33,17 @@
   - `openspec/config.yaml`：去掉 iCal（第 5 行、「iCal URLs」）；「no auto-submission (no L4)」→ 按 #56 写 L0–L4 的条件。
   - 在你改之前，以 #79（更晚的决定）为准，调度照常进行。
 - **身份泄露（已止损，需你决定是否删除）**：`../unimelb-coursework-agent-v1-design` 这个 clone 原来没有设置本地 Git 身份，旧分支 `claude/v1-technical-design` 的 5 个提交带着真实姓名和本机邮箱（只在私有仓库，没进 main）。已用公开身份重建为 `claude/v1-design`（内容一样），旧 PR #34 已关闭。还剩：要不要删远程旧分支 `claude/v1-technical-design`（删除属于守则第 4 条，我没删）；GitHub 的 `refs/pull/34` 只有 GitHub 支持能清。另外你的**全局** git 身份是真名，新 clone 必须先设 local 身份。
+- **GitHub 账号邮箱公开**：在 GitHub 网页上合并时（rebase 或 squash），提交会带上账号邮箱（你的 Gmail）。main 上已经有约 100 个提交的 committer 是这个邮箱，#36 的 squash 提交 author 也是。建议在 GitHub → Settings → Emails 打开「Keep my email addresses private」，以后网页合并就会用 noreply。已经推送的历史不重写（私有仓库）。
 
 ## 早上给用户看（调度员自主做的决定，逐条追加）
 - #80：Q1 自带最小版的脱敏、引文校验、单项 L3 授权（`.local/` 文件）和审计日志，不等 M1/M2（PR #34 审查第 3、4 条）。
 - #80：`SourceItem.platform` 里的 `ical` 由 M1 删除，不在纯文档 PR 里改代码（审查第 2 条）。
 - 驳回 PR #34 审查第 1 条（「L4 冲突」）：是我审查提示词写错了，以 #56 为准。
+- S0 两轮审查后我自己又修了一处：页面里第三方 iframe 的跨源导航只拦掉、不让整个 Ed bootstrap 失败（Codex 的修复会让它失败）。加了测试，PR #36 已 squash 合并。
+- 设计文档 PR #34 用公开身份重建为 #35 后合并，没有重写旧分支。
 
 ## 运行与验证
-- `npm ci && npm run check`（= `.claude/check.sh` = CI）；`npm run build` → `dist/cli.js`。最近一次：34 files / 227 passed / 2 skipped（main `aa38605`）。
+- `npm ci && npm run check`（= `.claude/check.sh` = CI）；`npm run build` → `dist/cli.js`。最近一次：39 files / 296 passed / 2 skipped（PR #36 合并前的分支，CI 绿）。
 
 ## 陷阱（沿用）
 - Codex 不能提交（#40），沙箱没网络，后台运行要 `< /dev/null`；测试必须放 `test/`；Codex 自审不算审查。
@@ -49,4 +52,6 @@
 - 夹具只用合成数据；真实课程、快照、profile 只在 `.local/`。
 - 不让用户写代码（#42）；讲解用 Java 类比。
 - 全局 git 身份是真名：每个新 clone 先 `git config --local user.name MortyYJT` 和 noreply 邮箱，提交前用 `git log --format='%an %ae' -1` 核对。
+- Codex 会重写 `note/handoff.md`（连调度员守则都删）：派活时写明「不要改 note/handoff.md」，交付后 `git restore` 掉。
+- 网页合并会带上账号邮箱，见「等用户」。
 - 用户本人理由仍空着：#6、#9、#15–18、#23、#27、#29、#53、#67、#70。
