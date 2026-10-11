@@ -92,8 +92,8 @@ export class SqliteRepository implements Repository {
     try {
       const events: Change[] = [];
       for (const scope of scopes) {
-        if (!scope.coverage.selected || !scope.coverage.normalizationComplete
-          || scope.coverage.codes.some(code => code !== 'INCOMPLETE')) continue;
+        if (!scope.coverage.selected || !scope.coverage.enumerationComplete
+          || !scope.coverage.normalizationComplete || scope.coverage.codes.length !== 0) continue;
         const table = { course: 'courses', assessment: 'assessments', source_item: 'source_items' }[scope.entity];
         const incoming = new Map(scope.values.map(value => [value.id, value]));
         for (const id of scope.ownedIds) {

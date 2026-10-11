@@ -85,6 +85,39 @@ it('6.2 failed coverage with valid-looking incoming rows cannot replace prior st
   expect(db.reconcile([failed], at)).toEqual([]);
   expect(db.loadAssessment('a')?.score).toBe(70);
 });
+it.each([
+  { enumerationComplete: false, codes: [] },
+  { enumerationComplete: false, codes: ['INCOMPLETE'] },
+  { enumerationComplete: true, codes: ['INCOMPLETE'] },
+] satisfies Pick<ReconcileScope['coverage'], 'enumerationComplete' | 'codes'>[])(
+  '6.2 incomplete coverage %j blocks updates/creates without advancing the cursor', coverage => {
+    const db = open(); db.reconcile([scope()], at);
+    const partial = scope([{ ...a, score: 99 }, syntheticAssessment('b', 20)]);
+    partial.coverage = { ...partial.coverage, ...coverage };
+    expect(db.reconcile([partial], at)).toEqual([]);
+    expect(db.loadAssessment('a')?.score).toBe(70);
+    expect(db.loadAssessment('b')).toBeUndefined();
+    expect(db.listChangesSince(1)).toEqual([]);
+    expect(db.listChangesSince(0).map(e => e.seq)).toEqual([1]);
+    expect(db.reconcile([scope([{ ...a, score: 99 }])], at)).toMatchObject([
+      { seq: 2, kind: 'updated', before: { score: 70 }, after: { score: 99 } },
+    ]);
+  });
+it('6.2 publishes an independent complete course while incomplete enumeration retains prior state', () => {
+  const db = open(); db.reconcile([scope()], at);
+  const partial = scope([{ ...a, score: 99 }, syntheticAssessment('b', 20)]);
+  partial.coverage.enumerationComplete = false;
+  partial.coverage.codes = ['INCOMPLETE'];
+  const other = { ...syntheticAssessment('c', 20), courseId: 'course-2' };
+  const complete = { ...scope([other]), courseId: other.courseId, ownedIds: [other.id] };
+  expect(db.reconcile([partial, complete], at)).toMatchObject([
+    { seq: 2, entityId: other.id, kind: 'created', after: { id: other.id, courseId: other.courseId } },
+  ]);
+  expect(db.loadAssessment('a')?.score).toBe(70);
+  expect(db.loadAssessment('b')).toBeUndefined();
+  expect(db.loadAssessment(other.id)).toEqual(JSON.parse(JSON.stringify(other)));
+  expect(db.listChangesSince(1).map(e => e.entityId)).toEqual([other.id]);
+});
 it('6.3 invalid later scope rolls back earlier publication and leaves cursor unchanged', () => {
   const db = open(); db.reconcile([scope()], at);
   const first = scope([{ ...a, score: 80 }]); first.ownedIds = ['a'];
