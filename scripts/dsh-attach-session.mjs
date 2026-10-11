@@ -12,12 +12,13 @@
 //   DSH_HOME overrides ~/.dsh (used for dry runs against a copy).
 //
 // The app keeps the registry in memory and rewrites the whole file, so this
-// refuses to run while DeepSeek Harness is open.
+// refuses to run while DeepSeek Harness is open; keep the app closed until it
+// finishes.
 
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { zstdDecompressSync } from "node:zlib";
 
 const EXPECTED_UNIT = { name: "workspace", version: 2 };
@@ -36,15 +37,23 @@ function parseArgs(argv) {
   }
   if (ids.length === 0) fail("usage: dsh-attach-session.mjs <session-id>... [--workspace <dir>]");
   workspace ??= execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
-  return { ids, workspace: realpathSync(workspace) };
+  return { ids: [...new Set(ids)], workspace: realpathSync(workspace) };
 }
 
+/** pgrep exits 0 on a match and 1 on none; anything else means we cannot tell. */
 function appIsRunning() {
   try {
     execFileSync("pgrep", ["-x", "DeepSeek Harness"], { stdio: "ignore" });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error.status === 1) return false;
+    fail(`cannot tell whether DeepSeek Harness is running (pgrep: ${error.status ?? error.code}); not touching the registry`);
+  }
+}
+
+function requireAppClosed() {
+  if (checkApp && appIsRunning()) {
+    fail("DeepSeek Harness is running; quit it (Cmd+Q), keep it closed, and run this again, or it will overwrite the change");
   }
 }
 
@@ -66,13 +75,29 @@ function readHeader(dshHome, sessionId) {
 
 const { ids, workspace } = parseArgs(process.argv.slice(2));
 const dshHome = process.env.DSH_HOME ?? join(homedir(), ".dsh");
-const registryPath = join(dshHome, "storages", "workspace.json");
+// Work on the resolved file, so a symlinked DSH_HOME or storages dir cannot dodge the app check.
+const registryPath = realpathSync(join(dshHome, "storages", "workspace.json"));
+const liveRegistry = join(homedir(), ".dsh", "storages", "workspace.json");
+// Skip the app check only for a copy; the live registry (however spelled) always needs it.
+const checkApp = !existsSync(liveRegistry) || registryPath === realpathSync(liveRegistry);
+requireAppClosed();
 
-if (process.env.DSH_HOME === undefined && appIsRunning()) {
-  fail("DeepSeek Harness is running; quit it (Cmd+Q) and run this again, or it will overwrite the change");
+// Serialize concurrent runs; a stale lock (crash) must be removed by hand.
+const lockPath = `${registryPath}.attach-lock`;
+let lock;
+try {
+  lock = openSync(lockPath, "wx");
+} catch {
+  fail(`another run holds ${lockPath}; wait for it, or delete the file if no run is active`);
 }
+process.on("exit", () => {
+  closeSync(lock);
+  unlinkSync(lockPath);
+});
 
-const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+const original = readFileSync(registryPath, "utf8");
+const originalMtime = statSync(registryPath).mtimeMs;
+const registry = JSON.parse(original);
 if (registry.unit?.name !== EXPECTED_UNIT.name || registry.unit?.version !== EXPECTED_UNIT.version) {
   fail(`unsupported registry format ${JSON.stringify(registry.unit)}; expected ${JSON.stringify(EXPECTED_UNIT)}. Check the app's attachSession before updating this script`);
 }
@@ -93,6 +118,9 @@ for (const id of ids) {
   }
   if (owner.has(id)) fail(`${id}: already filed under another project (${owner.get(id)})`);
   const header = readHeader(dshHome, id);
+  // Match the app's realpathNormalize: absolute cwd, resolving to this directory.
+  if (typeof header.cwd !== "string" || !isAbsolute(header.cwd)) fail(`${id}: header cwd ${JSON.stringify(header.cwd)} is not absolute`);
+  if (!existsSync(header.cwd) || !statSync(header.cwd).isDirectory()) fail(`${id}: cwd ${header.cwd} is not a directory`);
   if (realpathSync(header.cwd) !== workspace) fail(`${id}: cwd ${header.cwd} does not match ${workspace}`);
   added.push({ id, createdAt: header.createdAt });
 }
@@ -104,9 +132,15 @@ record.sessionIds = [...added.map((a) => a.id), ...record.sessionIds];
 record.updatedAt = new Date().toISOString();
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-copyFileSync(registryPath, `${registryPath}.bak-${stamp}`);
 const tmp = `${registryPath}.tmp-${process.pid}`;
 writeFileSync(tmp, JSON.stringify(registry, null, 2));
+// Re-check right before the swap: the app may have started, or another writer touched the file.
+requireAppClosed();
+if (statSync(registryPath).mtimeMs !== originalMtime || readFileSync(registryPath, "utf8") !== original) {
+  unlinkSync(tmp);
+  fail("workspace.json changed while this ran; nothing written, run again");
+}
+writeFileSync(`${registryPath}.bak-${stamp}`, original);
 renameSync(tmp, registryPath);
 for (const { id } of added) console.log(`${id}: filed under "${record.title}"`);
 console.log(`backup: workspace.json.bak-${stamp}`);
