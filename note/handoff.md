@@ -14,7 +14,7 @@
 - 测验：`note/interview/6.md`、`stage-2.md` 等用户作答
 
 ## 下一步（按顺序）
-1. **用户跑 capture**（5.5 / 6.5），趁课程还开着：`npm run build && node dist/cli.js capture`（自动用 Edge），登录 Canvas，打开任一课程页，输入 `c` 自动爬取；Ed 页面用 `s` 手动存；`q` 退出。汇总在 `.local/crawls/`，记下 saved、failed、时长、是否要 MFA。
+1. **用户跑 capture**（5.5 / 6.5），趁课程还开着：`npm run build && node dist/cli.js capture`（优先 Edge，其次 Chrome；如果 `.local/profiles/default` 已存在但没有浏览器记录，要先设 `COURSEWORK_BROWSER`），登录 Canvas，打开任一课程页，输入 `c` 自动爬取；Ed 页面用 `s` 手动存；`q` 退出。汇总在 `.local/crawls/`，记下 saved、failed、时长、是否要 MFA。
 2. 用户跑完后归档 `v1-foundation`（`openspec-archive-change`），勾掉 tasks.md。
 3. dsh 补一份 Stage 3 测验（PR #22：浏览器探测和爬取），不阻塞。
 4. 起草 M1（`v1-sync`）的 OpenSpec change（让 Codex 起草，Claude 审）；包含是否做 `coursework login`（#46，看 capture 测出的登录态时长）。方案选择题问用户，PR 由 Claude 合并（#48）。
