@@ -20,7 +20,7 @@ Issue mapping for dispatch: groups 1–2 are issue A (blocks the rest); groups 3
 - [ ] 3.1 `src/store/repository.ts`: repository interface (save and load per entity, batch save, list changes since a sequence number, record run)
 - [ ] 3.2 `src/store/sqlite.ts`: `node:sqlite` implementation with an in-memory option; batch saves in one transaction; zod parse on write and read
 - [ ] 3.3 `src/store/migrations/`: migration runner on `PRAGMA user_version`; first migration creates all tables; refuse newer databases untouched
-- [ ] 3.4 Data directory: `COURSEWORK_HOME` or `<package root>/.local`, holding `coursework.db`, `snapshots/`, `profiles/`; create if missing
+- [ ] 3.4 Data directory: `COURSEWORK_HOME` or `<package root>/.local`, holding `coursework.db`, `snapshots/`, `profiles/` (and `crawls/`, added by group 6); create if missing
 - [ ] 3.6 Change `seq` assignment inside the write transaction; list changes since a `seq` in ascending order
 - [ ] 3.5 Guard tests: no file outside `src/store/` imports `node:sqlite`; `git check-ignore` succeeds for `.local/coursework.db`
 
@@ -40,7 +40,7 @@ Issue mapping for dispatch: groups 1–2 are issue A (blocks the rest); groups 3
 
 ## 6. Browser detection and Canvas crawl (issue E, decisions #43–#46)
 
-- [ ] 6.1 Browser detection per the spec: Edge, then Chrome, then ask for bundled Chromium; `COURSEWORK_BROWSER` override (bad value exits 2); record the browser in `profiles/default/coursework-browser.json` and refuse a different one; injectable "is installed" check so tests need no real browser
+- [ ] 6.1 Browser detection per the spec: Edge, then Chrome, then ask for bundled Chromium; `COURSEWORK_BROWSER` override (bad value exits 2); record the browser in `profiles/default/coursework-browser.json` (an unrecorded existing profile counts as `chrome`) and refuse a different one; missing override browser and declined Chromium exit without launching; add `crawls/` to the data-dir helpers; injectable "is installed" check so tests need no real browser
 - [ ] 6.2 `src/capture/crawl.ts`: pure planning functions per the spec's link rules and order (start condition, course / assignment / announcement links, same-origin filter, 300-load cap, signed-out detection), unit-tested on synthetic HTML fixtures with fake course ids
 - [ ] 6.3 Crawl runner: hidden tab, `load` + `networkidle` with a 30 s timeout, GET loads only, ≥1 s between loads (injectable clock), failure rules, summary in `<data dir>/crawls/`; tested with a fake page object, no real browser
 - [ ] 6.4 Capture session: command `c`, refuse a second `c`, `s` still works, `q` / close / signals abort after the current load; updated start message; tests for each scenario
