@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Discover current-term courses from both sources
-Before first selection or explicit reselection, capture SHALL discover current-term courses from Canvas `/courses` and Ed's same-origin `GET /api/user` endpoint, using their logged-in profile sessions. Ed discovery SHALL read `courses[]` entries shaped as `{course, role, lab, last_active}`, where `course` contains `id`, `code`, `name`, `year`, `session`, and `status`. Ed eligibility SHALL require `course.year` and `course.session` to match the current term context and `course.status` to equal `active`. Eligibility SHALL use source term/current-course evidence, never a course-code heuristic. Choices SHALL be source-qualified by provider, origin and course id, with no implicit cross-provider matching. Discovery reads SHALL share the run's rate limiter and attempt cap. An unavailable source or indeterminate term SHALL be reported explicitly, without silently treating it as an empty successful result.
+Before first selection or explicit reselection, capture SHALL discover current-term courses from Canvas `/courses` and Ed's same-origin `GET /api/user` endpoint, using their logged-in profile sessions. Ed discovery SHALL read `courses[]` entries shaped as `{course, role, lab, last_active}`, where `course` contains `id`, `code`, `name`, `year`, `session`, and `status`. Ed exposes no verified current-term marker, so Ed eligibility SHALL be `course.status` equal to `active` only, with no hard-coded or date-guessed term; the picker SHALL group Ed choices by `course.year` + `course.session`, newest group first, and label each row with its term so the user decides (#54). Courses whose status is not `active` SHALL NOT be listed. Eligibility SHALL use source term/current-course evidence, never a course-code heuristic. Choices SHALL be source-qualified by provider, origin and course id, with no implicit cross-provider matching. Discovery reads SHALL share the run's rate limiter and attempt cap. An unavailable source or indeterminate term SHALL be reported explicitly, without silently treating it as an empty successful result.
 
 #### Scenario: List both sources
 - **GIVEN** Canvas and Ed list current-term ABCD10001 and historical WXYZ10002 with explicit term evidence
@@ -17,6 +17,11 @@ Before first selection or explicit reselection, capture SHALL discover current-t
 - **GIVEN** Ed discovery is unavailable and Canvas discovery succeeds
 - **WHEN** the user selects Canvas courses
 - **THEN** the Ed gap is reported and existing Ed choices are retained unchanged rather than erased
+
+#### Scenario: Ed active courses from two terms
+- **GIVEN** Ed lists active ABCD10001 (2026 Semester 2), active WXYZ10002 (2026 Semester 1) and non-active EFGH10003
+- **WHEN** first selection starts
+- **THEN** ABCD10001 and WXYZ10002 are listed in term groups with the 2026 Semester 2 group first, EFGH10003 is not listed, and nothing is pre-selected by term
 
 #### Scenario: Unknown term
 - **GIVEN** a source listing has no verified current-term evidence
