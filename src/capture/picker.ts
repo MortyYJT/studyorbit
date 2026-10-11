@@ -2,6 +2,7 @@ import { courseKey, type DiscoveryResult, type SelectedCourse } from './discover
 import type { CaptureSelection } from './selection-store.js';
 export interface SelectionTerminal { write(message: string): void; question(prompt: string, options?: { signal?: AbortSignal }): Promise<string> }
 export type PickerResult = { status: 'cancelled' } | { status: 'confirmed'; selection: CaptureSelection; gaps: DiscoveryResult[]; missing: SelectedCourse[] };
+const displayLine = (text: string): string => text.replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, ' ');
 export async function pickCourses(discoveries: DiscoveryResult[], prior: CaptureSelection | undefined,
   terminal: SelectionTerminal, signal?: AbortSignal): Promise<PickerResult> {
   const choices = discoveries.flatMap(result => result.status === 'available' ? result.courses : []);
@@ -18,7 +19,7 @@ export async function pickCourses(discoveries: DiscoveryResult[], prior: Capture
   missing.forEach(course => terminal.write(`${course.source} course ${course.id} missing or inaccessible.`));
   for (;;) {
     if (signal?.aborted) return { status: 'cancelled' };
-    choices.forEach((course, index) => terminal.write(`${index + 1}. [${ticks.has(courseKey(course)) ? 'x' : ' '}] ${course.source} | ${course.term.label} | ${course.code ?? ''} ${course.name}`));
+    choices.forEach((course, index) => terminal.write(displayLine(`${index + 1}. [${ticks.has(courseKey(course)) ? 'x' : ' '}] ${course.source} | ${course.term.label} | ${course.code ?? ''} ${course.name}`)));
     let answer: string;
     try { answer = (await terminal.question('Toggle a number; done to confirm; q to cancel: ', { signal })).trim(); }
     catch (error) { if (signal?.aborted) return { status: 'cancelled' }; throw error; }

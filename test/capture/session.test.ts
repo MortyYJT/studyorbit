@@ -120,3 +120,10 @@ it('failed crawl is handled without an unhandled rejection and a later c can sta
 it.each(['msedge', 'chrome', 'chromium'] as const)('%s leaves signal handling to capture so in-flight work can finish', browser => {
   expect(launchSettings('/synthetic/home', browser).options).toMatchObject({ handleSIGINT: false, handleSIGTERM: false });
 });
+it('first c and later c use the selection-aware run hook without requiring a Canvas tab', async () => {
+  const runCapture = vi.fn(async () => {});
+  const context = { pages: () => [], close: vi.fn(async () => {}) };
+  async function* commands() { yield 'c'; await new Promise(resolve => setImmediate(resolve)); yield 'c'; await new Promise(resolve => setImmediate(resolve)); yield 'q'; }
+  await captureSession(context, commands(), async () => '', () => {}, { runCapture });
+  expect(runCapture).toHaveBeenCalledTimes(2);
+});

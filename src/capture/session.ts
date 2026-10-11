@@ -46,7 +46,7 @@ export async function activePage<P extends CapturePage>(context: Pick<CaptureCon
 export async function captureSession<P extends CapturePage>(
   context: CaptureContext<P>, commands: AsyncIterable<string>,
   save: (page: P) => Promise<string>, log: (message: string) => void,
-  options: { crawl?: (page: P, signal: AbortSignal) => Promise<unknown>; signal?: AbortSignal } = {},
+  options: { runCapture?: (signal: AbortSignal) => Promise<unknown>; crawl?: (page: P, signal: AbortSignal) => Promise<unknown>; signal?: AbortSignal } = {},
 ): Promise<void> {
   const cancellation = new AbortController();
   const stop = () => cancellation.abort();
@@ -54,12 +54,18 @@ export async function captureSession<P extends CapturePage>(
   if (options.signal?.aborted) stop();
   let crawling: Promise<void> | undefined;
   try {
-    log('Sign in and navigate by hand. Enter s to save the active tab, c to crawl Canvas, q to quit.');
+    log('Sign in and navigate by hand. Enter s to save the active tab, c to capture selected courses, q to quit.');
     for await (const line of commands) {
       const command = line.trim().toLowerCase();
       if (command === 'q' || cancellation.signal.aborted) break;
       if (command === 'c') {
         if (crawling) { log('a crawl is already running'); continue; }
+        if (options.runCapture) {
+          crawling = Promise.resolve().then(() => options.runCapture!(cancellation.signal))
+            .then(() => {}, () => { log('Unable to complete the capture.'); })
+            .finally(() => { crawling = undefined; });
+          continue;
+        }
         const page = await activePage(context);
         if (!page) { log('Open a Canvas course page first.'); continue; }
         crawling = Promise.resolve().then(() => options.crawl?.(page, cancellation.signal))
@@ -67,7 +73,7 @@ export async function captureSession<P extends CapturePage>(
           .finally(() => { crawling = undefined; });
         continue;
       }
-      if (command !== 's') { log('Enter s to save, c to crawl Canvas, or q to quit.'); continue; }
+      if (command !== 's') { log('Enter s to save, c to capture selected courses, or q to quit.'); continue; }
       const page = await activePage(context);
       if (!page) { log('No open page to save.'); continue; }
       try { log(`Saved snapshot: ${await save(page)}`); }

@@ -15,10 +15,12 @@ const program = new Command()
 
 program.command('capture')
   .description('Sign in manually and save local page snapshots')
-  .action(async () => {
+  .option('--crawl', 'Run one selected-course capture')
+  .option('--reselect', 'Refresh course selection in a terminal')
+  .action(async (options: { crawl?: boolean; reselect?: boolean }) => {
     try {
       const { capture } = await import('./capture/command.js');
-      await capture();
+      await capture(options);
     } catch (error) {
       if (error instanceof CourseworkError && error.code === 'LOCKED') {
         console.error(error.message);
