@@ -180,12 +180,14 @@ export async function runCrawl<P extends CrawlPage>(
             if (!finalCourseId || !selected.some(c => c.id === finalCourseId)) {
               summary.skipped++; summary.gaps.push({ code: finalCourseId ? 'UNSELECTED_REDIRECT' : 'INELIGIBLE_FINAL_URL', url: finalUrl }); return;
             }
-            if (alreadySaved) { summary.duplicates++; return; }
+            if (alreadySaved) summary.duplicates++;
             let hrefs: string[] | undefined;
             if (finalUrl === requestedUrl && /^\/courses\/\d+\/(assignments|announcements)$/.test(new URL(target).pathname)) {
               hrefs = await page!.evaluate('Array.from(document.querySelectorAll("[href]"), element => element.getAttribute("href"))') as string[];
             }
-            await options.save(page!); summary.saved++; savedUrls.add(finalUrl);
+            if (!alreadySaved) {
+              await options.save(page!); summary.saved++; savedUrls.add(finalUrl);
+            }
             if (!options.signal?.aborted && hrefs) {
               const match = /^\/courses\/(\d+)\/(assignments|announcements)$/.exec(new URL(target).pathname)!;
               details.push(...detailLinks(hrefs, page!.url(), match[1], match[2] === 'assignments' ? 'assignments' : 'discussion_topics'));
