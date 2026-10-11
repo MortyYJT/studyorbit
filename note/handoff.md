@@ -1,9 +1,9 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖而不追加。信任之前先对照 `git status` 和 `git log`。
-> 背景：`note/product/vision.md`、`note/product/roadmap.md`、`note/decisions.md`（#1–#42）。
+> 背景：`note/product/vision.md`、`note/product/roadmap.md`、`note/decisions.md`（#1–#50）。
 
-- **最后更新：** 2026-10-11，`main` 在 `2d32070`（PR #22 合并后）再加本交接 PR
+- **最后更新：** 2026-10-11，`main` 在 `d6fcab4`（PR #23 合并后）再加本交接 PR
 - **项目：** `coursework`：以课业为核心的个人行动中心；定位「让通用 agent 能可靠读写墨大课业数据的工具层和运行时」（#29）
 - **OpenSpec change：** `v1-foundation`（M0）。任务组 1–6 代码全部合并；只剩 5.5 / 6.5（用户手动跑 capture），之后归档
 
@@ -13,11 +13,19 @@
 - 本地 `main`（`2d32070`）：`npm run check` 190 passed / 2 skipped（Claude 本地运行）；CI 绿
 - 测验：`note/interview/6.md`、`stage-2.md` 等用户作答
 
+## 首次真实爬取（2026-10-11，用户本机，数据只在 `.local/`）
+- Edge 自动探测成功；Canvas 爬取 `completed`：164 页、0 失败、13.6 分钟；未碰 300 页上限。Ed 未抓。
+- `/courses` 当前学期列出 12 条，其中只有 3–4 门是正式科目，其余是社区、培训模块、导师计划等；公告详情大半来自社区。
+- 部分科目的「作业」「大纲」「公告」页在 Canvas 上被关闭，访问会跳回课程首页（首页因此重复存了 2–3 份）。**有两门科目的作业布置在 Ed 上**（用户确认），所以 Canvas 里本来就没有。
+- 作业详情页正文抓到了，但大多数页面找不到「截止」字样，截止日期的位置要在 M1 写解析器时查（界面是中文）。
+- 快照含用户真实姓名和真实课程代码：只在 `.local/`，不得进仓库、夹具或文档。
+
 ## 下一步（按顺序）
-1. **用户跑 capture**（5.5 / 6.5），趁课程还开着：`npm run build && node dist/cli.js capture`（优先 Edge，其次 Chrome；如果 `.local/profiles/default` 已存在但没有浏览器记录，要先设 `COURSEWORK_BROWSER`），登录 Canvas，打开任一课程页，输入 `c` 自动爬取；Ed 页面用 `s` 手动存；`q` 退出。汇总在 `.local/crawls/`，记下 saved、failed、时长、是否要 MFA。
-2. 用户跑完后归档 `v1-foundation`（`openspec-archive-change`），勾掉 tasks.md。
-3. dsh 补一份 Stage 3 测验（PR #22：浏览器探测和爬取），不阻塞。
-4. 起草 M1（`v1-sync`）的 OpenSpec change（让 Codex 起草，Claude 审）；包含是否做 `coursework login`（#46，看 capture 测出的登录态时长）。方案选择题问用户，PR 由 Claude 合并（#48）。
+1. **新 change（小）：爬取只爬用户选定的课程**（#50）。先定选择方式（建议：`c` 先列出 `/courses` 里当前学期的课，用户在终端勾选，选择存进 `.local/` 并在下次默认沿用）；同时处理「跳回首页的页面只存一份」。让 Codex 起草规格和实现，Codex 只读审查，Claude 合并（#48、#49）。
+2. **Ed 的抓取**：部分科目的作业在 Ed 上，Ed 是单页应用。先让用户用 `s` 手动存几页 Ed（作业、课程、讨论），再决定是并进上面的 change 还是放进 M1。
+3. 归档 `v1-foundation`（5.5 / 6.5 的真实运行已完成 Canvas 部分；Ed 部分并入第 2 步）。
+4. dsh 补 Stage 3 测验（PR #22），不阻塞。
+5. 起草 M1（`v1-sync`），包含是否做 `coursework login`（#46）。
 
 ## 运行与验证
 - `npm ci && npm run check`（= `.claude/check.sh` = CI）；`npm run build` → `dist/cli.js`
