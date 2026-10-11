@@ -1,8 +1,13 @@
-import { afterEach, expect, it } from 'vitest';
-import { mkdtemp, realpath, readFile, stat, symlink, writeFile, mkdir, rm } from 'node:fs/promises';
+import { afterEach, expect, it, vi } from 'vitest';
+import { fsyncSync } from 'node:fs';
+import { mkdtemp, realpath, readFile, stat, symlink, writeFile, mkdir, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { QuizFiles } from '../../src/quiz/files.js';
+vi.mock('node:fs', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return { ...actual, fsyncSync: vi.fn(actual.fsyncSync) };
+});
 const directories: string[] = [];
 afterEach(async () => { for (const dir of directories.splice(0)) await rm(dir, { recursive: true, force: true }); });
 async function setup() { const root = await realpath(await mkdtemp(join(tmpdir(), 'quiz-files-'))); directories.push(root); return { root, files: new QuizFiles(root) }; }
@@ -15,6 +20,23 @@ it('writes atomic private records and appends rather than replacing audit', asyn
   expect((await stat(join(root, 'quiz'))).mode & 0o777).toBe(0o700);
   expect((await stat(join(root, 'quiz', 'proposal-synthetic.json'))).mode & 0o777).toBe(0o600);
   expect((await stat(join(root, 'quiz', 'audit.jsonl'))).mode & 0o777).toBe(0o600);
+});
+it('cancellation during write preparation preserves pending state and cleans the temporary file', async () => {
+  const { root, files } = await setup(); const controller = new AbortController();
+  await files.write('review-synthetic', { status: 'pending' });
+  const value = { toJSON() { queueMicrotask(() => controller.abort()); return { status: 'approved' }; } };
+  // Exercise the real storage path after preparation has begun, before activation.
+  await expect(files.write('review-synthetic', value, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+  expect(await files.read('review-synthetic')).toEqual({ status: 'pending' });
+  expect(await readdir(join(root, 'quiz'))).toEqual(['review-synthetic.json']);
+});
+it('a directory sync failure after rename leaves no usable approval', async () => {
+  const { root, files } = await setup();
+  await files.write('review-synthetic', { status: 'pending' });
+  vi.mocked(fsyncSync).mockImplementationOnce(() => { throw Object.assign(new Error('synthetic sync failure'), { code: 'EIO' }); });
+  await expect(files.write('review-synthetic', { status: 'approved' }, new AbortController().signal)).rejects.toMatchObject({ code: 'EIO' });
+  expect(await files.read('review-synthetic')).not.toMatchObject({ status: 'approved' });
+  expect((await readdir(join(root, 'quiz'))).some(name => name.endsWith('.tmp'))).toBe(false);
 });
 it.each(['../outside', 'ed:7:11', '/absolute', 'a/b', '.'])('rejects malformed filename %s', async name => {
   const { files } = await setup(); await expect(files.write(name, {})).rejects.toThrow();

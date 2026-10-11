@@ -64,7 +64,7 @@ it('3.2 explicit approval persists exact proposal/source/page hashes privately w
   expect([await f.files.read('policy-7'), await f.files.read(`grant-${hash(binding.assessmentId)}`)]).toEqual(before);
   const audit = await readFile(join(f.root, 'quiz', 'audit.jsonl'), 'utf8');
   const events = audit.trim().split('\n').map(line => JSON.parse(line)).filter(event => event.operation === 'review');
-  expect(events).toMatchObject([{ phase: 'intent' }, { phase: 'outcome', revision: f.request.revision, code: 'OK' }]);
+  expect(events).toMatchObject([{ phase: 'intent' }, { phase: 'intent', reviewStatus: 'approved' }, { phase: 'outcome', revision: f.request.revision, code: 'OK' }]);
   expect(audit).not.toMatch(/First answer|My calculation|Synthetic first question|Synthetic permission|synthetic-page/);
 });
 it.each(['reject', 'cancel'] as const)('3.2 %s blocks approval, including a previous approval', async decision => {
@@ -202,18 +202,49 @@ it('3.2 terminal controls in a proposed answer cannot erase the visible review',
 });
 it('3.2 failed final approval activation leaves pending state rather than a usable approval', async () => {
   const f = await setup(); const write = f.files.write.bind(f.files);
+  const events: Record<string, unknown>[] = [];
+  const audit = new AuditTrail(async line => { events.push(JSON.parse(line)); });
   vi.spyOn(f.files, 'write').mockImplementation(async (name, value) => {
     if (name === `review-${hash(binding.assessmentId)}` && (value as { status?: string }).status === 'approved') throw Error('SECRET-SENTINEL');
     await write(name, value);
   });
-  expect(await reviewQuiz(f.request, { ...f.dependencies, decide: async () => 'approve' })).toMatchObject({ ok: false, error: { code: 'INTERNAL' } });
+  expect(await reviewQuiz(f.request, { ...f.dependencies, audit, decide: async () => 'approve' })).toMatchObject({ ok: false, error: { code: 'INTERNAL' } });
   await expect(reviewedRevisionPreflight(f.request, f.files)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  expect(events.some(event => event.phase === 'outcome' && event.code === 'OK' && event.reviewStatus === 'approved')).toBe(false);
+  expect(events.at(-1)).toMatchObject({ phase: 'outcome', code: 'INTERNAL' });
+  expect(events.at(-1)).not.toHaveProperty('reviewStatus', 'approved');
 });
-it('3.4 review cancellation during completion auditing cannot activate approval', async () => {
+it('3.4 review cancellation during confirmation intent auditing cannot activate approval', async () => {
   const f = await setup(); const controller = new AbortController();
-  const audit = new AuditTrail(async line => { if (JSON.parse(line).phase === 'outcome') controller.abort(); });
+  const audit = new AuditTrail(async line => { const event = JSON.parse(line); if (event.phase === 'intent' && event.reviewStatus === 'approved') controller.abort(); });
   expect(await reviewQuiz(f.request, { ...f.dependencies, signal: controller.signal, audit, decide: async () => 'approve' })).toMatchObject({ ok: true, data: { status: 'cancelled' } });
   await expect(reviewedRevisionPreflight(f.request, f.files)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+});
+it('3.2 cancellation during asynchronous approval storage leaves no usable approval', async () => {
+  const f = await setup(); const controller = new AbortController(); const write = f.files.write.bind(f.files);
+  vi.spyOn(f.files, 'write').mockImplementation(async (name, value, ...rest) => {
+    if ((value as { status?: string }).status === 'approved') { await Promise.resolve(); controller.abort(); }
+    await write(name, value, ...rest);
+  });
+  const events: Record<string, unknown>[] = [];
+  const audit = new AuditTrail(async line => { events.push(JSON.parse(line)); });
+  expect(await reviewQuiz(f.request, { ...f.dependencies, audit, signal: controller.signal, decide: async () => 'approve' })).toMatchObject({ ok: true, data: { status: 'cancelled' } });
+  expect(controller.signal.aborted).toBe(true);
+  await expect(reviewedRevisionPreflight(f.request, f.files)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  expect(events.filter(event => event.phase === 'outcome')).toMatchObject([{ code: 'OK', reviewStatus: 'cancelled' }]);
+});
+it('3.2 success outcome is appended only after the exact approval is saved', async () => {
+  const f = await setup(); const controller = new AbortController();
+  const audit = new AuditTrail(async line => {
+    const event = JSON.parse(line);
+    if (event.phase === 'outcome' && event.reviewStatus === 'approved') {
+      expect(await f.files.read(`review-${hash(binding.assessmentId)}`)).toMatchObject({ status: 'approved', revision: f.request.revision, runId: event.runId });
+      // Cancellation after durable activation does not retroactively cancel consent.
+      controller.abort();
+    }
+  });
+  expect(await reviewQuiz(f.request, { ...f.dependencies, audit, signal: controller.signal, decide: async () => 'approve' })).toMatchObject({ ok: true, data: { status: 'approved' } });
+  expect(await reviewedRevisionPreflight(f.request, f.files)).toMatchObject({ record: { revision: f.request.revision } });
 });
 it.each(['approve', 'reject', 'cancel', 'timeout'] as const)('3.4 audit history records the safe %s review decision', async decision => {
   const f = await setup();

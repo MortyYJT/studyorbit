@@ -1,4 +1,4 @@
-import { constants } from 'node:fs';
+import { constants, openSync, closeSync, renameSync, fsyncSync, unlinkSync } from 'node:fs';
 import { lstat, mkdir, open, rename, unlink, chmod, readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve, relative, isAbsolute, sep } from 'node:path';
@@ -53,13 +53,33 @@ export class QuizFiles {
     if (names.length > 1000 || names.some(name => !localId.safeParse(name).success)) throw unavailable();
     return names.sort();
   }
-  async write(name: string, value: unknown): Promise<void> {
+  /** With a signal, cancellation remains effective until the synchronous durable commit. */
+  async write(name: string, value: unknown, signal?: AbortSignal): Promise<void> {
     const path = await this.path(name); const temporary = `${path}.${randomUUID()}.tmp`;
     const serialized = JSON.stringify(value) + '\n'; if (Buffer.byteLength(serialized) > 4 * 1024 * 1024) throw unavailable();
     const handle = await open(temporary, 'wx', 0o600);
     try {
       await handle.writeFile(serialized); await handle.sync(); await handle.close();
-      await this.path(name); await rename(temporary, path);
+      await this.path(name);
+      if (signal) {
+        let installed = false;
+        try {
+          const directory = openSync(dirname(path), constants.O_RDONLY | constants.O_NOFOLLOW);
+          try {
+            signal.throwIfAborted();
+            // No event-loop yield between the final cancellation check and durable activation.
+            renameSync(temporary, path); installed = true; fsyncSync(directory);
+          } finally { closeSync(directory); }
+        } catch (error) {
+          if (installed) {
+            // A failed durable commit must not expose the replacement after the lock is released.
+            unlinkSync(path);
+            const directory = openSync(dirname(path), constants.O_RDONLY | constants.O_NOFOLLOW);
+            try { fsyncSync(directory); } finally { closeSync(directory); }
+          }
+          throw error;
+        }
+      } else { await rename(temporary, path); }
     } finally { await handle.close(); await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw unavailable(); }); }
   }
   async append(name: 'audit' | 'runs', line: string): Promise<void> {

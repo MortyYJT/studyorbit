@@ -154,17 +154,28 @@ export async function reviewQuiz(input: unknown, dependencies: QuizReviewDepende
         const pending = await getFiles().read(name);
         if (!pending || hash(pending) !== hash({ version: 1, status: 'pending', runId })) return conflict();
         if (dependencies.signal?.aborted) status = 'cancelled';
-        refs.reviewStatus = status;
-        // Activation follows successful completion auditing. Any earlier failure leaves pending state.
-        await audit.record('review', 'outcome', runId, 'OK', refs); completed = true;
-        // Consent may be cancelled during asynchronous source/audit checks after the prompt.
-        if (dependencies.signal?.aborted && status !== 'cancelled') {
-          status = 'cancelled'; refs.reviewStatus = status;
-          await audit.record('review', 'outcome', runId, 'OK', refs);
-        }
-        await getFiles().write(name, { version: 1, status, runId, assessmentId: request.assessmentId, revision: loaded.record.revision,
+        // Confirmation is intent, not a claim that approval has already been saved.
+        await audit.record('review', 'intent', runId, 'OK', { ...refs, reviewStatus: status });
+        if (dependencies.signal?.aborted) status = 'cancelled';
+        const record = { version: 1, status, runId, assessmentId: request.assessmentId, revision: loaded.record.revision,
           proposalHash: hash(loaded.record), sourceRevision: loaded.record.sourceRevision, sourceHash: loaded.record.sourceHash,
-          page: loaded.page, reviewedAt: new Date().toISOString() });
+          page: loaded.page, reviewedAt: new Date().toISOString() };
+        // Even without an external signal, use the durable activation path.
+        const signal = dependencies.signal ?? new AbortController().signal;
+        try { await getFiles().write(name, record, status === 'approved' ? signal : undefined); }
+        catch (error) {
+          if (status !== 'approved' || !signal.aborted || !(error instanceof Error) || error.name !== 'AbortError') throw error;
+          status = 'cancelled';
+          await getFiles().write(name, { ...record, status });
+        }
+        refs.reviewStatus = status;
+        try { await audit.record('review', 'outcome', runId, 'OK', refs); completed = true; }
+        catch (error) {
+          // Preserve the existing fail-closed contract for completion-audit failures.
+          delete refs.reviewStatus;
+          await getFiles().write(name, { version: 1, status: 'pending', runId });
+          throw error;
+        }
         return { status, revision: loaded.record.revision };
       });
     } catch (error) { throw safeQuizError(error); }
