@@ -3,7 +3,7 @@
 > 单文件，只写当前状态，覆盖而不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#80）、`note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-12 深夜（调度员会话）。设计文档 PR #35 已合并；S0 issue C（3.1–3.6）PR #36 已合并（main `f5a9209`）。
+- **最后更新：** 2026-10-12 深夜，调度员换窗口时写。已合并：#35 设计文档、#36 S0 issue C、#38 Q1 change（main `58b2ec2`）。
 - **模式：全自动调度（#79）。** 用户在睡觉 / 不在线，只在必须决策时打断。
 
 ## 调度员守则（新会话第一件事读这里）
@@ -14,12 +14,20 @@
 5. **Codex 额度**：报错里有 usage limit 和恢复时间。恢复时间在 5 小时以内的是 5 小时额度，只等待，期间做 Claude 能做的事或改用子会话；恢复时间超过 5 小时或明确写 weekly 的是**每周额度**，才用重置卡。优先让 Codex 自己重置（用户已开启）；不行再用 computer use 在 Codex 应用里点**免费的**重置卡，只要屏幕上出现价格、付款、升级套餐就立即停下。computer use 的授权弹窗没人点时，就等每周额度自动恢复。
 6. **Claude 额度**：用完会话会直接停住，由看门狗在额度恢复后接着跑。所以本文件要随时保持最新：每合并一个 PR 就更新一次。
 7. **并行**：最多 3 条 Codex 线，各用独立 clone（`../unimelb-coursework-agent-<topic>`）；不切主 checkout 的分支。
+8. **控制上下文（用户 2026-10-12 要求）**：每次派给 Codex / 子会话的活只有一个 issue 那么大，提示词自包含，结果写进 `-o` 报告文件；调度员只读报告和需要的几行，绝不读整份日志。调度员自己的上下文变大时：更新本文件并推送 → `echo 0 > ~/.coursework-dispatcher-heartbeat` → 用 `run_scheduled_task` 立即运行 `coursework-dispatcher-watchdog`（它会接手当调度员）→ 归档旧会话，不用问用户。
+
+## 正在跑的 Codex（换窗口时仍在后台运行；用 `pgrep -fl "codex exec"` 核对）
+报告文件在旧会话的 scratchpad：`/private/tmp/claude-501/-Users-yu-junteng-Documents-unimelb-coursework-agent/12ccc39c-8a95-422d-975d-2b14db7b014e/scratchpad/`。报告不在了就直接看 clone 的工作区（`git status`、`git diff`），代码改动都还在。
+- **S0 3.7–3.8**：clone `../unimelb-coursework-agent-ed-capture`，分支 `codex/ed-orchestration`（从 `f5a9209` 开出），报告 `codex-s0-37.md`。
+- **Q1 issue A（1.1–1.4）**：clone `../unimelb-coursework-agent-quiz-assist`，分支 `codex/quiz-read`，issue #39，报告 `codex-q1-A.md`。
+- **M1 `v1-sync` change**：clone `../unimelb-coursework-agent-sync`，分支 `codex/v1-sync-change`，报告 `codex-m1-change.md`。
+交付后每条都要：`git restore note/handoff.md`（如果被改了）→ 自己跑 `bash .claude/check.sh`、读 diff → 用公开身份提交 → 新上下文 Codex 只读审查 → PR → CI 绿 → 合并（`--rebase`，带 merge commit 的分支用 `--squash`）。
 
 ## 工作队列（按顺序；能并行的并行）
 1. ~~设计文档 PR~~：#35 已合并（#34 因作者身份关闭）。
 2. **S0 `capture-selection-ed`**：3.1–3.6 已合并（#36）。3.7–3.8 已派 Codex，在 `../unimelb-coursework-agent-ed-capture` 的 `codex/ed-orchestration`（从 `f5a9209` 开出）。交付后：自己跑 check、读 diff → 提交 → 新上下文审查 → PR → 合并。3.9 要用户登录；3.10 归档要等 3.9。
-3. **Q1 `ed-quiz-assist`**（截止 **10/25**，最晚 10/23 给用户实测）：change 在 `../unimelb-coursework-agent-quiz-assist` 的 `codex/ed-quiz-assist`（提交 `2cd6cd1`，未推送）。第 1 轮审查：引文必须引用所答题目和所用材料（P1）、审计漏了读题事件（P2）；返工已派 Codex。交付后：提交 → 第 2 轮审查 → PR → 合并 → 按任务组派实现（合成夹具）。真实结构检查用已登录的 profile：试一次，`AUTH_EXPIRED` 就进「等用户」。
-4. **M1 `v1-sync`**：写 change → 实现（合成夹具）。Canvas `/api/v1` 实测要登录态，处理方式同上。
+3. **Q1 `ed-quiz-assist`**（截止 **10/25**，最晚 10/23 给用户实测）：change 已合并（#38）。按 tasks.md 的 A → B → C → D → E 依次实现，每组一个 issue；A 进行中（#39）。检查点：A/B 10/16，C 10/18，D 10/20，E 和 Claude 结构检查 10/22。真实结构检查用已登录的 profile：试一次，`AUTH_EXPIRED` 就进「等用户」。
+4. **M1 `v1-sync`**：change 正在写（见上）→ 审查、合并 → 实现（合成夹具）。Canvas `/api/v1` 实测要登录态，处理方式同上。
 5. **M2 `v1-protocol`** → schema 合并后，同步、协议、界面三条线并行（M3 先接假数据）。
 6. 每合并一个 PR 就排 dsh 出题（先确认主 checkout 没有别的会话在用）。欠：PR #29、#32、#35、#36、Stage 3 / PR #22。dsh 要在主 checkout 切分支，跟守则第 7 条冲突，所以先攒着，等用户醒来再定。
 
