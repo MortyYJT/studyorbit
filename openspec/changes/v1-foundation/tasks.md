@@ -36,7 +36,7 @@ Issue mapping for dispatch: groups 1–2 are issue A (blocks the rest); groups 3
 - [ ] 5.2 `src/capture/snapshot.ts`: write `page.html`, `page.png`, `meta.json` under `<data dir>/snapshots/<host>/<timestamp>-<slug>/` (data directory from task 3.4, honouring `COURSEWORK_HOME`); strip query and fragment from the URL; unit-test the path and URL logic without a browser
 - [ ] 5.3 `coursework capture`: persistent context on `<data dir>/profiles/default` with `channel: 'chrome'` (group 6 replaces this with detection), fallback to bundled Chromium only after asking; terminal commands `s` (save active tab) and `q` (quit); never touch form fields (also during the group 6 crawl)
 - [ ] 5.4 Guard test: `git check-ignore` succeeds for `.local/snapshots/` and `.local/profiles/`
-- [ ] 5.5 Manual run by the user (not automatable): sign in to Canvas and Ed, save assignment, announcement, grades, and Ed lesson pages for each course; note in the PR how long the session lasted and whether MFA was asked
+- [ ] 5.5 Manual run by the user (not automatable): sign in to Canvas and Ed, save assignment, announcement, grades, and Ed lesson pages for each course; note in the PR how long the session lasted and whether MFA was asked. Recorded so far (2026-10-11): one sign-in covered the whole 13.6-minute crawl with no re-login prompt; MFA was asked at sign-in; the maximum session lifetime was not measured. Ed pages move to the `capture-selection-ed` change (Ed JSON API, decisions #52-#53)
 
 ## 6. Browser detection and Canvas crawl (issue E, decisions #43–#46)
 
@@ -44,4 +44,4 @@ Issue mapping for dispatch: groups 1–2 are issue A (blocks the rest); groups 3
 - [ ] 6.2 `src/capture/crawl.ts`: pure planning functions per the spec's link rules and order (start condition, course / assignment / announcement links, same-origin filter, 300-load cap, signed-out detection), unit-tested on synthetic HTML fixtures with fake course ids
 - [ ] 6.3 Crawl runner: hidden tab, `load` + `networkidle` with a 30 s timeout, GET loads only, ≥1 s between loads (injectable clock), failure rules, summary in `<data dir>/crawls/`; tested with a fake page object, no real browser
 - [ ] 6.4 Capture session: command `c`, refuse a second `c`, `s` still works, `q` / close / signals abort after the current load; updated start message; tests for each scenario
-- [ ] 6.5 Manual run by the user: `coursework capture`, sign in, open a Canvas course page, enter `c`; record saved, failed, and duration from the summary. Ed is not crawled; save Ed pages with `s` (feeds 5.5)
+- [x] 6.5 Manual run by the user: `coursework capture`, sign in, open a Canvas course page, enter `c`; record saved, failed, and duration from the summary. Ed is not crawled; save Ed pages with `s` (feeds 5.5). Result (2026-10-11, Edge auto-detected): `completed`, 164 saved, 0 failed, 13.6 min, 300-page cap not reached; Ed not crawled

@@ -1,0 +1,41 @@
+Each implementation task below is a red/green increment: write the specified failing synthetic tests first, implement the smallest change, then run the targeted tests. No code or test implementation is part of this drafting task. Do not introduce dependencies, database migrations, CI changes, real data fixtures or new user-choice gates.
+
+Issue A establishes selection/discovery and the shared limiter contracts. Issues B and C can then develop their adapters in parallel using fake provider/page objects. C's final orchestration depends on B merging. Each issue uses its own standalone clone and `codex/<topic>` branch; Codex leaves changes uncommitted for Claude. Fresh-context reviews and verification are required per issue. No issues/PRs are opened by this draft.
+
+## 1. Selection and shared request budget (issue A)
+
+Scope: new selection/discovery/limiter modules under `src/capture/` and their tests. Do not edit Canvas runner, Ed capture adapter or CLI wiring (owned by B/C). Acceptance: all `course-selection` scenarios plus shared-limit tests; freeze injectable discovery, selection and limiter contracts before B/C start.
+
+- [ ] 1.1 Write failing tests for source-qualified choices, current-term filtering and unknown-term refusal; implement normalized discovery results. Verify the Canvas current-term marker and Ed course-list path/term field using authorized local read-only evidence; record only endpoint/field shapes and unresolved gaps, never actual course responses.
+- [ ] 1.2 Write failing tests for the 300-attempt shared budget and one-second spacing using an injected clock, counting discovery/failures/skips/bootstrap; implement the reusable limiter with cancellation and no retries.
+- [ ] 1.3 Write failing fake-page tests for Canvas `/courses` discovery and Ed same-origin course-list GET using the shared limiter; implement adapters without course-code heuristics, auth leakage or off-origin reads. Reuse the discovery responses in the run.
+- [ ] 1.4 Write failing tests for selection-file validation, first-save/reuse, valid empty selection, owner-only permissions and atomic replacement; implement local persistence without changing the domain or SQLite model.
+- [ ] 1.5 Write failing tests for terminal ticking, explicit reselection, cancellation and partial discovery retaining unavailable-source choices; implement the picker and selection resolver with injected terminal/source interfaces.
+- [ ] 1.6 Write failing tests for no-TTY absent/invalid selection and reselection returning `INVALID_INPUT` before browser/network use; implement the resolver result using existing envelope/error helpers and a manual-selection hint.
+- [ ] 1.7 Run targeted selection/limiter tests, `bash .claude/check.sh`, privacy/diff checks and fresh-context read-only review; record exact output and resolve correctness gaps before dispatching B/C.
+
+## 2. Selected Canvas crawl and redirect deduplication (issue B)
+
+Scope: `src/capture/crawl.ts`, Canvas planning helpers and synthetic Canvas tests. Consume A's selection and limiter contracts. Do not edit Ed adapter, CLI/command/session integration or A's modules. Acceptance: updated `page-capture` Canvas scenarios and unchanged baseline browser/navigation safeguards.
+
+- [ ] 2.1 Write failing tests proving fixed and linked-detail queues only contain selected source-qualified Canvas ids, missing ids are reported, and already fetched discovery is reused; implement selected-course planning.
+- [ ] 2.2 Write failing tests for two disabled-tab redirects saving one final home, query/fragment/trailing-slash normalization, and suppression of home-page link discovery; implement per-run successful-final-URL deduplication and redirect records.
+- [ ] 2.3 Write failing tests for failed first home save followed by successful save and a redirect into an unselected course; implement successful-write-only dedup state and reject unselected final-page capture/expansion.
+- [ ] 2.4 Write failing tests for shared-limit consumption by duplicate redirects, failures and cancellation; integrate A's limiter while retaining hidden-tab lifecycle, 30-second readiness, same-origin GET rules, no retries and Canvas-only signed-out outcomes.
+- [ ] 2.5 Write failing summary tests for sanitized requested/final redirect pairs, counts, gaps and signed-out/cap/abort distinctions; implement the Canvas outcome consumed by C without raw content in diagnostics.
+- [ ] 2.6 Run targeted Canvas tests and `bash .claude/check.sh`; perform privacy/diff checks and fresh-context read-only review. Record outputs and fix correctness gaps before C's final integration.
+
+## 3. Ed snapshots and capture orchestration (issue C)
+
+Scope: new Ed adapter/JSON snapshot modules and tests, then `src/capture/command.ts`, `session.ts` and CLI wiring. Consume A's contracts; fake Canvas until B merges. Do not change B's runner or A's contracts concurrently. Acceptance: all `ed-capture` scenarios and integrated selection/envelope/cancellation behavior.
+
+- [ ] 3.1 Write failing fake-page tests for logged-in page-context GETs, exact-origin enforcement including redirect refusal, and omission of `view`; implement the bounded Ed transport. Verify auth-header needs and no-view responses with authorized read-only local evidence; if unresolved, record gaps without guessing credentials or sending `view=1`.
+- [ ] 3.2 Write failing tests for selected-course lessons, attempt-only lesson expansion and referenced slides; implement Ed lesson planning with source-derived ids, excluding content-lesson bodies and unselected courses.
+- [ ] 3.3 Write failing tests for first thread page only, resources, missing 404/405 endpoints, 429/no-retry and malformed JSON; implement optional endpoint reads under the shared limiter, reporting coverage gaps.
+- [ ] 3.4 Write failing tests for 401/403 precedence stopping only Ed and retaining prior snapshots; implement Ed `AUTH_EXPIRED` outcomes and manual-login recovery hints.
+- [ ] 3.5 Write failing tests for collision-safe private JSON snapshots, verbatim XML/date preservation, safe metadata and content-free summaries/envelopes; implement the writer and Git-ignore guards. Use synthetic data only and provide no model-facing raw snapshot access.
+- [ ] 3.6 Write failing session/CLI tests for first `c`, reuse, `--reselect`, `--crawl` (with a TTY and no selection it runs the picker first), no-TTY one-shot execution and early selection errors; integrate selection and both providers, keeping existing browser/profile/password rules. Prove stdout contains exactly one bounded agent envelope in non-interactive mode, including `LOCKED` profile contention and browser-launch/preflight failures while retaining interactive lock exit status 3.
+- [ ] 3.7 After B merges, write failing integration tests for Ed expiry with Canvas completion, Canvas expiry with Ed continuation, shared cap across discovery and both adapters, second-crawl/reselection refusal, manual `s` availability and quit/browser-close/signals settling in-flight work; complete orchestration and per-source summaries.
+- [ ] 3.8 Run targeted integration tests, `bash .claude/check.sh`, `openspec validate capture-selection-ed --strict`, privacy/diff checks and fresh-context review; record output and fix requirement gaps. Report configured/tested/live-verified separately.
+- [ ] 3.9 Arrange user-operated login/MFA and authorized read-only live acceptance for current-term discovery, selected-course exclusion, Canvas redirects and Ed no-view JSON reads. Keep all raw data local; report failed/unverified endpoint coverage and session/MFA observations honestly without fabricating metrics.
+- [ ] 3.10 Once acceptance is complete, ensure `v1-foundation` has been archived first, reconcile any intervening `page-capture` changes, then archive `capture-selection-ed`. Update the handoff with evidence; Claude handles commits/PRs/merges per #48/#49, and later learning quizzes do not block implementation.
