@@ -17,7 +17,7 @@
 8. **控制上下文（用户 2026-10-12 要求）**：每次派给 Codex / 子会话的活只有一个 issue 那么大，提示词自包含，结果写进 `-o` 报告文件；调度员只读报告和需要的几行，绝不读整份日志。调度员自己的上下文变大时：更新本文件并推送 → `echo 0 > ~/.coursework-dispatcher-heartbeat` → 用 `run_scheduled_task` 立即运行 `coursework-dispatcher-watchdog`（它会接手当调度员）→ 归档旧会话，不用问用户。
 
 ## 正在跑的 Codex（换窗口时仍在后台运行；用 `pgrep -fl "codex exec"` 核对）
-报告文件在旧会话的 scratchpad：`/private/tmp/claude-501/-Users-yu-junteng-Documents-unimelb-coursework-agent/12ccc39c-8a95-422d-975d-2b14db7b014e/scratchpad/`。报告不在了就直接看 clone 的工作区（`git status`、`git diff`），代码改动都还在。
+报告文件在旧会话的 scratchpad：`/private/tmp/claude-501/-Users-yu-junteng-Documents-unimelb-coursework-agent/12ccc39c-8a95-422d-975d-2b14db7b014e/scratchpad/`。已完成的报告另存在 `~/.coursework-dispatcher-reports/`（新报告请直接写到这里）。报告不在了就直接看 clone 的工作区（`git status`、`git diff`），代码改动都还在。
 - **S0 3.7–3.8**：clone `../unimelb-coursework-agent-ed-capture`，分支 `codex/ed-orchestration`（从 `f5a9209` 开出），报告 `codex-s0-37.md`。
 - **Q1 issue A（1.1–1.4）**：clone `../unimelb-coursework-agent-quiz-assist`，分支 `codex/quiz-read`，issue #39，报告 `codex-q1-A.md`。
 - **M1 `v1-sync` change**：clone `../unimelb-coursework-agent-sync`，分支 `codex/v1-sync-change`，报告 `codex-m1-change.md`。
