@@ -94,3 +94,25 @@ it('4.3 staff allow-list survives Q1 normalization without reharvesting suppress
   expect(result.sources.find(s => s.id === 'ed:7:11:21:31')?.text).toContain('Synthetic Staff');
   expect(JSON.stringify(result)).not.toContain('staff@example.invalid');
 });
+it.each([
+  { author: { student_id: 123456 }, text: 'Answer from 123456', leak: '123456' },
+  { author: { telephone_number: 61400000000 }, text: 'Call 61.400.000.000', leak: '400.000' },
+])('4.3 harvests numeric identity aliases or withholds the source: $author', ({ author, text, leak }) => {
+  let output = '';
+  try { output = createRedactor({ author }).text(text); } catch (error) { expect(error).toMatchObject({ code: 'SOURCE_UNAVAILABLE' }); return; }
+  expect(output).not.toContain(leak);
+});
+it('4.3 withholds unknown primitive person fields regardless of value type', () => {
+  expect(() => createRedactor({ author: { badge_number: 998877 } })).toThrowError(expect.objectContaining({ code: 'SOURCE_UNAVAILABLE' }));
+});
+it('4.3 redacts names encoded with + in URL query strings', () => {
+  const output = createRedactor({ author: { name: 'Synthetic Person-Z' } }).text('https://edstem.org/resource?person=Synthetic+Person-Z');
+  expect(output).not.toMatch(/Synthetic[+ ]Person-Z/);
+});
+it.each(['author_name', 'user_display_name', 'created_by_name'])('4.3 harvests flat person-name field %s', async field => {
+  const bodies = fixture();
+  bodies['/api/courses/7/threads?limit=30&sort=new'] = { threads: [{ id: 41, title: 'Synthetic thanks', content: 'Thanks Synthetic Person-Z', [field]: 'Synthetic Person-Z' }] };
+  const result = await syncEd({ selection: selected, transport: reader(bodies), fetchedAt: time }).catch(error => error);
+  if (result instanceof Error) { expect(result).toMatchObject({ code: 'SOURCE_UNAVAILABLE' }); return; }
+  expect(JSON.stringify(result)).not.toContain('Synthetic Person-Z');
+});

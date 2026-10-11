@@ -4,8 +4,11 @@ const literal = z.string().trim().min(1).max(200).refine(s => !/[<>\p{C}]/u.test
 const rulesSchema = z.strictObject({ ownerRules: z.array(literal).max(100).optional(), staffNames: z.array(literal).max(100).optional() });
 const personKey = /^(?:authors?|people|students?|classmates?|users?|profiles?|owners?|created_by|updated_by)$/i;
 const nameKey = /^(?:name|full_?name|display_?name|first_?name|last_?name)$/i;
-const phoneKey = /^(?:phone(?:_?number)?|mobile(?:_?number)?|telephone)$/i;
-const safePersonKey = /^(?:name|full_?name|display_?name|first_?name|last_?name|id|email|phone(?:_?number)?|mobile(?:_?number)?|telephone|student_?number|avatar|username|answers?|grades?|solutions?)$/i;
+const phoneKey = /^(?:phone|mobile|telephone|tel)(?:_?number)?$/i;
+const identifierKey = /^(?:username|student_?(?:number|id))$/i;
+// Flat person-name fields outside a person object, e.g. `author_name` on a thread.
+const flatNameKey = /^(?:authors?|users?|students?|classmates?|owners?|creators?|posters?|senders?|created_?by|updated_?by)_?(?:full_?|display_?|first_?|last_?)?name$/i;
+const safePersonKey = /^(?:name|full_?name|display_?name|first_?name|last_?name|id|email|(?:phone|mobile|telephone|tel)(?:_?number)?|student_?(?:number|id)|avatar|username|answers?|grades?|solutions?)$/i;
 const canonical = (value: string): string => value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
 const escapeLiteral = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export function unsafeSource(): CourseworkError { return new CourseworkError('SOURCE_UNAVAILABLE', 'Normalized source withheld by privacy validation.'); }
@@ -26,7 +29,9 @@ export function createRedactor(scope: unknown, configuration: unknown = {}): { t
     if (typeof value === 'string' && value.length > 1_000_000) throw unsafeSource();
     if (Array.isArray(value)) { for (const v of value) collect(v, depth + 1, person); }
     else if (value && typeof value === 'object') for (const [key, item] of Object.entries(value)) {
-      if (person && typeof item === 'string' && !safePersonKey.test(key)) throw unsafeSource();
+      // Unknown primitive person fields are withheld whatever their type; a number can be an identifier too.
+      if (person && item !== null && typeof item !== 'object' && !safePersonKey.test(key)) throw unsafeSource();
+      if (flatNameKey.test(key)) { identity(item, names); continue; }
       if (person && nameKey.test(key)) { identity(item, names); continue; }
       if (person && (/^email$/i.test(key) || phoneKey.test(key))) {
         if (phoneKey.test(key)) {
@@ -40,7 +45,7 @@ export function createRedactor(scope: unknown, configuration: unknown = {}): { t
         } else identity(item, identifiers);
         continue;
       }
-      if (person && /^(?:username|student_?number)$/i.test(key)) { identity(item, identifiers); continue; }
+      if (person && identifierKey.test(key)) { identity(item, identifiers); continue; }
       if (personKey.test(key) && typeof item === 'string') { identity(item, names); continue; }
       collect(item, depth + 1, person || personKey.test(key));
     }
@@ -59,7 +64,7 @@ export function createRedactor(scope: unknown, configuration: unknown = {}): { t
     let text = value.normalize('NFKC');
     // Decode URL escapes before privacy checks; malformed encodings cannot fall back to raw text.
     text = text.replace(/https?:\/\/[^\s]+/giu, raw => {
-      try { let decoded = decodeURIComponent(raw); for (let i = 0; i < 3 && /%[a-f0-9]{2}/i.test(decoded); i++) decoded = decodeURIComponent(decoded); if (/%[a-f0-9]{2}/i.test(decoded)) throw unsafeSource(); const url = new URL(decoded); if (url.username || url.password) throw unsafeSource(); return decoded; }
+      try { const [base, ...query] = raw.split('?'); let decoded = decodeURIComponent(query.length ? `${base}?${query.join('?').replace(/\+/g, '%20')}` : raw); for (let i = 0; i < 3 && /%[a-f0-9]{2}/i.test(decoded); i++) decoded = decodeURIComponent(decoded); if (/%[a-f0-9]{2}/i.test(decoded)) throw unsafeSource(); const url = new URL(decoded); if (url.username || url.password) throw unsafeSource(); return decoded; }
       catch { throw unsafeSource(); }
     });
     text = text.normalize('NFKC');
