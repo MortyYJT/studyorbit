@@ -109,11 +109,18 @@ up to three Codex lines in separate clones, coordinated by one Claude session (#
 Decision #75. Goal: use the system on a real graded Ed quiz before 2026-10-25, without risking the grade on untested code.
 
 1. Read the quiz questions from Ed's lesson JSON through the existing Ed transport (no `view=1`).
-2. Expose them to the agent as a read command; the agent proposes answers, citing course material when it can.
+2. Expose them to the agent as a read command, after the redaction pass below; the agent proposes answers.
+   Each proposal cites the question it answers, and any statement drawn from course material cites that
+   material; the citation check (#63) runs on every proposal and rejects it on failure.
 3. The owner reviews the answers in the terminal (UI comes in M3).
 4. Playwright fills the answers into the open quiz page on the managed profile. **The owner clicks submit.**
 5. During that submission, record the request Ed sends (method, path, body shape; tokens stripped) to `.local/`,
    so M4 can implement L4 through the endpoint instead of the page.
+
+Q1 carries the minimum of M1 and M2 it needs, so no red line is skipped: a deterministic redaction pass over quiz
+text before it reaches the agent (emails, student numbers, phone numbers, names from author fields); the citation
+check; a per-assessment L3 grant read from a local file under `.local/`; and an append-only local audit log of
+read, propose, fill and recorded-submission events. M1 and M2 later replace these with the full versions.
 
 Before step 1 runs on real data: the course's AI policy is recorded as owner-attested (no course document,
 2026-10-12), and the repository is private (section 4). Step 1's structure check is done by Claude on the
@@ -130,7 +137,8 @@ Rejected: computer use (screenshot-driven clicking): slow, costly, non-determini
   token (#58). First task is a spike that proves these reads work for a student account; if they are blocked, stop
   and ask before falling back to HTML parsing.
 - **Ed**: JSON endpoints per #52; quiz and lesson structure from Q1.
-- **iCal**: dropped (#77); Canvas JSON already carries due dates.
+- **iCal**: dropped (#77); Canvas JSON already carries due dates. M1 removes `ical` from `SourceItem.platform`
+  (`src/domain/schemas.ts`) and from the domain-model spec.
 - **Materials**: download linked PDFs to `.local/`, extract per-page text with unpdf, keep page numbers for citations.
 - **Change detection** (#59): normalize each source into entities, compare field by field with current state,
   append `created` / `updated` / `deleted` events with a monotonically increasing cursor; consumers read

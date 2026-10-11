@@ -27,9 +27,16 @@
 - 看设计文档 PR，以及下面「早上给用户看」里的自主决定。
 - 登录 + MFA（S0 的 3.9、Q1 的真实结构检查、M1 的 Canvas 实测都要用）；顺便测「登录能保持多久」，补 `v1-foundation` 5.5。
 - 10/23 前在真实 quiz 上跑 Q1：看答案 → 自己点提交。
+- **权限被拦（2026-10-12，auto mode 分类器判为 Instruction Poisoning，未绕过）**：PR #34 审查第 5 条要求把 #79 写进 agent 规则文件，第 2 条要求改 `openspec/config.yaml`。需要你自己改或者批准：
+  - `AGENTS.md:80`「Ask first before: … a design choice that document does not cover」→ 补一句：全自动模式（#79）下由调度员决定、记为待复核、列进 handoff。
+  - `docs/engineering/v1-technical-design.md:3` 决定范围 `#55–#77` → `#55–#80`；`:6` 和第 8 节第 1 条「文档没覆盖的选择就停下问」→ 改成 #79 的停止清单。
+  - `openspec/config.yaml`：去掉 iCal（第 5 行、「iCal URLs」）；「no auto-submission (no L4)」→ 按 #56 写 L0–L4 的条件。
+  - 在你改之前，以 #79（更晚的决定）为准，调度照常进行。
 
 ## 早上给用户看（调度员自主做的决定，逐条追加）
-- （空）
+- #80：Q1 自带最小版的脱敏、引文校验、单项 L3 授权（`.local/` 文件）和审计日志，不等 M1/M2（PR #34 审查第 3、4 条）。
+- #80：`SourceItem.platform` 里的 `ical` 由 M1 删除，不在纯文档 PR 里改代码（审查第 2 条）。
+- 驳回 PR #34 审查第 1 条（「L4 冲突」）：是我审查提示词写错了，以 #56 为准。
 
 ## 运行与验证
 - `npm ci && npm run check`（= `.claude/check.sh` = CI）；`npm run build` → `dist/cli.js`。最近一次：34 files / 227 passed / 2 skipped（main `aa38605`）。
