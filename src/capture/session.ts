@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import type { CaptureBrowser } from './browser.js';
 
 export interface CapturePage {
   isClosed(): boolean;
@@ -19,15 +20,15 @@ export async function confirmBundledBrowser(
 ): Promise<boolean> {
   if (signal.aborted) return false;
   try {
-    const answer = await terminal.question('Chrome is unavailable. Use installed bundled Chromium? [y/N] ', { signal });
+    const answer = await terminal.question('Edge and Chrome are unavailable. Use installed bundled Chromium? [y/N] ', { signal });
     return /^y(es)?$/i.test(answer.trim());
   } catch (error) {
     if (signal.aborted) return false;
     throw error;
   }
 }
-export function launchSettings(home: string) {
-  return { profile: join(home, 'profiles', 'default'), options: { headless: false, channel: 'chrome' } };
+export function launchSettings(home: string, browser: CaptureBrowser) {
+  return { profile: join(home, 'profiles', 'default'), options: { headless: false, ...(browser === 'chromium' ? {} : { channel: browser }) } };
 }
 
 export async function activePage<P extends CapturePage>(context: Pick<CaptureContext<P>, 'pages'>): Promise<P | undefined> {
@@ -45,17 +46,37 @@ export async function activePage<P extends CapturePage>(context: Pick<CaptureCon
 export async function captureSession<P extends CapturePage>(
   context: CaptureContext<P>, commands: AsyncIterable<string>,
   save: (page: P) => Promise<string>, log: (message: string) => void,
+  options: { crawl?: (page: P, signal: AbortSignal) => Promise<unknown>; signal?: AbortSignal } = {},
 ): Promise<void> {
+  const cancellation = new AbortController();
+  const stop = () => cancellation.abort();
+  options.signal?.addEventListener('abort', stop, { once: true });
+  if (options.signal?.aborted) stop();
+  let crawling: Promise<void> | undefined;
   try {
-    log('Sign in and navigate by hand. Enter s to save the active tab, q to quit.');
+    log('Sign in and navigate by hand. Enter s to save the active tab, c to crawl Canvas, q to quit.');
     for await (const line of commands) {
       const command = line.trim().toLowerCase();
-      if (command === 'q') break;
-      if (command !== 's') { log('Enter s to save or q to quit.'); continue; }
+      if (command === 'q' || cancellation.signal.aborted) break;
+      if (command === 'c') {
+        if (crawling) { log('a crawl is already running'); continue; }
+        const page = await activePage(context);
+        if (!page) { log('Open a Canvas course page first.'); continue; }
+        crawling = Promise.resolve().then(() => options.crawl?.(page, cancellation.signal))
+          .then(() => {}, () => { log('Unable to complete the crawl.'); })
+          .finally(() => { crawling = undefined; });
+        continue;
+      }
+      if (command !== 's') { log('Enter s to save, c to crawl Canvas, or q to quit.'); continue; }
       const page = await activePage(context);
       if (!page) { log('No open page to save.'); continue; }
       try { log(`Saved snapshot: ${await save(page)}`); }
       catch { log('Unable to save this page; try again after it finishes loading.'); }
     }
-  } finally { await context.close(); }
+  } finally {
+    stop();
+    await crawling;
+    options.signal?.removeEventListener('abort', stop);
+    await context.close();
+  }
 }
