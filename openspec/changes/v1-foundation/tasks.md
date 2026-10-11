@@ -34,15 +34,14 @@ Issue mapping for dispatch: groups 1–2 are issue A (blocks the rest); groups 3
 
 - [ ] 5.1 Install `playwright`; `src/capture/lock.ts`: lock file `<data dir>/profiles/default.lock` created with `wx`, pid holder, stale-lock cleanup, throws `CourseworkError(LOCKED)`; `capture` exits with status 3 on a held lock; tests for both lock scenarios
 - [ ] 5.2 `src/capture/snapshot.ts`: write `page.html`, `page.png`, `meta.json` under `<data dir>/snapshots/<host>/<timestamp>-<slug>/` (data directory from task 3.4, honouring `COURSEWORK_HOME`); strip query and fragment from the URL; unit-test the path and URL logic without a browser
-- [ ] 5.3 `coursework capture`: persistent context on `<data dir>/profiles/default` with `channel: 'chrome'`, fallback to bundled Chromium only after asking; terminal commands `s` (save active tab) and `q` (quit); never touch form fields
+- [ ] 5.3 `coursework capture`: persistent context on `<data dir>/profiles/<browser>` with the chosen channel (group 6 adds `msedge`), fallback to bundled Chromium only after asking; terminal commands `s` (save active tab) and `q` (quit); never touch form fields (also during the group 6 crawl)
 - [ ] 5.4 Guard test: `git check-ignore` succeeds for `.local/snapshots/` and `.local/profiles/`
 - [ ] 5.5 Manual run by the user (not automatable): sign in to Canvas and Ed, save assignment, announcement, grades, and Ed lesson pages for each course; note in the PR how long the session lasted and whether MFA was asked
 
-## 6. Browser choice and Canvas crawl (issue E, decision #43)
+## 6. Browser choice and Canvas crawl (issue E, decisions #43 and #44)
 
-- [ ] 6.1 `--browser chrome|msedge` on `coursework capture` (default `chrome`; unknown value exits 2); tests on the launch settings and argument parsing
-- [ ] 6.2 `src/capture/crawl.ts`: pure planning functions (course links from the `/courses` HTML; per-course pages; assignment and announcement links; same-origin filter; 300-page cap), unit-tested on synthetic HTML fixtures with fake course ids
-- [ ] 6.3 Crawl runner: own tab, GET loads only, ≥1 s between loads (injectable clock for tests), stop on a cross-origin landing, save via the existing snapshot writer, summary file; tested with a fake page object, no real browser
-- [ ] 6.4 Terminal command `c` in the capture session; the "not on Canvas" message
-- [ ] 6.5 Manual run by the user: `coursework capture --browser msedge`, sign in, enter `c`; record pages saved and duration from the summary (feeds 5.5)
-
+- [ ] 6.1 `--browser chrome|msedge` (default `chrome`; unknown value exits 2); profile and lock per browser (`profiles/<browser>`, `profiles/<browser>.lock`); update the lock, data-dir, and CLI tests that assumed `default`
+- [ ] 6.2 `src/capture/crawl.ts`: pure planning functions per the spec's link rules and order (start condition, course / assignment / announcement links, same-origin filter, 300-load cap, signed-out detection), unit-tested on synthetic HTML fixtures with fake course ids
+- [ ] 6.3 Crawl runner: hidden tab, `load` + `networkidle` with a 30 s timeout, GET loads only, ≥1 s between loads (injectable clock), failure rules, summary in `<data dir>/crawls/`; tested with a fake page object, no real browser
+- [ ] 6.4 Capture session: command `c`, refuse a second `c`, `s` still works, `q` / close / signals abort after the current load; updated start message; tests for each scenario
+- [ ] 6.5 Manual run by the user: `coursework capture --browser msedge`, sign in, open a Canvas course page, enter `c`; record saved, failed, and duration from the summary. Ed is not crawled; save Ed pages with `s` (feeds 5.5)
