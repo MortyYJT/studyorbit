@@ -22,10 +22,38 @@ export const GradeProjectionSchema = z.object({
 export type GradeProjection = z.infer<typeof GradeProjectionSchema>;
 
 export function projectGrade(course: Course, assessments: readonly Assessment[], band: GradeBand): GradeProjection {
-  // TODO(human): implement per specs/domain-model "Grade projection" (decision #34).
-  // 1. gradedWeight / earned / currentAverage from items that have a score (earned = weight * score / 100).
-  // 2. need: unavailable checks in order nothing_graded -> no_final -> final_graded.
-  // 3. Ungraded non-final items score currentAverage; solve for the final score that reaches GRADE_BANDS[band].
-  // 4. raw > 100 -> unreachable; final.hurdleMin -> max(raw, hurdleMin) with setByHurdle; else raw <= 0 -> secured.
-  throw new Error('TODO(human)');
+  const graded = assessments.filter((a) => a.score !== undefined);
+  const gradedWeight = graded.reduce((sum, a) => sum + a.weight, 0);
+  const earned = graded.reduce((sum, a) => sum + (a.weight * (a.score ?? 0)) / 100, 0);
+  const currentAverage = gradedWeight > 0 ? (earned / gradedWeight) * 100 : null;
+  const final = assessments.find((a) => a.isFinal);
+  const ungradedOtherWeight = assessments
+    .filter((a) => !a.isFinal && a.score === undefined)
+    .reduce((sum, a) => sum + a.weight, 0);
+  const need = decideNeed(currentAverage, final, earned, ungradedOtherWeight, GRADE_BANDS[band]);
+  return { gradedWeight, earned, currentAverage, need };
+}
+
+/** Decides the final-exam need, in the evaluation order of specs/domain-model "Grade projection". */
+function decideNeed(
+  currentAverage: number | null,
+  final: Assessment | undefined,
+  earned: number,
+  ungradedOtherWeight: number,
+  target: number,
+): GradeNeed {
+  if (currentAverage === null) return { status: 'unavailable', reason: 'nothing_graded' };
+  if (final === undefined) return { status: 'unavailable', reason: 'no_final' };
+  if (final.score !== undefined) return { status: 'unavailable', reason: 'final_graded' };
+  // Ungraded non-final items are assumed to score the current average.
+  const projected = earned + (ungradedOtherWeight * currentAverage) / 100;
+  const raw = ((target - projected) * 100) / final.weight;
+  if (raw > 100) return { status: 'unreachable' };
+  // A hurdle still applies when the target is already secured.
+  if (final.hurdleMin !== undefined) {
+    const value = Math.max(raw, final.hurdleMin);
+    return { status: 'score', value, setByHurdle: value > raw };
+  }
+  if (raw <= 0) return { status: 'secured' };
+  return { status: 'score', value: raw, setByHurdle: false };
 }

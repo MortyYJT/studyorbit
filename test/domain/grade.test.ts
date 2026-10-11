@@ -2,12 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { projectGrade } from '../../src/domain/grade.js';
 import { syntheticCourse as course, syntheticAssessment as item, syntheticAssessments as assessments } from '../fixtures/synthetic.js';
 
-it('leaves grade projection for the human to implement', () => {
-  expect(() => projectGrade(course, assessments, 'H1')).toThrow('TODO(human)');
-});
-
-// Enable these executable specification tests when the human implements the body.
-describe.skip('grade projection scenarios (human implementation pending)', () => {
+describe('grade projection scenarios', () => {
   it('needed final score', () => {
     const result = projectGrade(course, assessments, 'H1');
     expect(result.gradedWeight).toBe(35);
