@@ -23,7 +23,7 @@ The store SHALL apply numbered migrations in order on open and record the applie
 - **THEN** opening fails with an error naming both versions and the file is unchanged
 
 ### Requirement: Data lives in .local only
-The data directory SHALL be the `COURSEWORK_HOME` environment variable when set, otherwise `.local/` inside the package root (the nearest ancestor of the running module that contains this package's `package.json`). The data directory holds `coursework.db`, `snapshots/`, and `profiles/`. The `.local/` directory MUST be ignored by git.
+The data directory SHALL be the `COURSEWORK_HOME` environment variable when set, otherwise `.local/` inside the package root (the nearest ancestor of the running module that contains this package's `package.json`). The data directory holds `coursework.db`, `snapshots/`, `profiles/`, and `crawls/` (crawl summaries from `page-capture`); each is created when first needed. The `.local/` directory MUST be ignored by git.
 
 #### Scenario: Default location
 - **WHEN** no override is set
