@@ -2,7 +2,7 @@
 
 `v1-foundation` is implemented but not archived. Its `specs/page-capture/spec.md` is the baseline: `c` currently crawls every Canvas course linked from `/courses`, in a hidden tab, with GET navigation, a one-second delay and a 300-attempt cap. `src/capture/crawl.ts` saves by requested URL without final-URL deduplication; `session.ts` consumes terminal commands; `command.ts` owns the profile lock and browser lifecycle. The current CLI prints human errors rather than agent envelopes.
 
-Decisions [#43–#50 and #52–#54](../../../note/decisions.md) govern this change. #45/#47 supersede earlier browser/profile choices; their behavior remains intact. The [Ed survey](../../../note/product/ed-findings.md) observed lesson, slide, thread, and resource endpoints on `https://edstem.org`, but did not verify the course-list endpoint, auth headers, or requests without `view=1`. This is evidence of endpoint shapes, not proof that capture already works.
+Decisions [#43–#50 and #52–#54](../../../note/decisions.md) govern this change. #45/#47 supersede earlier browser/profile choices; their behavior remains intact. The [Ed survey](../../../note/product/ed-findings.md) observed lesson, slide, thread, and resource endpoints on `https://edstem.org`, and subsequently verified `GET /api/user` discovery, the browser session’s `x-token` header, and a 200 response from `GET /api/lessons/{id}` without `view`. Cookies alone returned 401; `Authorization: Bearer` returned 400. Slide reads without `view` remain unverified. This is evidence of endpoint shapes, not proof that capture already works.
 
 ## Goals / Non-Goals
 
@@ -14,7 +14,7 @@ Decisions [#43–#50 and #52–#54](../../../note/decisions.md) govern this chan
 
 ### 1. Source-qualified selection, discovered once and reused (#50/#54)
 
-Discover current-term Canvas courses from the rendered `/courses` listing and Ed courses from its own course-list GET endpoint. Use explicit term/current-course metadata from each source, not a regular expression on course codes, page position, or a guessed semester date. Keep rows distinct by source, origin, and source course id; a synthetic course such as ABCD10001 can have one row per source. Selecting a Canvas row does not implicitly select an Ed row.
+Discover current-term Canvas courses from the rendered `/courses` listing and Ed courses from `GET /api/user`. Its `courses[]` entries are `{course, role, lab, last_active}`; `course` contains `id`, `code`, `name`, `year`, `session`, and `status`. Ed current-term eligibility requires `course.year` and `course.session` to match the current term context and `course.status` to equal `active`; active status alone is insufficient. Use explicit term/current-course metadata from each source, not a regular expression on course codes, page position, or a guessed semester date. Keep rows distinct by source, origin, and source course id; a synthetic course such as ABCD10001 can have one row per source. Selecting a Canvas row does not implicitly select an Ed row.
 
 Persist a small versioned selection file at `<data dir>/capture-selection.json`, using the existing `.local/` default and `COURSEWORK_HOME` override. Store source-qualified ids and source term context, not auth material; display names need not be persisted. Validate on read, use atomic replacement and owner-only permissions. Empty selection is valid and schedules no course reads. Discovery endpoints are permitted even when they list unselected courses; no unselected course detail endpoint is visited.
 
@@ -46,11 +46,11 @@ Rejected: deduplication by requested URL (does not remove redirected duplicates)
 
 ### 5. Ed GET responses from the logged-in page (#52/#53)
 
-Perform deterministic same-origin fetch inside a Playwright page on the fixed Ed origin, using the persistent profile's own session. No external HTTP client, self-issued token, model-authenticated call, password handling, POST, or explicit token-renew endpoint. Validate endpoint origin and identifiers and refuse cross-origin redirects before following them. The page's own login state is used; cookies alone have not been proven sufficient. If Ed requires an application auth header, verify its mechanism without exposing secrets; do not guess it or persist its value.
+Perform deterministic same-origin fetch inside a Playwright page on the fixed Ed origin, using the persistent profile's own session. No external HTTP client, self-issued token, model-authenticated call, password handling, POST, or explicit token-renew endpoint. Validate endpoint origin and identifiers and refuse cross-origin redirects before following them. Deterministic code reads the browser's existing session token from `localStorage` key `authToken:<region>` (AU: `authToken:au`) inside the page and attaches it as `x-token` to each same-origin GET. This is the browser session's own token issued after login, not a self-issued API token. Cookies alone return 401; `Authorization: Bearer` returns 400 and MUST NOT be used. The token never leaves page-context code: never log, print, store, snapshot, return, or expose it to a model; no stored/exported auth headers. Reading the existing browser-managed key does not create a capture-owned token store. A missing token is an expired Ed session (`AUTH_EXPIRED`), not a reason to try cookies alone or prompt for credentials.
 
-Capture the course list; per selected course, lessons list, each `kind: attempt` lesson and its referenced slides, the first thread-list page (`limit=30&sort=new`), and resources. The first thread page is the explicit pagination bound. Ordinary `kind: content` lesson bodies, thread details/replies, workspaces, external files and resource downloads are excluded. Lesson and slide GETs omit `view` entirely. A refusal without `view=1` is a gap/open question, never permission to send it. Absent tabs/endpoints (404/405) are recorded as unavailable/skipped, not failures; 401/403 always take precedence and stop only Ed.
+Discover courses with `GET /api/user` and snapshot only its `courses` array, never the full response body: top-level `user`, `push_key`, and `push_subscriptions` contain personal profile and push subscription data and MUST NOT be stored. For each selected course, capture its lessons list, each `kind: attempt` lesson and its referenced slides, the first thread-list page (`limit=30&sort=new`), and resources. The first thread page is the explicit pagination bound. Ordinary `kind: content` lesson bodies, thread details/replies, workspaces, external files and resource downloads are excluded. Lesson and slide GETs omit `view` entirely. `GET /api/lessons/{id}` without `view` has been verified to return 200; no-view slide reads remain unverified. Any refusal without `view` is a coverage gap, never permission to send `view=1`. Absent tabs/endpoints (404/405) are recorded as unavailable/skipped, not failures; 401/403 always take precedence and stop only Ed.
 
-Save successful raw JSON response bodies as `response.json` with a metadata sidecar under `<data dir>/snapshots/edstem.org/`, with collision-safe folders and owner-only permissions. Preserve embedded XML strings and date fields verbatim. Metadata identifies provider, endpoint path, capture time, status and safe pagination parameters, not request headers/cookies. Summaries contain counts and sanitized endpoint references, not response bodies or names.
+Save successful raw JSON response bodies (only the `courses` array for `GET /api/user`) as `response.json` with a metadata sidecar under `<data dir>/snapshots/edstem.org/`, with collision-safe folders and owner-only permissions. Preserve embedded XML strings and date fields verbatim. Metadata identifies provider, endpoint path, capture time, status and safe pagination parameters, not request headers/cookies. Summaries contain counts and sanitized endpoint references, not response bodies or names.
 
 Rejected: HTML-only Ed capture (SPA API gives structured assignment dates, #52); `view=1` even when convenient (marks viewed); unlimited threads (privacy, time); assuming every course has Lessons (survey disproves it).
 
@@ -58,17 +58,17 @@ Rejected: HTML-only Ed capture (SPA API gives structured assignment dates, #52);
 
 Raw course-list and thread snapshots can contain personal data. Keep all selection, snapshots and summaries in private local storage, ignored by Git. No raw response body or student name enters envelopes, logs, docs, fixtures, or models. Tests use wholly synthetic data, never redacted copies of real course captures. Any later ingestion/export must remove classmates' personal data, including names in nested authors and free text, before anything reaches a model; until such redaction is verified, raw snapshots cannot be exposed through model-facing tools.
 
-Maintain per-source results: Canvas's existing signed-out behavior applies to Canvas only; Ed 401/403 yields `AUTH_EXPIRED` with manual-login recovery and stops its remaining queue. Canvas can continue within the remaining shared budget. Missing Ed endpoints are skips, malformed/non-JSON successes or other HTTP errors are failures with no raw payload in messages. Both success and failure evidence survive cancellation or partial authentication.
+Maintain per-source results: Canvas's existing signed-out behavior applies to Canvas only; a missing Ed session token or Ed 401/403 yields `AUTH_EXPIRED` with manual-login recovery and stops its remaining queue. Canvas can continue within the remaining shared budget. Missing Ed endpoints are skips, malformed/non-JSON successes or other HTTP errors are failures with no raw payload in messages. Both success and failure evidence survive cancellation or partial authentication.
 
 Rejected: failing the entire run for an Ed expiry (loses usable Canvas evidence); claiming raw GET JSON is model-safe (thread authors contain classmates' names).
 
 ## Risks / Trade-offs
 
 - [Undocumented Ed API changes] → Small source adapter, synthetic contract tests, bounded reads and explicit gaps; no claim of stable public API compatibility.
-- [Unknown authentication header] → Verify page-context GET behavior during implementation using the existing logged-in session; absent proof report unavailable/expired rather than fabricate credentials.
-- [Read endpoints can have side effects] → Never send `view=1`; do not call renewal endpoints; verify no-view lesson and slide calls without weakening the boundary.
+- [Browser session token missing or changed] → Use only the existing page-local `authToken:<region>` via `x-token`; missing token reports Ed `AUTH_EXPIRED`, with no credential fabrication or token export.
+- [Read endpoints can have side effects] → Never send `view=1`; do not call renewal endpoints; retain the verified no-view lesson behavior and verify no-view slide calls without weakening the boundary.
 - [Rate limits or large selected courses] → Shared one-second spacing, 300 attempts including discovery, one thread page, no retries; report incomplete capture on cap/429.
-- [Current-term markers differ or are absent] → Confirm both discovery responses before implementing adapters; do not infer eligibility from codes or silently select historical courses.
+- [Current-term markers differ or are absent] → Use verified Ed `year` + `session` with `status: active`; confirm the Canvas marker before implementing its adapter; do not infer eligibility from codes or silently select historical courses.
 - [Raw local snapshots contain private data] → Restricted files, Git-ignore checks, no model exposure, synthetic fixtures; future redaction is a separate verified ingestion requirement.
 - [Canvas consumes the budget before Ed] → Report per-source attempted/not-started outcomes and cap reason; fair scheduling beyond the deterministic initial order is deferred.
 
@@ -80,10 +80,8 @@ Archive **after `v1-foundation`**, and only after its outstanding acceptance and
 
 ## Open Questions
 
-- What exact Ed GET endpoint returns the course list, and what field distinguishes the current term? The survey did not establish either.
 - Which rendered Canvas `/courses` section or term marker reliably identifies current-term entries?
-- Do page-context GETs authenticate with cookies alone, or need Ed's existing application header? The name and acquisition mechanism are unverified.
-- Do lesson and slide GETs work with `view` omitted? If not, record missing capture coverage without sending `view=1`.
+- Do slide GETs work with `view` omitted? Lesson GETs without `view` have been verified to return 200. If slide reads fail, record missing capture coverage without sending `view=1`.
 - How long does the Ed profile session survive restart, and when does MFA recur? This draft does not claim live acceptance or complete foundation task 5.5.
 
 These are implementation evidence gaps, not reopened user choices. Decisions #52–#54 record a pending personal rationale; do not invent one beyond their recorded context.

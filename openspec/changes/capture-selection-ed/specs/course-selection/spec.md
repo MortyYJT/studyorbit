@@ -1,12 +1,17 @@
 ## ADDED Requirements
 
 ### Requirement: Discover current-term courses from both sources
-Before first selection or explicit reselection, capture SHALL discover current-term courses from Canvas `/courses` and Ed's own same-origin course-list GET endpoint, using their logged-in profile sessions. Eligibility SHALL use source term/current-course evidence, never a course-code heuristic. Choices SHALL be source-qualified by provider, origin and course id, with no implicit cross-provider matching. Discovery reads SHALL share the run's rate limiter and attempt cap. An unavailable source or indeterminate term SHALL be reported explicitly, without silently treating it as an empty successful result.
+Before first selection or explicit reselection, capture SHALL discover current-term courses from Canvas `/courses` and Ed's same-origin `GET /api/user` endpoint, using their logged-in profile sessions. Ed discovery SHALL read `courses[]` entries shaped as `{course, role, lab, last_active}`, where `course` contains `id`, `code`, `name`, `year`, `session`, and `status`. Ed eligibility SHALL require `course.year` and `course.session` to match the current term context and `course.status` to equal `active`. Eligibility SHALL use source term/current-course evidence, never a course-code heuristic. Choices SHALL be source-qualified by provider, origin and course id, with no implicit cross-provider matching. Discovery reads SHALL share the run's rate limiter and attempt cap. An unavailable source or indeterminate term SHALL be reported explicitly, without silently treating it as an empty successful result.
 
 #### Scenario: List both sources
 - **GIVEN** Canvas and Ed list current-term ABCD10001 and historical WXYZ10002 with explicit term evidence
 - **WHEN** first selection starts
 - **THEN** the terminal lists source-labelled current-term choices only, and Canvas and Ed rows remain independently selectable
+
+#### Scenario: Ed term and active status
+- **GIVEN** a synthetic `GET /api/user` response includes courses matching the current year and session with `status: active`, an active course from another year or session, and an inactive course in the current term
+- **WHEN** Ed discovery builds choices
+- **THEN** only courses matching both current-term fields and active status are eligible; neither course codes nor active status alone determine eligibility
 
 #### Scenario: One source unavailable
 - **GIVEN** Ed discovery is unavailable and Canvas discovery succeeds
