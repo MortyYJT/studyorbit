@@ -1,6 +1,7 @@
 import { createInterface, type Interface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { join } from 'node:path';
+import type { Writable } from 'node:stream';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { dataDir } from '../config/data-dir.js';
 import { fail, ok, type Envelope } from '../protocol/envelope.js';
@@ -61,7 +62,7 @@ export async function capture(options: CaptureOptions = {}, dependencies: Captur
   let result: Envelope | undefined;
   const hidden = new Set<Page>();
   const stop = () => { cancellation.abort(); terminal?.close(); };
-  const terminalWrite = (message: string) => terminal!.write(message + '\n');
+  const terminalWrite = (message: string) => ((terminal as Interface & { output?: Writable }).output ?? stdout).write(message + '\n');
   try {
     // Resolver preflight must precede even the profile lock and browser detection without a TTY.
     let preflight: SelectionResolution | undefined;
@@ -84,7 +85,9 @@ export async function capture(options: CaptureOptions = {}, dependencies: Captur
     });
     if (cancellation.signal.aborted) return;
     const settings = launchSettings(home, browser);
-    context = await (dependencies.launch ?? chromium.launchPersistentContext.bind(chromium))(settings.profile, settings.options);
+    context = await (dependencies.launch ?? chromium.launchPersistentContext.bind(chromium))(settings.profile, {
+      ...settings.options, serviceWorkers: 'block', // Navigation guards must see requests intercepted by workers.
+    });
     recordBrowser(profile, browser);
     context.once('close', stop);
     if (cancellation.signal.aborted) return;

@@ -1,5 +1,6 @@
+import { EdTransport } from './ed-transport.js';
 import { CourseworkError } from '../protocol/errors.js';
-import { CANVAS_ORIGIN, ED_ORIGIN, normalizeCanvasCourses, normalizeEdCourses, unavailable, type DiscoveryResult } from './discovery.js';
+import { CANVAS_ORIGIN, normalizeCanvasCourses, normalizeEdCourses, unavailable, type DiscoveryResult } from './discovery.js';
 import type { CaptureLimiter } from './limiter.js';
 export interface DiscoveryPage {
   url(): string;
@@ -39,28 +40,12 @@ export async function discoverCanvas(page: DiscoveryPage, limiter: CaptureLimite
 export async function discoverEd(page: DiscoveryPage, limiter: CaptureLimiter,
   options: { signal?: AbortSignal; snapshot?: (courses: unknown[]) => Promise<void> } = {}): Promise<DiscoveryResult> {
   try {
-    if (!page.url().startsWith(`${ED_ORIGIN}/`)) {
-      await limiter.attempt(() => page.goto(`${ED_ORIGIN}/au/`, { waitUntil: 'load', timeout: 30000 }), options.signal);
-    }
-    return await limiter.attempt(async () => {
-      // This entire function runs inside the page. Neither auth headers nor the full body cross the boundary.
-      const response = await page.evaluate(async () => {
-        if (location.origin !== 'https://edstem.org') return { kind: 'unavailable' as const };
-        const token = localStorage.getItem('authToken:au');
-        if (!token) return { kind: 'auth' as const };
-        try {
-          const result = await fetch('/api/user', { method: 'GET', headers: { 'x-token': token }, credentials: 'same-origin', redirect: 'error' });
-          if (result.status === 401 || result.status === 403) return { kind: 'auth' as const };
-          if (!result.ok) return { kind: 'unavailable' as const };
-          const body = await result.json();
-          if (!Array.isArray(body?.courses)) return { kind: 'unavailable' as const };
-          return { kind: 'courses' as const, courses: body.courses as unknown[] };
-        } catch { return { kind: 'unavailable' as const }; }
-      });
-      if (response.kind !== 'courses') return unavailable('ed', response.kind === 'auth' ? 'AUTH_EXPIRED' : 'SOURCE_UNAVAILABLE');
-      const normalized = normalizeEdCourses(response.courses);
-      if (normalized.status === 'available') await options.snapshot?.(response.courses);
-      return normalized;
-    }, options.signal);
+    const response = await new EdTransport(page, limiter, options.signal).read('/api/user', {
+      snapshot: async (_endpoint, body) => {
+        if (Array.isArray(body) && normalizeEdCourses(body).status === 'available') await options.snapshot?.(body);
+      },
+    });
+    if (response.kind !== 'json') return unavailable('ed', response.kind === 'auth' ? 'AUTH_EXPIRED' : 'SOURCE_UNAVAILABLE');
+    return normalizeEdCourses(response.body);
   } catch (error) { stopped(error); return unavailable('ed'); }
 }

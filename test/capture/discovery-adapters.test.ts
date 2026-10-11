@@ -2,6 +2,26 @@ import { it, expect, vi } from 'vitest';
 import { discoverCanvas, discoverEd, type DiscoveryPage } from '../../src/capture/discovery-adapters.js';
 import { RequestLimiter } from '../../src/capture/limiter.js';
 const limiter = () => { let time = 0; return new RequestLimiter({ now: () => time, sleep: async ms => { time += ms; } }); };
+it('filters reflected credentials before discovery courses cross the page boundary or reach snapshots', async () => {
+  vi.stubGlobal('location', { origin: 'https://edstem.org' });
+  vi.stubGlobal('localStorage', { getItem: () => 'synthetic-secret' });
+  vi.stubGlobal('fetch', async () => ({ status: 200, ok: true, json: async () => ({
+    user: 'private-profile', courses: [{ course: { id: 42, code: 'SYN10001', name: 'Course synthetic-secret',
+      year: 2026, session: 'Synthetic', status: 'active', headers: { 'x-token': 'synthetic-secret' } } }],
+  }) }));
+  const crossed: unknown[] = []; const snapshot = vi.fn(async () => {});
+  const page = { url: () => 'https://edstem.org/au/', goto: vi.fn(),
+    evaluate: async (expression: string | (() => unknown)) => {
+      const result = await (typeof expression === 'string' ? Function(`return ${expression}`)() : expression());
+      crossed.push(result); return result;
+    } };
+  try {
+    const result = await discoverEd(page as DiscoveryPage, limiter(), { snapshot });
+    expect(JSON.stringify(crossed)).not.toMatch(/synthetic-secret|x-token|private-profile/);
+    expect(result).toMatchObject({ status: 'available', courses: [{ name: 'Course [withheld]' }] });
+    expect(snapshot).toHaveBeenCalledWith([{ course: { id: 42, code: 'SYN10001', name: 'Course [withheld]', year: 2026, session: 'Synthetic', status: 'active' } }]);
+  } finally { vi.unstubAllGlobals(); }
+});
 it('discovers Canvas only from current table including community/default terms', async () => {
   const evaluate = vi.fn(async () => [{ id: '42', name: 'Community', term: '默认学期' }]);
   const goto = vi.fn(async () => ({ status: () => 200 }));
@@ -19,7 +39,7 @@ it('keeps token inside page and returns/snapshots only courses', async () => {
   vi.stubGlobal('fetch', fetch);
   try {
     const snapshot = vi.fn(async () => {}); const budget = limiter();
-    const page = { url: () => 'https://edstem.org/au/dashboard', goto: vi.fn(), evaluate: async (fn: () => unknown) => fn() };
+    const page = { url: () => 'https://edstem.org/au/dashboard', goto: vi.fn(), evaluate: async (expression: string | (() => unknown)) => typeof expression === 'string' ? Function(`return ${expression}`)() : expression() };
     const result = await discoverEd(page as unknown as DiscoveryPage, budget, { snapshot });
     expect(result.status).toBe('available'); expect(snapshot).toHaveBeenCalledWith([]);
     expect(JSON.stringify(result)).not.toContain('synthetic-token');
@@ -31,9 +51,9 @@ it('keeps token inside page and returns/snapshots only courses', async () => {
   } finally { for (const [key, value] of Object.entries(previous)) vi.stubGlobal(key, value); }
 });
 it('bootstraps Ed within same budget and rejects redirects/errors without raw diagnostics', async () => {
-  const page = { url: () => 'about:blank', goto: vi.fn(async () => {}), evaluate: vi.fn(async () => ({ kind: 'unavailable' })) };
+  const page = { url: () => 'about:blank', route: vi.fn(), unroute: vi.fn(), goto: vi.fn(async () => {}), evaluate: vi.fn(async () => ({ kind: 'unavailable' })) };
   const budget = limiter();
-  expect((await discoverEd(page as unknown as DiscoveryPage, budget)).status).toBe('unavailable'); expect(budget.attempts).toBe(2);
+  expect((await discoverEd(page as unknown as DiscoveryPage, budget)).status).toBe('unavailable'); expect(budget.attempts).toBe(1);
   expect(await discoverCanvas({ ...page, url: () => 'https://other.invalid/courses' } as unknown as DiscoveryPage, budget)).toMatchObject({ status: 'unavailable' });
 });
 // Synthetic DOM cells preserve hidden text until a cloned screenreader node is removed.
@@ -81,7 +101,7 @@ it('maps Ed HTTP auth, rate limits, malformed data and redirects without retry',
   const previous = { location: globalThis.location, localStorage: globalThis.localStorage, fetch: globalThis.fetch };
   vi.stubGlobal('location', { origin: 'https://edstem.org' });
   vi.stubGlobal('localStorage', { getItem: () => 'synthetic-token' });
-  const page = { url: () => 'https://edstem.org/au/', goto: vi.fn(), evaluate: async (fn: () => unknown) => fn() };
+  const page = { url: () => 'https://edstem.org/au/', goto: vi.fn(), evaluate: async (expression: string | (() => unknown)) => typeof expression === 'string' ? Function(`return ${expression}`)() : expression() };
   try {
     for (const status of [401, 403, 429, 404]) {
       const fetch = vi.fn(async () => ({ status, ok: false })); vi.stubGlobal('fetch', fetch);

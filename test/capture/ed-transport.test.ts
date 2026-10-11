@@ -4,7 +4,7 @@ import { RequestLimiter } from '../../src/capture/limiter.js';
 import type { DiscoveryPage } from '../../src/capture/discovery-adapters.js';
 export function budget() { let now = 0; return new RequestLimiter({ now: () => now, sleep: async ms => { now += ms; } }); }
 export function page() {
-  return { url: () => 'https://edstem.org/au/', goto: vi.fn(),
+  return { url: () => 'https://edstem.org/au/', goto: vi.fn(), route: vi.fn(), unroute: vi.fn(),
     evaluate: async (expression: string) => Function(`return ${expression}`)() } as unknown as DiscoveryPage;
 }
 afterEach(() => vi.unstubAllGlobals());
@@ -48,6 +48,18 @@ it('projects user response to courses and withholds reflected auth material', as
   expect(await new EdTransport(page(), budget()).read('/api/user')).toMatchObject({ body: [] });
   session(200, { xml: '<document/>', token: 'synthetic-session-secret', headers: { 'x-token': 'synthetic-session-secret' }, reflection: 'synthetic-session-secret' });
   expect(JSON.stringify(await new EdTransport(page(), budget()).read('/api/lessons/11'))).not.toMatch(/synthetic-session-secret|x-token/);
+});
+it('drops reflected session tokens in nested object keys before leaving the page', async () => {
+  session(200, { lesson: { id: 11, nested: [{
+    'synthetic-session-secret': 'exact', 'prefix-synthetic-session-secret-suffix': 'embedded', safe: 'kept',
+  }] } });
+  const crossed: unknown[] = []; const p = page(); const evaluate = p.evaluate.bind(p);
+  p.evaluate = async expression => { const result = await evaluate(expression); crossed.push(result); return result; };
+  const snapshot = vi.fn(async () => {});
+  const result = await new EdTransport(p, budget()).read('/api/lessons/11', { snapshot });
+  expect(JSON.stringify(crossed)).not.toContain('synthetic-session-secret');
+  expect(result).toMatchObject({ body: { lesson: { id: 11, nested: [{ safe: 'kept' }] } } });
+  expect(snapshot).toHaveBeenCalledWith('/api/lessons/11', { lesson: { id: 11, nested: [{ safe: 'kept' }] } }, 200);
 });
 it('includes snapshot completion in limiter spacing and bootstraps once', async () => {
   session(); let url = 'about:blank'; let now = 0; const starts: number[] = [];

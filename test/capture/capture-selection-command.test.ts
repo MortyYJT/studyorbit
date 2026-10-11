@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events';
+import { createInterface } from 'node:readline/promises';
+import { PassThrough } from 'node:stream';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -52,6 +54,13 @@ it.each([false, true])('non-TTY plain/--crawl=%s runs once, reuses selection and
   expect(f.canvas.mock.calls[0][0].limiter).toBe(f.ed.mock.calls[0][0].limiter);
   expect(f.release).toHaveBeenCalledTimes(1); expect(f.context.close).toHaveBeenCalledTimes(1);
 });
+it.each(['msedge', 'chrome', 'chromium'] as const)('blocks Service Worker interception bypass in the %s capture profile', async browser => {
+  const f = setup(); f.dependencies.chooseBrowser = async () => browser;
+  await capture({ isTTY: false }, f.dependencies);
+  expect(f.dependencies.launch).toHaveBeenCalledWith(expect.stringContaining('profiles/default'),
+    expect.objectContaining({ serviceWorkers: 'block', headless: false }));
+  expect(f.canvas).toHaveBeenCalledTimes(1); expect(f.ed).toHaveBeenCalledTimes(1);
+});
 it.each(['lock', 'preflight', 'launch'])('non-TTY %s failure emits exactly one safe envelope', async stage => {
   const f = setup(); const failure = () => { throw stage === 'lock' ? new CourseworkError('LOCKED', 'synthetic holder') : Error('private raw failure'); };
   if (stage === 'lock') f.dependencies.acquireLock = failure;
@@ -68,7 +77,7 @@ it('interactive lock still throws LOCKED for CLI exit 3', async () => {
 });
 it.each([false, true])('TTY --crawl resolves picker first with reselect=%s and reuses discovery', async reselect => {
   const f = setup(reselect ? selection : null);
-  const answers = reselect ? ['done'] : ['1', '2', 'done']; const terminal = { write: vi.fn(), question: vi.fn(async () => answers.shift()!) };
+  const answers = reselect ? ['done'] : ['1', '2', 'done']; const terminal = { write: vi.fn(), output: { write: vi.fn() }, question: vi.fn(async () => answers.shift()!) };
   f.dependencies.terminal = () => Object.assign(new EventEmitter(), terminal, { close: vi.fn(), async *[Symbol.asyncIterator]() {} }) as never;
   await capture({ isTTY: true, crawl: true, reselect }, f.dependencies);
   expect(f.discover).toHaveBeenCalledTimes(1); expect(f.store.save).toHaveBeenCalledTimes(1);
@@ -76,9 +85,31 @@ it.each([false, true])('TTY --crawl resolves picker first with reselect=%s and r
   expect(f.canvas.mock.calls[0][0].discovery).toBeDefined();
   expect(f.ed.mock.calls[0][0].discoveryCaptured).toBe(true);
 });
+it('writes picker rows to real readline output without injecting input lines or control characters', async () => {
+  const f = setup(null); const input = new PassThrough(); const output = new PassThrough();
+  const terminal = createInterface({ input, output, terminal: false });
+  const lines: string[] = []; const displayed: string[] = [];
+  terminal.on('line', line => lines.push(line)); output.on('data', chunk => displayed.push(String(chunk)));
+  const write = vi.spyOn(terminal, 'write'); const answers = ['1', 'done'];
+  vi.spyOn(terminal, 'question').mockImplementation(async () => answers.shift()!);
+  f.dependencies.terminal = () => terminal;
+  f.dependencies.discover = async () => [{ source: 'canvas', status: 'available', skipped: 0,
+    courses: [{ ...selection.courses[0], name: 'Synthetic\nq\r\x1b[2J\tCourse\u0085End',
+      code: 'CODE\x00X', term: { label: 'Term\r\nq\u2028Next\u2029End' } }] }];
+  try {
+    await capture({ isTTY: true, crawl: true }, f.dependencies);
+    expect(write).not.toHaveBeenCalled(); expect(lines).toEqual([]);
+    const rows = displayed.join('').trimEnd().split('\n');
+    expect(rows).toHaveLength(2); // Initial display and redisplay after ticking.
+    expect(rows.every(row => row.startsWith('1. ['))).toBe(true);
+    expect(rows.join('')).not.toMatch(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/);
+    expect(rows[0]).toContain('Synthetic q'); expect(rows[0]).toContain('Term  q Next End');
+    expect(f.store.save).toHaveBeenCalledTimes(1); expect(f.canvas).toHaveBeenCalledTimes(1);
+  } finally { terminal.close(); input.destroy(); output.destroy(); }
+});
 it('cancelled TTY reselection preserves store and schedules no providers', async () => {
   const f = setup(); f.dependencies.terminal = () => Object.assign(new EventEmitter(), {
-    write: vi.fn(), question: async () => 'q', close: vi.fn(), async *[Symbol.asyncIterator]() {},
+    write: vi.fn(), output: { write: vi.fn() }, question: async () => 'q', close: vi.fn(), async *[Symbol.asyncIterator]() {},
   }) as never;
   await capture({ isTTY: true, reselect: true }, f.dependencies);
   expect(f.store.save).not.toHaveBeenCalled(); expect(f.canvas).not.toHaveBeenCalled(); expect(f.ed).not.toHaveBeenCalled();
@@ -86,7 +117,7 @@ it('cancelled TTY reselection preserves store and schedules no providers', async
 it('first interactive c picks and persists, then later c reuses without rediscovery', async () => {
   const f = setup(null); const answers = ['1', '2', 'done'];
   f.dependencies.terminal = () => Object.assign(new EventEmitter(), {
-    write: vi.fn(), question: vi.fn(async () => answers.shift()!), close: vi.fn(),
+    write: vi.fn(), output: { write: vi.fn() }, question: vi.fn(async () => answers.shift()!), close: vi.fn(),
     async *[Symbol.asyncIterator]() {
       yield 'c'; await vi.waitFor(() => expect(f.canvas).toHaveBeenCalledTimes(1));
       // Let the session's in-flight promise settle before the second command.
@@ -111,7 +142,7 @@ it('unavailable Ed discovery is retained in source outcome without a second disc
     { source: 'canvas', status: 'available', courses: [{ ...selection.courses[0], name: 'Synthetic Canvas' }], skipped: 0 },
     { source: 'ed', status: 'unavailable', error: new CourseworkError('AUTH_EXPIRED', 'Synthetic Ed auth') },
   ];
-  f.dependencies.terminal = () => Object.assign(new EventEmitter(), { write: vi.fn(), question: async () => 'done', close: vi.fn(), async *[Symbol.asyncIterator]() {} }) as never;
+  f.dependencies.terminal = () => Object.assign(new EventEmitter(), { write: vi.fn(), output: { write: vi.fn() }, question: async () => 'done', close: vi.fn(), async *[Symbol.asyncIterator]() {} }) as never;
   await capture({ isTTY: true, reselect: true, crawl: true }, f.dependencies);
   expect(f.canvas).toHaveBeenCalledTimes(1); expect(f.ed).not.toHaveBeenCalled();
   expect(f.stderr).toHaveBeenCalledWith(expect.stringContaining('AUTH_EXPIRED'));

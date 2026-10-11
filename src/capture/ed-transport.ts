@@ -2,6 +2,7 @@ import { CourseworkError } from '../protocol/errors.js';
 import { ED_ORIGIN } from './discovery.js';
 import type { DiscoveryPage } from './discovery-adapters.js';
 import type { CaptureLimiter } from './limiter.js';
+import type { Page, Route } from 'playwright';
 
 export type EdResponse = { kind: 'json'; status: number; body: unknown }
   | { kind: 'auth'; code: 'AUTH_EXPIRED'; status?: number }
@@ -17,7 +18,7 @@ export class EdTransport {
     if (!safeEdEndpoint(endpoint)) return { kind: 'gap', reason: 'unsafeEndpoint' };
     if (!this.page.url().startsWith(`${ED_ORIGIN}/`)) {
       try {
-        await this.limiter.attempt(() => this.page.goto(`${ED_ORIGIN}/au/`, { waitUntil: 'load', timeout: 30000 }), this.signal);
+        await this.bootstrap();
       } catch (error) { this.rethrowStop(error); return { kind: 'gap', reason: 'unavailable' }; }
     }
     return this.limiter.attempt(async () => {
@@ -45,7 +46,7 @@ export class EdTransport {
             if (typeof value === 'string') return value.split(token).join('[withheld]');
             if (Array.isArray(value)) return value.map(clean);
             if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value)
-              .filter(([key]) => !/^(?:headers|cookies?|authorization|x-token|.*token.*|push_key|push_subscriptions)$/i.test(key))
+              .filter(([key]) => !key.includes(token) && !/^(?:headers|cookies?|authorization|x-token|.*token.*|push_key|push_subscriptions)$/i.test(key))
               .map(([key, item]) => [key, clean(item)]));
             return value;
           };
@@ -58,6 +59,44 @@ export class EdTransport {
       }
       return result;
     }, this.signal);
+  }
+  private async bootstrap(): Promise<void> {
+    // Keep DiscoveryPage's shared contract intact; fail closed if routing is unavailable.
+    const page = this.page as DiscoveryPage & Pick<Page, 'route' | 'unroute'>;
+    if (!page.route || !page.unroute) throw new Error('Ed navigation guard unavailable.');
+    let next: string | undefined;
+    const guard = async (route: Route) => {
+      const request = route.request();
+      if (!request.isNavigationRequest()) { await route.continue(); return; }
+      if (new URL(request.url()).origin !== ED_ORIGIN) { await route.abort(); return; }
+      try {
+        // Playwright routes only the first URL in a redirect chain. Inspect 3xx before
+        // the browser sees them, then start each validated same-origin hop ourselves.
+        const response = await route.fetch({ maxRedirects: 0, maxRetries: 0, timeout: 30000 });
+        try {
+          if (response.status() >= 300 && response.status() < 400) {
+            const location = response.headers().location;
+            const target = location ? new URL(location, request.url()) : undefined;
+            if (target?.origin === ED_ORIGIN && !target.username && !target.password) next = target.href;
+            await route.abort();
+          } else await route.fulfill({ response });
+        } finally { await response.dispose(); }
+      } catch { await route.abort(); }
+    };
+    await page.route('**/*', guard);
+    try {
+      let target = `${ED_ORIGIN}/au/`;
+      for (let hop = 0; hop < 20; hop++) {
+        next = undefined;
+        try {
+          await this.limiter.attempt(() => page.goto(target, { waitUntil: 'load', timeout: 30000 }), this.signal);
+          if (new URL(page.url()).origin !== ED_ORIGIN) throw new Error('Ed navigation left origin.');
+          return;
+        } catch (error) { this.rethrowStop(error); if (!next) throw error; }
+        target = next;
+      }
+      throw new Error('Ed navigation redirect limit reached.');
+    } finally { await page.unroute('**/*', guard); }
   }
   private rethrowStop(error: unknown): void {
     if (error instanceof CourseworkError && error.code === 'LIMIT_EXCEEDED' || error instanceof Error && error.name === 'AbortError') throw error;
