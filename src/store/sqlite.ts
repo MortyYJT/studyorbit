@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { diffEntity, syncSchemas, invalidSync, type SyncValue } from '../sync/diff.js';
+import { adapterFields, diffEntity, syncSchemas, invalidSync, type SyncValue } from '../sync/diff.js';
 import { validateScopes, assertScopeMember, canDeleteScope, type ReconcileScope } from '../sync/reconciliation.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -101,6 +101,9 @@ export class SqliteRepository implements Repository {
           if (before) assertScopeMember(scope, before);
           const after = incoming.get(id);
           if (!after && !canDeleteScope(scope.collection, scope.coverage)) continue;
+          // Only a scope that owns every adapter field owns the entity's existence;
+          // a field-subset scope (e.g. submissions: score/status) may update but never create or delete.
+          if ((!before || !after) && !adapterFields[scope.entity].every(field => scope.fields.includes(field))) continue;
           const change = diffEntity(scope.entity, before, after, at, scope.fields);
           if (!change) continue;
           if (change.kind === 'deleted') this.db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);

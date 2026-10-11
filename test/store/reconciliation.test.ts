@@ -138,3 +138,15 @@ it('6.3 rolls back state writes when generated event validation fails inside pub
   expect(db.listChangesSince(0)).toHaveLength(1);
   expect(db.reconcile([scope([syntheticAssessment('b', 20)])], at).map(e => e.seq)).toEqual([2, 3]);
 });
+it('6.2 field-subset scopes update owned fields but never create or delete whole entities', () => {
+  const db = open(); db.saveModule(synthetic.module); db.saveCourse(synthetic.course); db.reconcile([scope()], at);
+  const course: ReconcileScope = { ...scope([]), entity: 'course', ownedIds: [synthetic.course.id], fields: ['name'] };
+  expect(db.reconcile([course], at)).toEqual([]);
+  expect(db.loadCourse(synthetic.course.id)).toMatchObject({ moduleId: synthetic.module.id, assessmentsComplete: true });
+  const submissions = { ...scope([]), collection: 'submissions', fields: ['score', 'status'] } as ReconcileScope;
+  expect(db.reconcile([submissions], at)).toEqual([]);
+  expect(db.loadAssessment('a')).toEqual(JSON.parse(JSON.stringify(a)));
+  const created = { ...scope([syntheticAssessment('b', 35)]), collection: 'submissions', fields: ['score', 'status'] } as ReconcileScope;
+  expect(db.reconcile([created], at)).toEqual([]);
+  expect(db.loadAssessment('b')).toBeUndefined();
+});
