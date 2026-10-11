@@ -3,7 +3,7 @@
 > 单文件，只写当前状态，覆盖而不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#79）、`note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-12 晚。仓库已转**私有**（#78）。设计文档在分支 `claude/v1-technical-design`（PR 见 `gh pr list`）。
+- **最后更新：** 2026-10-12 晚。仓库已转**私有**（#78）。设计文档在分支 `claude/v1-design`（替换已关闭的 PR #34，见 `gh pr list`）。
 - **模式：全自动调度（#79）。** 用户在睡觉 / 不在线，只在必须决策时打断。
 
 ## 调度员守则（新会话第一件事读这里）
@@ -32,6 +32,7 @@
   - `docs/engineering/v1-technical-design.md:3` 决定范围 `#55–#77` → `#55–#80`；`:6` 和第 8 节第 1 条「文档没覆盖的选择就停下问」→ 改成 #79 的停止清单。
   - `openspec/config.yaml`：去掉 iCal（第 5 行、「iCal URLs」）；「no auto-submission (no L4)」→ 按 #56 写 L0–L4 的条件。
   - 在你改之前，以 #79（更晚的决定）为准，调度照常进行。
+- **身份泄露（已止损，需你决定是否删除）**：`../unimelb-coursework-agent-v1-design` 这个 clone 原来没有设置本地 Git 身份，旧分支 `claude/v1-technical-design` 的 5 个提交带着真实姓名和本机邮箱（只在私有仓库，没进 main）。已用公开身份重建为 `claude/v1-design`（内容一样），旧 PR #34 已关闭。还剩：要不要删远程旧分支 `claude/v1-technical-design`（删除属于守则第 4 条，我没删）；GitHub 的 `refs/pull/34` 只有 GitHub 支持能清。另外你的**全局** git 身份是真名，新 clone 必须先设 local 身份。
 
 ## 早上给用户看（调度员自主做的决定，逐条追加）
 - #80：Q1 自带最小版的脱敏、引文校验、单项 L3 授权（`.local/` 文件）和审计日志，不等 M1/M2（PR #34 审查第 3、4 条）。
@@ -47,4 +48,5 @@
 - 私有仓库没有分支保护：只靠本地 `guard.sh` 守住 main，绝不直接推 main、不 force-push。
 - 夹具只用合成数据；真实课程、快照、profile 只在 `.local/`。
 - 不让用户写代码（#42）；讲解用 Java 类比。
+- 全局 git 身份是真名：每个新 clone 先 `git config --local user.name MortyYJT` 和 noreply 邮箱，提交前用 `git log --format='%an %ae' -1` 核对。
 - 用户本人理由仍空着：#6、#9、#15–18、#23、#27、#29、#53、#67、#70。
