@@ -40,7 +40,7 @@ Issue mapping for dispatch: groups 1–2 are issue A (blocks the rest); groups 3
 
 ## 6. Browser detection and Canvas crawl (issue E, decisions #43–#46)
 
-- [ ] 6.1 Browser detection per the spec: Edge, then Chrome, then ask for bundled Chromium; `COURSEWORK_BROWSER` override (bad value exits 2); record the browser in `profiles/default/coursework-browser.json` (an unrecorded existing profile counts as `chrome`) and refuse a different one; missing override browser and declined Chromium exit without launching; add `crawls/` to the data-dir helpers; injectable "is installed" check so tests need no real browser
+- [ ] 6.1 Browser detection per the spec: Edge, then Chrome, then ask for bundled Chromium; `COURSEWORK_BROWSER` override (bad value exits 2); record the browser in `profiles/default/coursework-browser.json` (an unrecorded existing profile needs `COURSEWORK_BROWSER`) and refuse a different one; missing override browser and declined Chromium exit without launching; add `crawls/` to the data-dir helpers; injectable "is installed" check so tests need no real browser
 - [ ] 6.2 `src/capture/crawl.ts`: pure planning functions per the spec's link rules and order (start condition, course / assignment / announcement links, same-origin filter, 300-load cap, signed-out detection), unit-tested on synthetic HTML fixtures with fake course ids
 - [ ] 6.3 Crawl runner: hidden tab, `load` + `networkidle` with a 30 s timeout, GET loads only, ≥1 s between loads (injectable clock), failure rules, summary in `<data dir>/crawls/`; tested with a fake page object, no real browser
 - [ ] 6.4 Capture session: command `c`, refuse a second `c`, `s` still works, `q` / close / signals abort after the current load; updated start message; tests for each scenario
