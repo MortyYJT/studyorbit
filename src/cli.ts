@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { CourseworkError } from './protocol/errors.js';
+import { BrowserChoiceError } from './capture/browser.js';
 
 const { version } = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -22,8 +23,11 @@ program.command('capture')
       if (error instanceof CourseworkError && error.code === 'LOCKED') {
         console.error(error.message);
         process.exitCode = 3;
+      } else if (error instanceof BrowserChoiceError) {
+        console.error(error.message);
+        process.exitCode = error.exitCode;
       } else {
-        console.error('Capture failed. Check Chrome is installed and the local profile is available.');
+        console.error('Capture failed. Check the browser installation and local profile are available.');
         process.exitCode = 1;
       }
     }

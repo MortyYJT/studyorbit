@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { dataDir, databasePath, snapshotsDir, profilesDir, packageRoot } from '../../src/config/data-dir.js';
+import { dataDir, databasePath, snapshotsDir, profilesDir, crawlsDir, packageRoot } from '../../src/config/data-dir.js';
 
 const temporary: string[] = [];
 afterEach(() => {
@@ -25,6 +25,8 @@ it('creates database parent, snapshots and profiles inside the override', () => 
   expect(databasePath()).toBe(join(home, 'coursework.db'));
   expect(snapshotsDir()).toBe(join(home, 'snapshots'));
   expect(profilesDir()).toBe(join(home, 'profiles'));
+  expect(crawlsDir()).toBe(join(home, 'crawls'));
+  expect(existsSync(crawlsDir())).toBe(true);
   expect(existsSync(snapshotsDir())).toBe(true);
   expect(existsSync(profilesDir())).toBe(true);
 });

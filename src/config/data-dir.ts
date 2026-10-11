@@ -30,3 +30,5 @@ function subdirectory(name: string): string {
 }
 export function snapshotsDir(): string { return subdirectory('snapshots'); }
 export function profilesDir(): string { return subdirectory('profiles'); }
+
+export function crawlsDir(): string { return subdirectory('crawls'); }
