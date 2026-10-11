@@ -18,12 +18,12 @@ Scope: new selection/discovery/limiter modules under `src/capture/` and their te
 
 Scope: `src/capture/crawl.ts`, Canvas planning helpers and synthetic Canvas tests. Consume A's selection and limiter contracts. Do not edit Ed adapter, CLI/command/session integration or A's modules. Acceptance: updated `page-capture` Canvas scenarios and unchanged baseline browser/navigation safeguards.
 
-- [ ] 2.1 Write failing tests proving fixed and linked-detail queues only contain selected source-qualified Canvas ids, missing ids are reported, and already fetched discovery is reused; implement selected-course planning.
-- [ ] 2.2 Write failing tests for two disabled-tab redirects saving one final home, query/fragment/trailing-slash normalization, and suppression of home-page link discovery; implement per-run successful-final-URL deduplication and redirect records.
-- [ ] 2.3 Write failing tests for failed first home save followed by successful save and a redirect into an unselected course; implement successful-write-only dedup state and reject unselected final-page capture/expansion.
-- [ ] 2.4 Write failing tests for shared-limit consumption by duplicate redirects, failures and cancellation; integrate A's limiter while retaining hidden-tab lifecycle, 30-second readiness, same-origin GET rules, no retries and Canvas-only signed-out outcomes.
-- [ ] 2.5 Write failing summary tests for sanitized requested/final redirect pairs, counts, gaps and signed-out/cap/abort distinctions; implement the Canvas outcome consumed by C without raw content in diagnostics.
-- [ ] 2.6 Run targeted Canvas tests and `bash .claude/check.sh`; perform privacy/diff checks and fresh-context read-only review. Record outputs and fix correctness gaps before C's final integration.
+- [x] 2.1 Write failing tests proving fixed and linked-detail queues only contain selected source-qualified Canvas ids, missing ids are reported, and already fetched discovery is reused; implement selected-course planning.
+- [x] 2.2 Write failing tests for two disabled-tab redirects saving one final home, query/fragment/trailing-slash normalization, and suppression of home-page link discovery; implement per-run successful-final-URL deduplication and redirect records.
+- [x] 2.3 Write failing tests for failed first home save followed by successful save and a redirect into an unselected course; implement successful-write-only dedup state and reject unselected final-page capture/expansion.
+- [x] 2.4 Write failing tests for shared-limit consumption by duplicate redirects, failures and cancellation; integrate A's limiter while retaining hidden-tab lifecycle, 30-second readiness, same-origin GET rules, no retries and Canvas-only signed-out outcomes.
+- [x] 2.5 Write failing summary tests for sanitized requested/final redirect pairs, counts, gaps and signed-out/cap/abort distinctions; implement the Canvas outcome consumed by C without raw content in diagnostics.
+- [x] 2.6 Run targeted Canvas tests and `bash .claude/check.sh`; perform privacy/diff checks and fresh-context read-only review. Record outputs and fix correctness gaps before C's final integration.
 
 ## 3. Ed snapshots and capture orchestration (issue C)
 
