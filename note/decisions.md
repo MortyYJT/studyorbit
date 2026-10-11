@@ -48,4 +48,4 @@
 | 41 | 2026-10-11 | 任务 3.4（数据目录）从 issue B 移到 issue D（`src/config/data-dir.ts`），B 只接收数据库路径 | Claude（排期决定） | B 和 D 并行时都要写数据目录工具，提前归属一个文件避免冲突；不涉及设计 |
 | 42 | 2026-10-11 | 推翻 #34：`projectGrade()` 由 Claude 写；以后开发流程里不再让用户亲手写代码（不用 TODO(human)），代码学习一律交给 dsh 出题 | 用户 | 用户只会 Java、不会 TypeScript；开发速度优先，学习走异步测验 |
 | 43 | 2026-10-11 | 方案 B：capture 支持选 Edge（`--browser msedge`），登录后用 `c` 自动遍历 Canvas 各课的作业、公告、成绩、大纲和链接到的作业/公告页并存快照；Ed 仍手动；只做同源 GET、每页间隔 ≥1 秒、上限 300 页 | 用户（选了推荐项） | 用户用 Edge，认为抓取应该自动；手动只保留登录。代价：提前做了 M1 的一部分 |
-| 44 | 2026-10-11 | 自动爬取也打开单条 Canvas 公告页（会把公告标成已读）；Chrome 和 Edge 各用一个 profile 目录；爬取汇总写到 `<data dir>/crawls/` | 用户（公告：没选推荐项）；Claude（profile 和汇总位置） | 用户要完整公告内容，接受未读标记失效。PR #19 审查指出：两个浏览器的 profile 格式不互通；汇总放进 snapshots 会混进快照列表 |
+| 44 | 2026-10-11 | 自动爬取也打开单条 Canvas 公告页（会把公告标成已读）；Chrome、Edge、内置 Chromium 各用一个 profile 目录；爬取汇总写到 `<data dir>/crawls/`；只爬 `canvas.lms.unimelb.edu.au` | 用户（公告：没选推荐项；存储布局：待确认） | 用户要完整公告内容，接受未读标记失效。PR #19 审查指出：两个浏览器的 profile 格式不互通；汇总放进 snapshots 会混进快照列表 |

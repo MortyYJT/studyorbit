@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: User-driven capture in a headed browser
-`coursework capture` SHALL open a visible Playwright browser on the persistent profile at `<data dir>/profiles/<browser>` (data directory as defined in `local-store`; `<browser>` is `chrome` or `msedge`, see "Choose the browser"). The user SHALL sign in and navigate by hand, except during a crawl started with `c` (see "Crawl Canvas after sign-in"). The tool MUST NOT read, type, store, or log passwords or one-time codes.
+`coursework capture` SHALL open a visible Playwright browser on the persistent profile at `<data dir>/profiles/<browser>` (data directory as defined in `local-store`; `<browser>` is `chrome`, `msedge`, or `chromium` for the bundled fallback, see "Choose the browser"). The user SHALL sign in and navigate by hand, except during a crawl started with `c` (see "Crawl Canvas after sign-in"). The tool MUST NOT read, type, store, or log passwords or one-time codes.
 
 #### Scenario: Start capture
 - **WHEN** the user runs `coursework capture`
@@ -30,7 +30,7 @@ Capture SHALL hold an exclusive lock file at `<data dir>/profiles/<browser>.lock
 - **THEN** a new capture removes the lock and starts
 
 ### Requirement: Choose the browser
-`coursework capture` SHALL accept `--browser chrome|msedge` (default `chrome`) and launch that installed browser channel. Each browser SHALL use its own profile directory `<data dir>/profiles/<browser>` and lock `<data dir>/profiles/<browser>.lock`; Chrome and Edge never share a profile, so switching browsers means signing in again. An unknown value MUST exit with status 2 and list the allowed values. The bundled-Chromium fallback still applies only after asking, and uses the `chrome` profile.
+`coursework capture` SHALL accept `--browser chrome|msedge` (default `chrome`) and launch that installed browser channel. Each browser SHALL use its own profile directory `<data dir>/profiles/<browser>` and lock `<data dir>/profiles/<browser>.lock`; Chrome and Edge never share a profile, so switching browsers means signing in again. An unknown value MUST exit with status 2 and list the allowed values. The bundled-Chromium fallback still applies only after asking (also when the chosen browser is not installed) and uses its own `chromium` profile and lock.
 
 #### Scenario: Edge
 - **WHEN** the user runs `coursework capture --browser msedge`
@@ -43,17 +43,17 @@ Capture SHALL hold an exclusive lock file at `<data dir>/profiles/<browser>.lock
 ### Requirement: Crawl Canvas after sign-in
 While capture runs, the terminal command `c` SHALL crawl the Canvas site of the active tab (the most recently focused tab, as for `s`) and save each loaded page as a snapshot in the same format as a manual save.
 
-- **Start condition.** The active tab's URL path is `/courses` or starts with `/courses/`. The crawl origin (scheme, host, and port) is that tab's origin, fixed when the crawl starts. Otherwise nothing is crawled and the terminal says to open a Canvas course page first.
+- **Start condition.** The active tab's host is `canvas.lms.unimelb.edu.au` and its URL path is `/courses` or starts with `/courses/`. The crawl origin (scheme, host, and port) is that tab's origin, fixed when the crawl starts. Otherwise nothing is crawled and the terminal says to open a Canvas course page first. If `/courses` fails or lists no course, the crawl ends with `status: "completed"` and the counts show it.
 - **Tab.** The crawl opens one new tab in the same browser context, never brings it to the front, and closes it when the crawl ends.
 - **Ready page.** A page counts as loaded after the `load` event plus `networkidle` (Playwright), with a 30-second timeout; links are read from the rendered DOM.
 - **Link rules.** Every `href` is resolved against the page URL, and its query and fragment are dropped. Course links are paths matching `^/courses/\d+/?$` on the `/courses` page, deduplicated by course id, with no filtering by term. Assignment links match `^/courses/<course id>/assignments/\d+/?$` on that course's assignments page; announcement links match `^/courses/<course id>/discussion_topics/\d+/?$` on its announcements page. Only same-origin links are followed.
 - **Order.** `/courses`; then, for each course in page order, `assignments`, `announcements`, `grades`, and `assignments/syllabus`; then the linked assignment and announcement pages, course by course.
 - **Limits.** Navigation is GET page loads only: the crawl MUST NOT click, type, or submit anything. At least one second passes between the end of one page load (including writing its snapshot) and the start of the next. The crawl stops after 300 page loads attempted, failures included.
 - **Read state.** Opening an announcement page may mark it read in Canvas. The user accepted this (decision #44); it is the only account-state change the crawl may cause.
-- **Failures.** A navigation error, a timeout, or HTTP status 400 or above counts as failed; no snapshot is written and there is no retry.
+- **Failures.** A navigation error, a timeout before `load`, or HTTP status 400 or above counts as failed; if `load` fired but `networkidle` timed out, the page is still saved; no snapshot is written and there is no retry.
 - **Signed out.** If a page load's final URL is on another origin, or on the crawl origin with a path starting with `/login`, the crawl stops and tells the user to sign in again; snapshots already saved remain.
 - **Commands during a crawl.** `c` is refused with "a crawl is already running"; `s` still saves the active tab; `q`, closing the browser, SIGINT, or SIGTERM stop the crawl after the current page load.
-- **Summary.** When the crawl ends for any reason, it prints and writes `<data dir>/crawls/<timestamp>.json` with `startedAt`, `durationMs`, `saved`, `failed`, `status` (`completed`, `capReached`, `signedOut`, or `aborted`), and the list of failed URLs with query and fragment removed. It holds no page content. Ed is not crawled; Ed pages are still saved by hand with `s`.
+- **Summary.** When the crawl ends for any reason, it prints and writes `<data dir>/crawls/<timestamp>.json` (UTC ISO 8601 with `:` replaced by `-`, e.g. `2026-10-11T10-08-17Z`) with `startedAt`, `durationMs`, `saved`, `failed`, `status` (`completed`, `capReached`, `signedOut`, or `aborted`), and the list of failed URLs with query and fragment removed. It holds no page content. Ed is not crawled; Ed pages are still saved by hand with `s`.
 
 #### Scenario: Crawl a signed-in Canvas
 - **WHEN** the active tab is on a signed-in Canvas course page and the user enters `c`
@@ -64,7 +64,7 @@ While capture runs, the terminal command `c` SHALL crawl the Canvas site of the 
 - **THEN** the crawl stops, earlier snapshots remain, the summary has `status: "signedOut"`, and the terminal tells the user to sign in again
 
 #### Scenario: Not on Canvas
-- **WHEN** the active tab's path does not start with `/courses` and the user enters `c`
+- **WHEN** the active tab is not on `canvas.lms.unimelb.edu.au`, or its path is neither `/courses` nor under `/courses/`, and the user enters `c`
 - **THEN** nothing is crawled and the terminal says to open a Canvas course page first
 
 #### Scenario: Page cap
