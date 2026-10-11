@@ -191,6 +191,27 @@ it('empty selection schedules no course-specific reads', async () => {
   expect(f.page.goto.mock.calls.map(c => c[0])).toEqual([`${origin}/courses`]);
 });
 // Task 2.2: final URL deduplication and redirect identity.
+it('discovers announcement details on the own-identity visit even when a redirect saved its snapshot', async () => {
+  const home = `${origin}/courses/101`;
+  const announcements = `${home}/announcements`;
+  const detail = `${home}/discussion_topics/501`;
+  const f = fixture({ links: { [announcements]: [detail, `${home}/assignments/601`] },
+    redirect: { [`${home}/assignments`]: announcements } });
+  const course = { source: 'canvas' as const, origin, id: '101', term: { label: 'Synthetic term' } };
+  const saved: string[] = [];
+  f.save.mockImplementation(async () => { saved.push(f.page.url()); return '/synthetic/snapshot'; });
+  const limiter = new RequestLimiter(f.options.clock);
+  const result = await runCrawl(f.context, home, { ...f.options, limiter,
+    selection: { version: 1, courses: [course] },
+    discovery: { source: 'canvas', status: 'available', skipped: 0, courses: [{ ...course, name: 'Synthetic' }] },
+  });
+  expect(f.page.goto.mock.calls.map(call => call[0])).toEqual([...fixedPages(origin, ['101']), detail]);
+  expect(f.page.evaluate).toHaveBeenCalledOnce(); // only the announcements visit under its own identity
+  expect(saved.filter(url => url === announcements)).toHaveLength(1);
+  expect(saved).toContain(detail);
+  expect(result).toMatchObject({ status: 'completed', attempted: 5, saved: 4, duplicates: 1, failed: 0 });
+  expect(limiter.attempts).toBe(5);
+});
 it('saves normalized redirected homes once per run without expanding home links', async () => {
   const home = `${origin}/courses/91001`;
   const f = fixture({ links: {
