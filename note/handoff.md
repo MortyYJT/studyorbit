@@ -18,8 +18,9 @@
 8. **控制上下文（用户 2026-10-12 要求）**：每次派给 Codex / 子会话的活只有一个 issue 那么大，提示词自包含，结果写进 `-o` 报告文件；调度员只读报告和需要的几行，绝不读整份日志。调度员自己的上下文变大时：更新本文件并推送 → `echo 0 > ~/.coursework-dispatcher-heartbeat` → 用 `run_scheduled_task` 立即运行 `coursework-dispatcher-watchdog`（它会接手当调度员）→ 归档旧会话，不用问用户。
 
 ## 正在跑的 Codex（`pgrep -fl "[c]odex exec"` 核对；报告在 `/Users/yu-junteng/.coursework-dispatcher-reports/`）
-- **Q1 issue C**（#50，终端审阅）：clone `../unimelb-coursework-agent-quiz-assist`，分支 `codex/quiz-review`，报告 `codex-q1-C.md`。
-- **M1 issue F**（#52，比对/对账/游标，用假输入）：clone `../unimelb-coursework-agent-sync`，分支 `codex/v1-sync-reconcile`，报告 `codex-m1-F.md`。
+- **Codex 5 小时额度又用完，13:11 恢复。** 期间审查改由 Claude 子会话（Agent 工具，只读）做。
+- **Q1 issue C**（#50）：已提交 `codex/quiz-review`（`3a2ce80`，含第一轮修复）；第二轮审查由 Claude 子会话进行中。
+- **M1 issue F**（#52）：已提交 `codex/v1-sync-reconcile`（`5af5736`，含第一轮修复）；第二轮 Codex 审查进行中（报告 `codex-review-m1-F-r2.md`，额度用完时可能失败 → 改用子会话）。
 报告目录：报告都在 `/Users/yu-junteng/.coursework-dispatcher-reports/`。
 交付流程：`git restore note/handoff.md`（如果被改了）→ 自己跑 check、读 diff → 用公开身份提交 → 新上下文 Codex 只读审查 → PR → CI 绿 → 合并（`--rebase`；有多次修复提交的用 `--squash`）。
 
