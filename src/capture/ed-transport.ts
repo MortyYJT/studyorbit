@@ -61,42 +61,78 @@ export class EdTransport {
     }, this.signal);
   }
   private async bootstrap(): Promise<void> {
-    // Keep DiscoveryPage's shared contract intact; fail closed if routing is unavailable.
+    // Never retain Playwright errors: their call logs may contain Cookie/Set-Cookie.
+    const unavailable = () => new CourseworkError('SOURCE_UNAVAILABLE', 'Ed navigation unavailable.');
     const page = this.page as DiscoveryPage & Pick<Page, 'route' | 'unroute'>;
-    if (!page.route || !page.unroute) throw new Error('Ed navigation guard unavailable.');
+    if (!page.route || !page.unroute) throw unavailable();
     let next: string | undefined;
-    const guard = async (route: Route) => {
-      const request = route.request();
-      if (!request.isNavigationRequest()) { await route.continue(); return; }
-      if (new URL(request.url()).origin !== ED_ORIGIN) { await route.abort(); return; }
-      try {
-        // Playwright routes only the first URL in a redirect chain. Inspect 3xx before
-        // the browser sees them, then start each validated same-origin hop ourselves.
-        const response = await route.fetch({ maxRedirects: 0, maxRetries: 0, timeout: 30000 });
-        try {
-          if (response.status() >= 300 && response.status() < 400) {
-            const location = response.headers().location;
-            const target = location ? new URL(location, request.url()) : undefined;
-            if (target?.origin === ED_ORIGIN && !target.username && !target.password) next = target.href;
-            await route.abort();
-          } else await route.fulfill({ response });
-        } finally { await response.dispose(); }
-      } catch { await route.abort(); }
+    let stopped: unknown;
+    let failed = false;
+    const abort = async (route: Route) => {
+      try { await route.abort(); } catch { failed = true; }
     };
-    await page.route('**/*', guard);
-    try {
-      let target = `${ED_ORIGIN}/au/`;
-      for (let hop = 0; hop < 20; hop++) {
-        next = undefined;
+    const guard = async (route: Route) => {
+      try {
+        const request = route.request();
+        if (!request.isNavigationRequest()) { await route.continue(); return; }
+        const url = new URL(request.url());
+        // Third-party iframes (widgets, analytics) are blocked without failing the Ed page.
+        let subframe = false;
+        try { subframe = request.frame().parentFrame() !== null; } catch { /* treat as main frame */ }
+        if (subframe && url.origin !== ED_ORIGIN) { await route.abort(); return; }
+        if (failed || stopped || url.origin !== ED_ORIGIN || url.username || url.password) {
+          failed = true; await abort(route); return;
+        }
         try {
-          await this.limiter.attempt(() => page.goto(target, { waitUntil: 'load', timeout: 30000 }), this.signal);
-          if (new URL(page.url()).origin !== ED_ORIGIN) throw new Error('Ed navigation left origin.');
-          return;
-        } catch (error) { this.rethrowStop(error); if (!next) throw error; }
-        target = next;
-      }
-      throw new Error('Ed navigation redirect limit reached.');
-    } finally { await page.unroute('**/*', guard); }
+          // Budget actual document requests, including client-side navigations. Do not
+          // wrap goto in this limiter: it waits for these callbacks and would deadlock.
+          await this.limiter.attempt(async () => {
+            try {
+              // Playwright routes only the first URL in a redirect chain. Inspect 3xx
+              // before the browser sees them and navigate each validated hop ourselves.
+              const response = await route.fetch({ maxRedirects: 0, maxRetries: 0, timeout: 30000 });
+              try {
+                if (response.status() >= 300 && response.status() < 400) {
+                  const location = response.headers().location;
+                  const target = location ? new URL(location, request.url()) : undefined;
+                  if (target?.origin === ED_ORIGIN && !target.username && !target.password) next = target.href;
+                  else failed = true;
+                  await abort(route);
+                } else await route.fulfill({ response });
+              } finally { await response.dispose(); }
+            } catch { throw unavailable(); }
+          }, this.signal);
+        } catch (error) {
+          // Only limiter-generated stop errors can survive the content-free boundary.
+          if (error instanceof CourseworkError && error.code === 'LIMIT_EXCEEDED') {
+            stopped = new CourseworkError('LIMIT_EXCEEDED', 'Capture attempt limit reached.');
+          } else if (this.signal?.aborted) stopped = new DOMException('Capture cancelled.', 'AbortError');
+          failed = true; await abort(route);
+        }
+      } catch { failed = true; await abort(route); }
+    };
+    try {
+      await page.route('**/*', guard);
+      try {
+        let target = `${ED_ORIGIN}/au/`;
+        for (let hop = 0; hop < 20; hop++) {
+          next = undefined;
+          try {
+            await page.goto(target, { waitUntil: 'load', timeout: 30000 });
+            if (failed || stopped || new URL(page.url()).origin !== ED_ORIGIN) throw unavailable();
+            return;
+          } catch {
+            if (failed || stopped || !next) throw unavailable();
+          }
+          target = next;
+        }
+        throw unavailable();
+      } finally { await page.unroute('**/*', guard); }
+    } catch {
+      if (stopped) throw stopped;
+      if (this.signal?.aborted) throw new DOMException('Capture cancelled.', 'AbortError');
+      throw unavailable();
+    }
   }
   private rethrowStop(error: unknown): void {
     if (error instanceof CourseworkError && error.code === 'LIMIT_EXCEEDED' || error instanceof Error && error.name === 'AbortError') throw error;

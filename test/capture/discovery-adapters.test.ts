@@ -1,5 +1,6 @@
 import { it, expect, vi } from 'vitest';
 import { discoverCanvas, discoverEd, type DiscoveryPage } from '../../src/capture/discovery-adapters.js';
+import type { Route } from 'playwright';
 import { RequestLimiter } from '../../src/capture/limiter.js';
 const limiter = () => { let time = 0; return new RequestLimiter({ now: () => time, sleep: async ms => { time += ms; } }); };
 it('filters reflected credentials before discovery courses cross the page boundary or reach snapshots', async () => {
@@ -51,7 +52,15 @@ it('keeps token inside page and returns/snapshots only courses', async () => {
   } finally { for (const [key, value] of Object.entries(previous)) vi.stubGlobal(key, value); }
 });
 it('bootstraps Ed within same budget and rejects redirects/errors without raw diagnostics', async () => {
-  const page = { url: () => 'about:blank', route: vi.fn(), unroute: vi.fn(), goto: vi.fn(async () => {}), evaluate: vi.fn(async () => ({ kind: 'unavailable' })) };
+  let guard: (route: Route) => Promise<void>;
+  const page = { url: () => 'about:blank',
+    route: vi.fn(async (_pattern: string, handler: typeof guard) => { guard = handler; }), unroute: vi.fn(),
+    goto: vi.fn(async () => {
+      await guard({ request: () => ({ url: () => 'https://edstem.org/au/', isNavigationRequest: () => true }),
+        fetch: async () => { throw Error('Synthetic private navigation diagnostic'); }, abort: async () => {},
+      } as unknown as Route);
+      throw Error('Synthetic navigation failed');
+    }), evaluate: vi.fn(async () => ({ kind: 'unavailable' })) };
   const budget = limiter();
   expect((await discoverEd(page as unknown as DiscoveryPage, budget)).status).toBe('unavailable'); expect(budget.attempts).toBe(1);
   expect(await discoverCanvas({ ...page, url: () => 'https://other.invalid/courses' } as unknown as DiscoveryPage, budget)).toMatchObject({ status: 'unavailable' });

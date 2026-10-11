@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { EdTransport } from '../../src/capture/ed-transport.js';
 import { RequestLimiter } from '../../src/capture/limiter.js';
+import type { Route } from 'playwright';
 import type { DiscoveryPage } from '../../src/capture/discovery-adapters.js';
 export function budget() { let now = 0; return new RequestLimiter({ now: () => now, sleep: async ms => { now += ms; } }); }
 export function page() {
@@ -63,7 +64,16 @@ it('drops reflected session tokens in nested object keys before leaving the page
 });
 it('includes snapshot completion in limiter spacing and bootstraps once', async () => {
   session(); let url = 'about:blank'; let now = 0; const starts: number[] = [];
-  const p = page(); p.url = () => url; p.goto = vi.fn(async () => { starts.push(now); url = 'https://edstem.org/au/'; });
+  const p = page(); p.url = () => url;
+  let guard: (route: Route) => Promise<void>;
+  Object.assign(p, { route: async (_pattern: string, handler: typeof guard) => { guard = handler; } });
+  p.goto = vi.fn(async () => {
+    await guard({ request: () => ({ url: () => 'https://edstem.org/au/', isNavigationRequest: () => true }),
+      fetch: async () => { starts.push(now); return { status: () => 200, dispose: async () => {} }; },
+      fulfill: async () => {}, abort: async () => {},
+    } as unknown as Route);
+    url = 'https://edstem.org/au/';
+  });
   const limiter = new RequestLimiter({ now: () => now, sleep: async ms => { now += ms; } });
   const transport = new EdTransport(p, limiter);
   await transport.read('/api/lessons/11', { snapshot: async () => { starts.push(now); now += 500; } });
