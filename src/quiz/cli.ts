@@ -1,67 +1,67 @@
-import { readFile, stat } from 'node:fs/promises';
-import { recordOwnerAction, proposeQuiz, recordInputFailure, type QuizWriteDependencies } from './proposals.js';
+import { z } from 'zod';
+import { parseProtocolCLI } from '../protocol/cli.js';
+import { contracts } from '../protocol/contracts.js';
+import { Registry, createRegistry, adaptLegacyHandler } from '../protocol/registry.js';
+import { unavailableCLIContext } from '../protocol/cli-context.js';
+import { fail, ok, withMetadata, type Envelope, type FailureEnvelope } from '../protocol/envelope.js';
+import { recordOwnerAction, proposeQuiz, proposalInputError, recordInputFailure, type QuizWriteDependencies } from './proposals.js';
+import { readQuiz, type QuizReadDependencies } from './read/command.js';
+import { safeQuizError } from './audit.js';
 import { CourseworkError } from '../protocol/errors.js';
-import { run } from '../protocol/envelope.js';
-import { Command } from 'commander';
-import { fail, ok } from '../protocol/envelope.js';
-import { quizReadCommand, readQuiz, type QuizReadDependencies } from './read/command.js';
 import { reviewQuiz, type QuizReviewDependencies } from './review.js';
+
+/** Keep the delivered Q1 handlers and durable journals; only their transport syntax is replaced. */
 export async function parseQuizCLI(args: string[], dependencies: QuizReadDependencies & QuizWriteDependencies & QuizReviewDependencies = {}): Promise<void> {
-  const output = dependencies.stdout ?? console.log;
-  const program = new Command().name('coursework').exitOverride().configureOutput({ writeOut: () => {}, writeErr: () => {} });
-  let ran = false;
-  const quiz = program.command('quiz').description('Read selected Ed quiz questions');
-  quiz.command('review').description('Review an exact private proposal revision in an owner terminal')
-    .requiredOption('--assessment <id>', 'Local assessment id').requiredOption('--revision <uuid>', 'Exact proposal revision')
-    .requiredOption('--page <id>', 'Explicit page identity for later fill preflight').option('--attempt <id>', 'Attempt identity when exposed')
-    .action(async (options: { assessment: string; revision: string; page: string; attempt?: string }) => {
-      ran = true;
-      output(JSON.stringify(await reviewQuiz({ assessmentId: options.assessment, revision: options.revision,
-        page: { pageId: options.page, ...(options.attempt ? { attemptId: options.attempt } : {}) } }, dependencies)));
-    });
-  quiz.command('read').description('Return one bounded model-safe envelope')
-    .option('--course <id>', 'Selected Ed course id').option('--lesson <id>', 'Discovered attempt lesson id')
-    .option('--question <ref>', 'Narrow to an exact question reference (repeatable)', (value: string, previous: string[]) => [...previous, value], [])
-    .action(async (options: { course?: string; lesson?: string; question: string[] }) => {
-      ran = true;
-      await quizReadCommand({ course: options.course, lesson: options.lesson, ...(options.question.length ? { questions: options.question } : {}) }, dependencies);
-    });
-  for (const name of ['policy', 'grant', 'prerequisites', 'propose'] as const) {
-    quiz.command(name).description(name === 'propose' ? 'Validate and privately save a cited proposal' : 'Explicit owner recording in a terminal')
-      .requiredOption('--input <path>', 'Local JSON input file')
-      .action(async (options: { input: string }) => {
-        ran = true;
-        const loaded = await run(`quiz.${name}`, async () => {
-          try {
-            if ((await stat(options.input)).size > 4 * 1024 * 1024) throw new CourseworkError('LIMIT_EXCEEDED', 'Quiz input exceeds the private record limit.');
-            return JSON.parse(await readFile(options.input, 'utf8')) as unknown;
-          } catch (error) {
-            throw new CourseworkError(error instanceof CourseworkError ? error.code : 'INVALID_INPUT', 'Quiz input file is unavailable or invalid.');
-          }
-        });
-        const envelope = loaded.ok ? await (name === 'propose' ? proposeQuiz(loaded.data, dependencies) : recordOwnerAction(name, loaded.data, dependencies))
-          : await recordInputFailure(name, loaded, dependencies);
-        output(JSON.stringify(envelope));
-      });
+  const registry = new Registry(); let legacy: Envelope | undefined;
+  const names = ['quiz.read', 'quiz.policy', 'quiz.grant', 'quiz.prerequisites', 'quiz.propose', 'quiz.review'] as const;
+  for (const entry of createRegistry().list()) {
+    const name = names.find(name => name === entry.name);
+    if (!name) { registry.register(entry); continue; }
+    registry.register<z.ZodType, z.ZodType>({ name, ...contracts[name], handler: adaptLegacyHandler(async input => {
+      legacy = await (name === 'quiz.read' ? readQuiz(input, dependencies)
+        : name === 'quiz.review' ? reviewQuiz(input, dependencies)
+        : name === 'quiz.propose' ? proposeQuiz(input, dependencies)
+        : recordOwnerAction(name === 'quiz.policy' ? 'policy' : name === 'quiz.grant' ? 'grant' : 'prerequisites', input, dependencies));
+      return legacy;
+    }) });
   }
-  try {
-    await program.parseAsync(args, { from: 'user' });
-    if (!ran) output(JSON.stringify(fail('quiz.read', 'INVALID_INPUT', 'Use quiz read with --course and --lesson.')));
-  } catch (error) {
-    if (ran) throw error; // Output sink failures must never cause a second stdout envelope.
-    const help = (error as { code?: string }).code === 'commander.helpDisplayed';
-    const name = args[0] === 'quiz' ? args[1] : undefined;
-    if (name === 'review') {
-      output(JSON.stringify(help ? ok('quiz.review', { usage: 'coursework quiz review --assessment <id> --revision <uuid> --page <id> [--attempt <id>]' }) : await reviewQuiz(undefined, dependencies)));
-      return;
+  const inputFailure = async (failure: FailureEnvelope): Promise<Envelope> => {
+    const kind = failure.command.slice('quiz.'.length);
+    if (kind === 'policy' || kind === 'grant' || kind === 'prerequisites' || kind === 'propose') {
+      const message = failure.error.message === 'Invalid command input.'
+        ? 'Quiz input file is unavailable or invalid.' : failure.error.message === 'Invalid command arguments.'
+          ? 'Invalid quiz command arguments.' : failure.error.message;
+      return recordInputFailure(kind, withMetadata(fail(failure.command, failure.error.code, message, failure.error.next), failure.meta) as FailureEnvelope, dependencies);
     }
-    const writeCommand = (['policy', 'grant', 'prerequisites', 'propose'] as const).find(command => command === name);
-    if (writeCommand) {
-      output(JSON.stringify(help ? ok(`quiz.${writeCommand}`, { usage: `coursework quiz ${writeCommand} --input <path>` })
-        : await recordInputFailure(writeCommand, fail(`quiz.${writeCommand}`, 'INVALID_INPUT', 'Invalid quiz command arguments.'), dependencies)));
-    } else {
-      output(JSON.stringify(help ? ok('quiz.read', { usage: 'coursework quiz read --course <id> --lesson <id> [--question <ref>]' })
-        : await readQuiz(undefined, dependencies)));
-    }
-  }
+    if (failure.command === 'quiz.review') return reviewQuiz(undefined, dependencies);
+    if (failure.command === 'quiz.read' || failure.command === 'unknown') return readQuiz(undefined, dependencies);
+    return failure;
+  };
+  const context = unavailableCLIContext();
+  // Q1 already checks its targets, grants, citations, privacy and durable audit inside the handler.
+  // The shared dispatcher still validates both schemas and enforces the host TTY gate.
+  const unavailableAuthorization = context.authorization;
+  context.authorization = { check: async (name, level, input) => {
+    if (!names.some(legacyName => legacyName === name)) await unavailableAuthorization.check(name, level, input);
+  } };
+  context.evidence = { check: async () => {} };
+  context.owner = { assertOwner: async () => {} };
+  await parseProtocolCLI(args, {
+    registry, context, isTTY: dependencies.isTTY, stdout: dependencies.stdout, stderr: dependencies.stderr,
+    inputFailure,
+    result: async (response, input) => {
+      if (!legacy) {
+        if (!response.ok && response.error.code === 'INVALID_INPUT' && names.some(name => name === response.command)
+          && !['quiz.read', 'quiz.review'].includes(response.command)) {
+          const error = safeQuizError(response.command === 'quiz.propose' ? proposalInputError(input)
+            : new CourseworkError('INVALID_INPUT', 'Owner recording is unavailable.'));
+          response = withMetadata(fail(response.command, error.code, error.message, error.next), response.meta);
+        }
+        return response.ok ? response : inputFailure(response);
+      }
+      if (response.ok && legacy.ok) return withMetadata(ok(response.command, response.data), legacy.meta);
+      if (!response.ok && !legacy.ok && response.error.code === legacy.error.code) return legacy;
+      return withMetadata(response, legacy.meta);
+    },
+  });
 }

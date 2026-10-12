@@ -66,3 +66,20 @@ it('CLI emits one envelope, supports question selection and never prints Command
     expect(JSON.stringify(stderr.mock.calls)).not.toContain('private-sentinel');
   }
 });
+it('generated legacy help keeps its exact usage receipt without source access', async () => {
+  const f = setup(); const stdout = vi.fn();
+  await parseQuizCLI(['quiz', 'read', '--help'], { ...f.dependencies, stdout });
+  expect(JSON.parse(stdout.mock.calls[0]![0])).toMatchObject({ command: 'quiz.read', ok: true,
+    data: { usage: 'coursework quiz read --course <id> --lesson <id> [--question <ref>]' } });
+  expect(f.dependencies.openSession).not.toHaveBeenCalled();
+});
+it('registry adaptation preserves Q1 sourceRevision and original safe failure details', async () => {
+  const f = setup(); const stdout = vi.fn();
+  await parseQuizCLI(['quiz', 'read', '--course', '7', '--lesson', '11'], { ...f.dependencies, stdout });
+  expect(JSON.parse(stdout.mock.calls[0]![0])).toMatchObject({ ok: true, data: { sourceRevision: expect.stringMatching(/^[a-f0-9]{64}$/) } });
+  stdout.mockClear();
+  f.dependencies.openSession = async () => { throw new CourseworkError('AUTH_EXPIRED', 'private-sentinel'); };
+  await parseQuizCLI(['quiz', 'read', '--course', '7', '--lesson', '11'], { ...f.dependencies, stdout, stderr: () => {} });
+  expect(JSON.parse(stdout.mock.calls[0]![0])).toMatchObject({ ok: false, error: { code: 'AUTH_EXPIRED',
+    message: 'Quiz read could not complete.', next: 'Ask the user to sign in again.' } });
+});

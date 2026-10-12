@@ -46,3 +46,22 @@ it.each([[], ['--crawl'], ['--reselect'], ['--crawl', '--reselect']].map(flags =
     expect(result.stderr).toBe('');
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
+
+it('generated root help advertises registry names and keeps capture available', () => {
+  const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
+  const result = spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' });
+  expect(result.stdout.trim().split('\n')).toHaveLength(1);
+  const response = JSON.parse(result.stdout);
+  expect(response).toMatchObject({ ok: true });
+  expect(response.data.usage).toContain('courses'); expect(response.data.usage).toContain('capture');
+});
+it.each([['courses', 'list'], ['quiz', 'fill'], ['quiz', 'submit']].map(args => ({ args })))('unmounted $args remains discoverable and refuses safely without prompting', ({ args }) => {
+  const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
+  const help = spawnSync(process.execPath, [cli, ...args, '--help'], { encoding: 'utf8' });
+  expect(JSON.parse(help.stdout)).toMatchObject({ ok: true, command: args.join('.') });
+  const input = args[0] === 'courses' ? [] : ['--assessment-id', 'synthetic-assessment'];
+  const result = spawnSync(process.execPath, [cli, ...args, ...input], { encoding: 'utf8', timeout: 5000 });
+  expect(result.stdout.trim().split('\n')).toHaveLength(1);
+  expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, command: args.join('.') });
+  expect(result.stderr).not.toMatch(/password|sign in:|RECORD|APPROVE/);
+});

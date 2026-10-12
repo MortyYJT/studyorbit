@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { CourseworkError } from './protocol/errors.js';
 import { BrowserChoiceError } from './capture/browser.js';
+import { parseProtocolCLI } from './protocol/cli.js';
+import { createRegistry } from './protocol/registry.js';
+import { unavailableCLIContext } from './protocol/cli-context.js';
 
 const { version } = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -12,8 +15,6 @@ const program = new Command()
   .name('coursework')
   .description('Manage cited coursework tasks')
   .version(version);
-
-program.command('quiz').description('Read selected Ed quiz questions');
 
 program.command('capture')
   .description('Sign in manually and save local page snapshots')
@@ -40,4 +41,5 @@ program.command('capture')
 if (process.argv[2] === 'quiz') {
   const { parseQuizCLI } = await import('./quiz/cli.js');
   await parseQuizCLI(process.argv.slice(2));
-} else await program.parseAsync();
+} else if (['capture', '--version', '-V'].includes(process.argv[2] ?? '')) await program.parseAsync();
+else await parseProtocolCLI(process.argv.slice(2), { registry: createRegistry(), context: unavailableCLIContext(), program });

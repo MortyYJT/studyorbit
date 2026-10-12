@@ -58,8 +58,8 @@ Depends on A; settle O3/O4 first. Scope: course policy, grants, safe audit/run i
 
 Depends on A only for independent implementation; I connects real B/D/H handlers. Scope: commander adapter and synthetic CLI tests.
 
-- [ ] 5.1 Write failing registry-driven subcommand/help/flag tests with strict input coercion, file-input limits, unknown commands and stdout/stderr separation; generate CLI dispatch from A contracts, retaining one JSON envelope and existing Q1 flags/names.
-- [ ] 5.2 Write failing regressions for `quiz read/policy/grant/prerequisites/propose/review`, malformed files/help, non-TTY owner refusal and no credential prompts; implement aliases to the same entries, not duplicate handlers. Keep existing capture entry point separate until a registry-compatible upstream handler exists; no change to its authentication behavior.
+- [x] 5.1 Write failing registry-driven subcommand/help/flag tests with strict input coercion, file-input limits, unknown commands and stdout/stderr separation; generate CLI dispatch from A contracts, retaining one JSON envelope and existing Q1 flags/names.
+- [x] 5.2 Write failing regressions for `quiz read/policy/grant/prerequisites/propose/review`, malformed files/help, non-TTY owner refusal and no credential prompts; implement aliases to the same entries, not duplicate handlers. Keep existing capture entry point separate until a registry-compatible upstream handler exists; no change to its authentication behavior.
 - [ ] 5.3 Run targeted green, fresh-context review and project check using injected handlers; report production handler integration pending I rather than silently disabling legacy commands.
 
 ## 6. Issue F — Generated local HTTP transport
