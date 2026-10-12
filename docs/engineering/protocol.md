@@ -2,7 +2,7 @@
 
 How the implemented `v1-protocol` seams fit together, for M2 integration and M3 consumers.
 Behaviour is specified in `openspec/changes/v1-protocol/` (until archived, then `openspec/specs/`);
-this file describes the code. Section letters (A–H) match the change's task groups.
+this file describes the code. Section letters (A–H) match the change's task groups. Group I (production wiring) is not merged yet.
 
 | Concern | Code | Section |
 | --- | --- | --- |
@@ -13,6 +13,7 @@ this file describes the code. Section letters (A–H) match the change's task gr
 | CLI transport | `src/protocol/cli.ts` | 5 |
 | HTTP transport | `src/protocol/http.ts` | 6 |
 | MCP transport | `src/protocol/mcp.ts` | 7 |
+| Validated writes, fill and submit gates | `src/protocol/writes.ts`, `study-writes.ts`, `actions.ts` | 8 |
 
 ## 1. Contracts and registry (A)
 
@@ -91,12 +92,12 @@ Unknown requested command text is withheld from envelopes and journals.
 
 With no action adapter, fill/submit return `status: unavailable`, `reason: SOURCE_UNAVAILABLE`,
 without any action call. `createFakeContext({ actions: true })` returns synthetic action receipts;
-these stubs do not verify a real endpoint, enforce a real grant, or submit anything. H owns serialized
+these stubs do not verify a real endpoint, enforce a real grant, or submit anything. H (section 8) owns serialized
 rechecks, durable intent/outcome audit and accurate uncertain outcomes. The confirmation port
 binds tokens to the exact filled target, source revision, page/attempt and policy/grant references.
 `FakeConfirmations` demonstrates host-owner issuance, exact binding, single use and expiry; its
-60-second lifetime is a test-double choice, not production expiry policy. H must settle production
-expiry and consume tokens under the action boundary. An agent boolean cannot represent consent.
+60-second lifetime is a test-double choice; production `SingleUseConfirmations` (section 8) uses 5 minutes
+and consumes tokens under the action boundary (#88). An agent boolean cannot represent consent.
 
 Dispatcher failures preserve existing error codes/retryability while replacing raw messages with
 safe diagnostics (`AUTH_EXPIRED` still directs the user to sign in). Final metadata is applied
@@ -226,7 +227,7 @@ checks and prompt-only limitation. It translates already trusted Q1 text/page ev
 course-scoped private materials. Attribution checks run across full answer/rationale fields
 so statement splitting cannot hide an explicit material attribution (#84).
 
-Issue H must compose authorization, privacy, durable audit/run recording and publication-time
+H (section 8) composes authorization, privacy, durable audit/run recording and publication-time
 revision rechecks. This service alone neither publishes nor proves the correctness of a claim.
 Real M1 evidence adapters remain issue B; persistence/transport/layout changes are out of scope.
 
@@ -267,6 +268,9 @@ The adapter has no migration to resume or roll back. A future backend requires a
 migration/retention/rollback decision and must switch authority atomically while retaining Q1 evidence.
 Do not silently fall back to another backend after an adapter failure.
 
+Passing the synthetic tests does not verify a real course policy, owner approval, browser fill,
+university endpoint or production acceptance.
+
 ### Host wiring
 
 Construct `Q1AuthorizationStore(files, identityMap)`, `DurableAudit(files)` and
@@ -280,7 +284,7 @@ Hosts must establish actual owner interaction; an agent argument is never a capa
 `AutoSubmitSettings` is an optional host persistence port, deliberately without a new file/table
 schema in D. No port means auto-submit is false and changing it is unavailable. Only an explicit,
 audited owner action can call `setAutoSubmit`; the boolean removes no authorization gate and never
-creates an L4 grant. H must consume this setting only at its confirmed submission boundary. Durable
+creates an L4 grant. H consumes this setting only at its confirmed submission boundary (section 8). Durable
 production settings wiring is pending the host's approved settings backend; test settings are synthetic.
 
 `DurableAudit.record` validates strict safe metadata and fsyncs the existing append-only audit log.
@@ -366,3 +370,24 @@ prerequisites, policy and grant recording, including Q1 aliases) are listed but 
 with `INVALID_INPUT`; no argument can grant owner authority and nothing prompts for credentials.
 The executable still uses the fail-closed `unavailableCLIContext` (`SOURCE_UNAVAILABLE`) until
 Issue I wires production ports. Hermes mounting/scheduling remains M4.
+
+## 8. Validated writes, fill and submit (H)
+
+- `ComposedServices` and `ComposedEvidence` (`src/protocol/writes.ts`) route each write command to its owning
+  service and evidence check explicitly; an unrouted command fails `SOURCE_UNAVAILABLE` instead of being accepted.
+- `StudyWriteService` (`src/protocol/study-writes.ts`) accepts cited breakdown, revision-note and practice writes
+  through the shared citation validator (section 3) against host-provided, target-scoped evidence. The evidence
+  provider resolves the course, so a mismatched `task.courseId` is rejected. The previous accepted record is kept by
+  compare-and-swap. `InMemoryStudyRecordStore` is the only store; durable tables need owner approval.
+- `Q1ProposalEvidence` and `Q1QuizServices` route quiz proposals and terminal review to the delivered Q1 handlers,
+  which keep their own locks, journals and TTY gates.
+- `GatedQuizActions` (`src/protocol/actions.ts`) separates L3 fill from L4 submit, serialises per assessment, records
+  audit intent before every action (an audit failure blocks it) and never retries. Fill rechecks policy and grant
+  inside the review lock against the exact revision, page and attempt, and never submits. `InMemoryFilledStore`
+  holds the current filled revision; a durable layout needs owner approval.
+- `SingleUseConfirmations`: server-issued, bound to the exact filled target and policy/grant references, 5-minute
+  lifetime, spent when presented, and a new token revokes older ones for that assessment (#88). The per-course
+  auto-submit setting (default off) removes only the confirmation step.
+- No real Ed submit driver exists in M2; submit audits a denial and returns `unavailable` without building a
+  request. M4 supplies a separately reviewed adapter. Known limits: `requestConfirmation` does not recheck
+  policy/grant (submit does); the token is spent before the adapter-availability check, so the owner reconfirms.

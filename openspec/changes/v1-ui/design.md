@@ -1,6 +1,6 @@
 ## Context
 
-Standing authority: `docs/engineering/v1-technical-design.md`, especially section 7 M3, and `note/decisions.md` (#15, #25, #28, #31, #56, #64–#77, #85). The obsolete iCal/no-L4 context in `openspec/config.yaml` is superseded by #77/#56; retain the config's strict TS, synthetic fixtures, privacy and external-reasoning constraints. Do not edit it in this change.
+Standing authority: `docs/engineering/v1-technical-design.md`, especially section 7 M3, and `note/decisions.md` (#15, #25, #28, #31, #56, #64–#77, #85).
 
 The merged M2 source is the wire truth: `src/protocol/contracts.ts`, `http.ts`, `actions.ts`, shared services and `docs/engineering/protocol.md`. At this checkout M2 supplies contracts, standalone transports, read/write/authorization services and synthetic action gates. Its final host integration remains a separate gate; CLI/MCP placeholder ports and permissive fakes are not production services. `startHttpTransport` serves only exact POST command routes, not static assets or a bootstrap/confirmation endpoint. `GatedQuizActions.requestConfirmation` is host-only; `SingleUseConfirmations` defaults to five minutes, revokes prior tokens for the assessment on issuance, and consumes presented tokens. Fake confirmation expiry is not the production rule.
 
@@ -59,7 +59,7 @@ At the start of M3, a scoped local Hermes spike must demonstrate an actually cal
 
 ### Autonomy and exact owner interaction
 
-Use #56, not obsolete no-L4 wording. L0 reads; L1 assistance; L2 drafts; L3 fills for owner review; L4 submits after owner confirmation by default. Recorded course policy and exact grants gate L2–L4, prohibited courses cap at L1, exams never above L1, unknown classification fails closed. UI labels and disabled controls explain these constraints but M2 services recheck them at execution; schema levels or cached receipts are not permission. Policy configuration remains outside UI. Auto-submit is default off and only an explicitly owner-enabled, audited per-course setting removes the confirmation step; it never bypasses other checks.
+Per #56: L0 reads; L1 assistance; L2 drafts; L3 fills for owner review; L4 submits after owner confirmation by default. Recorded course policy and exact grants gate L2–L4, prohibited courses cap at L1, exams never above L1, unknown classification fails closed. UI labels and disabled controls explain these constraints but M2 services recheck them at execution; schema levels or cached receipts are not permission. Policy configuration remains outside UI. Auto-submit is default off and only an explicitly owner-enabled, audited per-course setting removes the confirmation step; it never bypasses other checks.
 
 Display exact proposal answers, citations, evidence limitations and revision; use `quiz.review` only through a trusted browser-owner adapter after O7, not by calling Q1 TTY handlers from the browser. Changing source/proposal/target/page/attempt/policy/grant invalidates old review/consent. Fill is one explicit command with no submit side effect. A fill receipt is not a grade or submission. Render `partial`, `unavailable` and `uncertain` command data even under HTTP 200 and inspect failure envelopes under non-200 replies. Partial receipts with `retrySafe: false` and UNCERTAIN forbid blind repeats and require reconciliation; neither means complete fill/submission.
 
@@ -76,7 +76,7 @@ Before default L4 submission display the exact filled target/answers; the owner 
 
 ## Migration Plan
 
-1. Resolve each Open option before its affected issue; record pick/reason in this change or `note/decisions.md`. This draft records no selection. #79 gives Claude scheduling authority for permitted later decisions; it does not turn these recommendations into decisions or waive red lines.
+1. Resolve each Open option before its affected issue; record pick/reason in this change or `note/decisions.md`. This draft records no selection. Under #91 (overriding #79) the owner picks any option not already recorded; O1–O9 were recorded as #89, pending owner review.
 2. Merge synthetic host/client and read UI first. Build into `dist/ui`; keep mode visibly synthetic, no real services/profile attached. No production data migration.
 3. Deliver selected missing M2 contracts/services before enabling edits, study persistence, chat or owner action flows. Keep unsupported paths disabled and explicitly pending.
 4. Mount real delivered M2 services in the same process after protocol integration/privacy/security review. Keep fixtures independent and no copied course captures. Login/MFA are owner operations outside UI.

@@ -5,7 +5,7 @@
 
 - **最后更新：** 2026-10-13，文档清理会话，分支 `claude/docs-cleanup`。
 - **模式：** 用户在线时推进（#91，推翻 #79 的全自动）。看门狗定时任务 `coursework-dispatcher-watchdog` 已停用，不要重新打开。
-- **本轮做了什么：** 合并 4 份协议说明为 `docs/engineering/protocol.md`；删掉 15 份按 issue 写的过程证据（#90）；补勾已合并 PR 对应的 tasks；修正 `openspec/config.yaml`（去 iCal、按 #56 写 L0–L4）；技术设计第 8 节改成在线推进；README 重写；roadmap 改成带「卡在哪」的进度表；dispatch 技能补上已知陷阱。
+- **本轮做了什么：** 合并 4 份协议说明为 `docs/engineering/protocol.md`；删掉 11 份按 issue 写的过程证据笔记（#90）；补勾已合并 PR 对应的 tasks；修正 `openspec/config.yaml`（去 iCal、按 #56 写 L0–L4）；技术设计第 8 节改成在线推进；README 重写；roadmap 改成带「卡在哪」的进度表；dispatch 技能补上已知陷阱。
 
 ## 没合并的工作（都已推到远程）
 
