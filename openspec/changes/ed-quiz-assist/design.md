@@ -2,8 +2,7 @@
 
 This refines [v1 technical design sections 2–4, 6 and 7](../../../docs/engineering/v1-technical-design.md)
 and [decisions #56, #57 and #75](../../../note/decisions.md). The owner tests by **2026-10-23**;
-the real quiz is due 2026-10-25. This is L3: the owner submits. The obsolete iCal/no-L4 context in
-`openspec/config.yaml` does not override the approved design or this explicitly scoped request.
+the real quiz is due 2026-10-25. This is L3: the owner submits.
 
 `openspec/specs/` does not yet exist. Available baselines are `v1-foundation` (domain, local store,
 agent envelope, managed profile) and `capture-selection-ed` (selection, limiter, Ed transport).

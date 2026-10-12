@@ -1,6 +1,6 @@
 Implementation follows this change as the sole M2 spec. Each implementation increment starts with a meaningful failing test on independently synthetic fixtures in `test/`, records red evidence, implements the smallest passing behavior and records targeted green output. No real course captures, passwords, tokens, profiles or redacted real quiz content enter fixtures. Every issue ends with a fresh-context read-only correctness/requirements review and `bash .claude/check.sh` (= `npm run check`) output. Review, live acceptance and archive are gates, not manufactured failing tests.
 
-Claude resolves/records Open choices under #79, creates one GitHub issue/standalone clone per group, commits/pushes/opens PRs/merges after review and CI. Codex implements on `codex/<topic>` and never commits. Check actual private visibility before pushing answering/submitting implementation (#57). No unapproved dependencies, CI/deployment edits or destructive data migration. Any domain/storage change beyond the approved design/change needs owner approval. No milestone dates are invented. These tasks describe future implementation; this draft changes only `openspec/changes/v1-protocol/` and never `note/handoff.md`.
+Claude asks the owner for Open choices this change does not settle (#91, overriding #79) and records them, creates one GitHub issue/standalone clone per group, commits/pushes/opens PRs/merges after review and CI. Codex implements on `codex/<topic>` and never commits. Check actual private visibility before pushing answering/submitting implementation (#57). No unapproved dependencies, CI/deployment edits or destructive data migration. Any domain/storage change beyond the approved design/change needs owner approval. No milestone dates are invented. These tasks describe future implementation; this draft changes only `openspec/changes/v1-protocol/` and never `note/handoff.md`.
 
 | Issue | Deliverable | Merge dependencies | Synthetic implementation seam |
 | --- | --- | --- | --- |
@@ -24,7 +24,7 @@ Scope: shared protocol contracts/dispatcher and synthetic fakes; no production r
 - [x] 1.2 Write failing tests for duplicate/unknown commands, strict input/output schemas, existing error/envelope compatibility and all proposed read/write/policy/grant/review/fill/submit contracts; implement `{ name, input, output, handler, level }`, inferred types, registry interfaces and schema-valid fake examples. Preserve Q1 proposal/review shapes and minimum L0–L4 semantics.
 - [x] 1.3 Write failing dispatcher tests for one execution, output validation, bounded safe envelope, privacy/authorization service invocation, safe pre-handler denials and legacy envelope adaptation; implement a transport-independent dispatcher with injected trusted context. Ensure owner authority cannot be parsed from request data.
 - [x] 1.4 Write failing contract-consumer tests showing M3 fake reads, study writes and proposal/action outcomes validate without M1 ingestion, a real browser or later issues; publish interface/examples for repositories, evidence, owner interactions, audits and action adapters. Include unavailable adapter behavior without inventing endpoint support.
-- [ ] 1.5 Run targeted green, fresh-context review, project check and diff/privacy checks; provide outputs for Claude's A PR. **Merge A before parallel sync/protocol/M3 work**, and hand off the exact contracts through files/GitHub.
+- [x] 1.5 Run targeted green, fresh-context review, project check and diff/privacy checks; provide outputs for Claude's A PR. **Merge A before parallel sync/protocol/M3 work**, and hand off the exact contracts through files/GitHub.
 
 ## 2. Issue B — Bounded current-state reads and trusted evidence
 
@@ -33,7 +33,7 @@ Depends on A; O4 before identity translation. Scope: repository query interfaces
 - [x] 2.1 Write failing synthetic repository tests for bounded filtered course/assessment/task/source/material/run reads, accepted revision/practice/proposal queries through A's interface, missing evidence and safe continuation; implement queries behind `src/store/` without changing M1 domain schemas. A/D can supply accepted-record repository fakes until the actual adapter exists.
 - [x] 2.2 Write failing handler tests for trusted source-text provenance, PDF page/hash/locator resolution, missing/unsupported coverage and Q1/M1 source mapping; implement read/evidence adapters with verified O4 translation, never name-based course merging or raw capture exports.
 - [x] 2.3 Write failing tests for sensitive sentinels across entity fields, locators, URLs, change snapshots and errors; reuse deterministic M1 redaction and withhold unsafe output. Mount the existing changes handler while preserving exclusive cursors and oversized-event behavior; expose actual ledger measurements only.
-- [ ] 2.4 Run targeted green, fresh-context review and project check; document which M1 material/sync/run paths are integrated versus pending, with no live-read claim from fixtures.
+- [x] 2.4 Run targeted green, fresh-context review and project check; document which M1 material/sync/run paths are integrated versus pending, with no live-read claim from fixtures.
 
 ## 3. Issue C — Shared deterministic citation service
 
@@ -42,7 +42,7 @@ Depends on A. Scope: reusable citation/evidence validation and Q1 compatibility 
 - [x] 3.1 Write failing synthetic tests for NFKC, quote/whitespace normalization, empty/nonmember quotes, original UTF-16 ranges, repeated fragments, source hash and PDF page/locator mismatch; extract the shared exact-substring validator with trusted evidence injection, preserving existing Citation fields/private metadata.
 - [x] 3.2 Write failing tests for every breakdown step/note claim/practice explanation needing target-scoped evidence, invented source text/offsets and wrong-course sources; implement claim validation using A's selected O2 structures, no fuzzy matching or model calls.
 - [x] 3.3 Write failing Q1 regressions for own-question citation, material statements in answer/rationale, statement coverage and prompt-only limitations; keep existing conservative provenance safeguards and verified locator adapters. Test stale trusted hashes and preserve evidence limitations without claiming answer truth.
-- [ ] 3.4 Run targeted green, fresh-context review and project check; publish the shared service contract for H and preserve Q1 consumer compatibility.
+- [x] 3.4 Run targeted green, fresh-context review and project check; publish the shared service contract for H and preserve Q1 consumer compatibility.
 
 ## 4. Issue D — Full authorization/audit service and Q1 compatibility
 
@@ -52,7 +52,7 @@ Depends on A; settle O3/O4 first. Scope: course policy, grants, safe audit/run i
 - [x] 4.2 Write failing synthetic audit/run tests for safe intent/outcome/denial refs, no rejected prose/credentials, read audit compatibility, citation failures, pre-mutation failure and append-only persistence; implement injectable durable record services separate from operational run measurements. Local publication must not claim success if required recording fails.
 - [x] 4.3 Write failing private temp-directory tests over Q1 version-1 policy/grant/binding/prerequisite/snapshot/proposal/review/log fixtures, unsafe paths/symlinks, malformed records and interrupted activation; implement selected O3 adapter/migration with one authority per target, retained history/revisions/hashes and no deletion/escalation. If migration selected, add resumable duplicate-prevention/backup/atomic activation tests and record rollback/lifecycle before changing schema.
 - [x] 4.4 Write failing Q1 real-prerequisite scoping, ambiguous provider mapping, policy/grant hash and stale-review tests; implement compatibility facades used by existing Q1 functions, retaining TTY-only owner actions and that workflow's specific attestation/date.
-- [ ] 4.5 Run targeted green, fresh-context review, project check and privacy diff; document active backend/adapter lifecycle and unresolved identity records without editing/deleting owner data.
+- [x] 4.5 Run targeted green, fresh-context review, project check and privacy diff; document active backend/adapter lifecycle and unresolved identity records without editing/deleting owner data.
 
 ## 5. Issue E — Generated CLI and legacy aliases
 
@@ -60,7 +60,7 @@ Depends on A only for independent implementation; I connects real B/D/H handlers
 
 - [x] 5.1 Write failing registry-driven subcommand/help/flag tests with strict input coercion, file-input limits, unknown commands and stdout/stderr separation; generate CLI dispatch from A contracts, retaining one JSON envelope and existing Q1 flags/names.
 - [x] 5.2 Write failing regressions for `quiz read/policy/grant/prerequisites/propose/review`, malformed files/help, non-TTY owner refusal and no credential prompts; implement aliases to the same entries, not duplicate handlers. Keep existing capture entry point separate until a registry-compatible upstream handler exists; no change to its authentication behavior.
-- [ ] 5.3 Run targeted green, fresh-context review and project check using injected handlers; report production handler integration pending I rather than silently disabling legacy commands.
+- [x] 5.3 Run targeted green, fresh-context review and project check using injected handlers; report production handler integration pending I rather than silently disabling legacy commands.
 
 ## 6. Issue F — Generated local HTTP transport
 
@@ -69,9 +69,9 @@ Depends on A; O5 before implementation, O6 before owner-confirmation wiring. Sco
 - [x] 6.1 Record exact method/body/status/size/timeout conventions, Host/Origin checks, non-browser client authorization and owner capability bootstrap from O5. Write failing tests for loopback-only binding, generated known routes, malformed JSON, unknown paths/methods, request/body bounds and cleanup; implement the generic adapter.
 - [x] 6.2 Write failing security tests for cross-origin browser requests, forged Host/owner fields, unauthorized writes/owner actions and secrets in responses; implement selected checks with no wildcard CORS, credential exports or model assertions treated as owner approval.
 - [x] 6.3 Write failing dispatcher parity tests for success/schema errors/auth denials/oversized output and exactly one handler execution using fakes; implement safe envelope/status mapping without business logic.
-- [ ] 6.4 Run targeted green, fresh-context review and project check; record loopback/security evidence and pending B/D/H integration. Do not serve M3 assets or modify CI/deployment in this issue.
+- [x] 6.4 Run targeted green, fresh-context review and project check; record loopback/security evidence and pending B/D/H integration. Do not serve M3 assets or modify CI/deployment in this issue.
 
-Implementation and verification evidence for F: `note/issue-65-http.md`. Tasks 6.1–6.3 are checked on real loopback evidence: `test/protocol/http.test.ts` binds 127.0.0.1 on the host and passes, and the project check passes. Socket-free boundary tests are supplementary evidence only. Task 6.4 (fresh-context review sign-off) stays open.
+Verification evidence for F is in PR #70: `test/protocol/http.test.ts` binds 127.0.0.1 on the host and passes, and the project check passes. Socket-free boundary tests are supplementary evidence only.
 
 ## 7. Issue G — Official SDK stdio MCP transport
 
@@ -79,7 +79,7 @@ Depends on A only. Scope: MCP adapter plus synthetic stdio client tests. The sol
 
 - [x] 7.1 Write failing SDK-client tests for initialization, registry-derived discovery/input schema, calling commands and runtime refinement failures; implement `coursework mcp` with official SDK stdio and injected handlers, no custom protocol handshake or separate business registry.
 - [x] 7.2 Write failing tests for framing/diagnostic separation, sanitized failures/64 KiB command-envelope bounds, disconnect cleanup and forged owner privilege; implement error/result mapping and host-owned context with no credential prompts or grants from MCP arguments.
-- [ ] 7.3 Run targeted green, fresh-context review, project check and dependency/license review; report standalone transport evidence and pending production wiring. Hermes mounting/scheduling remains M4.
+- [x] 7.3 Run targeted green, fresh-context review, project check and dependency/license review; report standalone transport evidence and pending production wiring. Hermes mounting/scheduling remains M4.
 
 ## 8. Issue H — Validated writes and separate action gates
 
@@ -90,7 +90,7 @@ Depends on B/C/D; O2/O6 before relevant implementation. Scope: validated command
 - [x] 8.3 Write failing fake-action tests for L3-only fill, current grants/policies and exact review/page/attempt identity, unsupported controls, locks and stale/revoked authorization; implement separate fill command. Integrate only a delivered Q1 adapter, preserving no submit clicks/calls and passive-observation semantics.
 - [x] 8.4 Write failing fake-submit tests for L4 only, single-use owner confirmation bound to exact filled revision/target/authorization, stale/replayed/cross-target approvals and explicit default-off per-course auto-submit; implement O6 lifecycle, serialized preflight and safe unavailable adapter refusal. No real Ed submission request is constructed here.
 - [x] 8.5 Write failing tests for audit failure before action, local publication/ledger failure, partial fill, external action/outcome uncertainty and zero blind retries; implement accurate safe outcomes without fictitious rollback or status/grade inference. Keep every grant/fill/submit attempt audited.
-- [ ] 8.6 Run targeted green, fresh-context review and project check; Claude verifies private visibility before any answering-code push. Report real fill pending if Q1 unavailable and real L4 submit deferred to M4.
+- [x] 8.6 Run targeted green, fresh-context review and project check; Claude verifies private visibility before any answering-code push. Report real fill pending if Q1 unavailable and real L4 submit deferred to M4.
 
 ## 9. Issue I — Integration, acceptance and closeout
 

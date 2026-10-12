@@ -21,7 +21,7 @@ This document expands the root `AGENTS.md`. Read only the sections listed there 
 ## Communication and documentation
 
 - Talk to the user in Chinese. Keep this file, the README, engineering docs, source comments, and docstrings in English. Put Chinese planning and learning records in `note/`. Preserve intended Chinese UI copy.
-- Record meaningful decisions, milestone evidence, and unresolved issues in `note/` as work progresses. Keep notes concise and free of private identity details.
+- Record meaningful decisions in `note/decisions.md` and open questions in `note/handoff.md` as work progresses. Per-issue implementation and verification evidence belongs in the PR description, not in repository files; durable knowledge about how the code works goes into a module doc under `docs/engineering/`. Keep notes concise and free of private identity details.
 - Delivery report, in this order: (1) 你要做什么 - the single action required from the user, or "nothing"; (2) 我完成了什么 - one line per item with its evidence; (3) 我遇到什么问题 - what went wrong and how it was resolved; (4) 还没完成什么 - what is unfinished or unverified.
 - Open every section with a one-line summary. Lead with the user's action. One idea per line. Report code, tests, CI, local run, and deployment separately. Write "not run" or "not verified" plainly.
 - Put reasoning, tradeoffs, and history in `note/`, not in the report.

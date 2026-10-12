@@ -624,7 +624,7 @@ function renderSchool(m) {
       <div class="sub">${esc(c.name)}</div><div class="sub">${t("currentAvg")} ${pr.avg == null ? "—" : pr.avg.toFixed(1) + "%"} · ${t("nextDue")} ${next ? `${next.due.getMonth() + 1}/${next.due.getDate()}` : t("none")}</div></div></button>`;
   }).join("");
   return `<div class="detail-page view">${crumbs([{ label: `${m.glyph} ${modName(m)}` }])}
-    <div class="dh"><div><h2>${m.glyph} ${esc(modName(m))}</h2><p>Canvas · Ed · iCal</p></div></div>
+    <div class="dh"><div><h2>${m.glyph} ${esc(modName(m))}</h2><p>Canvas · Ed</p></div></div>
     <div class="sect" style="margin-top:0"><h3>${t("courses")}</h3><div class="tiles">${tiles}</div></div></div>`;
 }
 
@@ -723,7 +723,6 @@ function panelBody(tab) {
     <div class="row"><span>${t("lastSync")}</span><span>10/12 09:12 · 3m41s</span></div>
     <div class="row"><span><i class="status-dot ok"></i>Canvas</span><span class="sub">${t("syncOk")}</span></div>
     <div class="row"><span><i class="status-dot bad"></i>Ed</span><span>${t("syncBad")}</span></div>
-    <div class="row"><span><i class="status-dot ok"></i>iCal</span><span class="sub">${t("syncOk")}</span></div>
     <p class="note">${t("sample")}</p>`;
   if (tab === "metrics") return `
     <div class="kpis"><div class="kpi"><div class="v">3m41s</div><div class="l">${t("syncTime")}</div></div>
@@ -747,7 +746,7 @@ function panelBody(tab) {
     <form class="grid" id="weekForm"><label class="f">${t("semStart")}<input type="date" name="semStart" value="${settings.semStart}"></label>
       <label class="f">${t("breakWeeks")}<input type="number" name="breakAfter" min="0" max="12" value="${settings.breakAfter}"></label></form>
     <h3 style="font-size:13px;margin:18px 0 8px">${t("manageModules")}</h3>
-    ${modules.map((m) => `<div class="row"><span>${m.glyph} ${esc(modName(m))}</span><span class="sub">${m.auto ? "Canvas / Ed / iCal" : t("manual")}</span></div>`).join("")}
+    ${modules.map((m) => `<div class="row"><span>${m.glyph} ${esc(modName(m))}</span><span class="sub">${m.auto ? "Canvas / Ed" : t("manual")}</span></div>`).join("")}
     <form class="grid" id="modForm" style="margin-top:10px"><label class="f">${t("name")}<input name="name" required placeholder="${t("phModule")}"></label>
       <div style="display:flex;align-items:end"><button class="btn" type="submit">＋ ${t("addModule")}</button></div></form>`;
 }

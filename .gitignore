@@ -10,7 +10,7 @@ coverage/
 *.pem
 *.key
 
-# Local-only coursework data: browser profiles, iCal URLs, synced data, run metrics
+# Local-only coursework data: browser profiles, synced data, run metrics
 .local/
 *.ics
 
