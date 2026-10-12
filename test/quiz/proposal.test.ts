@@ -204,3 +204,50 @@ it('wrong-course material and inconsistent trusted PDF locators preserve the pro
     expect(await f.files.read(name)).toEqual(before);
   }
 });
+it.each(['policy', 'grant', 'prerequisites', 'propose'] as const)('generated %s help keeps its legacy receipt without owner confirmation', async command => {
+  const stdout = vi.fn(); const confirm = vi.fn(async () => true);
+  await parseQuizCLI(['quiz', command, '--help'], { stdout, isTTY: false, confirm });
+  expect(JSON.parse(stdout.mock.calls[0]![0])).toMatchObject({ ok: true, command: `quiz.${command}`,
+    data: { usage: `coursework quiz ${command} --input <path>` } });
+  expect(confirm).not.toHaveBeenCalled();
+});
+it.each(['policy', 'grant', 'prerequisites'] as const)('non-TTY %s file alias never confirms or mutates', async command => {
+  const f = await setup(); const stdout = vi.fn(); const confirm = vi.fn(async () => true);
+  const { writeFile } = await import('node:fs/promises'); const path = join(f.root, 'input.json');
+  const value = command === 'policy' ? policy : command === 'grant' ? grant
+    : { version: 1, binding, repositoryPrivate: true, verifiedAt: '2026-10-12T00:00:00Z' };
+  await writeFile(path, JSON.stringify(value));
+  await parseQuizCLI(['quiz', command, '--input', path], { ...f.dependencies, stdout, stderr: () => {}, isTTY: false, confirm });
+  expect(JSON.parse(stdout.mock.calls[0]![0])).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+  expect(confirm).not.toHaveBeenCalled();
+  expect(await f.files.read(command === 'policy' ? 'policy-7' : `${command}-${hash('ed:7:11')}`)).toBeUndefined();
+});
+it('alias preserves malformed-citation classification and original safe denial output', async () => {
+  const f = await setup(); const stdout = vi.fn(); const stderr = vi.fn();
+  const { writeFile } = await import('node:fs/promises'); const path = join(f.root, 'input.json');
+  const input = { ...f.input, answers: [{ ...answer, citations: [] }] };
+  const direct = await proposeQuiz(input, f.dependencies);
+  await writeFile(path, JSON.stringify(input));
+  await parseQuizCLI(['quiz', 'propose', '--input', path], { ...f.dependencies, stdout, stderr });
+  const response = JSON.parse(stdout.mock.calls[0]![0]);
+  if (direct.ok) throw Error('expected synthetic denial');
+  expect(response.error).toEqual(direct.error);
+  expect(JSON.parse((await readFile(join(f.root, 'quiz', 'audit.jsonl'), 'utf8')).trim().split('\n').at(-1)!)).toMatchObject({ runId: response.meta.runId, code: 'CITATION_MISMATCH' });
+  expect(JSON.parse((await readFile(join(f.root, 'quiz', 'runs.jsonl'), 'utf8')).trim().split('\n').at(-1)!)).toMatchObject({ id: response.meta.runId, errorCode: 'CITATION_MISMATCH' });
+  stdout.mockClear();
+  const refused = await recordOwnerAction('policy', policy, { ...f.dependencies, isTTY: false });
+  await writeFile(path, JSON.stringify(policy));
+  await parseQuizCLI(['quiz', 'policy', '--input', path], { ...f.dependencies, isTTY: false, stdout, stderr });
+  if (refused.ok) throw Error('expected owner refusal');
+  expect(JSON.parse(stdout.mock.calls[0]![0]).error).toEqual(refused.error);
+});
+it('alias preserves malformed-file and missing-file-flag messages', async () => {
+  const f = await setup(); const stdout = vi.fn(); const stderr = vi.fn();
+  const { writeFile } = await import('node:fs/promises'); const path = join(f.root, 'input.json');
+  await writeFile(path, '{');
+  await parseQuizCLI(['quiz', 'propose', '--input', path], { ...f.dependencies, stdout, stderr });
+  expect(JSON.parse(stdout.mock.calls[0]![0])).toMatchObject({ error: { message: 'Quiz input file is unavailable or invalid.' } });
+  stdout.mockClear();
+  await parseQuizCLI(['quiz', 'propose'], { ...f.dependencies, stdout, stderr });
+  expect(JSON.parse(stdout.mock.calls[0]![0])).toMatchObject({ error: { message: 'Invalid quiz command arguments.' } });
+});

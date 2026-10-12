@@ -13,6 +13,15 @@ import { quizOutputSchema, type QuizReadData } from './read/questions.js';
 import type { QuizTarget } from './read/contracts.js';
 const revisionSchema = z.string().regex(/^[a-f0-9]{64}$/);
 export const proposalSchema = z.strictObject({ version: z.literal(1), binding: bindingSchema, sourceRevision: revisionSchema, answers: z.array(answerSchema).min(1).max(300) });
+/** Preserve Q1's public error classification when a transport rejects malformed input first. */
+export function proposalInputError(input: unknown): CourseworkError {
+  const target = z.object({ version: z.literal(1), binding: bindingSchema, sourceRevision: revisionSchema }).safeParse(input);
+  if (target.success && typeof input === 'object' && input && 'answers' in input
+    && !z.array(answerSchema).min(1).max(300).safeParse(input.answers).success) {
+    return new CourseworkError('CITATION_MISMATCH', 'Citation input is invalid.');
+  }
+  return new CourseworkError('INVALID_INPUT', 'Invalid quiz proposal.');
+}
 export interface QuizWriteDependencies { files?: QuizFiles; audit?: AuditTrail; isTTY?: boolean; confirm?: (message: string) => Promise<boolean> }
 async function terminalConfirm(message: string): Promise<boolean> {
   const terminal = createInterface({ input: process.stdin, output: process.stderr });
@@ -113,10 +122,7 @@ export async function proposeQuiz(input: unknown, dependencies: QuizWriteDepende
   const result = await auditedMutation('proposal', audit, async refs => getFiles().exclusive(async () => {
     const parsed = proposalSchema.safeParse(input);
     if (!parsed.success) {
-      // Malformed citation metadata is a citation failure, while malformed target references are input failures.
-      const target = z.object({ version: z.literal(1), binding: bindingSchema, sourceRevision: revisionSchema }).safeParse(input);
-      if (target.success && typeof input === 'object' && input && 'answers' in input && !z.array(answerSchema).min(1).max(300).safeParse(input.answers).success) throw new CourseworkError('CITATION_MISMATCH', 'Citation input is invalid.');
-      throw new CourseworkError('INVALID_INPUT', 'Invalid quiz proposal.');
+      throw proposalInputError(input);
     }
     const { binding, answers, sourceRevision } = parsed.data;
     const recordedBinding = bindingSchema.safeParse(await getFiles().read(`binding-${hash(binding.assessmentId)}`));

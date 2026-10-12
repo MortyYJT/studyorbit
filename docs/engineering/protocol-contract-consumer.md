@@ -117,3 +117,28 @@ handle, expose the file/token to a model, or log that header. Ordinary reads use
 Exact security, limits, timeouts and status conventions are recorded in the OpenSpec design's
 “Issue F: selected HTTP conventions (O5)” section. No CLI entry point, UI or production mounting
 is supplied. Actual shared B/D/H service and O6 integration remains issue I/H work.
+
+## Generated CLI adapter (Issue E)
+
+`parseProtocolCLI(args, { registry, context, stdout, stderr, isTTY })` in
+`src/protocol/cli.ts` generates nested Commander commands from registered dotted names
+(`courses.list` becomes `coursework courses list`). Fields become kebab-case flags; numbers
+and explicit `true`/`false` booleans are strictly decoded, structured fields take JSON, and
+Zod remains authoritative for defaults, bounds and refinements. Discriminated-union fields
+are collected without choosing a variant. `--input <path>` supplies a strict JSON object
+instead of field flags; it accepts regular files only and bounds both stat and actual read
+to 4 MiB. `--json` is accepted; every generated invocation emits one bounded JSON envelope,
+including help as `{ usage }`, and safe diagnostics use stderr.
+
+Q1 retains repeated `--question`, review's `--assessment/--revision/--page/--attempt`, and
+mandatory `--input` for policy/grant/prerequisites/propose. Its explicit legacy adapter
+binds delivered functions to the same contracts and dispatcher, preserving receipts,
+read `sourceRevision`, safe error details, and durable journal run identities. Pure proposal
+error classification is shared with Q1 so malformed citation denials retain their original
+code. Owner entries need a host TTY and owner capability; CLI flags cannot provide either.
+No CLI adapter prompts for credentials.
+
+The executable keeps capture on its original path. New command ports remain explicitly
+unmounted (`SOURCE_UNAVAILABLE`) until Issue I; `unavailableCLIContext` is a fail-closed host
+placeholder, not a production repository or authorization service. Tests inject synthetic
+handlers/context; HTTP/MCP and production repository wiring are outside Issue E.
