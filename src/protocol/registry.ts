@@ -22,6 +22,7 @@ export class Registry {
   list(): readonly RegistryEntry[] { return [...this.entries.values()]; }
 }
 const safeMessages: Record<ErrorCode, string> = {
+  UNCERTAIN: 'The write may have completed but mandatory recording failed; inspect local state before retrying.',
   INVALID_INPUT: 'Invalid input or required trusted authorization is unavailable.',
   NOT_FOUND: 'The command or requested record was not found.', CONFLICT: 'The target revision changed; refresh before retrying.',
   AUTH_EXPIRED: 'Authentication expired.', SOURCE_UNAVAILABLE: 'The required source or adapter is unavailable.',
@@ -47,11 +48,12 @@ export function adaptLegacyHandler(handler: Handler<unknown, Envelope>): Handler
 }
 /** Trusted context is a separate host argument and is never reconstructed from the request. */
 export async function dispatch(registry: Registry, name: string, input: unknown, context: TrustedContext): Promise<Envelope> {
-  const runId = randomUUID(); const started = performance.now(); let executed = false;
+  const runId = randomUUID(); const started = performance.now(); let executed = false; let handlerSucceeded = false; let completionRecording = false;
   // Do not let oversized/invalid names inject request prose into the metadata journals.
   const safeName = registry.get(name)?.name ?? 'unknown';
+  let refs: Pick<AuditEvent, 'courseId' | 'assessmentId' | 'revision' | 'policyRef' | 'grantRef'> = {};
   const record = async (phase: AuditEvent['phase'], code: AuditEvent['code']) => {
-    const event = { command: safeName, runId, phase, code };
+    const event = { ...refs, command: safeName, runId, phase, code };
     await context.audit.record(event); await context.runs.record(event);
   };
   let result: Envelope;
@@ -64,22 +66,26 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
       if (!context.owner) throw new CourseworkError('INVALID_INPUT', safeMessages.INVALID_INPUT);
       await context.owner.assertOwner(name);
     }
+    refs = await context.authorization.references?.(name, entry.level, parsed.data) ?? {};
     await context.authorization.check(name, entry.level, parsed.data);
     if (entry.level >= 1 && name in contracts) await context.evidence.check(name as CommandName, parsed.data);
     await record('intent', 'OK');
     executed = true;
     const raw = await entry.handler(parsed.data, context);
+    handlerSucceeded = true;
     const validated = entry.output.safeParse(raw);
     if (!validated.success) throw new CourseworkError('INTERNAL', safeMessages.INTERNAL);
     const protectedOutput = await context.privacy.protect(name, validated.data);
     const finalOutput = entry.output.safeParse(protectedOutput);
     if (!finalOutput.success) throw new CourseworkError('INTERNAL', safeMessages.INTERNAL);
     result = withMetadata(ok(safeName, finalOutput.data), { runId, durationMs: performance.now() - started });
+    completionRecording = true;
     await record('outcome', result.ok ? 'OK' : result.error.code);
   } catch (error) {
-    let failure = safeError(error);
+    let failure = completionRecording && handlerSucceeded && !readNames.has(name)
+      ? new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN) : safeError(error);
     try { await record(executed ? 'outcome' : 'denial', failure.code); }
-    catch { failure = new CourseworkError('INTERNAL', safeMessages.INTERNAL); }
+    catch { if (failure.code !== 'UNCERTAIN') failure = new CourseworkError('INTERNAL', safeMessages.INTERNAL); }
     result = withMetadata(fail(safeName, failure.code, failure.message, failure.next), { runId, durationMs: performance.now() - started });
   }
   return result;
@@ -99,7 +105,17 @@ export function createRegistry(): Registry {
         if (canonical === 'quiz.submit') return context.actions
           ? context.actions.submit(input as never, context) : { status: 'unavailable', reason: 'SOURCE_UNAVAILABLE' };
         if (readNames.has(canonical)) return context.repository.read(canonical as ReadCommand, input as never);
-        return context.services.write(canonical as WriteCommand, input as never, context);
+        const raw = await context.services.write(canonical as WriteCommand, input as never, context);
+        if (canonical === 'policy.record' || canonical === 'grant.record') {
+          const receipt = contracts[canonical].output.parse(raw);
+          // Canonical requests carry identities; legacy translations are checked by D's explicit map.
+          const target = input as { courseId?: string; assessmentId?: string };
+          if (target.courseId !== undefined && receipt.courseId !== target.courseId
+            || target.assessmentId !== undefined && (!('assessmentId' in receipt) || receipt.assessmentId !== target.assessmentId)) {
+            throw new CourseworkError('INTERNAL', safeMessages.INTERNAL);
+          }
+        }
+        return raw;
       };
       handlers.set(canonical, handler);
     }

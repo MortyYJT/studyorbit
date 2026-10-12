@@ -19,6 +19,8 @@ export interface EvidenceService {
 export interface AuthorizationService {
   /** Recheck recorded policy/exact grant/classification. A registry level alone grants nothing. */
   check(command: string, level: Level, input: unknown): Promise<void>;
+  /** Optional trusted target/version resolution for audit metadata; no request prose. */
+  references?(command: string, level: Level, input: unknown): Promise<Pick<AuditRecord, 'courseId' | 'assessmentId' | 'revision' | 'policyRef' | 'grantRef'>>;
 }
 export interface OwnerInteraction {
   /** Host-established capability. Implementations must verify their actual owner interaction. */
@@ -34,7 +36,7 @@ export interface ActionAdapter {
   fill(input: ParsedCommandInput<'quiz.fill'>, context: TrustedContext): Promise<CommandOutput<'quiz.fill'>>;
   submit(input: ParsedCommandInput<'quiz.submit'>, context: TrustedContext): Promise<CommandOutput<'quiz.submit'>>;
 }
-export interface AuditEvent extends Pick<AuditRecord, 'assessmentId' | 'revision' | 'policyRef' | 'grantRef'> {
+export interface AuditEvent extends Pick<AuditRecord, 'courseId' | 'assessmentId' | 'revision' | 'policyRef' | 'grantRef'> {
   command: string; runId: string; phase: 'intent' | 'outcome' | 'denial'; code: 'OK' | ErrorCode;
 }
 export interface TrustedContext {

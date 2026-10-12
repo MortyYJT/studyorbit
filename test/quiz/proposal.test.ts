@@ -177,3 +177,11 @@ it('symbolic material copied as reasoning preserves the accepted revision on rej
   expect(await proposeQuiz({ ...f.input, answers: [a] }, f.dependencies)).toMatchObject({ ok: false, error: { code: 'CITATION_MISMATCH' } });
   expect(await f.files.read(name)).toEqual(before);
 });
+
+it('records an L1 revocation without a policy and never turns it into answering authority', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'quiz-revoke-'))); directories.push(root);
+  const files = new QuizFiles(root);
+  const input = { version: 1, binding, level: 1, date: '2026-10-12' };
+  expect(await recordOwnerAction('grant', input, { files, isTTY: true, confirm: async () => true })).toMatchObject({ ok: true });
+  expect(await files.read(`grant-${hash(binding.assessmentId)}`)).toEqual(input);
+});

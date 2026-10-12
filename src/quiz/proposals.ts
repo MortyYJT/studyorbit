@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline/promises';
 import { z } from 'zod';
+import { enforceAuthorization } from '../protocol/authorization-rules.js';
 import { CourseworkError } from '../protocol/errors.js';
 import { RunSchema } from '../domain/schemas.js';
 import { run, type Envelope, type FailureEnvelope } from '../protocol/envelope.js';
@@ -90,9 +91,13 @@ export async function recordOwnerAction(kind: 'policy' | 'grant' | 'prerequisite
       const { binding } = record; refs.assessmentRef = `ed:${binding.course}:${binding.lesson}`;
       const previous = await getFiles().read(`binding-${hash(binding.assessmentId)}`);
       if (previous && JSON.stringify(previous) !== JSON.stringify(binding)) throw new CourseworkError('CONFLICT', 'Assessment binding is already recorded differently.');
-      const policy = validatePolicy(await getFiles().read(`policy-${binding.course}`)); refs.policyRef = hash(policy);
+      const rawPolicy = await getFiles().read(`policy-${binding.course}`);
+      const policy = rawPolicy === undefined ? undefined : validatePolicy(rawPolicy);
+      if (policy) refs.policyRef = hash(rawPolicy);
       if (kind === 'grant' && 'level' in record) {
-        if (record.level > policy.cap || record.level > 1 && ['exam', 'unknown'].includes(binding.category)) return invalidAuthorization();
+        enforceAuthorization(record.level, { courseId: binding.course, assessmentId: binding.assessmentId, category: binding.category },
+          policy ? { ...policy, courseId: policy.course } : undefined,
+          { courseId: binding.course, assessmentId: binding.assessmentId, category: binding.category, level: record.level });
         refs.grantRef = hash(record); await getFiles().write(`grant-${hash(binding.assessmentId)}`, record);
       } else {
         verifyRealPrerequisites({ course: binding.course, lesson: binding.lesson }, policy, record);

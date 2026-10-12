@@ -5,7 +5,7 @@ it('fixes retryability for the complete closed set of error codes', () => {
   expect(retryable).toEqual({
     INVALID_INPUT: false, NOT_FOUND: false, CONFLICT: true,
     AUTH_EXPIRED: false, SOURCE_UNAVAILABLE: true, LOCKED: true,
-    CITATION_MISMATCH: false, LIMIT_EXCEEDED: false, INTERNAL: false,
+    CITATION_MISMATCH: false, LIMIT_EXCEEDED: false, INTERNAL: false, UNCERTAIN: false,
   });
 });
 

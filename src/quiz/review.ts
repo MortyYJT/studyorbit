@@ -5,7 +5,7 @@ import type { Readable, Writable } from 'node:stream';
 import { CourseworkError } from '../protocol/errors.js';
 import { run, type Envelope } from '../protocol/envelope.js';
 import { QuizFiles } from './files.js';
-import { bindingSchema, localId } from './policy.js';
+import { bindingSchema, localId, authorize } from './policy.js';
 import { edId } from './read/contracts.js';
 import { FileEvidence } from './proposals.js';
 import { answerSchema, hash, validateCitedAnswers, type TrustedSource } from './citations.js';
@@ -70,6 +70,9 @@ async function load(request: z.infer<typeof requestSchema>, files: QuizFiles) {
   if (!current.success || !saved.success || current.data.revision !== request.revision || current.data.binding.assessmentId !== request.assessmentId
     || hash(current.data) !== hash(saved.data)) return conflict();
   const record = saved.data; const { binding } = record;
+  const policy = await files.read(`policy-${binding.course}`); const grant = await files.read(`grant-${hash(binding.assessmentId)}`);
+  try { authorize(policy, grant, binding, 2); } catch { return conflict(); }
+  if (hash(policy) !== record.policyRef || hash(grant) !== record.grantRef) return conflict();
   if (request.page.course !== undefined && request.page.course !== binding.course || request.page.lesson !== undefined && request.page.lesson !== binding.lesson) return conflict();
   const evidence = new FileEvidence(files); const snapshot = await evidence.read(`ed:${binding.course}:${binding.lesson}`);
   const questions: TrustedSource[] = snapshot.data.sources.map(s => ({ ...s, kind: 'question', questionRef: s.sourceItemId }));

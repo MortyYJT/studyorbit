@@ -4,7 +4,7 @@ import { CourseworkError, retryable } from '../protocol/errors.js';
 import { run, type Envelope } from '../protocol/envelope.js';
 import { QuizFiles } from './files.js';
 export const assessmentRefSchema = z.string().regex(/^ed:[1-9]\d{0,15}:[1-9]\d{0,15}$/);
-const auditSchema = z.strictObject({ version: z.literal(1), operation: z.enum(['read', 'policy', 'grant', 'prerequisites', 'proposal', 'review']),
+export const auditSchema = z.strictObject({ version: z.literal(1), operation: z.enum(['read', 'policy', 'grant', 'prerequisites', 'proposal', 'review']),
   phase: z.enum(['intent', 'outcome', 'denial']), at: z.iso.datetime(), runId: z.uuid(),
   assessmentRef: assessmentRefSchema.optional(), revision: z.uuid().optional(), policyRef: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   grantRef: z.string().regex(/^[a-f0-9]{64}$/).optional(), code: z.enum(['OK', ...Object.keys(retryable) as (keyof typeof retryable)[]]),
@@ -36,6 +36,6 @@ export async function auditedMutation(operation: Exclude<AuditOperation, 'read'>
   });
   result.meta.runId = runId;
   try { await audit.record(operation, !result.ok && result.error.code === 'INVALID_INPUT' ? 'denial' : 'outcome', runId, result.ok ? 'OK' : result.error.code, refs); }
-  catch (error) { const failed = await run(result.command, () => { throw safeQuizError(error); }); failed.meta.runId = runId; return failed; }
+  catch (error) { const failed = await run(result.command, () => { throw result.ok ? new CourseworkError('UNCERTAIN', 'Write completed but outcome auditing failed; inspect local state before retrying.') : safeQuizError(error); }); failed.meta.runId = runId; return failed; }
   return result;
 }
