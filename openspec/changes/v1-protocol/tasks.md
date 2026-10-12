@@ -30,9 +30,9 @@ Scope: shared protocol contracts/dispatcher and synthetic fakes; no production r
 
 Depends on A; O4 before identity translation. Scope: repository query interfaces/implementations and read handlers. No transport/business write code. Real PDF/run coverage depends on those M1 deliveries; synthetic implementation does not.
 
-- [ ] 2.1 Write failing synthetic repository tests for bounded filtered course/assessment/task/source/material/run reads, accepted revision/practice/proposal queries through A's interface, missing evidence and safe continuation; implement queries behind `src/store/` without changing M1 domain schemas. A/D can supply accepted-record repository fakes until the actual adapter exists.
-- [ ] 2.2 Write failing handler tests for trusted source-text provenance, PDF page/hash/locator resolution, missing/unsupported coverage and Q1/M1 source mapping; implement read/evidence adapters with verified O4 translation, never name-based course merging or raw capture exports.
-- [ ] 2.3 Write failing tests for sensitive sentinels across entity fields, locators, URLs, change snapshots and errors; reuse deterministic M1 redaction and withhold unsafe output. Mount the existing changes handler while preserving exclusive cursors and oversized-event behavior; expose actual ledger measurements only.
+- [x] 2.1 Write failing synthetic repository tests for bounded filtered course/assessment/task/source/material/run reads, accepted revision/practice/proposal queries through A's interface, missing evidence and safe continuation; implement queries behind `src/store/` without changing M1 domain schemas. A/D can supply accepted-record repository fakes until the actual adapter exists.
+- [x] 2.2 Write failing handler tests for trusted source-text provenance, PDF page/hash/locator resolution, missing/unsupported coverage and Q1/M1 source mapping; implement read/evidence adapters with verified O4 translation, never name-based course merging or raw capture exports.
+- [x] 2.3 Write failing tests for sensitive sentinels across entity fields, locators, URLs, change snapshots and errors; reuse deterministic M1 redaction and withhold unsafe output. Mount the existing changes handler while preserving exclusive cursors and oversized-event behavior; expose actual ledger measurements only.
 - [ ] 2.4 Run targeted green, fresh-context review and project check; document which M1 material/sync/run paths are integrated versus pending, with no live-read claim from fixtures.
 
 ## 3. Issue C — Shared deterministic citation service

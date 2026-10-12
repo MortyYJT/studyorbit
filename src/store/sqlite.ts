@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { queryPlan, type Collection, type QueryInput, type QueryItem, type QueryPage, type CurrentStateReader } from './queries.js';
 import { adapterFields, diffEntity, syncSchemas, invalidSync, type SyncValue } from '../sync/diff.js';
 import { validateScopes, assertScopeMember, canDeleteScope, type ReconcileScope } from '../sync/reconciliation.js';
 import { mkdirSync } from 'node:fs';
@@ -13,7 +14,7 @@ import type { ChangeInput, Repository, SaveBatch } from './repository.js';
 
 interface EntitySchema<T> { parse(value: unknown): T }
 
-export class SqliteRepository implements Repository {
+export class SqliteRepository implements Repository, CurrentStateReader {
   private readonly db: DatabaseSync;
   private closed = false;
 
@@ -62,6 +63,14 @@ export class SqliteRepository implements Repository {
   recordRun(value: Run): void { this.saveBatch({ runs: [value] }); }
   loadRun(id: string): Run | undefined { return this.load('runs', 'id', id, RunSchema); }
   loadChange(seq: number): Change | undefined { return this.load('change_event', 'seq', seq, ChangeSchema); }
+
+  query<K extends Collection>(collection: K, input: QueryInput<K>): QueryPage<QueryItem<K>> {
+    const plan = queryPlan(collection, input);
+    const values = this.db.prepare(plan.sql).all(...plan.params)
+      .map(row => plan.schema.parse(JSON.parse(row.json as string))) as QueryItem<K>[];
+    const items = values.slice(0, plan.limit);
+    return { items, ...(values.length > plan.limit ? { nextCursor: plan.cursorFor(items.at(-1)!.id) } : {}) };
+  }
 
   recordChange(value: ChangeInput): Change {
     return this.saveBatch({ changes: [value] })[0];
