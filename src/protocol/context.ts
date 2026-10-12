@@ -11,6 +11,10 @@ export type ServiceInput<N extends WriteCommand> = N extends 'policy.record'
   : N extends 'grant.record' ? ParsedCommandInput<N> | ParsedCommandInput<'quiz.grant'> : ParsedCommandInput<N>;
 export interface ProtocolServices {
   write<N extends WriteCommand>(name: N, input: ServiceInput<N>, context: TrustedContext): Promise<CommandOutput<N>>;
+  /** Trusted, pure translation of a legacy Q1 recording payload to its canonical target, resolved before
+   * any write so the receipt can be checked. Absent translation denies the legacy alias.
+   */
+  recordingTarget?(name: 'policy.record' | 'grant.record', input: unknown): Promise<{ courseId: string; assessmentId?: string }>;
 }
 export interface EvidenceService {
   /** Resolve sources in the target scope; never accept trusted text/offsets from request data. */

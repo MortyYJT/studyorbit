@@ -96,6 +96,11 @@ export class FakeServices implements ProtocolServices {
     this.writes.push({ name, input: structuredClone(input) });
     return structuredClone(examples[name].output) as CommandOutput<N>;
   }
+  /** Synthetic stand-in for D's explicit identity map: the fixed Q1 example maps to the fixed canonical target. */
+  async recordingTarget(name: 'policy.record' | 'grant.record'): Promise<{ courseId: string; assessmentId?: string }> {
+    return name === 'policy.record' ? { courseId: examples['policy.record'].output.courseId }
+      : { courseId: examples['grant.record'].output.courseId, assessmentId: examples['grant.record'].output.assessmentId };
+  }
 }
 /** O6 test double. Production expiry/serialization/rechecks belong to H, not this fixture. */
 export class FakeConfirmations implements ConfirmationService {

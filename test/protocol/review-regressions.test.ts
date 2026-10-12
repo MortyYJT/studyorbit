@@ -90,7 +90,8 @@ describe('issue A review regressions', () => {
       expect(write).toHaveBeenCalledExactlyOnceWith(canonical, examples[alias].input, context);
       expect(contracts[alias].output.safeParse(receipts[canonical]).success).toBe(false);
       context.services.write = vi.fn(async () => ({ recorded: receipts[canonical].recorded })) as typeof context.services.write;
+      // The write returned, so a malformed receipt is reported as uncertain, never as a clean failure.
       expect(await dispatch(createFakeRegistry(), alias, examples[alias].input, context))
-        .toMatchObject({ ok: false, error: { code: 'INTERNAL' } });
+        .toMatchObject({ ok: false, error: { code: 'UNCERTAIN', retryable: false } });
     });
 });

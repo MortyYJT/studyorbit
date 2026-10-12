@@ -116,7 +116,7 @@ it('fails before recording mutation when intent is unavailable', async () => {
 it.each(['policy.record', 'grant.record'] as const)('rejects %s service receipts bound to another target', async name => {
   const context = createFakeContext({ owner: true });
   context.services.write = vi.fn(async () => ({ ...examples[name].output, courseId: 'wrong', ...(name === 'grant.record' ? { assessmentId: 'wrong' } : {}) })) as typeof context.services.write;
-  expect(await dispatch(createRegistry(), name, examples[name].input, context)).toMatchObject({ ok: false, error: { code: 'INTERNAL' } });
+  expect(await dispatch(createRegistry(), name, examples[name].input, context)).toMatchObject({ ok: false, error: { code: 'UNCERTAIN', retryable: false } });
 });
 it('reports uncertain after successful mutation with failed outcome audit and never retries', async () => {
   const context = createFakeContext(); const calls = vi.spyOn(context.services, 'write');

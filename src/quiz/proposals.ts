@@ -83,6 +83,18 @@ export class FileEvidence {
     return sources;
   }
 }
+/** Trusted Q1 snapshot/material resolution and #63/#84 citation checks; no writes, shared with M2 preflight. */
+export async function proposalEvidence(files: QuizFiles, proposal: z.infer<typeof proposalSchema>) {
+  const { binding, answers, sourceRevision } = proposal;
+  const evidence = new FileEvidence(files); const snapshot = await evidence.read(`ed:${binding.course}:${binding.lesson}`);
+  if (snapshot.sourceRevision !== sourceRevision) throw new CourseworkError('CONFLICT', 'Quiz sources changed; read the quiz again.');
+  const questions = snapshot.data.questions.filter(q => q.supported).map(q => q.ref);
+  const questionSources: TrustedSource[] = snapshot.data.sources.map(s => ({ ...s, kind: 'question', questionRef: s.sourceItemId }));
+  const materialIds = answers.flatMap(a => [...a.citations.map(c => c.sourceItemId), ...a.statements.flatMap(s => s.kind === 'material' ? [s.sourceItemId] : [])]).filter(id => !questionSources.some(s => s.sourceItemId === id));
+  const materials = await evidence.materials(materialIds, binding.course);
+  const validated = validateCitedAnswers(answers, questions, [...questionSources, ...materials]);
+  return { questionSources, materials, validated };
+}
 export async function checkRealQuizPrerequisites(target: QuizTarget, files = new QuizFiles()): Promise<void> {
   verifyRealPrerequisites({ course: target.course, lesson: target.lesson }, await files.read(`policy-${target.course}`), await files.read(`prerequisites-${hash(`ed:${target.course}:${target.lesson}`)}`));
 }
@@ -124,19 +136,13 @@ export async function proposeQuiz(input: unknown, dependencies: QuizWriteDepende
     if (!parsed.success) {
       throw proposalInputError(input);
     }
-    const { binding, answers, sourceRevision } = parsed.data;
+    const { binding, sourceRevision } = parsed.data;
     const recordedBinding = bindingSchema.safeParse(await getFiles().read(`binding-${hash(binding.assessmentId)}`));
     if (!recordedBinding.success || JSON.stringify(recordedBinding.data) !== JSON.stringify(binding)) return invalidAuthorization();
     refs.assessmentRef = `ed:${binding.course}:${binding.lesson}`;
     const policy = await getFiles().read(`policy-${binding.course}`); const grant = await getFiles().read(`grant-${hash(binding.assessmentId)}`);
     authorize(policy, grant, binding, 2); refs.policyRef = hash(policy); refs.grantRef = hash(grant);
-    const evidence = new FileEvidence(getFiles()); const snapshot = await evidence.read(refs.assessmentRef);
-    if (snapshot.sourceRevision !== sourceRevision) throw new CourseworkError('CONFLICT', 'Quiz sources changed; read the quiz again.');
-    const questions = snapshot.data.questions.filter(q => q.supported).map(q => q.ref);
-    const questionSources: TrustedSource[] = snapshot.data.sources.map(s => ({ ...s, kind: 'question', questionRef: s.sourceItemId }));
-    const materialIds = answers.flatMap(a => [...a.citations.map(c => c.sourceItemId), ...a.statements.flatMap(s => s.kind === 'material' ? [s.sourceItemId] : [])]).filter(id => !questionSources.some(s => s.sourceItemId === id));
-    const materials = await evidence.materials(materialIds, binding.course);
-    const validated = validateCitedAnswers(answers, questions, [...questionSources, ...materials]);
+    const { questionSources, materials, validated } = await proposalEvidence(getFiles(), parsed.data);
     const revision = randomUUID(); const previous = await getFiles().read(`proposal-${hash(binding.assessmentId)}`);
     const previousRevision = z.object({ revision: z.uuid() }).safeParse(previous);
     const record = { version: 1, revision, ...(previousRevision.success ? { previousRevision: previousRevision.data.revision } : {}), binding, sourceRevision,

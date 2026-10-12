@@ -4,7 +4,7 @@ import { createFakeContext, examples } from '../../src/protocol/fakes.js';
 it.each(['policy.record', 'grant.record'] as const)('fails closed on wrong %s receipt target', async name => {
   const context = createFakeContext({ owner: true });
   context.services.write = vi.fn(async () => ({ ...examples[name].output, courseId: 'wrong' })) as typeof context.services.write;
-  expect(await dispatch(createRegistry(), name, examples[name].input, context)).toMatchObject({ ok: false, error: { code: 'INTERNAL' } });
+  expect(await dispatch(createRegistry(), name, examples[name].input, context)).toMatchObject({ ok: false, error: { code: 'UNCERTAIN', retryable: false } });
 });
 it('reports non-retryable uncertainty when mandatory completion recording fails after write', async () => {
   const context = createFakeContext(); const calls = vi.spyOn(context.services, 'write');
