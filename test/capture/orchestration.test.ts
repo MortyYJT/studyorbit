@@ -11,12 +11,24 @@ import type { CaptureSelection } from '../../src/capture/selection-store.js';
 vi.mock('playwright', () => ({ chromium: { executablePath: () => '/synthetic/browser' } }));
 // CDP target creation has its own tests; retain real discovery, adapters and snapshot writers.
 vi.mock('../../src/capture/tab.js', () => ({ openHiddenPage: async (context: { takePage(): unknown }) => context.takePage() }));
+// The real writer stays the default. Budget tests that save ~300 pages opt into an in-memory writer that still
+// reads every page, because ~900 real files made their duration track host disk latency (#74).
+const snapshotWrites = vi.hoisted(() => ({ inMemory: false }));
+vi.mock('../../src/capture/snapshot.js', async importOriginal => {
+  const real = await importOriginal<typeof import('../../src/capture/snapshot.js')>();
+  return { ...real, saveSnapshot: async (page: Parameters<typeof real.saveSnapshot>[0], time?: Date) => {
+    if (!snapshotWrites.inMemory) return real.saveSnapshot(page, time);
+    const url = real.cleanUrl(page.url()); await page.title(); await page.content(); await page.screenshot({ fullPage: true });
+    if (real.cleanUrl(page.url()) !== url) throw new Error('Page URL changed during capture. Save the page again.');
+    return `memory:${url}`;
+  } };
+});
 const selection: CaptureSelection = { version: 1, courses: [
   { source: 'canvas', origin: CANVAS_ORIGIN, id: '101', term: { label: 'Synthetic' } },
   { source: 'ed', origin: ED_ORIGIN, id: '202', term: { label: 'Synthetic', year: 2026, session: 'Synthetic' } },
 ] };
 const homes: string[] = [];
-afterEach(() => { homes.splice(0).forEach(home => rmSync(home, { recursive: true, force: true })); vi.unstubAllEnvs(); });
+afterEach(() => { snapshotWrites.inMemory = false; homes.splice(0).forEach(home => rmSync(home, { recursive: true, force: true })); vi.unstubAllEnvs(); });
 function fixture({ canvasExpired = false, edExpired = false, first = false, many = false, redirects = false, canvasFailure = false, canvasLoginUrl = `${CANVAS_ORIGIN}/login`, canvasNavigationError = false, firstSaveFailure = false } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'orchestration-synthetic-')); homes.push(home); vi.stubEnv('COURSEWORK_HOME', home);
   let snapshotBarrier: Promise<void> | undefined; let finishSnapshot: (() => void) | undefined;
@@ -101,7 +113,9 @@ it.each([`${CANVAS_ORIGIN}/login/saml`, 'https://sso.example/signin'])('expired 
   expect(f.summaries()[0]).toEqual(f.data());
 });
 it('first selection shares 300 attempts across real discovery, Canvas and Ed without repeating discovery', async () => {
+  snapshotWrites.inMemory = true;
   const f = fixture({ first: true, many: true }); await capture({ isTTY: true, crawl: true }, f.dependencies);
+  expect(f.saves).toHaveLength(297);
   expect(f.limiter.attempts).toBe(300);
   expect(f.navigations.length + f.reads.length).toBe(300);
   expect(f.navigations.filter(url => url === `${CANVAS_ORIGIN}/courses`)).toHaveLength(1);
