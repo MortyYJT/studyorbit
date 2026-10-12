@@ -12,14 +12,14 @@ import { answerSchema, hash, validateCitedAnswers, type TrustedSource } from './
 import { AuditTrail, safeQuizError, type AuditRefs } from './audit.js';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
-const validatedAnswer = answerSchema.extend({
+export const validatedAnswer = answerSchema.extend({
   validatedCitations: z.array(answerSchema.shape.citations.element.extend({ offset: z.number().int().nonnegative(), end: z.number().int().positive(), sourceHash: digest, page: z.number().int().positive().optional() })),
   evidence: z.enum(['prompt-only', 'course-material']), limitation: z.string().optional(),
 });
-const recordSchema = z.strictObject({ version: z.literal(1), revision: z.uuid(), previousRevision: z.uuid().optional(), binding: bindingSchema,
+export const recordSchema = z.strictObject({ version: z.literal(1), revision: z.uuid(), previousRevision: z.uuid().optional(), binding: bindingSchema,
   sourceRevision: digest, sourceHash: digest, answers: z.array(validatedAnswer).min(1).max(300), policyRef: digest, grantRef: digest, createdAt: z.iso.datetime() });
-const pageSchema = z.strictObject({ course: edId.optional(), lesson: edId.optional(), pageId: localId, attemptId: edId.optional() });
-const requestSchema = z.strictObject({ assessmentId: localId, revision: z.uuid(), page: pageSchema });
+export const pageSchema = z.strictObject({ course: edId.optional(), lesson: edId.optional(), pageId: localId, attemptId: edId.optional() });
+export const requestSchema = z.strictObject({ assessmentId: localId, revision: z.uuid(), page: pageSchema });
 const approvalSchema = z.strictObject({ version: z.literal(1), status: z.literal('approved'), runId: z.uuid(), assessmentId: localId,
   revision: z.uuid(), proposalHash: digest, sourceRevision: digest, sourceHash: digest,
   page: pageSchema.extend({ course: edId, lesson: edId }), reviewedAt: z.iso.datetime() });

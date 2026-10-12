@@ -82,3 +82,8 @@ export async function run(command: string, fn: () => unknown | Promise<unknown>)
     return bounded(failure(command, mappedError(error), meta));
   }
 }
+
+/** Reapply serialization bounds after a dispatcher supplies its measured metadata. */
+export function withMetadata(envelope: Envelope, meta: Meta): Envelope {
+  return bounded({ ...envelope, meta });
+}
