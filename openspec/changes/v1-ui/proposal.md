@@ -6,7 +6,7 @@ M2 exposes validated coursework contracts, but the owner still needs a local int
 
 - Add the Vite + React SPA, built into `dist/ui`, served by the same loopback process and opened by `coursework ui`; reuse `design/prototype/` CSS variables and the approved month/week calendar, teaching weeks, module rail, task drawer and avatar menu.
 - Consume only M2 JSON POST commands through loopback HTTP with runtime envelope validation, bounded pagination, evidence/coverage display and explicit unavailable states. Start with independently synthetic server fixtures.
-- Display coursework and manual/recurring tasks, module progress and existing grade projections; implement a pure, tested earliest-deadline-first weekly planner that never drops work that does not fit.
+- Display coursework and manual/recurring tasks, module progress, required manual assessment weight/score entry and existing grade projections; implement a pure, tested earliest-deadline-first weekly planner that never drops work that does not fit.
 - Add cited course/week revision notes, browser-graded objective practice, external-agent feedback for open practice and weak-topic inputs to revision planning.
 - Add proposal review, separate L3 fill and L4 submit confirmation using exact M2 revisions and trusted authorization. Exams and prohibited courses stay capped at L1; L2–L4 require recorded course policy and assessment grants. Confirmation is the L4 default.
 - Spike Hermes connectivity at M3 start; chat remains a relay to the local external agent, with no model calls or keys managed by coursework.

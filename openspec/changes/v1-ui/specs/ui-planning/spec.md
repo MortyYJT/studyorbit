@@ -22,6 +22,21 @@ All modules SHALL be delivery-type per decision #31. Progress SHALL equal done s
 - **WHEN** two non-recurring tasks have 1 of 2 and 2 of 3 steps done and a recurring task also exists
 - **THEN** module progress is 3/5, and a module without non-recurring steps shows zero
 
+### Requirement: Required manual assessment weight and score entry
+The UI SHALL support manually entering assessment weights and scores in v1 per decision #28; later Canvas auto-fill SHALL NOT be a prerequisite for manual entry. Save and authoritative reads SHALL use separately specified, reviewed and merged M2 owner contracts under O3, with validation and version/conflict semantics. Missing contracts SHALL keep this required feature and full M3 acceptance pending, not reduce scope to projection display. The UI SHALL confirm saved state only after protocol success and authoritative reread, restore saved values on reload and compute the existing projection from those values. Rejected/conflicting saves SHALL preserve prior authoritative values and projection; no permanent browser-only store SHALL substitute for M2.
+
+#### Scenario: Save and reload manual grades
+- **WHEN** the owner enters valid synthetic assessment weights and scores and the M2 save succeeds
+- **THEN** authoritative reread confirms the values, and a page reload retrieves the same values through M2 without relying on browser-only persistence
+
+#### Scenario: Saved grades drive projection
+- **WHEN** saved manual inputs are 10% at 82, 15% at 88, 10% at 74, ungraded 25% and a 40% final with H1 target
+- **THEN** after save and reload the existing projection presents earned 28.8, average about 82.29 and final need about 76.6 with its assumption; changing and successfully saving a score recomputes from the new authoritative values
+
+#### Scenario: Invalid or conflicting grade save
+- **WHEN** M2 rejects an invalid weight/score or a stale conflicting edit
+- **THEN** the UI displays the failure, claims no durable save and preserves or rereads prior authoritative values and their projection
+
 ### Requirement: Transparent existing grade projection
 The UI SHALL present the existing pure domain grade projection from M2 courses/assessments, including graded weight, earned points, current average, selected target band, current-average assumption for ungraded non-finals, hurdle floor and secured/unreachable/unavailable reasons. It SHALL distinguish partial assessment coverage and estimates from confirmed results. It SHALL NOT fork the formula or claim a guaranteed grade.
 
