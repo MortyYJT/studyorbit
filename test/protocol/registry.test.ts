@@ -60,8 +60,8 @@ describe('issue A contracts for M3', () => {
   });
   it('keeps Q1 aliases and minimum levels', () => {
     const registry = createFakeRegistry();
-    expect(registry.get('quiz.policy')!.handler).toBe(registry.get('policy.record')!.handler);
-    expect(registry.get('quiz.grant')!.handler).toBe(registry.get('grant.record')!.handler);
+    expect(registry.get('quiz.policy')!.input).toBe(contracts['quiz.policy'].input);
+    expect(registry.get('quiz.grant')!.input).toBe(contracts['quiz.grant'].input);
     for (const [name, level] of [['courses.list', 0], ['breakdown.write', 1], ['revision.write', 1], ['practice.write', 1],
       ['quiz.propose', 2], ['quiz.fill', 3], ['quiz.submit', 4]] as const) expect(registry.get(name)!.level).toBe(level);
   });

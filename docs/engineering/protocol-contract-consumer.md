@@ -46,6 +46,19 @@ existing refinements. Q1 proposal/read/review/prerequisite/policy/grant shapes a
 allows their unchanged legacy payloads. D must resolve trusted provider identities; the dispatcher
 never guesses a `courseId` from a legacy numeric `course` or course title.
 
+Source evidence text is validated without trimming or other normalization. Its hash and citation
+UTF-16 offsets refer to the exact redacted text returned by the trusted evidence service. The same
+rule applies to `sources.get`, material items and evidence embedded in paginated reads.
+
+`policy.record` returns `{ recorded: 'policy', policyRef, courseId, status, cap, recordedAt }`;
+`grant.record` returns `{ recorded: 'grant', grantRef, courseId, assessmentId, category, level,
+recordedAt }`. References are SHA-256 digests of the recorded policy/grant supplied by the trusted
+recording service; timestamps are ISO UTC datetimes from that service's recording event. Metadata
+describes the current recorded state, not permission to fill or submit. Prohibited policy receipts
+require cap 1; allowed/owner-attested receipts require cap 2–4. Production record/hash/time resolution
+remains D. Q1 aliases call the same canonical services once, validate their full receipts, then return
+only the original `{ recorded: 'policy' }` or `{ recorded: 'grant' }` shapes.
+
 The owner commands are review, prerequisites, policy and grant recording (including Q1 aliases).
 They require `context.owner.assertOwner` even though their registry minimum is L0. Every dispatch
 also calls the injected authorization service. Study/proposal/action commands call the injected

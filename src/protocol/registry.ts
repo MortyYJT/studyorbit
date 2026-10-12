@@ -104,7 +104,16 @@ export function createRegistry(): Registry {
       handlers.set(canonical, handler);
     }
     const contract = contracts[name];
-    registry.register<z.ZodType, z.ZodType>({ name, ...contract, handler });
+    const canonicalHandler = handler;
+    // Q1 keeps its original receipt, while recording still executes once through the shared service.
+    const outputHandler: Handler = name === 'quiz.policy' || name === 'quiz.grant'
+      ? async (input, context) => {
+        const raw = await canonicalHandler(input, context);
+        const receipt = name === 'quiz.policy' ? contracts['policy.record'].output.parse(raw)
+          : contracts['grant.record'].output.parse(raw);
+        return { recorded: receipt.recorded };
+      } : canonicalHandler;
+    registry.register<z.ZodType, z.ZodType>({ name, ...contract, handler: outputHandler });
   }
   return registry;
 }

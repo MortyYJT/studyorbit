@@ -21,7 +21,9 @@ export const CitationInputSchema = CitationSchema.strict().extend({ sourceItemId
 export const VerifiedCitationSchema = CitationInputSchema.extend({ offset: count, end: count, sourceHash: HashSchema,
   page: z.number().int().positive().safe().optional() }).refine(c => c.end > c.offset);
 export const ClaimSchema = z.strictObject({ text, citations: z.array(CitationInputSchema).min(1).max(100) });
-export const SourceEvidenceSchema = z.strictObject({ sourceItemId: IdSchema, courseId: IdSchema, text,
+// Hashes and citation offsets refer to this exact redacted text; validation must not transform it.
+const sourceText = z.string().min(1).max(100000).refine(value => value.trim().length > 0);
+export const SourceEvidenceSchema = z.strictObject({ sourceItemId: IdSchema, courseId: IdSchema, text: sourceText,
   sourceHash: HashSchema, locator: text, page: z.number().int().positive().safe().optional(),
   provenance: z.enum(['canvas', 'ed', 'manual']), redacted: z.literal(true) });
 export const CoverageSchema = z.strictObject({ complete: z.boolean(), gaps: z.array(z.strictObject({
@@ -78,9 +80,18 @@ const actionOutcome = z.discriminatedUnion('status', [
   z.strictObject({ status: z.enum(['partial', 'uncertain']), target: actionTarget, retrySafe: z.literal(false) }),
 ]);
 const recorded = (kind: 'policy' | 'grant' | 'prerequisites') => z.strictObject({ recorded: z.literal(kind) });
+export const PolicyReceiptSchema = z.discriminatedUnion('status', [
+  z.strictObject({ recorded: z.literal('policy'), policyRef: HashSchema, courseId: IdSchema,
+    status: z.enum(['allowed', 'owner-attested']), cap: z.union([z.literal(2), z.literal(3), z.literal(4)]), recordedAt: z.iso.datetime() }),
+  z.strictObject({ recorded: z.literal('policy'), policyRef: HashSchema, courseId: IdSchema,
+    status: z.literal('prohibited'), cap: z.literal(1), recordedAt: z.iso.datetime() }),
+]);
+export const GrantReceiptSchema = z.strictObject({ recorded: z.literal('grant'), grantRef: HashSchema,
+  courseId: IdSchema, assessmentId: IdSchema, category: GrantRecordSchema.shape.category,
+  level: LevelSchema, recordedAt: z.iso.datetime() });
 const courses = { input: z.strictObject({ ...paging, term: text.optional() }), output: page(CourseSchema.strict()), level: 0 } as const;
-const policy = { input: PolicyRecordSchema, output: recorded('policy'), level: 0 } as const;
-const grant = { input: GrantRecordSchema, output: recorded('grant'), level: 0 } as const;
+const policy = { input: PolicyRecordSchema, output: PolicyReceiptSchema, level: 0 } as const;
+const grant = { input: GrantRecordSchema, output: GrantReceiptSchema, level: 0 } as const;
 export const contracts = {
   'courses.list': courses,
   'assessments.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }), output: page(AssessmentSchema.strict()), level: 0 },
@@ -101,8 +112,8 @@ export const contracts = {
   'quiz.prerequisites': { input: prerequisiteSchema, output: recorded('prerequisites'), level: 0 },
   'policy.record': policy,
   'grant.record': grant,
-  'quiz.policy': { ...policy, input: policySchema },
-  'quiz.grant': { ...grant, input: grantSchema },
+  'quiz.policy': { ...policy, input: policySchema, output: recorded('policy') },
+  'quiz.grant': { ...grant, input: grantSchema, output: recorded('grant') },
   'audit.list': { input: z.strictObject({ ...paging, assessmentId: IdSchema.optional(), command: IdSchema.optional() }), output: page(AuditRecordSchema), level: 0 },
   'quiz.fill': { input: actionTarget, output: z.discriminatedUnion('status', [actionOutcome.options[0], actionOutcome.options[2], actionOutcome.options[3]]), level: 3 },
   'quiz.submit': { input: FilledTargetSchema.extend({ confirmationToken: CursorSchema.optional() }), output: z.discriminatedUnion('status', [actionOutcome.options[1], actionOutcome.options[2], actionOutcome.options[3]]), level: 4 },
