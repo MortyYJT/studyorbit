@@ -99,3 +99,27 @@ it('accepts a statement backed by one of several materials that contain the same
   const cited = { ...answer, citations: [...answer.citations, { sourceItemId: copy.sourceItemId, quote: 'Parity is "even or odd".', locator: 'page:3' }] };
   expect(validateCitedAnswers([cited], [q], [question, material, copy])[0]).toMatchObject({ evidence: 'course-material' });
 });
+
+it('cannot hide explicit material attribution across reasoning statement boundaries', () => {
+  const text = 'According to the notes, the deadline falls on the last weekday.';
+  const proposal = { questionRef: q, answer: 'Friday.', rationale: text, citations: [citation], statements: [
+    { field: 'answer', text: 'Friday.', kind: 'reasoning' },
+    { field: 'rationale', text: 'According to the ', kind: 'reasoning' },
+    { field: 'rationale', text: 'notes, the deadline falls on the last weekday.', kind: 'reasoning' },
+  ] };
+  expect(() => validateCitedAnswers([proposal], [q], [question])).toThrow(/citation/i);
+});
+it('accepts unattributed paraphrase only with an explicit prompt-only limitation', () => {
+  const deadline = { ...material, text: 'The quiz deadline is Friday.' };
+  const proposal = { questionRef: q, answer: 'The last weekday.', rationale: 'My deduction.', citations: [citation], statements: [
+    { field: 'answer', text: 'The last weekday.', kind: 'reasoning' }, { field: 'rationale', text: 'My deduction.', kind: 'reasoning' },
+  ] };
+  expect(validateCitedAnswers([proposal], [q], [question, deadline])[0]).toMatchObject({ evidence: 'prompt-only', limitation: expect.stringContaining('not correctness') });
+});
+it('Q1 facade preserves original offsets and v1 source shape on normalized repeated fragments', () => {
+  const text = '😀  Ｗhat\n is   parity? What is parity?';
+  const proposal = { questionRef: q, answer: 'Even.', rationale: 'My deduction.', citations: [citation], statements: [
+    { field: 'answer', text: 'Even.', kind: 'reasoning' }, { field: 'rationale', text: 'My deduction.', kind: 'reasoning' },
+  ] };
+  expect(validateCitedAnswers([proposal], [q], [{ ...question, text }])[0]?.validatedCitations[0]).toMatchObject({ offset: 4, end: text.indexOf('?') + 1, sourceHash: expect.stringMatching(/^[a-f0-9]{64}$/) });
+});

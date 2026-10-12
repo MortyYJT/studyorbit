@@ -39,9 +39,9 @@ Depends on A; O4 before identity translation. Scope: repository query interfaces
 
 Depends on A. Scope: reusable citation/evidence validation and Q1 compatibility facade; no persistence layout or transport changes. Covers #63 and quiz provenance requirements.
 
-- [ ] 3.1 Write failing synthetic tests for NFKC, quote/whitespace normalization, empty/nonmember quotes, original UTF-16 ranges, repeated fragments, source hash and PDF page/locator mismatch; extract the shared exact-substring validator with trusted evidence injection, preserving existing Citation fields/private metadata.
-- [ ] 3.2 Write failing tests for every breakdown step/note claim/practice explanation needing target-scoped evidence, invented source text/offsets and wrong-course sources; implement claim validation using A's selected O2 structures, no fuzzy matching or model calls.
-- [ ] 3.3 Write failing Q1 regressions for own-question citation, material statements in answer/rationale, statement coverage and prompt-only limitations; keep existing conservative provenance safeguards and verified locator adapters. Test stale trusted hashes and preserve evidence limitations without claiming answer truth.
+- [x] 3.1 Write failing synthetic tests for NFKC, quote/whitespace normalization, empty/nonmember quotes, original UTF-16 ranges, repeated fragments, source hash and PDF page/locator mismatch; extract the shared exact-substring validator with trusted evidence injection, preserving existing Citation fields/private metadata.
+- [x] 3.2 Write failing tests for every breakdown step/note claim/practice explanation needing target-scoped evidence, invented source text/offsets and wrong-course sources; implement claim validation using A's selected O2 structures, no fuzzy matching or model calls.
+- [x] 3.3 Write failing Q1 regressions for own-question citation, material statements in answer/rationale, statement coverage and prompt-only limitations; keep existing conservative provenance safeguards and verified locator adapters. Test stale trusted hashes and preserve evidence limitations without claiming answer truth.
 - [ ] 3.4 Run targeted green, fresh-context review and project check; publish the shared service contract for H and preserve Q1 consumer compatibility.
 
 ## 4. Issue D — Full authorization/audit service and Q1 compatibility
