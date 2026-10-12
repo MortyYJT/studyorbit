@@ -1,9 +1,12 @@
 # v1 technical design
 
-Status: approved by the owner on 2026-10-12 (decisions #55–#77 in `note/decisions.md`).
-This document is the standing reference for autonomous development of version 1. Each milestone still gets
+Status: approved by the owner on 2026-10-12 (decisions #55–#77 in `note/decisions.md`). Later decisions
+refine it: #78 (repository private), #80–#89 (milestone details chosen during autonomous runs, pending owner
+review), #91 (development runs only while the owner is present; overrides #79).
+This document is the standing reference for development of version 1. Each milestone still gets
 its own OpenSpec change, written just before work starts; that change refines, never contradicts, this file.
 If a change needs a choice this file does not cover and an interviewer could ask "why", stop and ask the owner.
+Progress lives in `note/product/roadmap.md`; implemented M2 seams are described in `protocol.md`.
 
 ## 1. What version 1 does
 
@@ -175,13 +178,17 @@ Rejected: computer use (screenshot-driven clicking): slow, costly, non-determini
 - Revision is generated automatically when an exam is within a configurable window.
 - L4 submit uses the Ed endpoint recorded in Q1 and keeps the confirmation default.
 
-## 8. How development runs without the owner
+## 8. How development runs
+
+Development runs while the owner is online (#91, overriding the unattended mode of #79); there is no
+scheduled watchdog. Claude dispatches, reviews and merges as below, and asks the owner at the points listed.
 
 Per milestone: OpenSpec change (Codex drafts, Claude reviews) → issues → Codex implements with TDD in a separate
 clone → fresh-context Codex review → Claude commits, pushes, opens the PR → CI green → Claude merges (#48) →
-archive the change → acceptance checklist to the owner.
+archive the change → acceptance checklist to the owner. Implementation and verification evidence goes in the
+PR description, not in repository files (#90).
 
-The owner is interrupted only for:
+The owner is asked only for:
 
 1. A design choice this file does not cover.
 2. Steps only the owner can do: login, MFA, recording a course AI policy, changing repository visibility,
