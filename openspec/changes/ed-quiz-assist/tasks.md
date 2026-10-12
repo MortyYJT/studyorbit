@@ -23,7 +23,7 @@ Acceptance maps to selected transport and bounded/redacted read scenarios in the
 - [x] 1.2 Write failing fake-transport tests for selected course/lesson/reference validation, same-origin GETs, no `view`, page-local regional `authToken`/`x-token` isolation, missing-token/401/403 `AUTH_EXPIRED`, shared cap/spacing and no retry on refusal; implement the minimal quiz read adapter. Reuse upstream transport tests for its internal auth mechanics and add boundary sentinel checks that Q1 never receives/export tokens.
 - [x] 1.3 Write failing synthetic lesson/slide tests for stable question references, supported/unsupported structure, deterministic nested/free-text classmate redaction and withholding unsafe content; implement validated model-safe question/source output with explicit coverage, never grades/hidden solutions/other students' answers.
 - [x] 1.4 Write failing CLI/envelope tests for a single stdout envelope, source/validation failures, profile `LOCKED`, 64 KiB limit and question narrowing without truncation; implement `coursework quiz read` with validated reusable handler and safe stderr diagnostics, no credential prompt without TTY.
-- [ ] 1.5 Run targeted green tests, fresh-context read-only review against the transport/read scenarios, `bash .claude/check.sh` and diff/privacy checks; record outputs and fixes for Claude's issue A PR, without committing.
+- [x] 1.5 Run targeted green tests, fresh-context read-only review against the transport/read scenarios, `bash .claude/check.sh` and diff/privacy checks; record outputs and fixes for Claude's issue A PR, without committing.
 
 ## 2. Local policy, grants, audit and cited proposals (issue B)
 
