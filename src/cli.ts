@@ -41,5 +41,10 @@ program.command('capture')
 if (process.argv[2] === 'quiz') {
   const { parseQuizCLI } = await import('./quiz/cli.js');
   await parseQuizCLI(process.argv.slice(2));
+} else if (process.argv[2] === 'mcp' && process.argv.length === 3) {
+  // stdout is reserved for MCP framing: route any stray console output to stderr.
+  console.log = console.info = console.debug = (...args: unknown[]) => console.error(...args);
+  const { runMcpStdio } = await import('./protocol/mcp.js');
+  await runMcpStdio({ registry: createRegistry(), context: unavailableCLIContext(), version });
 } else if (['capture', '--version', '-V'].includes(process.argv[2] ?? '')) await program.parseAsync();
 else await parseProtocolCLI(process.argv.slice(2), { registry: createRegistry(), context: unavailableCLIContext(), program });

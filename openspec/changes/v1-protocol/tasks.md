@@ -77,8 +77,8 @@ Implementation and verification evidence for F: `note/issue-65-http.md`. Tasks 6
 
 Depends on A only. Scope: MCP adapter plus synthetic stdio client tests. The sole new runtime package is pre-approved `@modelcontextprotocol/sdk` from design section 3 (#62/#69); no install occurs in this documentation task.
 
-- [ ] 7.1 Write failing SDK-client tests for initialization, registry-derived discovery/input schema, calling commands and runtime refinement failures; implement `coursework mcp` with official SDK stdio and injected handlers, no custom protocol handshake or separate business registry.
-- [ ] 7.2 Write failing tests for framing/diagnostic separation, sanitized failures/64 KiB command-envelope bounds, disconnect cleanup and forged owner privilege; implement error/result mapping and host-owned context with no credential prompts or grants from MCP arguments.
+- [x] 7.1 Write failing SDK-client tests for initialization, registry-derived discovery/input schema, calling commands and runtime refinement failures; implement `coursework mcp` with official SDK stdio and injected handlers, no custom protocol handshake or separate business registry.
+- [x] 7.2 Write failing tests for framing/diagnostic separation, sanitized failures/64 KiB command-envelope bounds, disconnect cleanup and forged owner privilege; implement error/result mapping and host-owned context with no credential prompts or grants from MCP arguments.
 - [ ] 7.3 Run targeted green, fresh-context review, project check and dependency/license review; report standalone transport evidence and pending production wiring. Hermes mounting/scheduling remains M4.
 
 ## 8. Issue H — Validated writes and separate action gates
