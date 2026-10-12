@@ -96,3 +96,9 @@ it('allows .local descendants and genuinely external parent-segment paths', asyn
   expect(new QuizFiles(outside).root).toBe(outside);
   expect(() => new QuizFiles(packageRoot())).toThrow();
 });
+it('reports uncertainty and retains an installed ordinary record after directory durability failure', async () => {
+  const { files } = await setup(); await files.write('policy-synthetic', { cap: 2 });
+  vi.mocked(fsyncSync).mockImplementationOnce(() => { throw Object.assign(new Error('synthetic sync failure'), { code: 'EIO' }); });
+  await expect(files.write('policy-synthetic', { cap: 3 })).rejects.toMatchObject({ code: 'UNCERTAIN' });
+  expect(await files.read('policy-synthetic')).toEqual({ cap: 3 });
+});

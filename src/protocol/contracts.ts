@@ -63,7 +63,7 @@ export const GrantRecordSchema = z.strictObject({ version: z.literal(1), courseI
   category: z.enum(['assignment', 'ongoing', 'exam', 'unknown']), level: LevelSchema, date: z.iso.date() });
 export const AuditRecordSchema = z.strictObject({ id: z.uuid(), runId: z.uuid(), command: IdSchema,
   phase: z.enum(['intent', 'outcome', 'denial']), at: z.iso.datetime(), code: z.enum(['OK', ...Object.keys(retryable) as (keyof typeof retryable)[]]),
-  assessmentId: IdSchema.optional(), revision: z.uuid().optional(), policyRef: HashSchema.optional(), grantRef: HashSchema.optional() });
+  courseId: IdSchema.optional(), assessmentId: IdSchema.optional(), revision: z.uuid().optional(), policyRef: HashSchema.optional(), grantRef: HashSchema.optional() });
 export type AuditRecord = z.infer<typeof AuditRecordSchema>;
 /** The confirmation is minted/consumed by a trusted server service, never by a request flag. */
 export const FilledTargetSchema = z.strictObject({ assessmentId: IdSchema, revision: z.uuid(), sourceRevision: HashSchema,

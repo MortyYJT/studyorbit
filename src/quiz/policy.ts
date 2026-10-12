@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CourseworkError } from '../protocol/errors.js';
+import { enforceAuthorization } from '../protocol/authorization-rules.js';
 import { edId } from './read/contracts.js';
 export const localId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/);
 const date = z.iso.date().refine(value => new Date(value).toISOString().slice(0, 10) === value);
@@ -20,8 +21,9 @@ export function validatePolicy(input: unknown): Policy { const result = policySc
 export function validateGrant(input: unknown): Grant { const result = grantSchema.safeParse(input); if (!result.success) return invalidAuthorization(); return result.data; }
 export function authorize(policy: unknown, grant: unknown, binding: unknown, level: 2 | 3): Grant {
   const p = validatePolicy(policy); const g = validateGrant(grant); const b = bindingSchema.safeParse(binding);
-  if (!b.success || p.course !== b.data.course || JSON.stringify(g.binding) !== JSON.stringify(b.data)
-    || ['exam', 'unknown'].includes(b.data.category) || g.level < level || g.level > p.cap || p.cap < level) return invalidAuthorization();
+  if (!b.success || JSON.stringify(g.binding) !== JSON.stringify(b.data)) return invalidAuthorization();
+  enforceAuthorization(level, { courseId: b.data.course, assessmentId: b.data.assessmentId, category: b.data.category },
+    { ...p, courseId: p.course }, { ...g, courseId: g.binding.course, assessmentId: g.binding.assessmentId, category: g.binding.category });
   return g;
 }
 export function verifyRealPrerequisites(input: unknown, policy: unknown, prerequisite: unknown): void {

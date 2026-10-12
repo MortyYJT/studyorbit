@@ -265,3 +265,36 @@ it.each(['read', 'material'] as const)('3.4 %s removed/invalidated during the te
   } })).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
   expect(await f.files.read(`review-${hash(binding.assessmentId)}`)).not.toMatchObject({ status: 'approved' });
 });
+
+it.each(['policy', 'grant'])('shared Q1 compatibility invalidates review after %s changes', async kind => {
+  const f = await setup();
+  expect(await reviewQuiz(f.request, { ...f.dependencies, decide: async () => 'approve' })).toMatchObject({ ok: true, data: { status: 'approved' } });
+  const name = kind === 'policy' ? 'policy-7' : `grant-${hash(binding.assessmentId)}`;
+  const current = await f.files.read(name) as Record<string, unknown>;
+  await f.files.write(name, { ...current, date: '2026-10-13' });
+  const action = vi.fn();
+  await expect(withReviewedRevision(f.request, action, f.files)).rejects.toMatchObject({ code: 'CONFLICT' });
+  expect(action).not.toHaveBeenCalled();
+});
+
+it('opens the complete Q1 file chain through shared services without migration or reapproval', async () => {
+  const { SharedAuthorization, Q1AuthorizationStore, IdentityMap } = await import('../../src/protocol/authorization.js');
+  const { DurableAudit } = await import('../../src/protocol/audit.js');
+  const f = await setup();
+  await reviewQuiz(f.request, { ...f.dependencies, decide: async () => 'approve' });
+  const names = ['policy-7', `binding-${hash(binding.assessmentId)}`, `grant-${hash(binding.assessmentId)}`,
+    `read-${hash('ed:7:11')}`, `proposal-${hash(binding.assessmentId)}`, `revision-${f.request.revision}`, `review-${hash(binding.assessmentId)}`];
+  const before = await Promise.all(names.map(name => f.files.read(name)));
+  const history = await readFile(join(f.root, 'quiz', 'audit.jsonl'), 'utf8');
+  const map = new IdentityMap({ courses: [{ courseId: 'canonical-course', edCourse: '7' }],
+    assessments: [{ courseId: 'canonical-course', assessmentId: 'canonical-assessment', binding: { ...binding, category: 'assignment' } }] });
+  const store = new Q1AuthorizationStore(f.files, map); const audit = new DurableAudit(f.files);
+  const service = new SharedAuthorization(store, audit);
+  const proposal = before[4] as { policyRef: string; grantRef: string };
+  await service.check('quiz.fill', 3, { assessmentId: 'canonical-assessment', ...proposal });
+  await reviewedRevisionPreflight(f.request, f.files);
+  await new AuditTrail(line => f.files.append('audit', line)).record('read', 'outcome', f.request.revision, 'OK', { assessmentRef: 'ed:7:11' });
+  expect((await audit.list()).at(-1)).toMatchObject({ command: 'quiz.read', assessmentId: 'ed:7:11' });
+  expect(await Promise.all(names.map(name => f.files.read(name)))).toEqual(before);
+  expect((await readFile(join(f.root, 'quiz', 'audit.jsonl'), 'utf8')).startsWith(history)).toBe(true);
+});

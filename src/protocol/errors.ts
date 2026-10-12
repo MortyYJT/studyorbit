@@ -8,6 +8,7 @@ export const retryable = Object.freeze({
   CITATION_MISMATCH: false,
   LIMIT_EXCEEDED: false,
   INTERNAL: false,
+  UNCERTAIN: false,
 } as const);
 
 export type ErrorCode = keyof typeof retryable;

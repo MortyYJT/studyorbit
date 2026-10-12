@@ -47,6 +47,19 @@ export class QuizFiles {
     } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw unavailable(); }
     finally { await handle?.close(); }
   }
+  async readLog(name: 'audit' | 'runs'): Promise<unknown[]> {
+    const path = await this.path(name, 'jsonl'); let handle;
+    try {
+      handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const info = await handle.stat();
+      if (!info.isFile() || info.size > 4 * 1024 * 1024 || info.nlink !== 1 || process.getuid && info.uid !== process.getuid()) throw unavailable();
+      await handle.chmod(0o600);
+      const text = await handle.readFile('utf8');
+      if (text && !text.endsWith('\n')) throw unavailable();
+      return text.split('\n').filter(Boolean).map(line => JSON.parse(line) as unknown);
+    } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw unavailable(); }
+    finally { await handle?.close(); }
+  }
   async records(prefix: string): Promise<string[]> {
     if (!localId.safeParse(prefix).success) throw unavailable();
     const names = (await readdir(await this.directory())).filter(name => name.startsWith(prefix) && name.endsWith('.json')).map(name => name.slice(0, -5));
@@ -79,7 +92,17 @@ export class QuizFiles {
           }
           throw error;
         }
-      } else { await rename(temporary, path); }
+      } else {
+        let installed = false;
+        try {
+          await rename(temporary, path); installed = true;
+          const directory = openSync(dirname(path), constants.O_RDONLY | constants.O_NOFOLLOW);
+          try { fsyncSync(directory); } finally { closeSync(directory); }
+        } catch (error) {
+          if (installed) throw new CourseworkError('UNCERTAIN', 'Private record was installed but durability is uncertain; inspect local state before retrying.');
+          throw error;
+        }
+      }
     } finally { await handle.close(); await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw unavailable(); }); }
   }
   async append(name: 'audit' | 'runs', line: string): Promise<void> {
@@ -88,6 +111,8 @@ export class QuizFiles {
     try {
       const info = await handle.stat(); if (!info.isFile() || info.nlink !== 1 || process.getuid && info.uid !== process.getuid()) throw unavailable();
       await handle.chmod(0o600); await handle.writeFile(line); await handle.sync();
+      const directory = await open(dirname(path), constants.O_RDONLY | constants.O_NOFOLLOW);
+      try { await directory.sync(); } finally { await directory.close(); }
     } finally { await handle.close(); }
   }
   async exclusive<T>(fn: () => Promise<T>): Promise<T> {
