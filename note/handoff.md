@@ -3,7 +3,7 @@
 > 单文件，只写当前状态，覆盖而不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 依据：`docs/engineering/v1-technical-design.md`（v1 技术设计，开发唯一参照）、`note/decisions.md`（#1–#84）、`note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-12 下午，调度员（会话 585cc3fa）。本轮合并到 #54。**目前所有可做的线都卡在「等用户」**（见下）；看门狗接手时只核对状态，没事可做就刷新本行时间后退出，不要重做已完成的事。
+- **最后更新：** 2026-10-12 18:00，看门狗接手的调度员。本轮合并到 #54。S0、Q1-D、M1-C/E 都卡在「等用户」；**M2 不被阻塞**（依赖 M1 schemas，#47 已合并），已派 Codex 写 `v1-protocol` change（clone `../unimelb-coursework-agent-protocol`，分支 `codex/v1-protocol-change`，报告 `codex-m2-change.md`）。
 - **模式：全自动调度（#79）。** 用户在睡觉 / 不在线，只在必须决策时打断。
 
 ## 调度员守则（新会话第一件事读这里）
@@ -26,7 +26,7 @@
 1. **S0 `capture-selection-ed`**：3.1–3.8 已合并（#36、#41）。3.9 要用户登录实测；3.10 归档等 3.9。
 2. **Q1 `ed-quiz-assist`**（截止 **10/25**，最晚 10/23 给用户实测）：A（#42）、B（#49）、C（#53）已合并。D（#55）在分支 `codex/quiz-fill`（`f9d2065`）：4.1–4.5 实现完成，第一轮审查的 P2 已修，**P1 卡在设计选择**（见「等用户」第一条），未开 PR。E 依赖 D。检查点：B 10/16，C 10/18，D 10/20，E 和结构检查 10/22。
 3. **M1 `v1-sync`**：change（#40）和 1.1 合成探针（#45）已合并。1.2 真实探针要用户登录；**C（Canvas 适配器）按 tasks 要等 1.2 实测通过才开**。B（schema/迁移）已合并（#47）。D（Ed 规范化/脱敏）已合并（#51）。F 已合并（#54）。**E（私有 PDF）卡住**：要装预批依赖 `unpdf@1.8.1`（#74），`npm install` 被 auto 模式分类器拦下（Untrusted Code Integration），见「等用户」。G 要等 C–F，H 要等 D–G。
-4. **M2 `v1-protocol`** → schema 合并后，同步、协议、界面三条线并行（M3 先接假数据）。
+4. **M2 `v1-protocol`**：Codex 正在写 change（18:00 派出）→ 新上下文审查 → PR → 合并 → 先做 issue A（命令注册表 + zod 契约）；A 合并后同步、协议、界面三条线并行（M3 先接假数据）。change 里的「Open choices」按守则第 3 条自主定并记 decisions。
 5. dsh 出题欠：PR #29、#32、#35、#36、#40、#41、#42、#45、#47、#49、#51、#53、#54、Stage 3 / PR #22（等用户定方式）。
 
 ## 等用户（醒来后）
