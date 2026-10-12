@@ -66,10 +66,12 @@ Depends on A only for independent implementation; I connects real B/D/H handlers
 
 Depends on A; O5 before implementation, O6 before owner-confirmation wiring. Scope: built-in `node:http` and synthetic local HTTP tests, no UI, deployment or framework.
 
-- [ ] 6.1 Record exact method/body/status/size/timeout conventions, Host/Origin checks, non-browser client authorization and owner capability bootstrap from O5. Write failing tests for loopback-only binding, generated known routes, malformed JSON, unknown paths/methods, request/body bounds and cleanup; implement the generic adapter.
-- [ ] 6.2 Write failing security tests for cross-origin browser requests, forged Host/owner fields, unauthorized writes/owner actions and secrets in responses; implement selected checks with no wildcard CORS, credential exports or model assertions treated as owner approval.
-- [ ] 6.3 Write failing dispatcher parity tests for success/schema errors/auth denials/oversized output and exactly one handler execution using fakes; implement safe envelope/status mapping without business logic.
+- [x] 6.1 Record exact method/body/status/size/timeout conventions, Host/Origin checks, non-browser client authorization and owner capability bootstrap from O5. Write failing tests for loopback-only binding, generated known routes, malformed JSON, unknown paths/methods, request/body bounds and cleanup; implement the generic adapter.
+- [x] 6.2 Write failing security tests for cross-origin browser requests, forged Host/owner fields, unauthorized writes/owner actions and secrets in responses; implement selected checks with no wildcard CORS, credential exports or model assertions treated as owner approval.
+- [x] 6.3 Write failing dispatcher parity tests for success/schema errors/auth denials/oversized output and exactly one handler execution using fakes; implement safe envelope/status mapping without business logic.
 - [ ] 6.4 Run targeted green, fresh-context review and project check; record loopback/security evidence and pending B/D/H integration. Do not serve M3 assets or modify CI/deployment in this issue.
+
+Implementation and verification evidence for F: `note/issue-65-http.md`. Tasks 6.1–6.3 remain unchecked until real loopback tests and the project check pass; the current sandbox rejects `listen` with `EPERM`. Socket-free boundary tests are supplementary evidence only.
 
 ## 7. Issue G — Official SDK stdio MCP transport
 
