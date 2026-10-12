@@ -11,7 +11,7 @@
 
 | 分支 | 内容 | 下一步 |
 | --- | --- | --- |
-| `claude/protocol-integration` | M2 I（issue #77）：生产组装 + 集成测试 + 验收清单 | 第 1 轮审查的 4 处 P2 已修（`11c35df`），要复审 → 本机跑 check（含 socket 测试）→ PR。合并前删掉 `note/issue-77-integration.md` |
+| `claude/protocol-integration` | M2 I（issue #77）：生产组装 + 集成测试 + 验收清单 | 第 1 轮审查的 4 处 P2 已修（`11c35df`），要复审 → 本机跑 check（含 socket 测试）→ PR。合并前删掉 `note/issue-77-integration.md`。**复审时查**：它的 clone 里 23:23 出现了 `.local/coursework.db` 和合成快照，测试可能写进了默认数据目录而不是临时目录 |
 | `codex/quiz-fill` | Q1 D（issue #55）：L3 填写 + 被动记录提交请求 | 等用户选接管方式（见下）后返工 → 审查 → PR。合并前删掉 `note/issue-55-implementation.md` |
 | `codex/ui-inventory` | M3 A（issue #79）：M2 契约缺口清单 | 审查 → PR；Hermes `--help` 没跑通，1.3 实测要用户 |
 
