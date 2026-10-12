@@ -43,16 +43,17 @@ export class TrustedStoreEvidence implements SourceEvidenceReader {
     // No page number or cross-provider identity is guessed from a source title, code or URL.
     if (source.kind === 'material' && !metadata) throw new CourseworkError('SOURCE_UNAVAILABLE', 'Material page metadata is unavailable.');
     const safe = this.protect(source) as typeof source;
-    if (safe.text !== source.text || safe.title !== source.title || safe.url !== source.url) throw unsafeSource();
-    const sourceHash = createHash('sha256').update(source.text).digest('hex');
-    if (metadata && metadata.sourceHash !== sourceHash) throw unsafeSource();
+    const storedHash = createHash('sha256').update(source.text).digest('hex');
+    if (metadata && metadata.sourceHash !== storedHash) throw unsafeSource();
+    // Citation hashes/UTF-16 offsets are based only on the exact model-facing text.
+    const sourceHash = createHash('sha256').update(safe.text).digest('hex');
     let locator = metadata?.locator ?? source.id;
     if (metadata?.page !== undefined) {
       if (locator !== `page:${metadata.page}` && locator !== `page ${metadata.page}`) throw unsafeSource();
       locator = `page ${metadata.page}`;
     } else if (/^page[: ]/i.test(locator)) throw unsafeSource();
     const evidence = SourceEvidenceSchema.parse({ sourceItemId: source.id, courseId: source.courseId,
-      text: source.text, sourceHash, locator, ...(metadata?.page !== undefined ? { page: metadata.page } : {}),
+      text: safe.text, sourceHash, locator, ...(metadata?.page !== undefined ? { page: metadata.page } : {}),
       provenance: source.platform, redacted: true });
     // Revalidation cannot change text, locators or identity under already accepted hashes/offsets.
     if (JSON.stringify(this.protect(evidence)) !== JSON.stringify(evidence)) throw unsafeSource();
@@ -102,7 +103,24 @@ export class StoreProtocolReads implements ProtocolRepository {
       if (!bounded.ok) throw new CourseworkError(bounded.error.code, 'Unable to read changes safely.');
       const data = ChangesOutputSchema.parse(bounded.data);
       const result = await changesHandler({ listChangesSince: () =>
-        data.changes.map(change => this.evidence.protect(change) as typeof change) }, input);
+        data.changes.map(change => {
+          try { return this.evidence.protect(change) as typeof change; }
+          catch (error) {
+            if (!(error instanceof CourseworkError) || error.code !== 'SOURCE_UNAVAILABLE') throw error;
+            // Keep sequence and event identity while explicitly withholding the entire unsafe snapshot.
+            const { before, after, ...identity } = change;
+            let safeIdentity: typeof identity;
+            try { safeIdentity = this.evidence.protect(identity) as typeof identity; }
+            catch (identityError) {
+              if (!(identityError instanceof CourseworkError) || identityError.code !== 'SOURCE_UNAVAILABLE') throw identityError;
+              // An unsafe identity cannot stall the cursor or be exported in the placeholder.
+              safeIdentity = { ...identity, entityId: `withheld:${createHash('sha256').update(identity.entityId).digest('hex')}` };
+            }
+            const placeholder = { withheld: true, reason: 'SOURCE_UNAVAILABLE' };
+            return { ...safeIdentity, ...(before !== undefined ? { before: placeholder } : {}),
+              ...(after !== undefined ? { after: placeholder } : {}) };
+          }
+        }) }, input);
       if (!result.ok) throw new CourseworkError(result.error.code, 'Unable to read changes safely.');
       return result.data;
     }
