@@ -13,7 +13,7 @@ import { CourseworkError, retryable } from '../../src/protocol/errors.js';
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn(); });
-async function setup(options: { bodyTimeoutMs?: number; maxActiveRequests?: number } = {}) {
+async function setup(options: { bodyTimeoutMs?: number; maxActiveRequests?: number; requestTimeoutMs?: number } = {}) {
   const directory = await mkdtemp(join(await realpath(tmpdir()), 'coursework-http-'));
   cleanup.push(() => rm(directory, { recursive: true, force: true }));
   const registry = new Registry();
@@ -123,6 +123,43 @@ describe('generated loopback HTTP transport', () => {
     const first = send(server); await started;
     try { expect((await send(server)).status).toBe(503); expect(handler).toHaveBeenCalledTimes(1); }
     finally { release(); await first; }
+  });
+  it('never dispatches a second request pipelined on the same connection', async () => {
+    const { server, handler } = await setup();
+    const one = ['POST /api/synthetic HTTP/1.1', `Host: ${new URL(server.origin).host}`, 'Content-Type: application/json',
+      'Content-Length: 2', '', '{}'].join('\r\n');
+    const text = await new Promise<string>(resolve => {
+      const socket = connect(Number(new URL(server.origin).port), '127.0.0.1');
+      let text = ''; socket.on('error', () => {}); socket.on('data', c => { text += c; }); socket.on('close', () => resolve(text));
+      socket.on('connect', () => socket.write(one + one));
+    });
+    expect(text.match(/HTTP\/1\.1 \d{3}/g)).toEqual(['HTTP/1.1 200']);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+  it('delivers a slow command response past the receive timeout, while incomplete bodies still time out unexecuted', async () => {
+    const { server, handler } = await setup({ requestTimeoutMs: 300, bodyTimeoutMs: 100 });
+    handler.mockImplementationOnce(async () => { await new Promise(resolve => setTimeout(resolve, 1200)); return { value: 'slow' }; });
+    const response = await send(server);
+    expect(response.status).toBe(200); expect(response.body.data).toEqual({ value: 'slow' }); expect(handler).toHaveBeenCalledTimes(1);
+    handler.mockClear();
+    const partial = await new Promise<string>(resolve => {
+      const socket = connect(Number(new URL(server.origin).port), '127.0.0.1');
+      let text = ''; socket.on('error', () => {}); socket.on('data', c => { text += c; }); socket.on('close', () => resolve(text));
+      socket.on('connect', () => socket.write(`POST /api/synthetic HTTP/1.1\r\nHost: ${new URL(server.origin).host}\r\nContent-Type: application/json\r\nContent-Length: 10\r\n\r\n{`));
+    });
+    expect(partial).toContain('408'); expect(handler).not.toHaveBeenCalled();
+  });
+  it('accepts a private capability directory under a symlinked parent but never a symlinked final directory', async () => {
+    const { directory, registry, context } = await setup();
+    const parent = join(directory, 'parent-link'); await symlink(directory, parent);
+    const transport = await startHttpTransport({ registry, context, capabilityDirectory: join(parent, 'store') });
+    cleanup.push(() => transport.close());
+    expect((await stat(transport.capabilityFile)).mode & 0o777).toBe(0o600);
+    expect((await stat(join(directory, 'store'))).mode & 0o777).toBe(0o700);
+    expect((await send(transport)).status).toBe(200);
+    await symlink(join(directory, 'store'), join(directory, 'store-link'));
+    await expect(startHttpTransport({ registry, context, capabilityDirectory: join(parent, 'store-link') })).rejects.toMatchObject({ code: 'INTERNAL' });
   });
   it('rejects unsafe capability storage and cleans failed startup', async () => {
     const { directory, registry, context, server } = await setup();

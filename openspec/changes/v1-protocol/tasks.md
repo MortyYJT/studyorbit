@@ -71,7 +71,7 @@ Depends on A; O5 before implementation, O6 before owner-confirmation wiring. Sco
 - [x] 6.3 Write failing dispatcher parity tests for success/schema errors/auth denials/oversized output and exactly one handler execution using fakes; implement safe envelope/status mapping without business logic.
 - [ ] 6.4 Run targeted green, fresh-context review and project check; record loopback/security evidence and pending B/D/H integration. Do not serve M3 assets or modify CI/deployment in this issue.
 
-Implementation and verification evidence for F: `note/issue-65-http.md`. Tasks 6.1–6.3 remain unchecked until real loopback tests and the project check pass; the current sandbox rejects `listen` with `EPERM`. Socket-free boundary tests are supplementary evidence only.
+Implementation and verification evidence for F: `note/issue-65-http.md`. Tasks 6.1–6.3 are checked on real loopback evidence: `test/protocol/http.test.ts` binds 127.0.0.1 on the host and passes, and the project check passes. Socket-free boundary tests are supplementary evidence only. Task 6.4 (fresh-context review sign-off) stays open.
 
 ## 7. Issue G — Official SDK stdio MCP transport
 

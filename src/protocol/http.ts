@@ -1,8 +1,8 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
 import type { Socket } from 'node:net';
-import { chmod, lstat, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { chmod, lstat, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { ownerCommands } from './contracts.js';
 import type { TrustedContext } from './context.js';
@@ -30,6 +30,8 @@ export interface HttpOptions {
   capabilityDirectory?: string;
   /** Host may tighten bounds, never enlarge them. */
   bodyTimeoutMs?: number;
+  /** Receive-phase request and idle timeout; host may tighten it below 10s, never enlarge it. */
+  requestTimeoutMs?: number;
   maxActiveRequests?: number;
 }
 const unavailable = () => new CourseworkError('INTERNAL', 'Local HTTP transport is unavailable.');
@@ -39,19 +41,18 @@ function bound(value: number | undefined, maximum: number): number {
   return value;
 }
 async function privateCapability(root: string, token: string): Promise<string> {
-  // Walk all components, refusing symlinks instead of following them through recursive mkdir.
-  const paths: string[] = []; let path = resolve(root);
-  while (dirname(path) !== path) { paths.unshift(path); path = dirname(path); }
-  for (const directory of paths) {
-    try { await mkdir(directory, { mode: 0o700 }); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw unavailable(); }
-    const info = await lstat(directory);
-    if (!info.isDirectory() || info.isSymbolicLink()) throw unavailable();
-  }
-  const info = await lstat(resolve(root));
+  // Trust the parent as resolved by realpath (macOS /tmp and /var are symlinks), but never a symlinked final directory.
+  const target = resolve(root);
+  let base: string;
+  try { await mkdir(dirname(target), { recursive: true, mode: 0o700 }); base = join(await realpath(dirname(target)), basename(target)); }
+  catch { throw unavailable(); }
+  try { await mkdir(base, { mode: 0o700 }); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw unavailable(); }
+  const info = await lstat(base);
+  if (info.isSymbolicLink() || !info.isDirectory()) throw unavailable();
   if (process.getuid && info.uid !== process.getuid()) throw unavailable();
   // Do not change permissions on ancestor directories owned by the caller.
-  const directory = await mkdtemp(join(resolve(root), 'http-'));
+  const directory = await mkdtemp(join(base, 'http-'));
   try {
     await chmod(directory, 0o700);
     await writeFile(join(directory, 'capability'), token + '\n', { mode: 0o600, flag: 'wx' });
@@ -74,6 +75,7 @@ function headerCount(req: IncomingMessage, name: string): number {
 export async function startHttpTransport(options: HttpOptions): Promise<HttpTransport> {
   const bodyTimeoutMs = bound(options.bodyTimeoutMs, 5000);
   const maxActive = bound(options.maxActiveRequests, 32);
+  const requestTimeoutMs = bound(options.requestTimeoutMs, 10000);
   const port = options.port ?? 0;
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw unavailable();
   const token = randomBytes(32).toString('hex');
@@ -84,8 +86,15 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
   const sockets = new Set<Socket>();
   // Sockets that already carry a Connection: close response; trailing bytes must never get a second response.
   const answered = new WeakSet<Socket>();
-  const server = createServer({ maxHeaderSize: 8192, headersTimeout: 5000, requestTimeout: 10000,
+  // One request per connection: anything pipelined after the first is never dispatched, answered or in flight.
+  const served = new WeakSet<Socket>();
+  const server = createServer({ maxHeaderSize: 8192, headersTimeout: Math.min(5000, requestTimeoutMs), requestTimeout: requestTimeoutMs,
     connectionsCheckingInterval: 250 }, (req, res) => {
+    if (req.socket) {
+      // The first response carries Connection: close, so Node ends the socket after it; this request gets nothing.
+      if (served.has(req.socket)) { req.resume(); return; }
+      served.add(req.socket);
+    }
     let finished = false; let counted = false; let dispatching = false; let timer: NodeJS.Timeout | undefined;
     const finish = () => {
       if (finished) return;
@@ -155,13 +164,15 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
       } } } : {}) };
       // No deadline races against a mutation: dispatcher completion determines its real outcome.
       dispatching = true;
+      // Receive-phase timeouts end here; the socket stays open until the dispatcher's real outcome is written.
+      req.socket?.setTimeout(0);
       void dispatch(options.registry, name, input, context).then(envelope => reply(httpStatus(envelope), envelope))
         .catch(() => reply(500, fail('unknown', 'INTERNAL', 'The command could not complete safely.')))
         .finally(() => { dispatching = false; if (counted) { active--; counted = false; } });
     });
   });
   server.maxConnections = 64;
-  server.setTimeout(10000, socket => socket.destroy());
+  server.setTimeout(requestTimeoutMs, socket => socket.destroy());
   server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
   server.on('clientError', (error, socket) => {
     if (!socket.writable) { socket.destroy(); return; }
