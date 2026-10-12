@@ -3,7 +3,7 @@ import { afterEach, expect, it } from 'vitest';
 import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { envelopeSchema } from '../../src/protocol/contracts.js';
+import { envelopeSchema, ownerCommands } from '../../src/protocol/contracts.js';
 import { Registry, createRegistry } from '../../src/protocol/registry.js';
 import { createFakeContext, examples, FakeServices } from '../../src/protocol/fakes.js';
 import { createMcpServer, runMcpStdio } from '../../src/protocol/mcp.js';
@@ -34,11 +34,13 @@ it('initializes through the official SDK and advertises the tools capability', a
   expect(client.getServerCapabilities()).toHaveProperty('tools');
 });
 
-it('discovers exactly the registry with zod-derived object input schemas', async () => {
+it('discovers the registry minus owner-only commands, with zod-derived object input schemas (decision #87)', async () => {
   const registry = createRegistry();
   const { client } = await connect(registry, createFakeContext());
   const { tools } = await client.listTools();
-  expect(tools.map(tool => tool.name).sort()).toEqual(registry.list().map(entry => entry.name).sort());
+  expect(tools.map(tool => tool.name).sort())
+    .toEqual(registry.list().map(entry => entry.name).filter(name => !ownerCommands.has(name)).sort());
+  expect(tools.some(tool => ownerCommands.has(tool.name))).toBe(false);
   for (const tool of tools) {
     const entry = registry.get(tool.name)!;
     const derived = z.toJSONSchema(entry.input, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>;
@@ -46,7 +48,6 @@ it('discovers exactly the registry with zod-derived object input schemas', async
     if (derived.properties) expect(tool.inputSchema.properties).toEqual(derived.properties);
     else expect(tool.inputSchema.oneOf ?? tool.inputSchema.anyOf).toEqual(derived.oneOf ?? derived.anyOf);
   }
-  expect(tools.find(tool => tool.name === 'policy.record')!.description).toMatch(/owner/i);
 });
 
 it('calls a registry command through dispatch and returns one contract envelope', async () => {

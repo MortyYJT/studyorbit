@@ -44,7 +44,8 @@ export function createMcpServer(options: McpOptions): McpServer {
   const server = new McpServer({ name: 'coursework', version: options.version ?? '0.0.0' }, { capabilities: { tools: {} } });
   // Low-level handlers keep advertised schemas derived from zod while leaving validation to dispatch().
   server.server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: options.registry.list().map(entry => ({ name: entry.name, description: describe(entry), inputSchema: inputSchema(entry) })),
+    // Decision #87: agents never see owner-only tools; calling one by name is still refused below.
+    tools: options.registry.list().filter(entry => !ownerCommands.has(entry.name)).map(entry => ({ name: entry.name, description: describe(entry), inputSchema: inputSchema(entry) })),
   }));
   server.server.setRequestHandler(CallToolRequestSchema, async request => {
     let envelope: Envelope;

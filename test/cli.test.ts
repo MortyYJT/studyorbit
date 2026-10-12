@@ -94,7 +94,7 @@ it('coursework mcp over real stdio pipes writes only MCP frames to stdout and ex
   const frames = stdout.split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, any>);
   expect(frames.map(frame => frame.id)).toEqual([1, 2, 3, 4]);
   for (const frame of frames) expect(frame.jsonrpc).toBe('2.0');
-  expect(frames[1]!.result.tools.length).toBeGreaterThan(20);
+  expect(frames[1]!.result.tools.length).toBe(18); // 24 registry commands minus 6 owner-only (decision #87)
   expect(JSON.parse(frames[2]!.result.content[0].text)).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
   expect(JSON.parse(frames[3]!.result.content[0].text)).toMatchObject({ ok: false, error: { code: 'SOURCE_UNAVAILABLE' } });
   expect(stderr).toContain('coursework mcp');
