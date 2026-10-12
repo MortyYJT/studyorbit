@@ -106,6 +106,18 @@ new dependency, M1 domain migration or actual remote write is included in Issue 
 Task 1.5 remains unchecked because this request covers 1.1–1.4 and does not deliver/merge a PR.
 Production policy/grant/evidence persistence and gates remain D/C/H, and real submission remains M4.
 
+## Standalone HTTP adapter (Issue F)
+
+`src/protocol/http.ts` exports `startHttpTransport`, `HttpOptions`, `HttpTransport` and
+`httpStatus`. Inject the same registry and trusted context used by `dispatch`; the adapter selects
+no production repository/service. The returned host handle has `origin`, `capabilityFile` and an
+idempotent asynchronous `close()`. Read the capability file only in a trusted local client and
+supply it in `X-Coursework-Capability` for mutations and owner commands. Do not serialize the host
+handle, expose the file/token to a model, or log that header. Ordinary reads use JSON POST too.
+Exact security, limits, timeouts and status conventions are recorded in the OpenSpec design's
+“Issue F: selected HTTP conventions (O5)” section. No CLI entry point, UI or production mounting
+is supplied. Actual shared B/D/H service and O6 integration remains issue I/H work.
+
 ## Generated CLI adapter (Issue E)
 
 `parseProtocolCLI(args, { registry, context, stdout, stderr, isTTY })` in

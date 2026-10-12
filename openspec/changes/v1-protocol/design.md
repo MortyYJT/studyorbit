@@ -107,3 +107,70 @@ No self-issued Canvas tokens; browser credentials remain page-local, models neve
 | O5 — before F: HTTP request/security convention | (a) JSON POST for every command, exact Host/Origin checks and owner-session capability for mutations; (b) GET reads/POST writes with same protections; (c) loopback alone | (a): one route convention and consistent zod inputs; reject browser cross-origin requests and require trusted local authorization. Specify non-browser client credentials, bootstrap, limits and status mapping before implementation; never treat caller-supplied owner flags as authority. |
 | O6 — before H/F: exact L4 confirmation lifecycle | (a) server-issued single-use confirmation bound to filled revision/page/attempt and policy/grant versions; (b) confirm anew in owner TTY for each action; (c) client boolean | (a) for M3 compatibility, with (b) as CLI interaction: stale/replayed confirmation is rejectable. Define expiry and consumption before H; (c) cannot prove owner confirmation. Auto-submit remains explicit per-course owner configuration, default off. |
 | O7 — decision #84 reconciliation | Resolved: #84 is recorded and consistent with this design | `quiz.propose` keeps Q1's #84 provenance rule unchanged; shared citation service in C must not weaken it. |
+
+### Issue F: selected HTTP conventions (O5)
+
+The standalone host API `startHttpTransport({ registry, context, port?, capabilityDirectory? })`
+uses built-in `node:http` only. It always listens on IPv4 `127.0.0.1`; port defaults to zero
+(ephemeral). Routes are looked up directly in the injected registry: exact `POST /api/<name>`
+with no query, URL decoding, path aliases, UI assets or discovery endpoint. The body is one
+UTF-8 JSON value validated by the dispatcher. Empty, malformed and invalid UTF-8 bodies fail.
+Require `Content-Type: application/json` (optional `; charset=utf-8`); reject content encodings.
+Fixed-length and chunked bodies are both bounded before dispatch.
+
+| Bound | Convention |
+| --- | --- |
+| URL | 1,024 characters; larger returns 414 |
+| Headers | Node parser maximum 8 KiB; maximum 64 received header fields; overflow returns 431 |
+| Request body | 64 KiB, declared and streamed bytes; overflow returns 413 |
+| Response | Existing dispatcher envelope maximum 64 KiB, including final metadata |
+| Connections / active requests | 64 connections; 32 active requests; excess requests return 503; connections over the limit are dropped |
+| Timeouts | 5 s incomplete headers (Node parser, 250 ms checking interval), 5 s total body receipt, 10 s socket inactivity and Node total request receipt |
+| Execution | No deadline race, retry or cancellation claim for a running handler; context ports own action deadlines. Disconnected handlers still count against the active limit until completion |
+| Cleanup | `close()` is idempotent, stops accepting requests, destroys tracked sockets and removes this process's capability directory. It does not roll back or cancel an already dispatched handler |
+
+Body timeout returns 408; parser header/total-request timeouts use Node's native 408 and close.
+Every application reply is one JSON envelope, `Cache-Control: no-store`, `nosniff` and
+`Connection: close`; no keepalive or CORS headers. Parser malformed framing returns a safe 400
+envelope; parser timeout and connection rejection are transport failures, not command outcomes.
+Unsupported method returns 405 (`Allow: POST`), unsupported media/encoding 415, unknown route 404,
+unsafe Host/Origin or missing mutation capability 403. These transport failures use safe existing
+`INVALID_INPUT`/`NOT_FOUND`/`LIMIT_EXCEEDED`/`LOCKED` codes and command `unknown`, without echoing
+request text. Dispatcher envelopes pass through unchanged, apart from checking for the host's
+own capability leak. Dispatcher HTTP mapping: success 200; `INVALID_INPUT` 400; `NOT_FOUND` 404;
+`CONFLICT` 409; `AUTH_EXPIRED` 401; `SOURCE_UNAVAILABLE` 503; `LOCKED` 423;
+`CITATION_MISMATCH` 422; `LIMIT_EXCEEDED` 413; `INTERNAL`/`UNCERTAIN` 500. An unavailable action
+reported as command data remains HTTP 200, rather than inventing a different command outcome.
+
+Security is checked before collecting bodies or invoking dispatch. Require exactly one Host equal
+to `127.0.0.1:<actual-port>`. If Origin is present, require exactly one equal to the actual
+`http://127.0.0.1:<actual-port>` origin; `null`, different schemes/ports and duplicate headers fail.
+If Sec-Fetch-Site is present, only one `same-origin` or `none` is allowed. There is no OPTIONS
+preflight allowance or wildcard CORS. Non-browser reads may omit Origin; loopback alone gives
+no write or owner authority.
+
+Chosen trusted local authorization: a new random 256-bit capability per server process, kept
+only in memory and a unique `.local/http-*/capability` file (0600), inside a 0700 directory.
+The default parent is `.local/`; a trusted host may supply another private storage parent for
+standalone use/tests. Refuse symlink components and parents owned by a different user, create
+exclusively, and clean up on startup failure/close. Never reuse a previous process's file/token.
+After a hard crash, any stale file is inert and may be removed by the owner; no automatic deletion
+of another process's directories. Capability file location is returned only to the embedding host,
+never via HTTP. The trusted owner client reads that file privately and supplies
+`X-Coursework-Capability` for L1–L4 commands and all `ownerCommands`, including their L0 aliases.
+Keep it away from model arguments, responses and logs. This capability trusts the OS account and
+clients to which the owner deliberately delegates it; it does not isolate hostile same-user code.
+
+Compare the single header in constant time; duplicate credentials are invalid. HTTP always strips
+any owner port on the supplied context, then establishes its own owner capability only after
+verification. Top-level `owner`, `context`, `trustedContext` and `confirmed` fields are rejected;
+strict command schemas remain authoritative for all other fields. The capability is an outer gate,
+never a substitute for recorded policy/grant/evidence/confirmation checks in the dispatcher and
+injected services. The adapter logs nothing, does not pass headers to ports, and withholds any
+serialized envelope accidentally containing its own token. Privacy of all other service output
+continues through the existing dispatcher privacy boundary.
+
+O6 is deliberately not implemented by F: `confirmationToken` remains strict command input passed
+to H's serialized submit boundary, whose server-issued single-use token must bind the exact filled
+revision/target/policy/grant. A capability is not L4 consent. No issue-F confirmation issuer, browser
+login, production repository mounting or real assessment action is added.
