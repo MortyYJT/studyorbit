@@ -14,8 +14,8 @@
 5. **Codex 额度**：报错里有 usage limit 和恢复时间。恢复时间在 5 小时以内的是 5 小时额度，只等待，期间做 Claude 能做的事或改用子会话；恢复时间超过 5 小时或明确写 weekly 的是**每周额度**，才用重置卡。优先让 Codex 自己重置（用户已开启）；不行再用 computer use 在 Codex 应用里点**免费的**重置卡，只要屏幕上出现价格、付款、升级套餐就立即停下。computer use 的授权弹窗没人点时，就等每周额度自动恢复。
 6. **Claude 额度**：用完会话会直接停住，由看门狗在额度恢复后接着跑。所以本文件要随时保持最新：每合并一个 PR 就更新一次。
 7. **并行**：最多 3 条 Codex 线，各用独立 clone（`../unimelb-coursework-agent-<topic>`）；不切主 checkout 的分支。
-9. **不弹窗的写法**：一条 Bash 只做一件事，用 `git -C <clone>`，不用 `cd …&&`、`for`、管道、`~`；跑测试用 `npm run --prefix <clone> check -- <文件>`；`codex exec … < /dev/null` 直接后台运行、等完成通知，不写 `while pgrep` 轮询（`pgrep -f "codex exec"` 会匹配到循环自己，永远不结束）。
-8. **控制上下文（用户 2026-10-12 要求）**：每次派给 Codex / 子会话的活只有一个 issue 那么大，提示词自包含，结果写进 `-o` 报告文件；调度员只读报告和需要的几行，绝不读整份日志。调度员自己的上下文变大时：更新本文件并推送 → `echo 0 > ~/.coursework-dispatcher-heartbeat` → 用 `run_scheduled_task` 立即运行 `coursework-dispatcher-watchdog`（它会接手当调度员）→ 归档旧会话，不用问用户。
+8. **不弹窗的写法**：一条 Bash 只做一件事，用 `git -C <clone>`，不用 `cd …&&`、`for`、管道、`~`；跑测试用 `npm run --prefix <clone> check -- <文件>`；`codex exec … < /dev/null` 直接后台运行、等完成通知，不写 `while pgrep` 轮询（`pgrep -f "codex exec"` 会匹配到循环自己，永远不结束）。
+9. **控制上下文（用户 2026-10-12 要求）**：每次派给 Codex / 子会话的活只有一个 issue 那么大，提示词自包含，结果写进 `-o` 报告文件；调度员只读报告和需要的几行，绝不读整份日志。调度员自己的上下文变大时：更新本文件并推送 → `echo 0 > /Users/yu-junteng/.coursework-dispatcher-heartbeat` → 用 `run_scheduled_task` 立即运行 `coursework-dispatcher-watchdog`（它会接手当调度员）→ 归档旧会话，不用问用户。
 
 ## 正在跑的 Codex（`pgrep -fl "[c]odex exec"` 核对；报告在 `/Users/yu-junteng/.coursework-dispatcher-reports/`）
 - **Codex 5 小时额度又用完，13:11 恢复。** 期间审查改由 Claude 子会话（Agent 工具，只读）做。
