@@ -50,7 +50,7 @@ export class TrustedStoreEvidence implements SourceEvidenceReader {
     let locator = metadata?.locator ?? source.id;
     if (metadata?.page !== undefined) {
       if (locator !== `page:${metadata.page}` && locator !== `page ${metadata.page}`) throw unsafeSource();
-      locator = `page ${metadata.page}`;
+      locator = `page:${metadata.page}`;
     } else if (/^page[: ]/i.test(locator)) throw unsafeSource();
     const evidence = SourceEvidenceSchema.parse({ sourceItemId: source.id, courseId: source.courseId,
       text: safe.text, sourceHash, locator, ...(metadata?.page !== undefined ? { page: metadata.page } : {}),

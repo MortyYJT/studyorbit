@@ -74,8 +74,8 @@ export function createRedactor(scope: unknown, configuration: unknown = {}): { t
     text = text.normalize('NFKC');
     if (/[\p{C}]/u.test(text.replace(/[\t\n\r]/g, '')) || /[<>]/u.test(text) || credentialSyntax.test(text)) throw unsafeSource();
     for (const pattern of patterns) text = text.replace(pattern, '[redacted]');
-    text = text.replace(/\b((?:student\s*(?:number|no\.?|id)|id)\s*[:#]?\s*)\d{6,}\b/giu, '$1[redacted]').replace(/[^\s/?:#=&]*@[^\s/?:#=&]+/gu, '[redacted]')
-      // Decision #81 preserves untagged six/seven-digit mathematical values.
+    text = text.replace(/\b((?:student[\s_-]*(?:number|no\.?|id)|sid|id)\s*[:#=-]?\s*)\d{6,}\b/giu, '$1[redacted]').replace(/[^\s/?:#=&]*@[^\s/?:#=&]+/gu, '[redacted]')
+      // Decision #81 preserves untagged six/seven-digit mathematical values; labelled ids are redacted above.
       .replace(/\b\d{8,15}\b/gu, '[redacted]')
       .replace(/\+\d{1,3}[\s()-]*\d(?:[\d ()-]{6,}\d)|\b0[23478](?:[\d ()-]{6,}\d)|\b\d{3}[ -]\d{3}[ -]\d{4}\b/gu, '[redacted]');
     for (const pattern of patterns) { pattern.lastIndex = 0; if (pattern.test(text)) throw unsafeSource(); }

@@ -11,7 +11,7 @@ const revision = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const digest = 'a'.repeat(64);
 const at = '2026-01-01T00:00:00Z';
 const binding = { assessmentId: 'synthetic-assessment', course: '7', lesson: '11', category: 'assignment' as const };
-const citation = { sourceItemId: 'synthetic-source', quote: 'Read the synthetic guide.', locator: 'page 1' };
+const citation = { sourceItemId: 'synthetic-source', quote: 'Read the synthetic guide.', locator: 'page:1' };
 const verified = { ...citation, offset: 0, end: 25, sourceHash: digest, page: 1 };
 const source = { sourceItemId: citation.sourceItemId, courseId: 'synthetic-course', text: citation.quote,
   sourceHash: digest, locator: citation.locator, page: 1, provenance: 'manual' as const, redacted: true as const };

@@ -29,7 +29,7 @@ describe('trusted protocol reads', () => {
     const f = setup('  Synthetic page text.\n');
     try {
       const page = await f.reads.read('sources.get', { sourceItemId: 'legacy-page' });
-      expect(page).toMatchObject({ sourceItemId: f.source.id, locator: 'page 2', page: 2, text: f.source.text, sourceHash: hash(f.source.text) });
+      expect(page).toMatchObject({ sourceItemId: f.source.id, locator: 'page:2', page: 2, text: f.source.text, sourceHash: hash(f.source.text) });
       const materials = await f.reads.read('materials.list', { courseId: f.course.id, page: 2, limit: 1 });
       expect(materials.items).toHaveLength(1);
       expect((await f.reads.read('materials.list', { courseId: 'other', limit: 1 })).items).toEqual([]);
@@ -358,4 +358,14 @@ it.each(['student number', 'student-id', 'student_no', 'author_name', 'phone_num
   const safe = protectRead({ url }) as { url: string };
   expect(new URL(safe.url).pathname).toBe('/files/1234567');
   expect(new URL(safe.url).searchParams.get(key)).toBe('[redacted]');
+});
+it('returns paged evidence that the shared citation validator accepts', async () => {
+  const { validateCitation } = await import('../../src/citations/exact.js');
+  const f = setup('Synthetic page text.');
+  try {
+    const page = await f.reads.read('sources.get', { sourceItemId: f.source.id });
+    const { sourceItemId, text, locator, sourceHash } = page;
+    const result = validateCitation({ sourceItemId, quote: 'page text', locator }, { sourceItemId, text, locator, sourceHash, page: page.page });
+    expect(result).toMatchObject({ sourceItemId: f.source.id, page: 2, sourceHash: hash('Synthetic page text.') });
+  } finally { f.db.close(); }
 });

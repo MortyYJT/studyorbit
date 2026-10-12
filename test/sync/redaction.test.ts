@@ -116,3 +116,10 @@ it.each(['author_name', 'user_display_name', 'created_by_name'])('4.3 harvests f
   if (result instanceof Error) { expect(result).toMatchObject({ code: 'SOURCE_UNAVAILABLE' }); return; }
   expect(JSON.stringify(result)).not.toContain('Synthetic Person-Z');
 });
+it.each(['student_id=1234567', 'SID: 1234567', 'Student Number - 1234567', 'student-no 1234567', 'id: 1234567'])(
+  'redacts the labelled seven-digit student number in %s', value => {
+    expect(createRedactor({}).text(value)).not.toContain('1234567');
+  });
+it('keeps a seven-digit provider object number in a URL path', () => {
+  expect(createRedactor({}).url('https://canvas.example.edu/courses/123/files/1234567')).toContain('/files/1234567');
+});
