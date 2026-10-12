@@ -130,3 +130,29 @@ The executable keeps capture on its original path. New command ports remain expl
 unmounted (`SOURCE_UNAVAILABLE`) until Issue I; `unavailableCLIContext` is a fail-closed host
 placeholder, not a production repository or authorization service. Tests inject synthetic
 handlers/context; HTTP/MCP and production repository wiring are outside Issue E.
+
+## Stdio MCP adapter (Issue G)
+
+Run `coursework mcp` (after `npm run build`, `node dist/cli.js mcp`) and configure an MCP
+client to launch that command over stdio. The server is the official
+`@modelcontextprotocol/sdk` `McpServer` with `StdioServerTransport`; there is no custom
+handshake. Stdout carries only newline-delimited JSON-RPC frames; startup, per-call failure
+codes and shutdown diagnostics go to stderr, and stray `console.log` output is redirected
+there. The process exits cleanly when the client closes stdin. Inbound frames are bounded to
+the same 4 MiB as CLI `--input`.
+
+`createMcpServer({ registry, context, stderr, version })` and `runMcpStdio({ ..., stdin,
+stdout })` in `src/protocol/mcp.ts` generate one tool per registry entry with the same dotted
+name. Each `inputSchema` is `z.toJSONSchema(entry.input, { io: 'input' })`; union roots are
+wrapped as `type: object`. The advertised schema is a hint only: the SDK does not validate
+arguments, and every `tools/call` runs `dispatch()` exactly once, so zod refinements,
+authorization, evidence, privacy and the 64 KiB envelope bound stay authoritative. The result
+is one text content item holding the `coursework.agent/v1` envelope, with `isError` set on
+failure. Unknown tools return `NOT_FOUND` for command `unknown`; raw errors and input are not
+echoed.
+
+The host-owned context is passed without its `owner` capability, so owner commands (review,
+prerequisites, policy and grant recording, including Q1 aliases) are listed but always refused
+with `INVALID_INPUT`; no argument can grant owner authority and nothing prompts for credentials.
+The executable still uses the fail-closed `unavailableCLIContext` (`SOURCE_UNAVAILABLE`) until
+Issue I wires production ports. Hermes mounting/scheduling remains M4.
