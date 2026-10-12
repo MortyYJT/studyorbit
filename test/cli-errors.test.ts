@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 vi.mock('../src/capture/command.js', () => ({ capture: vi.fn() }));
 vi.mock('commander', () => ({
@@ -14,7 +14,9 @@ vi.mock('commander', () => ({
   },
 }));
 const originalExitCode = process.exitCode;
-afterEach(() => { process.exitCode = originalExitCode; vi.restoreAllMocks(); });
+const originalArgv = process.argv;
+beforeEach(() => { process.argv = ['node', 'coursework', 'capture']; });
+afterEach(() => { process.argv = originalArgv; process.exitCode = originalExitCode; vi.restoreAllMocks(); });
 
 it.each([
   { kind: 'LOCKED', status: 3, message: 'locked by process 123' },

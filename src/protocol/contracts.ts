@@ -107,7 +107,8 @@ export const contracts = {
   'revision.write': { input: z.strictObject({ ...studyWrite, claims: z.array(ClaimSchema).min(1).max(300) }), output: receipt, level: 1 },
   'practice.write': { input: z.strictObject({ ...studyWrite, questions: z.array(PracticeQuestionSchema).min(1).max(300) }), output: receipt, level: 1 },
   'quiz.propose': { input: proposalSchema, output: z.strictObject({ assessmentRef: IdSchema, revision: z.uuid(), sourceRevision: HashSchema, evidence: z.array(z.enum(['prompt-only', 'course-material'])).min(1).max(300) }), level: 2 },
-  'quiz.read': { input: targetSchema, output: quizOutputSchema, level: 0 },
+  // Q1 CLI returns the trusted snapshot digest; it is optional for existing registry consumers.
+  'quiz.read': { input: targetSchema, output: quizOutputSchema.extend({ sourceRevision: HashSchema.optional() }), level: 0 },
   'quiz.review': { input: requestSchema, output: z.strictObject({ status: z.enum(['approved', 'rejected', 'cancelled', 'timed-out']), revision: z.uuid() }), level: 0 },
   'quiz.prerequisites': { input: prerequisiteSchema, output: recorded('prerequisites'), level: 0 },
   'policy.record': policy,
