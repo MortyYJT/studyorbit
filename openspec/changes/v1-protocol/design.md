@@ -1,6 +1,6 @@
 ## Context
 
-This change refines the approved v1 design sections 2, 3, 4, 5, 6, M2 in section 7 and section 8, and decisions #56, #57, #62–#64, #69, #76, #79 and #80. It also preserves #81 (Q1 redaction) and #84 (Q1 citation provenance), and its open choices are settled by #85. The config's iCal/no-L4 statements are obsolete under #56/#77; this change does not edit config or handoff. No milestone dates are introduced.
+This change refines the approved v1 design sections 2, 3, 4, 5, 6, M2 in section 7 and section 8, and decisions #56, #57, #62–#64, #69, #76, #79 and #80. It also preserves #81 (Q1 redaction) and #84 (Q1 citation provenance), and its open choices are settled by #85. This change does not edit config or handoff. No milestone dates are introduced.
 
 Observed implementation in this checkout:
 

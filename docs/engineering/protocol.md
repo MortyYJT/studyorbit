@@ -381,7 +381,8 @@ Issue I wires production ports. Hermes mounting/scheduling remains M4.
   compare-and-swap. `InMemoryStudyRecordStore` is the only store; durable tables need owner approval.
 - `Q1ProposalEvidence` and `Q1QuizServices` route quiz proposals and terminal review to the delivered Q1 handlers,
   which keep their own locks, journals and TTY gates.
-- `GatedQuizActions` (`src/protocol/actions.ts`) separates L3 fill from L4 submit, serialises per assessment, records
+- `GatedQuizActions` (`src/protocol/actions.ts`) separates L3 fill from L4 submit, allows one action per assessment at a time (a concurrent request
+  fails `LOCKED`), records
   audit intent before every action (an audit failure blocks it) and never retries. Fill rechecks policy and grant
   inside the review lock against the exact revision, page and attempt, and never submits. `InMemoryFilledStore`
   holds the current filled revision; a durable layout needs owner approval.

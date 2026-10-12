@@ -1,6 +1,6 @@
 ## Context
 
-This is M1 in [v1 technical design sections 2, 3, 5 and 7](../../../docs/engineering/v1-technical-design.md), governed by [decisions #52–#80](../../../note/decisions.md). The approved pipeline is capture → private raw snapshots → normalize → redact → diff → SQLite current state, append-only `change_event` and run ledger. Code never calls a model. Obsolete iCal/no-L4 context in `openspec/config.yaml` does not override the explicit request or newer decisions; this change does not edit that config.
+This is M1 in [v1 technical design sections 2, 3, 5 and 7](../../../docs/engineering/v1-technical-design.md), governed by [decisions #52–#80](../../../note/decisions.md). The approved pipeline is capture → private raw snapshots → normalize → redact → diff → SQLite current state, append-only `change_event` and run ledger. Code never calls a model.
 
 At drafting time, `src/capture/ed-transport.ts` and the selection/limiter/snapshot modules exist following the merged Ed transport work. `capture-selection-ed` still has outstanding integration/acceptance/archive tasks; reconcile those before implementation integration. `openspec/specs/` is absent, so `v1-foundation` supplies domain/local-store baselines and `capture-selection-ed` supplies selection/Ed contracts. Q1 `ed-quiz-assist` is a planning dependency for quiz shape and safety compatibility, not evidence that its code or real checks have shipped. Its design's statement that transport was absent is historical.
 
