@@ -123,3 +123,17 @@ it.each(['student_id=1234567', 'SID: 1234567', 'Student Number - 1234567', 'stud
 it('keeps a seven-digit provider object number in a URL path', () => {
   expect(createRedactor({}).url('https://canvas.example.edu/courses/123/files/1234567')).toContain('/files/1234567');
 });
+it('redacts long separator-free text in linear time (#71)', () => {
+  const started = performance.now();
+  createRedactor({}).text('界'.repeat(60000));
+  expect(performance.now() - started).toBeLessThan(500);
+});
+it.each([
+  ['mail a.b@example.edu now', 'mail [redacted] now'],
+  ['x@y?z=1', '[redacted]?z=1'],
+  ['trailing at@ sign', 'trailing at@ sign'],
+  ['a@b@ c', '[redacted] c'],
+  ['@handle here', '[redacted] here'],
+])('keeps email redaction semantics for %s', (input, expected) => {
+  expect(createRedactor({}).text(input)).toBe(expected);
+});
