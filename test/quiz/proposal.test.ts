@@ -185,3 +185,22 @@ it('records an L1 revocation without a policy and never turns it into answering 
   expect(await recordOwnerAction('grant', input, { files, isTTY: true, confirm: async () => true })).toMatchObject({ ok: true });
   expect(await files.read(`grant-${hash(binding.assessmentId)}`)).toEqual(input);
 });
+it('rejects a tampered trusted snapshot hash without replacing the accepted proposal', async () => {
+  const f = await setup(); await authorize(f); await proposeQuiz(f.input, f.dependencies);
+  const name = `proposal-${hash(binding.assessmentId)}`; const before = await f.files.read(name);
+  await f.files.write(`read-${hash(data.assessmentRef)}`, { version: 1, sourceRevision: hash(data), data: { ...data, sources: [{ ...data.sources[0], text: 'Changed trusted text.' }] } });
+  expect(await proposeQuiz(f.input, f.dependencies)).toMatchObject({ ok: false, error: { code: 'SOURCE_UNAVAILABLE' } });
+  expect(await f.files.read(name)).toEqual(before);
+});
+it('wrong-course material and inconsistent trusted PDF locators preserve the proposal', async () => {
+  const f = await setup(); await authorize(f); await proposeQuiz(f.input, f.dependencies);
+  const name = `proposal-${hash(binding.assessmentId)}`; const before = await f.files.read(name);
+  const source = { sourceItemId: 'synthetic-other-material', kind: 'material', text: 'Synthetic material claim.', locator: 'page:2', page: 2 };
+  const a = { ...answer, rationale: source.text, citations: [...answer.citations, { sourceItemId: source.sourceItemId, quote: source.text, locator: 'page:2' }],
+    statements: [answer.statements[0], { field: 'rationale', text: source.text, kind: 'material', sourceItemId: source.sourceItemId }] };
+  for (const record of [{ version: 1, course: '8', redacted: true, source }, { version: 1, course: '7', redacted: true, source: { ...source, page: 3 } }]) {
+    await f.files.write(`material-${hash(source.sourceItemId)}`, record);
+    expect(await proposeQuiz({ ...f.input, answers: [a] }, f.dependencies)).toMatchObject({ ok: false, error: { code: 'CITATION_MISMATCH' } });
+    expect(await f.files.read(name)).toEqual(before);
+  }
+});
