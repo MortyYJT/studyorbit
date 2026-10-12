@@ -106,6 +106,18 @@ new dependency, M1 domain migration or actual remote write is included in Issue 
 Task 1.5 remains unchecked because this request covers 1.1–1.4 and does not deliver/merge a PR.
 Production policy/grant/evidence persistence and gates remain D/C/H, and real submission remains M4.
 
+## Standalone HTTP adapter (Issue F)
+
+`src/protocol/http.ts` exports `startHttpTransport`, `HttpOptions`, `HttpTransport` and
+`httpStatus`. Inject the same registry and trusted context used by `dispatch`; the adapter selects
+no production repository/service. The returned host handle has `origin`, `capabilityFile` and an
+idempotent asynchronous `close()`. Read the capability file only in a trusted local client and
+supply it in `X-Coursework-Capability` for mutations and owner commands. Do not serialize the host
+handle, expose the file/token to a model, or log that header. Ordinary reads use JSON POST too.
+Exact security, limits, timeouts and status conventions are recorded in the OpenSpec design's
+“Issue F: selected HTTP conventions (O5)” section. No CLI entry point, UI or production mounting
+is supplied. Actual shared B/D/H service and O6 integration remains issue I/H work.
+
 ## Generated CLI adapter (Issue E)
 
 `parseProtocolCLI(args, { registry, context, stdout, stderr, isTTY })` in
@@ -130,3 +142,29 @@ The executable keeps capture on its original path. New command ports remain expl
 unmounted (`SOURCE_UNAVAILABLE`) until Issue I; `unavailableCLIContext` is a fail-closed host
 placeholder, not a production repository or authorization service. Tests inject synthetic
 handlers/context; HTTP/MCP and production repository wiring are outside Issue E.
+
+## Stdio MCP adapter (Issue G)
+
+Run `coursework mcp` (after `npm run build`, `node dist/cli.js mcp`) and configure an MCP
+client to launch that command over stdio. The server is the official
+`@modelcontextprotocol/sdk` `McpServer` with `StdioServerTransport`; there is no custom
+handshake. Stdout carries only newline-delimited JSON-RPC frames; startup, per-call failure
+codes and shutdown diagnostics go to stderr, and stray `console.log` output is redirected
+there. The process exits cleanly when the client closes stdin. Inbound frames are bounded to
+the same 4 MiB as CLI `--input`.
+
+`createMcpServer({ registry, context, stderr, version })` and `runMcpStdio({ ..., stdin,
+stdout })` in `src/protocol/mcp.ts` generate one tool per registry entry with the same dotted
+name. Each `inputSchema` is `z.toJSONSchema(entry.input, { io: 'input' })`; union roots are
+wrapped as `type: object`. The advertised schema is a hint only: the SDK does not validate
+arguments, and every `tools/call` runs `dispatch()` exactly once, so zod refinements,
+authorization, evidence, privacy and the 64 KiB envelope bound stay authoritative. The result
+is one text content item holding the `coursework.agent/v1` envelope, with `isError` set on
+failure. Unknown tools return `NOT_FOUND` for command `unknown`; raw errors and input are not
+echoed.
+
+The host-owned context is passed without its `owner` capability, so owner commands (review,
+prerequisites, policy and grant recording, including Q1 aliases) are listed but always refused
+with `INVALID_INPUT`; no argument can grant owner authority and nothing prompts for credentials.
+The executable still uses the fail-closed `unavailableCLIContext` (`SOURCE_UNAVAILABLE`) until
+Issue I wires production ports. Hermes mounting/scheduling remains M4.
