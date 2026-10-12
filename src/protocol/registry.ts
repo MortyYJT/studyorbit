@@ -82,7 +82,8 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
     completionRecording = true;
     await record('outcome', result.ok ? 'OK' : result.error.code);
   } catch (error) {
-    let failure = completionRecording && handlerSucceeded && !readNames.has(name)
+    // After a contract write/action returned, any later validation, privacy or recording failure is uncertainty.
+    let failure = handlerSucceeded && !readNames.has(name) && (completionRecording || writeNames.has(name))
       ? new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN) : safeError(error);
     try { await record(executed ? 'outcome' : 'denial', failure.code); }
     catch { if (failure.code !== 'UNCERTAIN') failure = new CourseworkError('INTERNAL', safeMessages.INTERNAL); }
@@ -91,6 +92,8 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   return result;
 }
 const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'proposals.get', 'changes', 'quiz.read']));
+const writeNames = new Set<string>(Object.keys(contracts).filter(n => !readNames.has(n)));
+const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
 /** Bind the settled contract surface to injected ports; no production service is selected here. */
 export function createRegistry(): Registry {
   const registry = new Registry();
@@ -105,15 +108,24 @@ export function createRegistry(): Registry {
         if (canonical === 'quiz.submit') return context.actions
           ? context.actions.submit(input as never, context) : { status: 'unavailable', reason: 'SOURCE_UNAVAILABLE' };
         if (readNames.has(canonical)) return context.repository.read(canonical as ReadCommand, input as never);
+        let target: { courseId?: string; assessmentId?: string } | undefined;
+        if (canonical === 'policy.record' || canonical === 'grant.record') {
+          // Canonical requests carry identities; legacy payloads are translated by the trusted map before writing.
+          const canonicalInput = contracts[canonical].input.safeParse(input);
+          if (canonicalInput.success) target = canonicalInput.data;
+          else {
+            if (!context.services.recordingTarget) throw new CourseworkError('INVALID_INPUT', safeMessages.INVALID_INPUT);
+            target = await context.services.recordingTarget(canonical, input);
+          }
+        }
         const raw = await context.services.write(canonical as WriteCommand, input as never, context);
         if (canonical === 'policy.record' || canonical === 'grant.record') {
-          const receipt = contracts[canonical].output.parse(raw);
-          // Canonical requests carry identities; legacy translations are checked by D's explicit map.
-          const target = input as { courseId?: string; assessmentId?: string };
-          if (target.courseId !== undefined && receipt.courseId !== target.courseId
-            || target.assessmentId !== undefined && (!('assessmentId' in receipt) || receipt.assessmentId !== target.assessmentId)) {
-            throw new CourseworkError('INTERNAL', safeMessages.INTERNAL);
-          }
+          // The write returned: a malformed or wrong-target receipt cannot prove nothing changed.
+          const parsed = contracts[canonical].output.safeParse(raw);
+          if (!parsed.success) throw uncertain();
+          const receipt = parsed.data;
+          if (target?.courseId === undefined || receipt.courseId !== target.courseId
+            || canonical === 'grant.record' && (!('assessmentId' in receipt) || receipt.assessmentId !== target.assessmentId)) throw uncertain();
         }
         return raw;
       };
@@ -125,9 +137,9 @@ export function createRegistry(): Registry {
     const outputHandler: Handler = name === 'quiz.policy' || name === 'quiz.grant'
       ? async (input, context) => {
         const raw = await canonicalHandler(input, context);
-        const receipt = name === 'quiz.policy' ? contracts['policy.record'].output.parse(raw)
-          : contracts['grant.record'].output.parse(raw);
-        return { recorded: receipt.recorded };
+        const receipt = (name === 'quiz.policy' ? contracts['policy.record'].output : contracts['grant.record'].output).safeParse(raw);
+        if (!receipt.success) throw uncertain();
+        return { recorded: receipt.data.recorded };
       } : canonicalHandler;
     registry.register<z.ZodType, z.ZodType>({ name, ...contract, handler: outputHandler });
   }

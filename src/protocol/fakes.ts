@@ -5,7 +5,7 @@ import { contracts, type CommandName, type CommandInput, type CommandOutput, typ
 import { createRegistry } from './registry.js';
 import type { TrustedContext, AuditEvent, ReadCommand, WriteCommand, ProtocolRepository, ProtocolServices, ConfirmationService, ServiceInput } from './context.js';
 import { CourseworkError } from './errors.js';
-import { createRedactor } from '../sync/redaction.js';
+import { protectRead } from './read-privacy.js';
 
 const revision = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const digest = 'a'.repeat(64);
@@ -96,6 +96,11 @@ export class FakeServices implements ProtocolServices {
     this.writes.push({ name, input: structuredClone(input) });
     return structuredClone(examples[name].output) as CommandOutput<N>;
   }
+  /** Synthetic stand-in for D's explicit identity map: the fixed Q1 example maps to the fixed canonical target. */
+  async recordingTarget(name: 'policy.record' | 'grant.record'): Promise<{ courseId: string; assessmentId?: string }> {
+    return name === 'policy.record' ? { courseId: examples['policy.record'].output.courseId }
+      : { courseId: examples['grant.record'].output.courseId, assessmentId: examples['grant.record'].output.assessmentId };
+  }
 }
 /** O6 test double. Production expiry/serialization/rechecks belong to H, not this fixture. */
 export class FakeConfirmations implements ConfirmationService {
@@ -118,10 +123,8 @@ export class FakeConfirmations implements ConfirmationService {
 export function createFakeRegistry() { return createRegistry(); }
 export function createFakeContext(options: { owner?: boolean; actions?: boolean } = {}) {
   const events: AuditEvent[] = []; const runEvents: AuditEvent[] = []; const actionCalls: string[] = [];
-  const redactor = createRedactor({});
-  const clean = (value: unknown): unknown => typeof value === 'string' ? redactor.text(value)
-    : Array.isArray(value) ? value.map(clean) : value && typeof value === 'object'
-      ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, clean(item)])) : value;
+  // Same privacy boundary as production reads: free text is redacted, structural ids are validated, not rewritten.
+  const clean = (value: unknown): unknown => protectRead(value);
   const context: TrustedContext & { events: AuditEvent[]; runEvents: AuditEvent[]; actionCalls: string[] } = {
     repository: new FakeRepository(), services: new FakeServices(),
     // Contract fixtures deliberately do not claim production evidence/authorization verification.

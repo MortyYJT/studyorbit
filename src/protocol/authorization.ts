@@ -207,5 +207,10 @@ export class SharedAuthorization implements AuthorizationService {
       if (name === 'grant.record') return await this.recordGrant(input, context.owner) as CommandOutput<N>;
       throw new CourseworkError('SOURCE_UNAVAILABLE', 'The requested write service is unavailable.');
     },
+    recordingTarget: async (name, input) => {
+      if (name === 'policy.record') return { courseId: this.store.normalizePolicy(input).courseId };
+      const grant = this.store.normalizeGrant(input);
+      return { courseId: grant.courseId, assessmentId: grant.assessmentId };
+    },
   };
 }
