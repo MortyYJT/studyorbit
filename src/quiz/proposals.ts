@@ -11,7 +11,7 @@ import { answerSchema, hash, trustedSourceSchema, validateCitedAnswers, type Tru
 import { quizOutputSchema, type QuizReadData } from './read/questions.js';
 import type { QuizTarget } from './read/contracts.js';
 const revisionSchema = z.string().regex(/^[a-f0-9]{64}$/);
-const proposalSchema = z.strictObject({ version: z.literal(1), binding: bindingSchema, sourceRevision: revisionSchema, answers: z.array(answerSchema).min(1).max(300) });
+export const proposalSchema = z.strictObject({ version: z.literal(1), binding: bindingSchema, sourceRevision: revisionSchema, answers: z.array(answerSchema).min(1).max(300) });
 export interface QuizWriteDependencies { files?: QuizFiles; audit?: AuditTrail; isTTY?: boolean; confirm?: (message: string) => Promise<boolean> }
 async function terminalConfirm(message: string): Promise<boolean> {
   const terminal = createInterface({ input: process.stdin, output: process.stderr });
