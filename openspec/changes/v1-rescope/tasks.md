@@ -13,19 +13,19 @@ Each numbered group after 1 is one issue: one standalone clone on a `codex/<topi
 
 Scope: deletions and the minimum rewiring to keep `main` green. No new behavior.
 
-- [ ] 2.1 Move the policy, grant, binding and audit schemas and file helpers that `src/protocol/authorization.ts`, `audit.ts` and `contracts.ts` import from `src/quiz/` into `src/protocol/`; port their tests first and keep them green
-- [ ] 2.2 Delete `src/quiz/`, the `quiz` CLI commands and `test/quiz/`; delete `src/protocol/actions.ts`, the fill/submit/review contracts and their tests
-- [ ] 2.3 Delete the Canvas crawl, terminal picker, selection store/resolver, discovery, Canvas probe, capture REPL session and `capture` command, and their tests; keep `browser.ts`, `lock.ts`, `limiter.ts`, `ed-transport.ts`, `ed-snapshot.ts` and anything they import
-- [ ] 2.4 Delete `src/sync/diff.ts`, `reconciliation.ts`, `changes-handler.ts`, the `changes` command and change-seq repository methods and their tests; stop all writes to the change-event table without dropping it
-- [ ] 2.5 Remove `Change` from the domain schemas and add the iCal/Change guard tests from the `domain-model` delta
-- [ ] 2.6 Delete branch `codex/quiz-fill` and drop `codex/ui-inventory`; list every deleted path in the PR description
+- [x] 2.1 Move the policy, grant, binding and audit schemas and file helpers that `src/protocol/authorization.ts`, `audit.ts` and `contracts.ts` import from `src/quiz/` into `src/protocol/`; port their tests first and keep them green
+- [x] 2.2 Delete `src/quiz/`, the `quiz` CLI commands and `test/quiz/`; delete `src/protocol/actions.ts`, the fill/submit/review contracts and their tests
+- [x] 2.3 Delete the Canvas crawl, terminal picker, selection store/resolver, discovery, Canvas probe, capture REPL session and `capture` command, and their tests; keep `browser.ts`, `lock.ts`, `limiter.ts`, `ed-transport.ts`, `ed-snapshot.ts` and anything they import
+- [x] 2.4 Delete `src/sync/diff.ts`, `reconciliation.ts`, `changes-handler.ts`, the `changes` command and change-seq repository methods and their tests; stop all writes to the change-event table without dropping it
+- [x] 2.5 Remove `Change` from the domain schemas and add the iCal/Change guard tests from the `domain-model` delta
+- [x] 2.6 Delete branch `codex/quiz-fill` and drop `codex/ui-inventory`; list every deleted path in the PR description
 
 ## 3. Issue B — Resident browser
 
-- [ ] 3.1 Failing tests with an injected launcher/clock: `browser start` launches once with a loopback debugging port, writes `browser.json` (0600) and holds the lock; a second start returns the same endpoint; stale files are cleared; `stop` cleans up
-- [ ] 3.2 Failing tests: attach helper opens and closes only its own tabs; no resident browser gives one `AUTH_EXPIRED` envelope without launching
-- [ ] 3.3 Failing tests: `browser status` per site with synthetic Canvas/Ed responses (signed in, login redirect, missing Ed token), no body content in output, limiter used
-- [ ] 3.4 Failing tests on a synthetic page: highlight-then-click helper (outline, ≥1 s wait, one click; refuse hidden targets)
+- [x] 3.1 Failing tests with an injected launcher/clock: `browser start` launches once with a loopback debugging port, writes `browser.json` (0600) and holds the lock; a second start returns the same endpoint; stale files are cleared; `stop` cleans up
+- [x] 3.2 Failing tests: attach helper opens and closes only its own tabs; no resident browser gives one `AUTH_EXPIRED` envelope without launching
+- [x] 3.3 Failing tests: `browser status` per site with synthetic Canvas/Ed responses (signed in, login redirect, missing Ed token), no body content in output, limiter used
+- [x] 3.4 Failing tests on a synthetic page: highlight-then-click helper (outline, ≥1 s wait, one click; refuse hidden targets)
 - [ ] 3.5 Owner check on the real profile: start Edge, sign in by hand, run `status`, leave it overnight and record the actual session lifetime; record whether remote debugging works on the managed profile or the fallback in design Decision 2 was used
 
 ## 4. Issue C — Protocol integration without gates

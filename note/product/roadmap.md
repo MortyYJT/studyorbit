@@ -15,9 +15,9 @@
 | S0 | Ed 读取 | Ed JSON 读取和限速（Canvas 爬取、终端选课被 #100 砍掉） | 已完成（2026-10-14 归档） | — | `capture-selection-ed`（已归档） |
 | Q1 | 第一个真实作业 | COMP20003 Week 11 Workshop，agent 直接操作浏览器完成并提交（#94、#97） | 已完成（2026-10-13） | — | `ed-quiz-assist`（已关闭） |
 | M2 | agent 协议 | 命令注册表 → CLI / MCP / HTTP；读接口；带引文核对的写接口；政策、授权、审计 | 已完成 A–H（2026-10-14 归档）；收尾 I 并入 R-C | — | `v1-protocol`（已归档） |
-| R-A | 删掉被砍的代码 | `src/quiz/`、填写 / 提交关卡、Canvas 爬取、终端选课、变化检测 | 未开始 | — | `v1-rescope` |
-| R-B | 常驻浏览器 | 常驻 Edge、可连接、登录状态、点击前高亮 | 未开始 | R-A | `v1-rescope` |
-| R-C | 协议收尾 | 生产组装（不带关卡）、`autonomy.check`、`audit.record` | 未开始 | R-A | `v1-rescope` |
+| R-A | 删掉被砍的代码 | `src/quiz/`、填写 / 提交关卡、Canvas 爬取、终端选课、变化检测 | 已完成（PR #86） | — | `v1-rescope` |
+| R-B | 常驻浏览器 | 常驻 Edge、可连接、登录状态、点击前高亮 | 代码已合并（PR #88） | 3.5 你在真机上登录并验证、记录登录能保持多久 | `v1-rescope` |
+| R-C | 协议收尾 | 生产组装（不带关卡）、`autonomy.check`、`audit.record`、作业技能 | 进行中（issue #89 已派给 Codex） | — | `v1-rescope` |
 | R-D | 复习技能 | 定时准备 + 对话复习；`source.fetch`；学习记录入 SQLite | 未开始，**目标 10/26** | R-B；装 `unpdf` 要你在场 | `v1-rescope` |
 | R-E/F | 数据模型 + `coursework sync` | 新实体；Canvas JSON + Ed 写入本地库；按课程代码合并 | 未开始 | R-B | `v1-rescope` |
 | R-G/H | 批注 + 排期 | agent 带出处的批注、考核项绑定；可用时间 + 截止优先排期 | 未开始 | R-E | `v1-rescope` |
