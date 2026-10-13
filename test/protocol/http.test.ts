@@ -194,7 +194,7 @@ describe('HTTP security and dispatcher parity', () => {
   it('denies unauthenticated mutations and owner actions, even with a preexisting host owner or forged body flag', async () => {
     const { server, registry, token, context } = await setup();
     for (const entry of createFakeRegistry().list()) registry.register(entry);
-    for (const name of ['revision.write', 'policy.record', 'quiz.review', 'quiz.prerequisites', 'quiz.fill', 'quiz.submit'] as const) {
+    for (const name of ['revision.write', 'policy.record'] as const) {
       const input = JSON.stringify(examples[name].input);
       expect((await send(server, input, {}, `/api/${name}`)).status).toBe(403);
       expect((await send(server, input, { 'X-Coursework-Capability': 'wrong' }, `/api/${name}`)).status).toBe(403);

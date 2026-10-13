@@ -79,19 +79,4 @@ describe('issue A review regressions', () => {
       expect(contracts[name].output.safeParse(invalid).success).toBe(false);
     }
   });
-
-  it.each([['quiz.policy', 'policy.record'], ['quiz.grant', 'grant.record']] as const)(
-    '%s retains its Q1 receipt through the canonical recording service', async (alias, canonical) => {
-      const context = createFakeContext({ owner: true });
-      const write = vi.fn(async () => receipts[canonical]);
-      context.services.write = write as typeof context.services.write;
-      expect(await dispatch(createFakeRegistry(), alias, examples[alias].input, context))
-        .toMatchObject({ ok: true, data: examples[alias].output });
-      expect(write).toHaveBeenCalledExactlyOnceWith(canonical, examples[alias].input, context);
-      expect(contracts[alias].output.safeParse(receipts[canonical]).success).toBe(false);
-      context.services.write = vi.fn(async () => ({ recorded: receipts[canonical].recorded })) as typeof context.services.write;
-      // The write returned, so a malformed receipt is reported as uncertain, never as a clean failure.
-      expect(await dispatch(createFakeRegistry(), alias, examples[alias].input, context))
-        .toMatchObject({ ok: false, error: { code: 'UNCERTAIN', retryable: false } });
-    });
 });

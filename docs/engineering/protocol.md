@@ -8,12 +8,12 @@ this file describes the code. Section letters (A–H) match the change's task gr
 | --- | --- | --- |
 | Command contracts, registry, dispatcher, fakes | `src/protocol/contracts.ts`, `registry.ts`, `context.ts`, `fakes.ts` | 1 |
 | Current-state reads and trusted evidence | `src/protocol/reads.ts`, `src/store/queries.ts`, `src/store/accepted-records.ts` | 2 |
-| Exact citation validation | `src/citations/exact.ts`, `src/protocol/citations.ts`, `src/quiz/citations.ts` | 3 |
+| Exact citation validation | `src/citations/exact.ts`, `src/protocol/citations.ts` | 3 |
 | Authorization, audit, run journal, Q1 compatibility | `src/protocol/authorization.ts`, `audit.ts` | 4 |
 | CLI transport | `src/protocol/cli.ts` | 5 |
 | HTTP transport | `src/protocol/http.ts` | 6 |
 | MCP transport | `src/protocol/mcp.ts` | 7 |
-| Validated writes, fill and submit gates | `src/protocol/writes.ts`, `study-writes.ts`, `actions.ts` | 8 |
+| Validated study writes | `src/protocol/writes.ts`, `study-writes.ts` | 8 |
 
 ## 1. Contracts and registry (A)
 
@@ -27,10 +27,10 @@ contract seam for M3 and subsequent M2 issues; it does not select production sto
 - `src/protocol/registry.ts`: `Registry`, `RegistryEntry`, `createRegistry`, `dispatch`, and
   explicit `adaptLegacyHandler`. Entries contain exactly name/input/output/handler/level.
 - `src/protocol/context.ts`: host-injected repository, service, evidence, authorization, privacy,
-  owner interaction, confirmation, audit/run and action ports. Repository access never opens SQLite
+  owner interaction and audit/run ports. Repository access never opens SQLite
   from a handler. Only trusted host code creates this context; request fields cannot create it.
 - `src/protocol/fakes.ts`: independent synthetic `examples`, `FakeRepository`, `FakeServices`,
-  `FakeConfirmations`, `createFakeRegistry` and `createFakeContext`.
+  `createFakeRegistry` and `createFakeContext`.
 
 A minimal fake-data consumer:
 
@@ -53,15 +53,10 @@ if (response.ok) {
 New list cursors are bounded opaque base64url-compatible tokens. Clients echo them unchanged and
 never derive offsets or identities from them. A missing `nextCursor` means there is no continuation.
 Repository implementations own token validity and filter binding; fake repositories return cloned
-fixed examples and deliberately do not implement production filtering/paging. `changes` retains
-its exclusive numeric `since`/`nextCursor`, default limit 100 and maximum limit 500. Existing
-`changesHandler` can be mounted through `adaptLegacyHandler`; it retains oversized-event handling.
+fixed examples and deliberately do not implement production filtering/paging.
 
 Study writes use cited claim units; breakdown uses a strict, bounded copy of M1 Task with its
-existing refinements. Q1 proposal/read/review/prerequisite/policy/grant shapes are reused directly.
-`quiz.policy` and `quiz.grant` share canonical owner service handlers; `ServiceInput<N>` explicitly
-allows their unchanged legacy payloads. D must resolve trusted provider identities; the dispatcher
-never guesses a `courseId` from a legacy numeric `course` or course title.
+existing refinements.
 
 Source evidence text is validated without trimming or other normalization. Its hash and citation
 UTF-16 offsets refer to the exact redacted text returned by the trusted evidence service. The same
@@ -73,12 +68,11 @@ recordedAt }`. References are SHA-256 digests of the recorded policy/grant suppl
 recording service; timestamps are ISO UTC datetimes from that service's recording event. Metadata
 describes the current recorded state, not permission to fill or submit. Prohibited policy receipts
 require cap 1; allowed/owner-attested receipts require cap 2–4. Production record/hash/time resolution
-remains D. Q1 aliases call the same canonical services once, validate their full receipts, then return
-only the original `{ recorded: 'policy' }` or `{ recorded: 'grant' }` shapes.
+remains D.
 
-The owner commands are review, prerequisites, policy and grant recording (including Q1 aliases).
+The owner commands are policy and grant recording.
 They require `context.owner.assertOwner` even though their registry minimum is L0. Every dispatch
-also calls the injected authorization service. Study/proposal/action commands call the injected
+also calls the injected authorization service. Study write commands call the injected
 evidence service. Production services must perform the corresponding publication/action safety
 checks; registry levels and schema success do not grant authorization or verify citations.
 
@@ -89,15 +83,6 @@ Fake privacy uses the existing default-on redactor. Inject the actual trusted sc
 Audit and run sinks receive only safe command/run/phase/code metadata from the dispatcher; their
 ports also allow optional target/revision/policy/grant references resolved by trusted D/H services.
 Unknown requested command text is withheld from envelopes and journals.
-
-With no action adapter, fill/submit return `status: unavailable`, `reason: SOURCE_UNAVAILABLE`,
-without any action call. `createFakeContext({ actions: true })` returns synthetic action receipts;
-these stubs do not verify a real endpoint, enforce a real grant, or submit anything. H (section 8) owns serialized
-rechecks, durable intent/outcome audit and accurate uncertain outcomes. The confirmation port
-binds tokens to the exact filled target, source revision, page/attempt and policy/grant references.
-`FakeConfirmations` demonstrates host-owner issuance, exact binding, single use and expiry; its
-60-second lifetime is a test-double choice; production `SingleUseConfirmations` (section 8) uses 5 minutes
-and consumes tokens under the action boundary (#88). An agent boolean cannot represent consent.
 
 Dispatcher failures preserve existing error codes/retryability while replacing raw messages with
 safe diagnostics (`AUTH_EXPIRED` still directs the user to sign in). Final metadata is applied
@@ -135,13 +120,6 @@ cursor separately from SQL criteria: page metadata lives in the trusted evidence
 M1 column. A page can contain no material items but still have a continuation when scanned sources
 have a different page or unsupported coverage. Continue until `nextCursor` is absent.
 
-`changes` mounts the existing `changesHandler` with a local size-bounded pass, followed by a protected, remeasured prefix. Its numeric cursor
-remains exclusive, ascending and unchanged on empty results. The existing oversized first/later
-behavior is retained. Unsafe snapshots fail without returning an advanced cursor. Source URLs and
-locators, entity fields, run diagnostics, before/after snapshots and adapter failures all pass the
-read boundary. Private paths, hidden solutions and raw/person objects are withheld. Redacting
-identity/locator/hash fields would break their meaning, so those records are withheld instead.
-
 ### Trusted evidence and O4
 
 Only a host supplies `EvidenceMetadata` records. Each binds a canonical source id, exact course id,
@@ -151,8 +129,7 @@ legacy aliases colliding with an existing canonical row, stale hashes, mismatche
 and contradictory page/locator values fail closed. No course code/title comparison or automatic
 cross-provider merging exists. The canonical M1 course/source identities remain authoritative.
 
-Only metadata-proven `page:N` or `page N` becomes `page N`; Q1 proposal citation locators and
-proposal/review hashes remain unchanged. A material without verified metadata reports unsupported
+Only metadata-proven `page:N` or `page N` becomes `page N`. A material without verified metadata reports unsupported
 coverage, rather than guessing a PDF page from a title or URL. Non-material normalized M1 sources
 can use their canonical id as locator. Hashes cover the exact returned text, including whitespace;
 M1 `contentHash` covers other fields and is deliberately not used as a citation text hash. Persisted
@@ -166,23 +143,22 @@ The adapter reports provenance/coverage, not citation membership or answer corre
 
 `src/store/accepted-records.ts` supplies the read-only accepted-record port for D's eventual
 backend. Hosts may inject synthetic A/D adapters now. B revalidates accepted output schemas,
-course/week/revision/assessment filters, requested page bounds and supplied source evidence, and
+course/week/revision filters, requested page bounds and supplied source evidence, and
 withholds accepted prose that would change under redaction. Accepted adapters own their opaque
 filter-bound continuation. Missing revision/practice adapters return `UNSUPPORTED` coverage;
-missing proposal adapters fail with `SOURCE_UNAVAILABLE`. B does not create file/SQLite accepted
-persistence or manufacture accepted records. Q1 live reads and D audit reads have explicit optional
-ports; absent Q1 fails unavailable and absent audit reports unsupported. Authentication expiry
+B does not create file/SQLite accepted persistence or manufacture accepted records. D audit reads
+have an explicit optional port; absent audit reports unsupported. Authentication expiry
 retains `AUTH_EXPIRED` through Issue A, with no password prompt or token fallback.
 
 ### Integrated and pending paths
 
 - Integrated: M1 current courses/assessments/tasks/source items and run tables in SQLite; existing
-  M1 change ledger/handler; M1 deterministic redactor; A contracts/ReadCommand/registry dispatch.
+  M1 deterministic redactor; A contracts/ReadCommand/registry dispatch.
 - Integrated through injected trusted seams: canonical/legacy source identity and PDF page metadata,
-  explicit entity-source links, accepted revision/practice/proposal reads, audit and Q1 read ports.
+  explicit entity-source links, accepted revision/practice reads and audit ports.
 - Pending: real M1 PDF extraction/private page metadata producer (absent in this checkout), Canvas
   material ingestion, completed sync orchestration/run finalization, D's accepted/audit private-file
-  compatibility backend and identity-map producer, and production managed-profile Q1 read mounting.
+  compatibility backend and identity-map producer.
   Existing stored run measurements are returned unchanged; historical missing measurements stay
   absent. No time, request, cost or extraction-accuracy value is estimated by reads.
 - Not verified: live Canvas/Ed, real PDF extraction, production identity records, browser/authentication
@@ -220,33 +196,22 @@ records. `check(command, input)` implements issue A's EvidenceService seam for t
 writes only; unsupported commands fail with `SOURCE_UNAVAILABLE`. Compose with other evidence
 adapters rather than installing it as a permissive all-command service.
 
-`src/quiz/citations.ts` remains the Q1 facade, retaining its exports, strict version-1 answer
-and trusted-source shapes, question provenance, statement coverage, conservative material reuse
-checks and prompt-only limitation. It translates already trusted Q1 text/page evidence into
-`validateCitation`; `FileEvidence` continues to check snapshot hashes, question locators and
-course-scoped private materials. Attribution checks run across full answer/rationale fields
-so statement splitting cannot hide an explicit material attribution (#84).
-
 H (section 8) composes authorization, privacy, durable audit/run recording and publication-time
 revision rechecks. This service alone neither publishes nor proves the correctness of a claim.
 Real M1 evidence adapters remain issue B; persistence/transport/layout changes are out of scope.
 
-## 4. Authorization and Q1 compatibility (D)
+## 4. Authorization and audit (D)
 
 The behavior specification remains `openspec/changes/v1-protocol/specs/assessment-autonomy/`.
-This implementation covers tasks 4.1–4.4. Transport wiring, evidence publication and serialized
-fill/submit/confirmation orchestration remain E–I; no browser or submit adapter is installed.
+This implementation covers tasks 4.1–4.4. Transport wiring and evidence publication remain pending.
 
 ### Authority and lifecycle
 
 `SharedAuthorization` implements the issue-A authorization port and exposes owner recording services.
 `Q1AuthorizationStore` is the active file adapter: policy, grant and exact binding records are read
-and written in the original private Q1 directory through `QuizFiles`. There is no SQLite migration,
+and written in the original private Q1 directory through `ProtocolFiles`. There is no SQLite migration,
 activation flag, duplicate canonical record, deletion or fallback authority. Existing snapshots,
-materials, proposal/revision records, approvals and logs stay where they are. Existing Q1 functions
-use the same authorization decision rule and files; review preflight now also rechecks the recorded
-policy/grant hashes. Owner recording/review keeps Q1's TTY confirmation, and real-read prerequisites
-keep their specific 2026-10-12 attestation and repository-private verification.
+materials, proposal/revision records, approvals and logs stay where they are. Owner recording uses a host-established owner interaction.
 
 Hosts supply an `IdentityMap` with explicit canonical course IDs ↔ Ed course IDs and canonical
 assessment IDs ↔ complete Q1 bindings. Mapping must be one-to-one on both sides, including the Ed
@@ -256,8 +221,7 @@ Production identity records are not available in this checkout; none are inferre
 
 Policy/grant references hash the existing validated private records, retaining Q1's references rather
 than hashing their canonical translations. Canonical recording receipts report the requested canonical
-IDs; recording aliases translate through the explicit map and return their original Q1 receipt.
-A grant is activated only with its exact binding. Existing bindings are not rewritten on grant updates. New grants are saved before a missing binding
+IDs; A grant is activated only with its exact binding. Existing bindings are not rewritten on grant updates. New grants are saved before a missing binding
 is activated, so an old orphan cannot gain permission during a failed replacement. Post-install
 durability or partial activation failures report `UNCERTAIN`. An orphan grant, mismatched binding or partial log
 fails closed. Lowering the existing grant to L0/L1 revokes answering authority without deleting history.
@@ -275,23 +239,17 @@ university endpoint or production acceptance.
 
 Construct `Q1AuthorizationStore(files, identityMap)`, `DurableAudit(files)` and
 `SharedAuthorization(store, audit)`; inject the service as `context.authorization`. Its `services`
-port mounts only `policy.record` and `grant.record` (including the registry's Q1 aliases). Compose
+port mounts only `policy.record` and `grant.record`. Compose
 other write services explicitly in H/I; unsupported writes fail unavailable. Owner recording rechecks
 a host-established `OwnerInteraction`, even when invoked outside the dispatcher, holds the shared
 Q1 mutation lock, records intent before publication and records outcome before returning success.
 Hosts must establish actual owner interaction; an agent argument is never a capability.
 
-`AutoSubmitSettings` is an optional host persistence port, deliberately without a new file/table
-schema in D. No port means auto-submit is false and changing it is unavailable. Only an explicit,
-audited owner action can call `setAutoSubmit`; the boolean removes no authorization gate and never
-creates an L4 grant. H consumes this setting only at its confirmed submission boundary (section 8). Durable
-production settings wiring is pending the host's approved settings backend; test settings are synthetic.
-
 `DurableAudit.record` validates strict safe metadata and fsyncs the existing append-only audit log.
 `list` reads both issue-A audit records and Q1 version-1 lines without modifying history. Legacy Ed
 assessment references remain provider-qualified rather than being guessed into canonical identities;
 legacy line IDs are stable hashes. Q1-specific review metadata remains in the original log.
-`QuizFiles.readLog` uses the same private-path, ownership, link, size and permissions checks as record
+`ProtocolFiles.readLog` uses the same private-path, ownership, link, size and permissions checks as record
 reads and refuses malformed or truncated logs. Paginated `audit.list` repository wiring remains I/B;
 D supplies validated records, not a second command registry.
 
@@ -320,18 +278,9 @@ instead of field flags; it accepts regular files only and bounds both stat and a
 to 4 MiB. `--json` is accepted; every generated invocation emits one bounded JSON envelope,
 including help as `{ usage }`, and safe diagnostics use stderr.
 
-Q1 retains repeated `--question`, review's `--assessment/--revision/--page/--attempt`, and
-mandatory `--input` for policy/grant/prerequisites/propose. Its explicit legacy adapter
-binds delivered functions to the same contracts and dispatcher, preserving receipts,
-read `sourceRevision`, safe error details, and durable journal run identities. Pure proposal
-error classification is shared with Q1 so malformed citation denials retain their original
-code. Owner entries need a host TTY and owner capability; CLI flags cannot provide either.
-No CLI adapter prompts for credentials.
-
-The executable keeps capture on its original path. New command ports remain explicitly
-unmounted (`SOURCE_UNAVAILABLE`) until Issue I; `unavailableCLIContext` is a fail-closed host
-placeholder, not a production repository or authorization service. Tests inject synthetic
-handlers/context; HTTP/MCP and production repository wiring are outside Issue E.
+Owner entries need a host TTY and owner capability; CLI flags cannot provide either.
+No CLI adapter prompts for credentials. New command ports remain explicitly unmounted
+(`SOURCE_UNAVAILABLE`) until Issue I.
 
 ## 6. Loopback HTTP (F)
 
@@ -365,13 +314,13 @@ is one text content item holding the `coursework.agent/v1` envelope, with `isErr
 failure. Unknown tools return `NOT_FOUND` for command `unknown`; raw errors and input are not
 echoed.
 
-The host-owned context is passed without its `owner` capability, so owner commands (review,
-prerequisites, policy and grant recording, including Q1 aliases) are listed but always refused
+The host-owned context is passed without its `owner` capability, so policy and grant recording
+commands are always refused
 with `INVALID_INPUT`; no argument can grant owner authority and nothing prompts for credentials.
 The executable still uses the fail-closed `unavailableCLIContext` (`SOURCE_UNAVAILABLE`) until
 Issue I wires production ports. Hermes mounting/scheduling remains M4.
 
-## 8. Validated writes, fill and submit (H)
+## 8. Validated study writes (H)
 
 - `ComposedServices` and `ComposedEvidence` (`src/protocol/writes.ts`) route each write command to its owning
   service and evidence check explicitly; an unrouted command fails `SOURCE_UNAVAILABLE` instead of being accepted.
@@ -379,16 +328,3 @@ Issue I wires production ports. Hermes mounting/scheduling remains M4.
   through the shared citation validator (section 3) against host-provided, target-scoped evidence. The evidence
   provider resolves the course, so a mismatched `task.courseId` is rejected. The previous accepted record is kept by
   compare-and-swap. `InMemoryStudyRecordStore` is the only store; durable tables need owner approval.
-- `Q1ProposalEvidence` and `Q1QuizServices` route quiz proposals and terminal review to the delivered Q1 handlers,
-  which keep their own locks, journals and TTY gates.
-- `GatedQuizActions` (`src/protocol/actions.ts`) separates L3 fill from L4 submit, allows one action per assessment at a time (a concurrent request
-  fails `LOCKED`), records
-  audit intent before every action (an audit failure blocks it) and never retries. Fill rechecks policy and grant
-  inside the review lock against the exact revision, page and attempt, and never submits. `InMemoryFilledStore`
-  holds the current filled revision; a durable layout needs owner approval.
-- `SingleUseConfirmations`: server-issued, bound to the exact filled target and policy/grant references, 5-minute
-  lifetime, spent when presented, and a new token revokes older ones for that assessment (#88). The per-course
-  auto-submit setting (default off) removes only the confirmation step.
-- No real Ed submit driver exists in M2; submit audits a denial and returns `unavailable` without building a
-  request. M4 supplies a separately reviewed adapter. Known limits: `requestConfirmation` does not recheck
-  policy/grant (submit does); the token is spent before the adapter-availability check, so the owner reconfirms.

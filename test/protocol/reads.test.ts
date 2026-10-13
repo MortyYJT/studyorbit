@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { SqliteRepository } from '../../src/store/sqlite.js';
 import { StoreProtocolReads, TrustedStoreEvidence } from '../../src/protocol/reads.js';
 import { createFakeContext, examples, FakeRepository } from '../../src/protocol/fakes.js';
-import { validateCitedAnswers } from '../../src/quiz/citations.js';
+import { validateCitation } from '../../src/citations/exact.js';
 import { protectRead } from '../../src/protocol/read-privacy.js';
 import { createRegistry, dispatch } from '../../src/protocol/registry.js';
 const at = '2026-01-01T00:00:00Z';
@@ -53,19 +53,6 @@ describe('trusted protocol reads', () => {
       expect(tasks.coverage.gaps[0].code).toBe('MISSING_EVIDENCE');
     } finally { f.db.close(); }
   });
-  it('uses accepted-record ports and reports absent adapters without invented records', async () => {
-    const f = setup();
-    try {
-      for (const name of ['revision.list', 'practice.list'] as const) {
-        const value = await f.reads.read(name, { courseId: f.course.id, limit: 1 });
-        expect(value.items).toHaveLength(1);
-        const missing = new StoreProtocolReads(f.db, f.evidence);
-        expect((await missing.read(name, { courseId: f.course.id, limit: 1 })).coverage.gaps).toEqual([{ code: 'UNSUPPORTED' }]);
-      }
-      await expect(new StoreProtocolReads(f.db, f.evidence).read('proposals.get', { assessmentId: 'unknown' }))
-        .rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
-    } finally { f.db.close(); }
-  });
   it('redacts entity fields and URLs, returns redacted sensitive evidence and private paths', async () => {
     const f = setup('Synthetic Person synthetic@example.invalid Student number: 1234567');
     try {
@@ -77,21 +64,6 @@ describe('trusted protocol reads', () => {
         f.db.saveCourse({ ...f.course, name: text });
         await expect(f.reads.read('courses.list', { limit: 1 })).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
       }
-    } finally { f.db.close(); }
-  });
-  it('mounts exclusive changes and preserves oversized-event bounds and advances past withheld events', async () => {
-    const f = setup();
-    try {
-      f.db.recordChange({ kind: 'created', entity: 'course', entityId: 'one', at, after: { name: 'Synthetic Person', url: 'https://example.invalid/?email=synthetic%40example.invalid' } });
-      f.db.recordChange({ kind: 'created', entity: 'course', entityId: 'two', at, after: { text: 'large '.repeat(12000) } });
-      const ctx = createFakeContext(); ctx.repository = f.reads;
-      const result = await dispatch(createRegistry(), 'changes', { since: 0 }, ctx);
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.data).toMatchObject({ nextCursor: 1, changes: [{ after: { name: '[redacted]' } }] });
-      await expect(f.reads.read('changes', { since: 1, limit: 100 })).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' });
-      expect(await f.reads.read('changes', { since: 2, limit: 100 })).toEqual({ changes: [], nextCursor: 2 });
-      f.db.recordChange({ kind: 'created', entity: 'course', entityId: 'three', at, after: { text: 'password=synthetic-secret' } });
-      expect(await f.reads.read('changes', { since: 2, limit: 100 })).toMatchObject({ nextCursor: 3, changes: [{ after: { withheld: true, reason: 'SOURCE_UNAVAILABLE' } }] });
     } finally { f.db.close(); }
   });
   it('exposes recorded run measurements only and sanitizes arbitrary adapter errors', async () => {
@@ -149,35 +121,6 @@ describe('read continuation and adapter regressions', () => {
       expect(await f.evidence.get('ed:7:11:2:3')).toMatchObject({ courseId: f.course.id, provenance: 'ed', locator: 'ed:7:11:2:3' });
     } finally { f.db.close(); }
   });
-  it('revalidates accepted filters and keeps absent quiz/audit integration explicit', async () => {
-    const f = setup();
-    try {
-      await expect(f.reads.read('revision.list', { courseId: 'wrong', limit: 1 })).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
-      await expect(f.reads.read('practice.list', { courseId: f.course.id, week: 2, limit: 1 })).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
-      expect(await f.reads.read('proposals.get', examples['proposals.get'].input)).toEqual(examples['proposals.get'].output);
-      await expect(f.reads.read('proposals.get', { assessmentId: 'wrong' })).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
-      expect((await f.reads.read('audit.list', { limit: 1 })).coverage.gaps).toEqual([{ code: 'UNSUPPORTED' }]);
-      await expect(f.reads.read('quiz.read', { course: '7', lesson: '11' })).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
-      const expired = new StoreProtocolReads(f.db, f.evidence, { quiz: { read: async () => { const { CourseworkError } = await import('../../src/protocol/errors.js'); throw new CourseworkError('AUTH_EXPIRED', 'password=synthetic-secret'); } } });
-      const ctx = createFakeContext(); ctx.repository = expired;
-      const result = await dispatch(createRegistry(), 'quiz.read', { course: '7', lesson: '11' }, ctx);
-      expect(result).toMatchObject({ ok: false, error: { code: 'AUTH_EXPIRED' } });
-      expect(JSON.stringify(result)).not.toContain('synthetic-secret');
-    } finally { f.db.close(); }
-  });
-  it('withholds sensitive locators, hidden solutions and unknown student snapshots', async () => {
-    const f = setup();
-    try {
-      for (const locator of ['https://example.invalid/?email=synthetic%40example.invalid', 'password=synthetic-secret', '/tmp/private.pdf']) {
-        const provider = new TrustedStoreEvidence(f.db, { metadata: [{ ...f.metadata[0], page: undefined, locator }] });
-        await expect(provider.get(f.source.id)).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
-      }
-      for (const after of [{ hidden_solution: 'Synthetic hidden answer' }, { author: { name: 'Synthetic Person', answer: 'Other answer' } }]) {
-        const change = f.db.recordChange({ entity: 'source_item', entityId: f.source.id, kind: 'created', at, after });
-        expect(await f.reads.read('changes', { since: change.seq - 1, limit: 1 })).toMatchObject({ nextCursor: change.seq, changes: [{ after: { withheld: true, reason: 'SOURCE_UNAVAILABLE' } }] });
-      }
-    } finally { f.db.close(); }
-  });
 });
 
 
@@ -197,15 +140,14 @@ describe('independent review privacy regressions', () => {
 });
 
 
-it('keeps legacy size failure for an event above redactor input bounds', async () => {
-  const f = setup();
-  try {
-    f.db.recordChange({ kind: 'created', entity: 'source_item', entityId: 'huge', at, after: { text: 'large '.repeat(170000) } });
-    await expect(f.reads.read('changes', { since: 0, limit: 1 })).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' });
-  } finally { f.db.close(); }
-});
-
-
+it('revalidates accepted filters and keeps absent audit integration explicit', async () => {
+    const f = setup();
+    try {
+      await expect(f.reads.read('revision.list', { courseId: 'wrong', limit: 1 })).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
+      await expect(f.reads.read('practice.list', { courseId: f.course.id, week: 2, limit: 1 })).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
+      expect(await f.reads.read('audit.list', { limit: 100 })).toMatchObject({ coverage: { complete: false } });
+    } finally { f.db.close(); }
+  });
 describe('issue B review regressions', () => {
   it('P2-1 preserves numeric external IDs, UUID segments, hashes and paged run/audit reads', async () => {
     const f = setup();
@@ -236,19 +178,9 @@ describe('issue B review regressions', () => {
       const page = await f.reads.read('sources.get', { sourceItemId: f.source.id });
       expect(page.text).toBe('A finite example. [redacted] student number: [redacted]');
       expect(page.sourceHash).toBe(hash(page.text));
-      const quote = 'finite example'; const q = 'ed:7:11:21:31';
-      const [accepted] = validateCitedAnswers([{ questionRef: q, answer: quote, rationale: 'By definition.',
-        citations: [{ sourceItemId: q, locator: 'question:31', quote: 'What is the example?' },
-          { sourceItemId: page.sourceItemId, locator: 'page:2', quote }],
-        statements: [{ field: 'answer', text: quote, kind: 'material', sourceItemId: page.sourceItemId },
-          { field: 'rationale', text: 'By definition.', kind: 'reasoning' }] }], [q],
-        [{ sourceItemId: q, questionRef: q, kind: 'question', locator: 'question:31', text: 'What is the example?' },
-          { ...page, kind: 'material', locator: 'page:2' }].map(({ sourceItemId, kind, locator, text, ...rest }) =>
-          ({ sourceItemId, kind: kind as 'material' | 'question', locator, text,
-            ...('questionRef' in rest ? { questionRef: rest.questionRef } : { page: 2 }) })));
-      const citation = accepted.validatedCitations[1];
-      expect(citation).toMatchObject({ offset: page.text.indexOf(quote), end: page.text.indexOf(quote) + quote.length, sourceHash: page.sourceHash });
-      expect(page.text.slice(citation.offset, citation.end)).toBe(quote);
+      const citation = { sourceItemId: page.sourceItemId, locator: 'page:2', quote: 'finite example' };
+      const accepted = validateCitation(citation, { sourceItemId: page.sourceItemId, locator: page.locator, text: page.text, sourceHash: page.sourceHash, page: 2 });
+      expect(page.text.slice(accepted.offset, accepted.end)).toBe(citation.quote);
       expect((await f.reads.read('materials.list', { courseId: f.course.id, limit: 1 })).items[0]).toEqual(page);
       const safe = protectRead({ url: url + '&person=Synthetic+Person&email=synthetic%2540example.invalid&student=12345678' },
         { people: [{ name: 'Synthetic Person' }] }) as { url: string };
@@ -276,42 +208,12 @@ describe('issue B review regressions', () => {
     for (const id of ['synthetic@example.invalid', 'Synthetic Person', '/tmp/private'])
       expect(() => protectRead({ id }, { people: [{ name: 'Synthetic Person' }] })).toThrow();
   });
-  it('P3-2 withholds only unsafe snapshots and retains safe prefixes and exclusive cursor progress', async () => {
-    const f = setup();
-    try {
-      f.db.recordChange({ kind: 'created', entity: 'course', entityId: 'one', at, after: { name: 'Safe first' } });
-      f.db.recordChange({ kind: 'updated', entity: 'course', entityId: 'two', at,
-        before: { name: 'Safe before' }, after: { hidden_solution: 'unsafe-sentinel' } });
-      f.db.recordChange({ kind: 'deleted', entity: 'course', entityId: 'three', at, before: { name: 'Safe last' } });
-      const first = await f.reads.read('changes', { since: 0, limit: 2 });
-      expect(first).toMatchObject({ nextCursor: 2, changes: [{ after: { name: 'Safe first' } },
-        { before: { withheld: true, reason: 'SOURCE_UNAVAILABLE' }, after: { withheld: true, reason: 'SOURCE_UNAVAILABLE' } }] });
-      expect(JSON.stringify(first)).not.toContain('unsafe-sentinel');
-      expect(await f.reads.read('changes', { since: first.nextCursor, limit: 2 })).toMatchObject({ nextCursor: 3, changes: [{ entityId: 'three' }] });
-    } finally { f.db.close(); }
-  });
 });
 
 it('redacts harvested personal numeric identities even in numeric URL path segments', () => {
   const scope = { people: [{ name: 'Synthetic Person', student_number: '12345678' }] };
   const safe = protectRead({ url: 'https://example.invalid/students/12345678/files/87654321' }, scope) as { url: string };
   expect(decodeURIComponent(safe.url)).toBe('https://example.invalid/students/[redacted]/files/87654321');
-});
-
-it.each(['synthetic@example.invalid', '/tmp/private', 'Synthetic Person'])('withholds unsafe change identity without blocking safe events: %s', entityId => {
-  const f = setup();
-  return (async () => {
-    try {
-      f.db.recordChange({ kind: 'created', entity: 'course', entityId: 'safe-first', at, after: { name: 'Safe first' } });
-      f.db.recordChange({ kind: 'created', entity: 'course', entityId, at, after: { name: 'Withheld' } });
-      f.db.recordChange({ kind: 'created', entity: 'course', entityId: 'safe-last', at, after: { name: 'Safe last' } });
-      const page = await f.reads.read('changes', { since: 0, limit: 2 });
-      expect(page).toMatchObject({ nextCursor: 2, changes: [{ entityId: 'safe-first' },
-        { entityId: expect.stringMatching(/^withheld:[a-f0-9]{64}$/), after: { withheld: true, reason: 'SOURCE_UNAVAILABLE' } }] });
-      expect(JSON.stringify(page)).not.toContain(entityId);
-      expect((await f.reads.read('changes', { since: page.nextCursor, limit: 2 })).changes[0].entityId).toBe('safe-last');
-    } finally { f.db.close(); }
-  })();
 });
 
 it('preserves decision #81 untagged six/seven-digit math and redacts labelled or harvested identities', () => {

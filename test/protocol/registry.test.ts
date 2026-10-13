@@ -2,14 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { contracts, envelopeSchema, type CommandInput, type CommandOutput } from '../../src/protocol/contracts.js';
 import { Registry, dispatch, adaptLegacyHandler, type Handler } from '../../src/protocol/registry.js';
-import { createFakeContext, createFakeRegistry, examples, FakeConfirmations } from '../../src/protocol/fakes.js';
+import { createFakeContext, createFakeRegistry, examples } from '../../src/protocol/fakes.js';
 import { ok, fail } from '../../src/protocol/envelope.js';
 import { CourseworkError, retryable } from '../../src/protocol/errors.js';
 
-const names = ['courses.list', 'assessments.list', 'tasks.list', 'sources.get', 'materials.list', 'changes', 'runs.list',
-  'revision.list', 'practice.list', 'proposals.get', 'breakdown.write', 'revision.write', 'practice.write', 'quiz.propose',
-  'quiz.read', 'quiz.review', 'quiz.prerequisites', 'policy.record', 'grant.record', 'audit.list', 'quiz.fill', 'quiz.submit',
-  'quiz.policy', 'quiz.grant'];
+const names = ['courses.list', 'assessments.list', 'tasks.list', 'sources.get', 'materials.list', 'runs.list',
+  'revision.list', 'practice.list', 'breakdown.write', 'revision.write', 'practice.write', 'policy.record', 'grant.record', 'audit.list'];
 
 describe('issue A contracts for M3', () => {
   it('exports every command with strict schema-valid synthetic examples and inferred consumer types', () => {
@@ -25,18 +23,15 @@ describe('issue A contracts for M3', () => {
     expect(response.items.length).toBeGreaterThan(0);
     expect(contracts['courses.list'].input.parse(request).limit).toBe(10);
   });
-  it('bounds limits and preserves opaque new cursors versus exclusive numeric changes', () => {
+  it('bounds limits and preserves opaque new cursors', () => {
     for (const name of names.filter(n => n.endsWith('.list')) as (keyof typeof contracts)[]) {
       for (const limit of [0, -1, 1.2, 501, Number.MAX_SAFE_INTEGER + 1]) {
         expect(contracts[name].input.safeParse({ ...examples[name].input, limit }).success).toBe(false);
       }
       expect(contracts[name].input.safeParse({ ...examples[name].input, cursor: 1 }).success).toBe(false);
     }
-    expect(contracts.changes.input.parse({ since: 0 })).toEqual({ since: 0, limit: 100 });
-    expect(contracts.changes.input.safeParse({ since: 'opaque' }).success).toBe(false);
-    expect(contracts.changes.input.safeParse({ since: Number.MAX_SAFE_INTEGER + 1 }).success).toBe(false);
   });
-  it('requires claim evidence, Task-compatible cited steps and the Q1 answer shape', () => {
+  it('requires claim evidence, Task-compatible cited steps', () => {
     const note = structuredClone(examples['revision.write'].input);
     note.claims[0]!.citations = [];
     expect(contracts['revision.write'].input.safeParse(note).success).toBe(false);
@@ -46,24 +41,16 @@ describe('issue A contracts for M3', () => {
     const breakdown = structuredClone(examples['breakdown.write'].input);
     breakdown.task.steps[0]!.citations = [];
     expect(contracts['breakdown.write'].input.safeParse(breakdown).success).toBe(false);
-    const proposal = structuredClone(examples['quiz.propose'].input);
-    proposal.answers[0]!.statements = [];
-    expect(contracts['quiz.propose'].input.safeParse(proposal).success).toBe(false);
-    expect(contracts['quiz.submit'].input.safeParse({ ...examples['quiz.submit'].input, confirmed: true }).success).toBe(false);
   });
   it('rejects nested extra fields and bounds Task inputs without changing M1', () => {
     const breakdown = structuredClone(examples['breakdown.write'].input);
     breakdown.task.id = 'x'.repeat(257);
     expect(contracts['breakdown.write'].input.safeParse(breakdown).success).toBe(false);
-    expect(contracts.changes.output.safeParse({ changes: [{ seq: 1, kind: 'created', entity: 'course',
-      entityId: 'synthetic', after: {}, at: '2026-01-01T00:00:00Z', secret: 'raw' }], nextCursor: 1 }).success).toBe(false);
   });
-  it('keeps Q1 aliases and minimum levels', () => {
+  it('keeps retained command levels', () => {
     const registry = createFakeRegistry();
-    expect(registry.get('quiz.policy')!.input).toBe(contracts['quiz.policy'].input);
-    expect(registry.get('quiz.grant')!.input).toBe(contracts['quiz.grant'].input);
     for (const [name, level] of [['courses.list', 0], ['breakdown.write', 1], ['revision.write', 1], ['practice.write', 1],
-      ['quiz.propose', 2], ['quiz.fill', 3], ['quiz.submit', 4]] as const) expect(registry.get(name)!.level).toBe(level);
+      ['policy.record', 0], ['grant.record', 0]] as const) expect(registry.get(name)!.level).toBe(level);
   });
 });
 
@@ -169,7 +156,7 @@ describe('transport-independent dispatcher', () => {
 
 describe('fake contract consumer', () => {
   it('runs every command on schema-valid data without browser, filesystem or production ingestion', async () => {
-    const context = createFakeContext({ owner: true, actions: true });
+    const context = createFakeContext({ owner: true });
     const registry = createFakeRegistry();
     for (const name of Object.keys(contracts) as (keyof typeof contracts)[]) {
       const result = await dispatch(registry, name, examples[name].input, context);
@@ -177,33 +164,6 @@ describe('fake contract consumer', () => {
       if (result.ok) expect(contracts[name].output.safeParse(result.data).success).toBe(true);
       expect(envelopeSchema(name).safeParse(result).success, name).toBe(true);
     }
-    expect(context.actionCalls).toEqual(['quiz.fill', 'quiz.submit']);
-  });
-  it('returns an explicit unavailable action outcome when no adapter exists', async () => {
-    const context = createFakeContext();
-    const result = await dispatch(createFakeRegistry(), 'quiz.submit', examples['quiz.submit'].input, context);
-    expect(result).toMatchObject({ ok: true, data: { status: 'unavailable', reason: 'SOURCE_UNAVAILABLE' } });
-    expect(context.actionCalls).toEqual([]);
-  });
-});
 
-describe('server confirmation contract fake', () => {
-  it('binds exact filled target, consumes once, expires, and requires host owner on issuance', async () => {
-    let now = 0;
-    const service = new FakeConfirmations(() => now);
-    const target = examples['quiz.submit'].output.target;
-    const owner = { assertOwner: vi.fn(async () => {}) };
-    const confirmation = await service.issue(target, owner);
-    expect(owner.assertOwner).toHaveBeenCalledWith('quiz.submit');
-    for (const changed of [{ ...target, filledRevision: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
-      { ...target, assessmentId: 'other' }, { ...target, policyRef: 'b'.repeat(64) },
-      { ...target, page: { ...target.page, attemptId: '23' } }]) {
-      await expect(service.consume(confirmation.token, changed)).rejects.toMatchObject({ code: 'CONFLICT' });
-    }
-    await service.consume(confirmation.token, target);
-    await expect(service.consume(confirmation.token, target)).rejects.toMatchObject({ code: 'CONFLICT' });
-    const expired = await service.issue(target, owner);
-    now = 60000;
-    await expect(service.consume(expired.token, target)).rejects.toMatchObject({ code: 'CONFLICT' });
   });
 });

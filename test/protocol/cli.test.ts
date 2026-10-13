@@ -51,17 +51,7 @@ it('passes coerced filter flags and defaults through dispatcher once', async () 
   const { response } = await invoke(['materials', 'list', '--course-id', 'synthetic-course', '--page', '2'], options);
   expect(response.ok).toBe(true); expect(read).toHaveBeenCalledWith('materials.list', { courseId: 'synthetic-course', page: 2, limit: 100 });
 });
-it.each(['quiz.read', 'quiz.policy', 'quiz.grant', 'quiz.prerequisites', 'quiz.propose', 'quiz.review'] as const)('legacy syntax calls the registry entry %s once', async name => {
-  const options = fixture(); const entry = options.registry.get(name)!; const handler = vi.fn(entry.handler);
-  const registry = new Registry(); registry.register({ ...entry, handler }); options.registry = registry;
-  const args = name === 'quiz.read' ? ['quiz', 'read', '--course', '7', '--lesson', '11', '--question', examples['quiz.read'].output.questions[0]!.ref]
-    : name === 'quiz.review' ? ['quiz', 'review', '--assessment', examples[name].input.assessmentId, '--revision', examples[name].input.revision, '--page', examples[name].input.page.pageId, '--attempt', examples[name].input.page.attemptId!]
-    : ['quiz', name.split('.')[1]!, '--input', await file(examples[name].input)];
-  const { response } = await invoke(args, options);
-  expect(response).toMatchObject({ ok: true, command: name, data: examples[name].output }); expect(handler).toHaveBeenCalledOnce();
-  if (name === 'quiz.policy' || name === 'quiz.grant') expect((options.context.services as FakeServices).writes[0]?.name).toBe(name === 'quiz.policy' ? 'policy.record' : 'grant.record');
-});
-it.each(['quiz.policy', 'quiz.grant', 'quiz.prerequisites', 'quiz.review', 'policy.record', 'grant.record'] as const)('non-TTY refuses owner entry %s even with injected owner capability', async name => {
+it.each(['policy.record', 'grant.record'] as const)('non-TTY refuses owner entry %s even with injected owner capability', async name => {
   const options = fixture(createRegistry(), false); const owner = vi.spyOn(options.context.owner!, 'assertOwner');
   const { response } = await invoke([...name.split('.'), '--input', await file(examples[name].input)], options);
   expect(response).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } }); expect(owner).not.toHaveBeenCalled();
@@ -70,21 +60,13 @@ it.each(['quiz.policy', 'quiz.grant', 'quiz.prerequisites', 'quiz.review', 'poli
 it('rejects malformed, oversized, missing and mixed file input without executing', async () => {
   const path = await file({}); const malformed = fixture();
   await writeFile(path, '{private-sentinel');
-  expect((await invoke(['quiz', 'propose', '--input', path], malformed)).response.error.code).toBe('INVALID_INPUT');
+  expect((await invoke(['revision', 'write', '--input', path], malformed)).response.error.code).toBe('INVALID_INPUT');
   await truncate(path, MAX_INPUT_BYTES + 1);
-  expect((await invoke(['quiz', 'propose', '--input', path])).response.error.code).toBe('LIMIT_EXCEEDED');
-  expect((await invoke(['quiz', 'propose', '--input', `${path}-missing`])).response.error.code).toBe('INVALID_INPUT');
+  expect((await invoke(['revision', 'write', '--input', path])).response.error.code).toBe('LIMIT_EXCEEDED');
+  expect((await invoke(['revision', 'write', '--input', `${path}-missing`])).response.error.code).toBe('INVALID_INPUT');
   await writeFile(path, JSON.stringify(examples['courses.list'].input));
   expect((await invoke(['courses', 'list', '--input', path, '--limit', '2'])).response.error.code).toBe('INVALID_INPUT');
   expect((malformed.context.services as FakeServices).writes).toHaveLength(0);
-});
-it('help keeps Q1 usage and never runs a handler', async () => {
-  for (const name of ['quiz.read', 'quiz.policy', 'quiz.grant', 'quiz.prerequisites', 'quiz.propose', 'quiz.review'] as CommandName[]) {
-    const options = fixture(); const read = vi.spyOn(options.context.repository, 'read');
-    const { response } = await invoke([...name.split('.'), '--help'], options);
-    expect(response).toMatchObject({ ok: true, command: name }); expect(response.data.usage).toContain(`coursework ${name.replace('.', ' ')}`);
-    expect(read).not.toHaveBeenCalled(); expect((options.context.services as FakeServices).writes).toHaveLength(0);
-  }
 });
 it('stdout sink failures never print a second envelope', async () => {
   const options = fixture(); options.stdout.mockImplementation(() => { throw Error('sink failure'); });
