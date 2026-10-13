@@ -87,11 +87,22 @@ export const contracts = {
   'grant.record': grant,
   'audit.list': { input: z.strictObject({ ...paging, assessmentId: IdSchema.optional(), command: IdSchema.optional() }), output: page(AuditRecordSchema), level: 0 },
 } as const;
+// Browser lifecycle is a host service, separate from repository read/write port types.
+const siteStatus = z.strictObject({ state: z.enum(['signedIn', 'signedOut', 'unknown']), checkedAt: z.iso.datetime(),
+  hint: z.strictObject({ code: z.literal('AUTH_EXPIRED'), next: z.enum([
+    'Sign in to Canvas by hand in the resident browser.',
+    'Sign in to Ed by hand in the resident browser.',
+  ]) }).optional() });
+export const browserContracts = {
+  'browser.status': { input: z.strictObject({}), output: z.strictObject({ canvas: siteStatus, ed: siteStatus }), level: 0 },
+  'browser.start': { input: z.strictObject({}), output: z.strictObject({ running: z.literal(true), browser: z.enum(['msedge', 'chrome', 'chromium']), startedAt: z.iso.datetime() }), level: 0 },
+  'browser.stop': { input: z.strictObject({}), output: z.strictObject({ running: z.literal(false) }), level: 0 },
+} as const;
 export type CommandName = keyof typeof contracts;
 export type CommandInput<N extends CommandName> = z.input<(typeof contracts)[N]['input']>;
 export type ParsedCommandInput<N extends CommandName> = z.output<(typeof contracts)[N]['input']>;
 export type CommandOutput<N extends CommandName> = z.output<(typeof contracts)[N]['output']>;
-export const ownerCommands: ReadonlySet<string> = new Set(['policy.record', 'grant.record']);
+export const ownerCommands: ReadonlySet<string> = new Set(['policy.record', 'grant.record', 'browser.start', 'browser.stop']);
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });
 export const FailureEnvelopeSchema = z.strictObject({ protocol: z.literal('coursework.agent/v1'), command: z.string(), meta,
   ok: z.literal(false), error: z.strictObject({ code: z.enum(Object.keys(retryable) as (keyof typeof retryable)[]), message: z.string(), retryable: z.boolean(), next: z.string().optional() }) }).refine(e => e.error.retryable === retryable[e.error.code]);

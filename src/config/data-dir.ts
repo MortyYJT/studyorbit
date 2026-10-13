@@ -15,9 +15,14 @@ export function packageRoot(): string {
   }
 }
 
-export function dataDir(): string {
+/** Resolve without creating directories, for read-only browser discovery and synthetic tests. */
+export function resolveDataDir(): string {
   const home = process.env.COURSEWORK_HOME;
-  const directory = home?.trim() ? resolve(home) : join(packageRoot(), '.local');
+  return home?.trim() ? resolve(home) : join(packageRoot(), '.local');
+}
+
+export function dataDir(): string {
+  const directory = resolveDataDir();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   return directory;
 }

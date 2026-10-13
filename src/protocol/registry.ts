@@ -1,6 +1,10 @@
+import { safeBrowserChoiceMessage } from '../capture/browser.js';
+import { browserStatus, type BrowserStatus } from '../browser/status.js';
+import { ownerResidentBrowser } from '../browser/runtime.js';
+import type { BrowserState } from '../browser/resident.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { contracts, ownerCommands, FailureEnvelopeSchema, type Level, type CommandName } from './contracts.js';
+import { contracts, browserContracts, ownerCommands, FailureEnvelopeSchema, type Level, type CommandName } from './contracts.js';
 import type { TrustedContext, ReadCommand, WriteCommand, AuditEvent } from './context.js';
 import { ok, fail, withMetadata, type Envelope } from './envelope.js';
 import { CourseworkError, retryable, type ErrorCode } from './errors.js';
@@ -25,11 +29,17 @@ const safeMessages: Record<ErrorCode, string> = {
   UNCERTAIN: 'The write may have completed but mandatory recording failed; inspect local state before retrying.',
   INVALID_INPUT: 'Invalid input or required trusted authorization is unavailable.',
   NOT_FOUND: 'The command or requested record was not found.', CONFLICT: 'The target revision changed; refresh before retrying.',
-  AUTH_EXPIRED: 'Authentication expired.', SOURCE_UNAVAILABLE: 'The required source or adapter is unavailable.',
+  AUTH_EXPIRED: 'Authentication expired. Run coursework browser start and ask the user to sign in.', SOURCE_UNAVAILABLE: 'The required source or adapter is unavailable.',
   LOCKED: 'The target is locked.', CITATION_MISMATCH: 'Citation provenance could not be verified.',
   LIMIT_EXCEEDED: 'The response exceeds 64 KiB.', INTERNAL: 'The command could not complete safely.',
 };
-function safeError(error: unknown): CourseworkError {
+function safeError(error: unknown, command?: string): CourseworkError {
+  if (command === 'browser.start') {
+    const choice = safeBrowserChoiceMessage(error);
+    if (choice) return new CourseworkError('INVALID_INPUT', choice);
+    if (error instanceof CourseworkError && error.code === 'LOCKED'
+      && /^Browser profile is locked by process [1-9]\d*\.$/.test(error.message)) return new CourseworkError('LOCKED', error.message);
+  }
   const code = error instanceof CourseworkError && Object.hasOwn(retryable, error.code) ? error.code : 'INTERNAL';
   return new CourseworkError(code, safeMessages[code]);
 }
@@ -84,18 +94,21 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   } catch (error) {
     // After a contract write/action returned, any later validation, privacy or recording failure is uncertainty.
     let failure = handlerSucceeded && !readNames.has(name) && (completionRecording || writeNames.has(name))
-      ? new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN) : safeError(error);
+      ? new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN) : safeError(error, name);
     try { await record(executed ? 'outcome' : 'denial', failure.code); }
     catch { if (failure.code !== 'UNCERTAIN') failure = new CourseworkError('INTERNAL', safeMessages.INTERNAL); }
     result = withMetadata(fail(safeName, failure.code, failure.message, failure.next), { runId, durationMs: performance.now() - started });
   }
   return result;
 }
-const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get']));
+const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'browser.status']));
 const writeNames = new Set<string>(Object.keys(contracts).filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
 /** Bind the settled contract surface to injected ports; no production service is selected here. */
-export function createRegistry(): Registry {
+export interface BrowserServices {
+  status(): Promise<BrowserStatus>; start(): Promise<BrowserState>; stop(): Promise<void>;
+}
+export function createRegistry(options: { browser?: Partial<BrowserServices> } = {}): Registry {
   const registry = new Registry();
   const handlers = new Map<string, Handler>();
   for (const name of Object.keys(contracts) as CommandName[]) {
@@ -131,5 +144,14 @@ export function createRegistry(): Registry {
     const canonicalHandler = handler;
     registry.register<z.ZodType, z.ZodType>({ name, ...contract, handler: canonicalHandler });
   }
+  registry.register({ name: 'browser.status', ...browserContracts['browser.status'], handler: async () =>
+    options.browser?.status ? options.browser.status() : browserStatus() });
+  registry.register({ name: 'browser.start', ...browserContracts['browser.start'], handler: async () => {
+    const state = await (options.browser?.start ? options.browser.start() : ownerResidentBrowser().start());
+    return { running: true as const, browser: state.browser, startedAt: state.startedAt };
+  } });
+  registry.register({ name: 'browser.stop', ...browserContracts['browser.stop'], handler: async () => {
+    await (options.browser?.stop ? options.browser.stop() : ownerResidentBrowser().stop()); return { running: false as const };
+  } });
   return registry;
 }

@@ -6,6 +6,20 @@ export class BrowserChoiceError extends Error {
   constructor(message: string, readonly exitCode = 1) { super(message); }
 }
 const browsers: CaptureBrowser[] = ['msedge', 'chrome', 'chromium'];
+/** Only messages produced by detection may cross the protocol error boundary. */
+export function safeBrowserChoiceMessage(error: unknown): string | undefined {
+  if (!(error instanceof BrowserChoiceError)) return undefined;
+  const messages = new Set([
+    'COURSEWORK_BROWSER must be one of: msedge, chrome, chromium.',
+    'Invalid browser record. Remove the profile and sign in again.',
+    'Profile browser is unknown. Set COURSEWORK_BROWSER to its browser or remove the profile and sign in again.',
+    'No Edge or Chrome installed. Run coursework browser start in a terminal to choose bundled Chromium.',
+    'Bundled Chromium is not installed. No browser will be downloaded.', 'Bundled Chromium declined.',
+    ...browsers.map(browser => `${browser} is not installed. No fallback will be launched.`),
+    ...browsers.flatMap(recorded => browsers.map(selected => mismatch(recorded, selected).message)),
+  ]);
+  return messages.has(error.message) ? error.message : undefined;
+}
 export function browserExecutablePaths(browser: Exclude<CaptureBrowser, 'chromium'>, platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string[] {
   if (platform === 'darwin') return [browser === 'msedge'
     ? '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
@@ -52,7 +66,7 @@ export async function chooseBrowser(options: {
     if (recorded && recorded !== 'chromium') {
       throw mismatch(recorded, 'chromium');
     }
-    if (!options.isTTY) throw new BrowserChoiceError('No Edge or Chrome installed. Run capture in a terminal to choose bundled Chromium.');
+    if (!options.isTTY) throw new BrowserChoiceError('No Edge or Chrome installed. Run coursework browser start in a terminal to choose bundled Chromium.');
     if (!isInstalled('chromium')) throw new BrowserChoiceError('Bundled Chromium is not installed. No browser will be downloaded.');
     if (!await options.confirm()) throw new BrowserChoiceError('Bundled Chromium declined.', 1);
     selected = 'chromium';
