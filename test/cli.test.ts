@@ -16,46 +16,15 @@ it('coursework --version prints the package version', () => {
 });
 
 
-it('non-TTY locked capture returns one LOCKED envelope before launching a browser', () => {
-  const home = mkdtempSync(join(tmpdir(), 'coursework-cli-'));
-  try {
-    mkdirSync(join(home, 'profiles'));
-    writeFileSync(join(home, 'capture-selection.json'), JSON.stringify({ version: 1, courses: [] }));
-    const lock = join(home, 'profiles', 'default.lock');
-    writeFileSync(lock, String(process.pid));
-    const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
-    const result = spawnSync(process.execPath, [cli, 'capture'], {
-      env: { ...process.env, COURSEWORK_HOME: home }, encoding: 'utf8', timeout: 5000,
-    });
-    expect(result.status).toBe(0);
-    expect(result.stdout.trim().split('\n')).toHaveLength(1);
-    expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error: { code: 'LOCKED' } });
-    expect(readFileSync(lock, 'utf8')).toBe(String(process.pid));
-  } finally { rmSync(home, { recursive: true, force: true }); }
-});
-
-it.each([[], ['--crawl'], ['--reselect'], ['--crawl', '--reselect']].map(flags => ({ flags })))('non-TTY capture flags %j return early INVALID_INPUT with no prompt', ({ flags }) => {
-  const home = mkdtempSync(join(tmpdir(), 'coursework-cli-selection-'));
-  try {
-    const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
-    const result = spawnSync(process.execPath, [cli, 'capture', ...flags], {
-      env: { ...process.env, COURSEWORK_HOME: home, COURSEWORK_BROWSER: 'invalid' }, encoding: 'utf8', timeout: 5000,
-    });
-    expect(result.stdout.trim().split('\n')).toHaveLength(1);
-    expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
-    expect(result.stderr).toBe('');
-  } finally { rmSync(home, { recursive: true, force: true }); }
-});
-
-it('generated root help advertises registry names and keeps capture available', () => {
+it('generated root help advertises retained registry names', () => {
   const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
   const result = spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' });
   expect(result.stdout.trim().split('\n')).toHaveLength(1);
   const response = JSON.parse(result.stdout);
   expect(response).toMatchObject({ ok: true });
-  expect(response.data.usage).toContain('courses'); expect(response.data.usage).toContain('capture');
+  expect(response.data.usage).toContain('courses');
 });
-it.each([['courses', 'list'], ['quiz', 'fill'], ['quiz', 'submit']].map(args => ({ args })))('unmounted $args remains discoverable and refuses safely without prompting', ({ args }) => {
+it.each([['courses', 'list']].map(args => ({ args })))('unmounted $args remains discoverable and refuses safely without prompting', ({ args }) => {
   const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
   const help = spawnSync(process.execPath, [cli, ...args, '--help'], { encoding: 'utf8' });
   expect(JSON.parse(help.stdout)).toMatchObject({ ok: true, command: args.join('.') });
@@ -94,7 +63,7 @@ it('coursework mcp over real stdio pipes writes only MCP frames to stdout and ex
   const frames = stdout.split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, any>);
   expect(frames.map(frame => frame.id)).toEqual([1, 2, 3, 4]);
   for (const frame of frames) expect(frame.jsonrpc).toBe('2.0');
-  expect(frames[1]!.result.tools.length).toBe(18); // 24 registry commands minus 6 owner-only (decision #87)
+  expect(frames[1]!.result.tools.length).toBe(12); // 14 retained registry commands minus 2 owner-only
   expect(JSON.parse(frames[2]!.result.content[0].text)).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
   expect(JSON.parse(frames[3]!.result.content[0].text)).toMatchObject({ ok: false, error: { code: 'SOURCE_UNAVAILABLE' } });
   expect(stderr).toContain('coursework mcp');

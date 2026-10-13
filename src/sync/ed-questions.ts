@@ -1,7 +1,9 @@
 import { z } from 'zod';
-import { CourseworkError } from '../../protocol/errors.js';
-import { edId, targetSchema } from './contracts.js';
-import { sourceUnavailable, type QuizPayload } from './adapter.js';
+import { CourseworkError } from '../protocol/errors.js';
+import { edId } from '../protocol/policy.js';
+const targetSchema = z.strictObject({ course: edId, lesson: edId, questions: z.array(z.string().regex(/^ed:[1-9]\d{0,15}:[1-9]\d{0,15}:[1-9]\d{0,15}:[1-9]\d{0,15}$/)).min(1).max(300).optional() });
+const sourceUnavailable = () => new CourseworkError('SOURCE_UNAVAILABLE', 'Ed question source is unavailable.');
+interface QuestionPayload { target: unknown; lesson: unknown; slides: unknown[] }
 const id = z.union([edId, z.number().int().positive().safe().transform(String)]);
 const rawQuestion = z.object({ id, type: z.string().min(1) });
 const rawSlide = z.object({ slide: z.object({ id, questions: z.array(rawQuestion).max(300) }) });
@@ -17,7 +19,7 @@ export const quizOutputSchema = z.strictObject({ assessmentRef: z.string(), ques
 });
 export type QuizReadData = z.infer<typeof quizOutputSchema>;
 /** Projection is deliberately limited to synthetic plain-text contracts until live structure verification. */
-export function normalizeQuiz(payload: QuizPayload): QuizReadData {
+export function normalizeEdQuestions(payload: QuestionPayload): QuizReadData {
   const target = targetSchema.safeParse(payload.target);
   const lesson = z.object({ lesson: z.object({ id, slides: z.array(z.object({ id })).max(300) }) }).safeParse(payload.lesson);
   if (!target.success || !lesson.success || lesson.data.lesson.id !== target.data.lesson) throw sourceUnavailable();

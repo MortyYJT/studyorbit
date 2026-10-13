@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { redactNormalizedSources } from '../../src/sync/privacy-boundary.js';
 import { createRedactor } from '../../src/sync/redaction.js';
 import { syncEd } from '../../src/sync/ed-adapter.js';
-import { selected } from '../quiz/synthetic.js';
+import { selected } from './ed-scope-fixture.js';
 import { fixture, reader, time } from './synthetic.js';
 const source = (platform: 'canvas' | 'ed') => ({ id: `${platform}:${'a'.repeat(64)}`, platform, externalId: 'thread:41',
   courseId: `${platform}:${'b'.repeat(64)}`, kind: 'post', title: 'Synthetic Person-Z',
@@ -41,7 +41,7 @@ it('4.4 unknown nested person fields or excessive depth withhold output safely',
 it('4.4 embedded encoded URLs cannot hide harvested names', () => {
   expect(createRedactor([{ author: 'Synthetic Person-Z' }]).text('url: https://edstem.org/Synthetic%20Person-Z')).not.toContain('Person-Z');
 });
-import type { EdReader } from '../../src/capture/ed-capture.js';
+import type { EdReader } from '../../src/sync/ed-reader.js';
 it('4.4 wraps invalid URLs after redaction in a content-free diagnostic', () => {
   try {
     redactNormalizedSources('ed', [{ ...source('ed'), url: 'https://person-z.example.invalid/private-sentinel' }], [{ author: 'person-z' }]);

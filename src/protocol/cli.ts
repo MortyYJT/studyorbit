@@ -20,11 +20,6 @@ interface FieldSchema {
   type?: string | string[]; enum?: unknown[]; const?: unknown; default?: unknown;
   anyOf?: FieldSchema[]; oneOf?: FieldSchema[]; properties?: Record<string, FieldSchema>;
 }
-const legacyUsage: Record<string, string> = {
-  'quiz.read': 'coursework quiz read --course <id> --lesson <id> [--question <ref>]',
-  'quiz.review': 'coursework quiz review --assessment <id> --revision <uuid> --page <id> [--attempt <id>]',
-  ...Object.fromEntries(['policy', 'grant', 'prerequisites', 'propose'].map(name => [`quiz.${name}`, `coursework quiz ${name} --input <path>`])),
-};
 function invalid(): never { throw new CourseworkError('INVALID_INPUT', 'Invalid command arguments.'); }
 function coerce(value: string, schema: FieldSchema): unknown {
   const alternatives = schema.anyOf ?? schema.oneOf;
@@ -110,29 +105,19 @@ export async function parseProtocolCLI(args: string[], options: ProtocolCLIOptio
     command.description(`${entry.name} (L${entry.level}${ownerCommands.has(entry.name) ? ', owner terminal' : ''})`)
       .option('--json', 'Print one coursework.agent/v1 envelope')
       .option('--input <path>', `Strict JSON input file (maximum ${MAX_INPUT_BYTES} bytes; exclusive with field flags)`);
-    const fileOnly = ['quiz.policy', 'quiz.grant', 'quiz.prerequisites', 'quiz.propose'].includes(entry.name);
-    if (fileOnly) command.options.find(option => option.long === '--input')!.makeOptionMandatory();
     command.options.find(option => option.long === '--input')!.argParser((value: string, previous: unknown) => {
       if (previous !== undefined) return invalid();
       return value;
     });
-    const shape = fileOnly ? {} : fields(entry);
-    if (entry.name === 'quiz.review') {
-      delete shape.page;
-      shape.pageId = { type: 'string' }; shape.attemptId = { type: 'string' };
-    }
+    const shape = fields(entry);
     for (const [field, schema] of Object.entries(shape)) {
-      const flag = entry.name === 'quiz.read' && field === 'questions' ? 'question'
-        : entry.name === 'quiz.review' ? ({ assessmentId: 'assessment', pageId: 'page', attemptId: 'attempt' }[field] ?? field)
-        : field.replace(/[A-Z]/g, char => `-${char.toLowerCase()}`);
-      const repeated = entry.name === 'quiz.read' && field === 'questions';
+      const flag = field.replace(/[A-Z]/g, char => `-${char.toLowerCase()}`);
       const option = new Option(`--${flag} <value>`, `${field}: ${schema.type ?? 'JSON'}${schema.enum ? ` (${schema.enum.join(', ')})` : ''}${schema.default === undefined ? '' : `; default ${JSON.stringify(schema.default)}`}`);
       option.argParser((value: string, previous: unknown) => {
-        if (repeated) return [...(previous as string[] | undefined ?? []), value];
         if (previous !== undefined) return invalid();
         return coerce(value, schema);
       });
-      // Store by schema field, independent of Commander camel-casing and legacy flag names.
+      // Store by schema field, independent of Commander camel-casing .
       option.attributeName = () => field;
       command.addOption(option);
     }
@@ -143,10 +128,6 @@ export async function parseProtocolCLI(args: string[], options: ProtocolCLIOptio
       try {
         if (input !== undefined && Object.keys(supplied).length) return invalid();
         request = input === undefined ? supplied : await loadInput(input as string);
-        if (input === undefined && entry.name === 'quiz.review') {
-          const { pageId, attemptId, ...rest } = supplied;
-          request = { ...rest, page: { pageId, ...(attemptId === undefined ? {} : { attemptId }) } };
-        }
       } catch (error) {
         response = fail(entry.name, error instanceof CourseworkError ? error.code : 'INVALID_INPUT', 'Invalid command input.');
         if (options.inputFailure) response = await options.inputFailure(response as FailureEnvelope);
@@ -171,7 +152,7 @@ export async function parseProtocolCLI(args: string[], options: ProtocolCLIOptio
     if (!response) response = fail(selected?.name ?? 'unknown', 'INVALID_INPUT', 'Choose a registered command.');
   } catch (error) {
     if (error instanceof CommanderError && ['commander.helpDisplayed', 'commander.help'].includes(error.code)) {
-      response = ok(selected?.name ?? 'help', { usage: selected && legacyUsage[selected.name] ? legacyUsage[selected.name] : current.helpInformation() });
+      response = ok(selected?.name ?? 'help', { usage: current.helpInformation() });
     } else {
       response = fail(selected?.name ?? 'unknown', 'INVALID_INPUT', 'Invalid command arguments.');
       if (options.inputFailure) response = await options.inputFailure(response as FailureEnvelope);

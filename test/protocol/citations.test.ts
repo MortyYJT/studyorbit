@@ -47,5 +47,5 @@ it('does not accept request-supplied evidence or invent support for nonstudy com
   const { service, resolve } = setup();
   await expect(service.check('revision.write', { ...inputs['revision.write'], sources: [source] })).rejects.toMatchObject({ code: 'CITATION_MISMATCH' });
   expect(resolve).not.toHaveBeenCalled();
-  await expect(service.check('quiz.propose', {})).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
+  await expect(service.check('policy.record', {})).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
 });

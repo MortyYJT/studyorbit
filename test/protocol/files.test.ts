@@ -3,14 +3,14 @@ import { fsyncSync } from 'node:fs';
 import { mkdtemp, realpath, readFile, stat, symlink, writeFile, mkdir, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { QuizFiles } from '../../src/quiz/files.js';
+import { ProtocolFiles } from '../../src/protocol/files.js';
 vi.mock('node:fs', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs')>();
   return { ...actual, fsyncSync: vi.fn(actual.fsyncSync) };
 });
 const directories: string[] = [];
 afterEach(async () => { for (const dir of directories.splice(0)) await rm(dir, { recursive: true, force: true }); });
-async function setup() { const root = await realpath(await mkdtemp(join(tmpdir(), 'quiz-files-'))); directories.push(root); return { root, files: new QuizFiles(root) }; }
+async function setup() { const root = await realpath(await mkdtemp(join(tmpdir(), 'quiz-files-'))); directories.push(root); return { root, files: new ProtocolFiles(root) }; }
 it('writes atomic private records and appends rather than replacing audit', async () => {
   const { root, files } = await setup();
   await files.write('proposal-synthetic', { revision: 1 }); await files.write('proposal-synthetic', { revision: 2 });
@@ -50,7 +50,7 @@ it('rejects directory, ancestor, record and audit symlink escapes', async () => 
   await expect(files.write('proposal-synthetic', {})).rejects.toThrow();
   await symlink(join(outside, 'victim'), join(root, 'quiz', 'audit.jsonl')); await expect(files.append('audit', 'unsafe')).rejects.toThrow();
   expect(await readFile(join(outside, 'victim'), 'utf8')).toBe('preserved');
-  await symlink(outside, join(root, 'alias')); await expect(new QuizFiles(join(root, 'alias', 'child')).write('test', {})).rejects.toThrow();
+  await symlink(outside, join(root, 'alias')); await expect(new ProtocolFiles(join(root, 'alias', 'child')).write('test', {})).rejects.toThrow();
 });
 it('exclusive mutations reject competing writers and preserve previous revision on failure', async () => {
   const { files } = await setup(); await files.write('proposal-synthetic', { revision: 1 });
@@ -73,10 +73,10 @@ it('uses ignored local default or private external override and rejects reposito
   const { root } = await setup();
   vi.stubEnv('COURSEWORK_HOME', '');
   try {
-    expect(new QuizFiles().root).toBe(join(packageRoot(), '.local'));
+    expect(new ProtocolFiles().root).toBe(join(packageRoot(), '.local'));
     expect(await readFile(join(packageRoot(), '.gitignore'), 'utf8')).toMatch(/^\.local\/$/m);
-    vi.stubEnv('COURSEWORK_HOME', root); expect(new QuizFiles().root).toBe(root);
-    expect(() => new QuizFiles(join(packageRoot(), 'src'))).toThrow();
+    vi.stubEnv('COURSEWORK_HOME', root); expect(new ProtocolFiles().root).toBe(root);
+    expect(() => new ProtocolFiles(join(packageRoot(), 'src'))).toThrow();
   } finally { vi.unstubAllEnvs(); }
 });
 
@@ -84,17 +84,17 @@ it.each(['..quiz-private', '..quiz-private/nested', '...', '.local-private', '.l
   const { packageRoot } = await import('../../src/config/data-dir.js');
   const { vi } = await import('vitest');
   const root = join(packageRoot(), name);
-  expect(() => new QuizFiles(root)).toThrow(/unavailable/i);
+  expect(() => new ProtocolFiles(root)).toThrow(/unavailable/i);
   vi.stubEnv('COURSEWORK_HOME', root);
-  try { expect(() => new QuizFiles()).toThrow(/unavailable/i); }
+  try { expect(() => new ProtocolFiles()).toThrow(/unavailable/i); }
   finally { vi.unstubAllEnvs(); }
 });
 it('allows .local descendants and genuinely external parent-segment paths', async () => {
   const { packageRoot } = await import('../../src/config/data-dir.js');
-  expect(new QuizFiles(join(packageRoot(), '.local', 'nested')).root).toBe(join(packageRoot(), '.local', 'nested'));
+  expect(new ProtocolFiles(join(packageRoot(), '.local', 'nested')).root).toBe(join(packageRoot(), '.local', 'nested'));
   const outside = join(packageRoot(), '..', '..quiz-private');
-  expect(new QuizFiles(outside).root).toBe(outside);
-  expect(() => new QuizFiles(packageRoot())).toThrow();
+  expect(new ProtocolFiles(outside).root).toBe(outside);
+  expect(() => new ProtocolFiles(packageRoot())).toThrow();
 });
 it('reports uncertainty and retains an installed ordinary record after directory durability failure', async () => {
   const { files } = await setup(); await files.write('policy-synthetic', { cap: 2 });

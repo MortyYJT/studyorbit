@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { sqliteImports } from './import-guard.js';
 
@@ -27,7 +27,7 @@ it('detects static, re-export, dynamic, CommonJS and type-only SQLite imports', 
 
 it('keeps SQL imports inside src/store across tracked and new source files', () => {
   const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' })
-    .split('\0').filter(file => file && /\.[cm]?[jt]sx?$/.test(file) && !file.startsWith('src/store/'));
+    .split('\0').filter(file => file && existsSync(file) && /\.[cm]?[jt]sx?$/.test(file) && !file.startsWith('src/store/'));
   const violations = files.flatMap(file => sqliteImports(readFileSync(file, 'utf8')).map(line => `${file}:${line}`));
   expect(violations).toEqual([]);
 });

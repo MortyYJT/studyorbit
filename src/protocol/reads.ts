@@ -6,7 +6,6 @@ import type { CurrentStateReader, Collection, QueryInput } from '../store/querie
 import { contracts, SourceEvidenceSchema, IdSchema, HashSchema, type CommandOutput, type ParsedCommandInput } from './contracts.js';
 import type { ProtocolRepository, ReadCommand } from './context.js';
 import { CourseworkError, retryable } from './errors.js';
-import { changesHandler, ChangesOutputSchema } from '../sync/changes-handler.js';
 import { ok } from './envelope.js';
 import { protectRead } from './read-privacy.js';
 import { unsafeSource } from '../sync/redaction.js';
@@ -64,7 +63,6 @@ export interface AuxiliaryReadPorts {
   accepted?: AcceptedRecordReader;
   /** Future D audit adapter and existing Q1 managed-profile read, explicitly mounted by a host. */
   audit?: { read(input: ParsedCommandInput<'audit.list'>): Promise<CommandOutput<'audit.list'>> };
-  quiz?: { read(input: ParsedCommandInput<'quiz.read'>): Promise<CommandOutput<'quiz.read'>> };
   /** M1 entities do not store source links except Task citations; never infer them by name. */
   entitySources?: (collection: 'courses' | 'assessments', id: string) => readonly string[];
 }
@@ -73,7 +71,7 @@ const unsupported = () => ({ items: [], evidence: [], coverage: { complete: fals
 const unavailable = () => new CourseworkError('SOURCE_UNAVAILABLE', 'The requested read adapter or source is unavailable.');
 /** ReadCommand implementation only: no transports, authorization services or business writes. */
 export class StoreProtocolReads implements ProtocolRepository {
-  constructor(private readonly store: CurrentStateReader & Pick<Repository, 'loadSourceItem' | 'listChangesSince'>,
+  constructor(private readonly store: CurrentStateReader & Pick<Repository, 'loadSourceItem'>,
     private readonly evidence: SourceEvidenceReader, private readonly ports: AuxiliaryReadPorts = {}) {}
 
   async read<N extends ReadCommand>(name: N, input: ParsedCommandInput<N>): Promise<CommandOutput<N>> {
@@ -84,7 +82,7 @@ export class StoreProtocolReads implements ProtocolRepository {
       const validated = contracts[name].output.parse(raw);
       const protectedValue = this.evidence.protect(validated);
       // Accepted records' citation offsets/hashes must not silently acquire changed prose.
-      if ((name === 'revision.list' || name === 'practice.list' || name === 'proposals.get' || name === 'quiz.read')
+      if ((name === 'revision.list' || name === 'practice.list')
         && JSON.stringify(protectedValue) !== JSON.stringify(validated)) throw unsafeSource();
       const output = contracts[name].output.parse(protectedValue) as CommandOutput<N>;
       if (!ok(name, output).ok) throw new CourseworkError('LIMIT_EXCEEDED', 'The read exceeds the response bound.');
@@ -96,38 +94,10 @@ export class StoreProtocolReads implements ProtocolRepository {
   }
   private async execute(name: ReadCommand, input: unknown): Promise<unknown> {
     if (name === 'sources.get') return this.evidence.get((input as ParsedCommandInput<'sources.get'>).sourceItemId);
-    if (name === 'changes') {
-      // First preserve the legacy bounded prefix (including events above redactor input bounds).
-      // Raw data remains local; only that prefix is protected and measured again before exposure.
-      const bounded = await changesHandler(this.store, input);
-      if (!bounded.ok) throw new CourseworkError(bounded.error.code, 'Unable to read changes safely.');
-      const data = ChangesOutputSchema.parse(bounded.data);
-      const result = await changesHandler({ listChangesSince: () =>
-        data.changes.map(change => {
-          try { return this.evidence.protect(change) as typeof change; }
-          catch (error) {
-            if (!(error instanceof CourseworkError) || error.code !== 'SOURCE_UNAVAILABLE') throw error;
-            // Keep sequence and event identity while explicitly withholding the entire unsafe snapshot.
-            const { before, after, ...identity } = change;
-            let safeIdentity: typeof identity;
-            try { safeIdentity = this.evidence.protect(identity) as typeof identity; }
-            catch (identityError) {
-              if (!(identityError instanceof CourseworkError) || identityError.code !== 'SOURCE_UNAVAILABLE') throw identityError;
-              // An unsafe identity cannot stall the cursor or be exported in the placeholder.
-              safeIdentity = { ...identity, entityId: `withheld:${createHash('sha256').update(identity.entityId).digest('hex')}` };
-            }
-            const placeholder = { withheld: true, reason: 'SOURCE_UNAVAILABLE' };
-            return { ...safeIdentity, ...(before !== undefined ? { before: placeholder } : {}),
-              ...(after !== undefined ? { after: placeholder } : {}) };
-          }
-        }) }, input);
-      if (!result.ok) throw new CourseworkError(result.error.code, 'Unable to read changes safely.');
-      return result.data;
-    }
-    if (name === 'revision.list' || name === 'practice.list' || name === 'proposals.get') {
-      if (!this.ports.accepted) { if (name === 'proposals.get') throw unavailable(); return unsupported(); }
+    if (name === 'revision.list' || name === 'practice.list') {
+      if (!this.ports.accepted) { return unsupported(); }
       const value = contracts[name].output.parse(await this.ports.accepted.read(name, input as never));
-      const filters = input as ParsedCommandInput<'revision.list'> & ParsedCommandInput<'proposals.get'>;
+      const filters = input as ParsedCommandInput<'revision.list'>;
       if ('items' in value) {
         if (value.items.length > filters.limit || value.items.some(item => item.courseId !== filters.courseId
           || filters.week !== undefined && item.week !== filters.week
@@ -136,15 +106,10 @@ export class StoreProtocolReads implements ProtocolRepository {
           const resolved = await this.evidence.get(supplied.sourceItemId);
           if (resolved.courseId !== filters.courseId || JSON.stringify(resolved) !== JSON.stringify(supplied)) throw unavailable();
         }
-      } else if (value.binding.assessmentId !== filters.assessmentId
-        || filters.revision !== undefined && value.revision !== filters.revision) throw unavailable();
+      }
       return value;
     }
     if (name === 'audit.list') return this.ports.audit ? this.ports.audit.read(input as ParsedCommandInput<'audit.list'>) : unsupported();
-    if (name === 'quiz.read') {
-      if (!this.ports.quiz) throw unavailable();
-      return this.ports.quiz.read(input as ParsedCommandInput<'quiz.read'>);
-    }
     return this.list(name, input as Record<string, unknown> & { limit: number; cursor?: string });
   }
   private async list(name: ReadCommand, input: Record<string, unknown> & { limit: number; cursor?: string }) {

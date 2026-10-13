@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { EdReader } from '../../src/capture/ed-capture.js';
+import type { EdReader } from '../../src/sync/ed-reader.js';
 export function fixture() {
   return {
     '/api/user': [{ course: { id: 7, status: 'active', year: 2026, session: 'S2', name: 'Synthetic', code: 'SYN' } }],

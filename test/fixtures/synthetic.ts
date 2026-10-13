@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Assessment, Course, Module, SourceItem, Task, Change, Run } from '../../src/domain/schemas.js';
+import type { Assessment, Course, Module, SourceItem, Task, Run } from '../../src/domain/schemas.js';
 
 // Entirely invented data. No captured course pages or real student information.
 export const syntheticCourse: Course = {
@@ -33,7 +33,6 @@ const task: Task = {
     citations: [{ sourceItemId: sourceItem.id, quote: text, locator: 'paragraph 1' }] }],
 };
 const module: Module = { id: syntheticCourse.moduleId, name: 'Fictional coursework', glyph: 'book', auto: true };
-const change: Change = { seq: 1, kind: 'created', entity: 'task', entityId: task.id, after: task, at };
 const run: Run = { id: 'run-1', command: 'sync', startedAt: at, endedAt: at, steps: 1, outcome: 'ok', costUsd: 0 };
 
-export const synthetic = { module, course: syntheticCourse, assessments: syntheticAssessments, sourceItem, task, change, run };
+export const synthetic = { module, course: syntheticCourse, assessments: syntheticAssessments, sourceItem, task, run };

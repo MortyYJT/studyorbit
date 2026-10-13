@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { ChangeSchema } from '../../domain/schemas.js';
+import { ChangeSchema } from './legacy-change.js';
 
 const operations: Record<string, 'created' | 'updated' | 'deleted'> = {
   'item.added': 'created',

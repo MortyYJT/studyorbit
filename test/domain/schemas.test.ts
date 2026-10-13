@@ -1,7 +1,8 @@
+import * as schemas from '../../src/domain/schemas.js';
 import { describe, expect, it } from 'vitest';
 import {
   ModuleSchema, CourseSchema, AssessmentSchema, SourceItemSchema,
-  CitationSchema, StepSchema, TaskSchema, ChangeSchema, RunSchema,
+  CitationSchema, StepSchema, TaskSchema, RunSchema,
 } from '../../src/domain/schemas.js';
 
 const step = { title: 'Read fictional brief', estimateMinutes: 15, done: false, citations: [] };
@@ -64,27 +65,6 @@ describe('entity schemas', () => {
   });
 });
 
-describe('change snapshots', () => {
-  const change = { seq: 1, entity: 'task', entityId: 'task-1', at };
-  it('change without before or added with before is rejected', () => {
-    expect(ChangeSchema.safeParse({ ...change, kind: 'updated', after: { due: at } }).success).toBe(false);
-    expect(ChangeSchema.safeParse({ ...change, kind: 'created', before: task, after: task }).success).toBe(false);
-  });
-  it.each(['updated'])('%s requires both snapshots', kind => {
-    expect(ChangeSchema.safeParse({ ...change, kind, before: {}, after: {} }).success).toBe(true);
-    expect(ChangeSchema.safeParse({ ...change, kind, before: {} }).success).toBe(false);
-    expect(ChangeSchema.safeParse({ ...change, kind, after: {} }).success).toBe(false);
-  });
-  it('added requires only after and removed requires only before', () => {
-    expect(ChangeSchema.safeParse({ ...change, kind: 'created', after: task }).success).toBe(true);
-    expect(ChangeSchema.safeParse({ ...change, kind: 'created' }).success).toBe(false);
-    expect(ChangeSchema.safeParse({ ...change, kind: 'deleted', before: task }).success).toBe(true);
-    expect(ChangeSchema.safeParse({ ...change, kind: 'deleted', before: task, after: task }).success).toBe(false);
-    expect(ChangeSchema.safeParse({ ...change, kind: 'deleted' }).success).toBe(false);
-  });
-});
-
-
 describe('supported source providers (2.1)', () => {
   const source = { id: 'source-1', externalId: 'external-1', kind: 'material', title: 'Synthetic brief', text: '', contentHash: 'fake-hash', fetchedAt: at };
   it.each(['canvas', 'ed', 'manual'])('accepts %s without changing other fields', platform => {
@@ -98,11 +78,7 @@ describe('supported source providers (2.1)', () => {
 });
 
 
-it('rejects historical specialized operations outside migration and invalid seq (2.2)', () => {
-  for (const kind of ['item.added', 'item.removed', 'content.changed', 'deadline.changed', 'grade.changed']) {
-    expect(ChangeSchema.safeParse({ seq: 1, kind, entity: 'task', entityId: 'task-1', before: {}, after: {}, at }).success).toBe(false);
-  }
-  for (const seq of [0, -1, 1.5, Infinity, undefined]) {
-    expect(ChangeSchema.safeParse({ seq, kind: 'created', entity: 'task', entityId: 'task-1', after: {}, at }).success).toBe(false);
-  }
+it('exports no Change entity or schema', () => {
+  expect(schemas).not.toHaveProperty('ChangeSchema');
+  expect(schemas).not.toHaveProperty('Change');
 });

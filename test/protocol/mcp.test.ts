@@ -109,7 +109,7 @@ it('keeps tool results within the 64 KiB command-envelope bound', async () => {
   expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(64 * 1024);
 });
 
-it.each(['policy.record', 'quiz.policy', 'grant.record', 'quiz.review', 'quiz.prerequisites'] as const)(
+it.each(['policy.record', 'grant.record'] as const)(
   'owner command %s is refused even with a host owner capability and forged owner arguments', async name => {
     let ownerCalls = 0;
     const context = { ...createFakeContext(), owner: { assertOwner: async () => { ownerCalls++; } } };

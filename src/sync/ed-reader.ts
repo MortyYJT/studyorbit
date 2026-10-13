@@ -1,6 +1,6 @@
 import { CourseworkError } from '../protocol/errors.js';
-import type { SelectedCourse } from './discovery.js';
-import type { EdResponse, EdSnapshot } from './ed-transport.js';
+import type { EdSyncScope } from './ed-scope.js';
+import type { EdResponse, EdSnapshot } from '../capture/ed-transport.js';
 /** Snapshot callbacks must settle inside the reader's shared limiter attempt, before read resolves. */
 export interface EdReader { read(endpoint: string, options?: { snapshot?: EdSnapshot }): Promise<EdResponse> }
 export interface EdOutcome {
@@ -18,8 +18,8 @@ function rows(body: unknown, key: string): unknown[] | undefined {
   const value = (body as Record<string, unknown>)[key];
   return Array.isArray(value) ? value : undefined;
 }
-export async function runEdCapture(options: {
-  courses: SelectedCourse[]; transport: EdReader; snapshot: EdSnapshot; discoveryCaptured?: boolean;
+export async function readEdScope(options: {
+  courses: EdSyncScope['courses']; transport: EdReader; snapshot: EdSnapshot; discoveryCaptured?: boolean;
 }): Promise<EdOutcome> {
   const outcome: EdOutcome = { source: 'ed', status: 'completed', attempted: 0, saved: 0, failed: 0, skipped: 0, gaps: [] };
   const selected = options.courses.filter(course => course.source === 'ed');

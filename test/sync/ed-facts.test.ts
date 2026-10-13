@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { syncEd, sourceIdentity } from '../../src/sync/ed-adapter.js';
-import { selected } from '../quiz/synthetic.js';
+import { selected } from './ed-scope-fixture.js';
 import { fixture, reader, time } from './synthetic.js';
 it('4.2 retains effective due, explicit status and grade provenance without guessed assessments', async () => {
   const bodies = fixture();

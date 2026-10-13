@@ -2,11 +2,11 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { EdTransport } from '../../src/capture/ed-transport.js';
 import { RequestLimiter } from '../../src/capture/limiter.js';
 import type { Route } from 'playwright';
-import type { DiscoveryPage } from '../../src/capture/discovery-adapters.js';
+import type { EdPage } from '../../src/capture/ed-transport.js';
 export function budget() { let now = 0; return new RequestLimiter({ now: () => now, sleep: async ms => { now += ms; } }); }
 export function page() {
   return { url: () => 'https://edstem.org/au/', goto: vi.fn(), route: vi.fn(), unroute: vi.fn(),
-    evaluate: async (expression: string) => Function(`return ${expression}`)() } as unknown as DiscoveryPage;
+    evaluate: async (expression: string) => Function(`return ${expression}`)() } as unknown as EdPage;
 }
 afterEach(() => vi.unstubAllGlobals());
 export function session(status = 200, body: unknown = { lesson: { id: 11 } }) {

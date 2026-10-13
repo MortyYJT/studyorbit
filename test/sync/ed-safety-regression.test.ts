@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { syncEd } from '../../src/sync/ed-adapter.js';
 import { createRedactor } from '../../src/sync/redaction.js';
-import { selected } from '../quiz/synthetic.js';
+import { selected } from './ed-scope-fixture.js';
 import { fixture, reader, time } from './synthetic.js';
 it('4.5 label-based six digit identifiers, invisible characters and nested URL encoding cannot escape', () => {
   const redactor = createRedactor([{ author: 'Synthetic Person-Z' }]);

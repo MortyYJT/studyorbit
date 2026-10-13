@@ -2,9 +2,9 @@ import { expect, it, vi } from 'vitest';
 import { syncEd } from '../../src/sync/ed-adapter.js';
 import { EdTransport } from '../../src/capture/ed-transport.js';
 import { RequestLimiter } from '../../src/capture/limiter.js';
-import type { DiscoveryPage } from '../../src/capture/discovery-adapters.js';
-import type { EdReader } from '../../src/capture/ed-capture.js';
-import { selected } from '../quiz/synthetic.js';
+import type { EdPage } from '../../src/capture/ed-transport.js';
+import type { EdReader } from '../../src/sync/ed-reader.js';
+import { selected } from './ed-scope-fixture.js';
 import { fixture, reader, time } from './synthetic.js';
 it('4.1 consumes bounded selected Ed reads, source ids and Q1 question refs', async () => {
   const transport = reader(); const snapshot = vi.fn(async () => {});
@@ -47,7 +47,7 @@ it('4.1 consumes the actual merged transport and courses-only discovery response
   const page = { url: () => 'https://edstem.org/au/', evaluate: vi.fn(async (script: string) => {
     const endpoint = Object.keys(fixture()).find(p => script.includes(JSON.stringify(p)))!;
     return { kind: 'json', status: 200, body: fixture()[endpoint] };
-  }) } as unknown as DiscoveryPage;
+  }) } as unknown as EdPage;
   let clock = 0;
   const transport = new EdTransport(page, new RequestLimiter({ now: () => clock, sleep: async ms => { clock += ms; } }));
   const result = await syncEd({ selection: selected, transport, fetchedAt: time });

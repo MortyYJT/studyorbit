@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { createRedactor } from '../../src/sync/redaction.js';
 import { syncEd } from '../../src/sync/ed-adapter.js';
-import { selected } from '../quiz/synthetic.js';
+import { selected } from './ed-scope-fixture.js';
 import { fixture, reader, time } from './synthetic.js';
 it.each(['phone_number', 'phoneNumber', 'mobile', 'telephone'])('4.3 harvests explicit contact field %s before publishing', async field => {
   const bodies = fixture();

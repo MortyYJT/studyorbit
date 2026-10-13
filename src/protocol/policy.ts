@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { CourseworkError } from '../protocol/errors.js';
-import { enforceAuthorization } from '../protocol/authorization-rules.js';
-import { edId } from './read/contracts.js';
+import { CourseworkError } from './errors.js';
+import { enforceAuthorization } from './authorization-rules.js';
+export const edId = z.string().regex(/^[1-9]\d{0,15}$/);
 export const localId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/);
 const date = z.iso.date().refine(value => new Date(value).toISOString().slice(0, 10) === value);
 const base = { version: z.literal(1), course: edId };
@@ -12,7 +12,6 @@ export const policySchema = z.discriminatedUnion('status', [
 ]);
 export const bindingSchema = z.strictObject({ assessmentId: localId, course: edId, lesson: edId, category: z.enum(['assignment', 'ongoing', 'exam', 'unknown']) });
 export const grantSchema = z.strictObject({ version: z.literal(1), binding: bindingSchema, level: z.number().int().min(0).max(4), date });
-export const prerequisiteSchema = z.strictObject({ version: z.literal(1), binding: bindingSchema, repositoryPrivate: z.literal(true), verifiedAt: z.iso.datetime({ offset: true }) });
 export type Binding = z.infer<typeof bindingSchema>;
 export type Policy = z.infer<typeof policySchema>;
 export type Grant = z.infer<typeof grantSchema>;
@@ -25,12 +24,4 @@ export function authorize(policy: unknown, grant: unknown, binding: unknown, lev
   enforceAuthorization(level, { courseId: b.data.course, assessmentId: b.data.assessmentId, category: b.data.category },
     { ...p, courseId: p.course }, { ...g, courseId: g.binding.course, assessmentId: g.binding.assessmentId, category: g.binding.category });
   return g;
-}
-export function verifyRealPrerequisites(input: unknown, policy: unknown, prerequisite: unknown): void {
-  const t = z.strictObject({ course: edId, lesson: edId }).safeParse(input); if (!t.success) return invalidAuthorization();
-  const target = t.data;
-  const p = validatePolicy(policy); const r = prerequisiteSchema.safeParse(prerequisite);
-  if (!r.success || p.status !== 'owner-attested' || p.date !== '2026-10-12' || p.course !== target.course
-    || r.data.binding.course !== target.course || r.data.binding.lesson !== target.lesson
-    || ['exam', 'unknown'].includes(r.data.binding.category)) invalidAuthorization();
 }

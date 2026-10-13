@@ -4,10 +4,10 @@ import { PolicyRecordSchema, GrantRecordSchema, IdSchema, type Level, type Comma
 import type { AuthorizationService, OwnerInteraction, AuditEvent, ProtocolServices, WriteCommand, ServiceInput, TrustedContext } from './context.js';
 import { CourseworkError } from './errors.js';
 import { enforceAuthorization, denyAuthorization, type AuthorizationTarget } from './authorization-rules.js';
-import { bindingSchema, policySchema, grantSchema, type Binding } from '../quiz/policy.js';
-import { edId } from '../quiz/read/contracts.js';
-import { QuizFiles } from '../quiz/files.js';
-import { hash } from '../quiz/citations.js';
+import { bindingSchema, policySchema, grantSchema, type Binding } from './policy.js';
+import { edId } from './policy.js';
+import { ProtocolFiles } from './files.js';
+import { hash } from '../citations/exact.js';
 type Policy = z.infer<typeof PolicyRecordSchema>;
 type Grant = z.infer<typeof GrantRecordSchema>;
 const identitySchema = z.strictObject({
@@ -49,7 +49,7 @@ export interface AuthorizationStore {
 }
 /** O3: existing Q1 files remain the sole authority. No activation marker, migration or copied records. */
 export class Q1AuthorizationStore implements AuthorizationStore {
-  constructor(private readonly files: QuizFiles, readonly identities: IdentityMap) {}
+  constructor(private readonly files: ProtocolFiles, readonly identities: IdentityMap) {}
   course(id: string): void { this.identities.course(id); }
   exclusive<T>(fn: () => Promise<T>): Promise<T> { return this.files.exclusive(fn); }
   async target(id: string, recording?: boolean): Promise<AuthorizationTarget> {

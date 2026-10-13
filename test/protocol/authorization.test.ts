@@ -1,12 +1,13 @@
+import { z } from 'zod';
 import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtemp, realpath, rm, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SharedAuthorization, Q1AuthorizationStore, IdentityMap } from '../../src/protocol/authorization.js';
 import { DurableAudit, DurableRuns } from '../../src/protocol/audit.js';
-import { QuizFiles } from '../../src/quiz/files.js';
-import { hash } from '../../src/quiz/citations.js';
-import { dispatch, createRegistry } from '../../src/protocol/registry.js';
+import { ProtocolFiles } from '../../src/protocol/files.js';
+import { hash } from '../../src/citations/exact.js';
+import { dispatch, createRegistry, Registry } from '../../src/protocol/registry.js';
 import { createFakeContext, examples } from '../../src/protocol/fakes.js';
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
@@ -17,7 +18,7 @@ const mappings = { courses: [{ courseId: 'course-a', edCourse: '7' }], assessmen
 const owner = { assertOwner: vi.fn(async () => {}) };
 async function setup() {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'authorization-'))); roots.push(root);
-  const files = new QuizFiles(root);
+  const files = new ProtocolFiles(root);
   await files.write('policy-7', policy); await files.write(`binding-${hash(binding.assessmentId)}`, binding);
   await files.write(`grant-${hash(binding.assessmentId)}`, grant);
   const store = new Q1AuthorizationStore(files, new IdentityMap(mappings));
@@ -26,43 +27,43 @@ async function setup() {
 }
 it('checks policy/grant matrix and live revocation without caching permissions', async () => {
   const { files, service } = await setup();
-  for (const level of [0, 1, 2, 3, 4] as const) await service.check('quiz.submit', level, { assessmentId: 'assessment-a' });
+  for (const level of [0, 1, 2, 3, 4] as const) await service.check('assessment.action', level, { assessmentId: 'assessment-a' });
   for (const status of ['allowed', 'owner-attested', 'prohibited'] as const) {
     const p = status === 'owner-attested' ? policy : { version: 1, course: '7', status, quote: 'Synthetic rule', locator: 'policy:1', cap: status === 'prohibited' ? 1 : 4 };
     await files.write('policy-7', p);
     await service.check('study', 1, {});
-    if (status === 'prohibited') await expect(service.check('quiz.submit', 2, { assessmentId: 'assessment-a' })).rejects.toThrow();
-    else await service.check('quiz.submit', 4, { assessmentId: 'assessment-a' });
+    if (status === 'prohibited') await expect(service.check('assessment.action', 2, { assessmentId: 'assessment-a' })).rejects.toThrow();
+    else await service.check('assessment.action', 4, { assessmentId: 'assessment-a' });
   }
   await files.write('policy-7', { ...policy, cap: 2 });
-  await expect(service.check('quiz.propose', 2, { assessmentId: 'assessment-a' })).rejects.toThrow();
+  await expect(service.check('revision.write', 2, { assessmentId: 'assessment-a' })).rejects.toThrow();
   await files.write('policy-7', policy); await files.write(`grant-${hash(binding.assessmentId)}`, { ...grant, level: 0 });
-  await expect(service.check('quiz.submit', 4, { assessmentId: 'assessment-a' })).rejects.toThrow();
+  await expect(service.check('assessment.action', 4, { assessmentId: 'assessment-a' })).rejects.toThrow();
 });
 it.each(['exam', 'unknown'] as const)('caps trusted %s classification at L1', async category => {
   const { files, audit } = await setup(); const b = { ...binding, category };
   await files.write(`binding-${hash(binding.assessmentId)}`, b); await files.write(`grant-${hash(binding.assessmentId)}`, { ...grant, binding: b });
   const service = new SharedAuthorization(new Q1AuthorizationStore(files, new IdentityMap({ ...mappings, assessments: [{ ...mappings.assessments[0]!, binding: b }] })), audit);
   await service.check('study', 1, {});
-  await expect(service.check('quiz.submit', 2, { assessmentId: 'assessment-a' })).rejects.toThrow();
+  await expect(service.check('assessment.action', 2, { assessmentId: 'assessment-a' })).rejects.toThrow();
 });
 it('fails closed for absent/malformed policies, wrong course/assessment/grant and stale refs', async () => {
   const { files, service } = await setup();
   for (const p of [undefined, { ...policy, course: '8' }, { ...policy, date: '2026-02-30' }]) {
     await files.write('policy-7', p ?? null);
-    await expect(service.check('quiz.submit', 4, { assessmentId: 'assessment-a' })).rejects.toThrow();
+    await expect(service.check('assessment.action', 4, { assessmentId: 'assessment-a' })).rejects.toThrow();
   }
   await files.write('policy-7', policy);
   for (const g of [{ ...grant, binding: { ...binding, assessmentId: 'other' } }, null]) {
     await files.write(`grant-${hash(binding.assessmentId)}`, g);
-    await expect(service.check('quiz.submit', 4, { assessmentId: 'assessment-a' })).rejects.toThrow();
+    await expect(service.check('assessment.action', 4, { assessmentId: 'assessment-a' })).rejects.toThrow();
   }
   await files.write(`grant-${hash(binding.assessmentId)}`, grant);
   for (const input of [{ assessmentId: 'other' }, { assessmentId: 'assessment-a', courseId: 'other' },
     { assessmentId: 'assessment-a', policyRef: 'a'.repeat(64) }, { assessmentId: 'assessment-a', grantRef: 'a'.repeat(64) }]) {
-    await expect(service.check('quiz.submit', 4, input)).rejects.toThrow();
+    await expect(service.check('assessment.action', 4, input)).rejects.toThrow();
   }
-  await service.check('quiz.propose', 2, { binding });
+  await service.check('revision.write', 2, { binding });
 });
 it('requires owner recording and uses one Q1 authority with original hashes and default-off settings', async () => {
   const { files, service, store } = await setup();
@@ -79,7 +80,7 @@ it('requires owner recording and uses one Q1 authority with original hashes and 
   await expect(enabled.setAutoSubmit('course-a', true)).rejects.toThrow();
   await enabled.setAutoSubmit('course-a', true, owner);
   expect(await enabled.autoSubmit('course-a')).toBe(true);
-  await expect(enabled.check('quiz.submit', 4, { assessmentId: 'assessment-a' })).rejects.toThrow();
+  await expect(enabled.check('assessment.action', 4, { assessmentId: 'assessment-a' })).rejects.toThrow();
 });
 it('rejects ambiguous maps, symlinks and interrupted/unbound activation without modifying records', async () => {
   expect(() => new IdentityMap({ ...mappings, courses: [...mappings.courses, { courseId: 'other', edCourse: '7' }] })).toThrow();
@@ -87,7 +88,7 @@ it('rejects ambiguous maps, symlinks and interrupted/unbound activation without 
   const { root, files, service } = await setup();
   await files.write(`binding-${hash(binding.assessmentId)}`, { ...binding, lesson: '12' });
   const before = await readFile(join(root, 'quiz', `grant-${hash(binding.assessmentId)}.json`), 'utf8');
-  await expect(service.check('quiz.submit', 4, { assessmentId: 'assessment-a' })).rejects.toThrow();
+  await expect(service.check('assessment.action', 4, { assessmentId: 'assessment-a' })).rejects.toThrow();
   expect(await readFile(join(root, 'quiz', `grant-${hash(binding.assessmentId)}.json`), 'utf8')).toBe(before);
   const victim = join(root, 'victim'); await writeFile(victim, 'private sentinel');
   await symlink(victim, join(root, 'quiz', 'policy-8.json'));
@@ -96,7 +97,7 @@ it('rejects ambiguous maps, symlinks and interrupted/unbound activation without 
 });
 it('append-only audits accept safe refs and keep operational runs separate, refusing unsafe metadata', async () => {
   const { root, files, audit } = await setup(); const runs = new DurableRuns(files);
-  const event = { command: 'quiz.propose', runId: examples['audit.list'].output.items[0]!.runId, phase: 'intent' as const, code: 'OK' as const, assessmentId: 'assessment-a', policyRef: hash(policy) };
+  const event = { command: 'revision.write', runId: examples['audit.list'].output.items[0]!.runId, phase: 'intent' as const, code: 'OK' as const, assessmentId: 'assessment-a', policyRef: hash(policy) };
   await audit.record(event); await audit.record({ ...event, phase: 'denial', code: 'CITATION_MISMATCH' });
   await runs.record({ ...event, phase: 'denial', code: 'CITATION_MISMATCH' });
   expect((await audit.list()).length).toBe(2);
@@ -131,19 +132,19 @@ it('records a first exact binding only through owner action and refuses an orpha
   const ids = new IdentityMap({ courses: mappings.courses, assessments: [{ courseId: 'course-a', assessmentId: 'second-canonical', binding: b }] });
   const store = new Q1AuthorizationStore(files, ids); const service = new SharedAuthorization(store, audit);
   await files.write(`grant-${hash(b.assessmentId)}`, { ...grant, binding: b });
-  await expect(service.check('quiz.submit', 4, { assessmentId: 'second-canonical' })).rejects.toThrow();
+  await expect(service.check('assessment.action', 4, { assessmentId: 'second-canonical' })).rejects.toThrow();
   const before = await readFile(join(root, 'quiz', `grant-${hash(b.assessmentId)}.json`), 'utf8');
   expect(before).toContain('second-legacy');
   await service.recordGrant({ version: 1, courseId: 'course-a', assessmentId: 'second-canonical', category: 'assignment', level: 2, date: '2026-10-12' }, owner);
-  await service.check('quiz.propose', 2, { assessmentId: 'second-canonical' });
-  await expect(service.check('quiz.fill', 3, { assessmentId: 'second-canonical' })).rejects.toThrow();
+  await service.check('revision.write', 2, { assessmentId: 'second-canonical' });
+  await expect(service.check('assessment.action', 3, { assessmentId: 'second-canonical' })).rejects.toThrow();
 });
 it('audits safe canonical target refs on dispatch and records citation denial in both journals', async () => {
   const { root, files, service, audit } = await setup();
   const context = createFakeContext(); context.authorization = service; context.audit = audit; context.runs = new DurableRuns(files);
   context.evidence.check = async () => { throw new (await import('../../src/protocol/errors.js')).CourseworkError('CITATION_MISMATCH', 'rejected prose sentinel'); };
-  const input = { ...examples['quiz.propose'].input, binding };
-  expect(await dispatch(createRegistry(), 'quiz.propose', input, context)).toMatchObject({ ok: false, error: { code: 'CITATION_MISMATCH' } });
+  const input = { binding };
+  expect(await dispatch(assessmentRegistry(), 'breakdown.write', input, context)).toMatchObject({ ok: false, error: { code: 'CITATION_MISMATCH' } });
   expect((await audit.list()).at(-1)).toMatchObject({ phase: 'denial', courseId: 'course-a', assessmentId: 'assessment-a', policyRef: hash(policy), grantRef: hash(grant) });
   expect(await readFile(join(root, 'quiz', 'runs.jsonl'), 'utf8')).toContain('CITATION_MISMATCH');
   expect(await readFile(join(root, 'quiz', 'audit.jsonl'), 'utf8')).not.toContain('rejected prose sentinel');
@@ -164,7 +165,7 @@ it('authorization denials retain verified target refs and owner intents identify
   const { files, service, audit } = await setup();
   await files.write(`grant-${hash(binding.assessmentId)}`, { ...grant, level: 0 });
   const context = createFakeContext(); context.authorization = service; context.audit = audit;
-  expect(await dispatch(createRegistry(), 'quiz.propose', { ...examples['quiz.propose'].input, binding }, context)).toMatchObject({ ok: false });
+  expect(await dispatch(assessmentRegistry(), 'breakdown.write', { binding }, context)).toMatchObject({ ok: false });
   expect((await audit.list()).at(-1)).toMatchObject({ phase: 'denial', courseId: 'course-a', assessmentId: 'assessment-a' });
   await service.recordGrant({ version: 1, courseId: 'course-a', assessmentId: 'assessment-a', category: 'assignment', level: 1, date: '2026-10-12' }, owner);
   expect((await audit.list()).slice(-2)).toMatchObject([
@@ -185,3 +186,9 @@ it('does not rewrite an existing binding when updating a grant, and exposes part
   await expect(service.recordGrant({ version: 1, courseId: 'course-a', assessmentId: 'assessment-a', category: 'assignment', level: 1, date: '2026-10-12' }, owner)).rejects.toMatchObject({ code: 'UNCERTAIN' });
   expect((await audit.list()).at(-1)).toMatchObject({ phase: 'outcome', code: 'UNCERTAIN', grantRef: hash(await files.read(`grant-${hash(binding.assessmentId)}`)) });
 });
+
+function assessmentRegistry() {
+  const registry = new Registry();
+  registry.register({ name: 'breakdown.write', level: 2, input: z.strictObject({ binding: z.unknown() }), output: z.strictObject({}), handler: () => ({}) });
+  return registry;
+}

@@ -7,7 +7,7 @@ import { CourseworkError } from '../protocol/errors.js';
 import { localId } from './policy.js';
 const unavailable = () => new CourseworkError('INTERNAL', 'Private quiz storage is unavailable.');
 /** No caller references become path components; symbolic links and hard-linked files fail closed. */
-export class QuizFiles {
+export class ProtocolFiles {
   readonly root: string;
   constructor(root?: string) {
     this.root = resolve(root ?? (process.env.COURSEWORK_HOME?.trim() || join(packageRoot(), '.local')));

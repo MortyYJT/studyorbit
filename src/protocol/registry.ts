@@ -91,7 +91,7 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   }
   return result;
 }
-const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'proposals.get', 'changes', 'quiz.read']));
+const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get']));
 const writeNames = new Set<string>(Object.keys(contracts).filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
 /** Bind the settled contract surface to injected ports; no production service is selected here. */
@@ -99,14 +99,10 @@ export function createRegistry(): Registry {
   const registry = new Registry();
   const handlers = new Map<string, Handler>();
   for (const name of Object.keys(contracts) as CommandName[]) {
-    const canonical = name === 'quiz.policy' ? 'policy.record' : name === 'quiz.grant' ? 'grant.record' : name;
+    const canonical = name;
     let handler = handlers.get(canonical);
     if (!handler) {
       handler = async (input, context) => {
-        if (canonical === 'quiz.fill') return context.actions
-          ? context.actions.fill(input as never, context) : { status: 'unavailable', reason: 'SOURCE_UNAVAILABLE' };
-        if (canonical === 'quiz.submit') return context.actions
-          ? context.actions.submit(input as never, context) : { status: 'unavailable', reason: 'SOURCE_UNAVAILABLE' };
         if (readNames.has(canonical)) return context.repository.read(canonical as ReadCommand, input as never);
         let target: { courseId?: string; assessmentId?: string } | undefined;
         if (canonical === 'policy.record' || canonical === 'grant.record') {
@@ -133,15 +129,7 @@ export function createRegistry(): Registry {
     }
     const contract = contracts[name];
     const canonicalHandler = handler;
-    // Q1 keeps its original receipt, while recording still executes once through the shared service.
-    const outputHandler: Handler = name === 'quiz.policy' || name === 'quiz.grant'
-      ? async (input, context) => {
-        const raw = await canonicalHandler(input, context);
-        const receipt = (name === 'quiz.policy' ? contracts['policy.record'].output : contracts['grant.record'].output).safeParse(raw);
-        if (!receipt.success) throw uncertain();
-        return { recorded: receipt.data.recorded };
-      } : canonicalHandler;
-    registry.register<z.ZodType, z.ZodType>({ name, ...contract, handler: outputHandler });
+    registry.register<z.ZodType, z.ZodType>({ name, ...contract, handler: canonicalHandler });
   }
   return registry;
 }

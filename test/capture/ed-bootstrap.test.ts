@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { Route } from 'playwright';
-import { discoverEd, type DiscoveryPage } from '../../src/capture/discovery-adapters.js';
-import { EdTransport } from '../../src/capture/ed-transport.js';
+
+import { EdTransport, type EdPage } from '../../src/capture/ed-transport.js';
 import { run } from '../../src/protocol/envelope.js';
 import { RequestLimiter } from '../../src/capture/limiter.js';
 function budget() { let now = 0; return new RequestLimiter({ now: () => now, sleep: async ms => { now += ms; } }); }
@@ -49,14 +49,12 @@ function bootstrap(redirects?: string | Record<string, string>, extraDocument = 
   };
   return { page, route, requested };
 }
-it.each(['transport', 'discovery'])('refuses bootstrap redirect before sending any cross-origin request: %s', async mode => {
+it('refuses bootstrap redirect before sending any cross-origin request', async () => {
   for (const target of ['https://evil.invalid/login', 'http://edstem.org/au/', 'https://edstem.org:444/au/', 'https://edstem.org.evil.invalid/au/']) {
     const f = bootstrap(target); const limiter = budget(); const snapshot = vi.fn(async () => {});
-    const result = mode === 'transport'
-      ? await new EdTransport(f.page as DiscoveryPage, limiter).read('/api/user', { snapshot })
-      : await discoverEd(f.page as DiscoveryPage, limiter, { snapshot });
+    const result = await new EdTransport(f.page as EdPage, limiter).read('/api/user', { snapshot });
     expect(f.requested).not.toContain(target);
-    expect(result).toMatchObject(mode === 'transport' ? { kind: 'gap', reason: 'unavailable' } : { status: 'unavailable', error: { code: 'SOURCE_UNAVAILABLE' } });
+    expect(result).toMatchObject({ kind: 'gap', reason: 'unavailable' });
     expect(f.route.abort).toHaveBeenCalled(); expect(f.page.evaluate).not.toHaveBeenCalled();
     expect(snapshot).not.toHaveBeenCalled(); expect(limiter.attempts).toBe(1);
     expect(f.page.unroute).toHaveBeenCalled();
@@ -67,7 +65,7 @@ it('loads a direct Ed bootstrap and removes only its own navigation guard', asyn
   vi.stubGlobal('localStorage', { getItem: () => 'synthetic-secret' });
   const fetch = vi.fn(async () => ({ status: 200, ok: true, json: async () => ({ courses: [] }) })); vi.stubGlobal('fetch', fetch);
   const f = bootstrap(); const limiter = budget();
-  expect(await discoverEd(f.page as DiscoveryPage, limiter)).toMatchObject({ status: 'available', courses: [] });
+  expect(await new EdTransport(f.page as EdPage, limiter).read('/api/user')).toMatchObject({ kind: 'json', body: [] });
   expect(f.route.fetch).toHaveBeenCalledWith(expect.objectContaining({ maxRedirects: 0 }));
   expect(f.route.fulfill).toHaveBeenCalled(); expect(f.page.unroute).toHaveBeenCalledTimes(1);
   expect(fetch).toHaveBeenCalledTimes(1); expect(limiter.attempts).toBe(2);
@@ -77,7 +75,7 @@ it('checks every same-origin redirect hop before any later external redirect', a
   const f = bootstrap({ 'https://edstem.org/au/': '/au/dashboard',
     'https://edstem.org/au/dashboard': 'https://evil.invalid/login' });
   const limiter = budget();
-  expect(await new EdTransport(f.page as DiscoveryPage, limiter).read('/api/user')).toMatchObject({ kind: 'gap', reason: 'unavailable' });
+  expect(await new EdTransport(f.page as EdPage, limiter).read('/api/user')).toMatchObject({ kind: 'gap', reason: 'unavailable' });
   expect(f.requested).toEqual(['https://edstem.org/au/', 'https://edstem.org/au/dashboard']);
   expect(f.page.evaluate).not.toHaveBeenCalled(); expect(limiter.attempts).toBe(2);
   expect(f.page.unroute).toHaveBeenCalledTimes(1);
@@ -87,7 +85,7 @@ it('follows a validated same-origin redirect as a separate budgeted navigation',
   vi.stubGlobal('localStorage', { getItem: () => 'synthetic-secret' });
   vi.stubGlobal('fetch', async () => ({ status: 200, ok: true, json: async () => ({ courses: [] }) }));
   const f = bootstrap('/au/dashboard'); const limiter = budget();
-  expect(await discoverEd(f.page as DiscoveryPage, limiter)).toMatchObject({ status: 'available' });
+  expect(await new EdTransport(f.page as EdPage, limiter).read('/api/user')).toMatchObject({ kind: 'json' });
   expect(f.requested).toEqual(['https://edstem.org/au/', 'https://edstem.org/au/dashboard']);
   expect(limiter.attempts).toBe(3); expect(f.page.unroute).toHaveBeenCalledTimes(1);
 });
@@ -100,7 +98,7 @@ it('budgets and spaces two document requests during one bootstrap', async () => 
   const limiter = new RequestLimiter({ now: () => now, sleep: async ms => { now += ms; } });
   const f = bootstrap(undefined, true); const fetch = f.route.fetch.getMockImplementation()!;
   f.route.fetch.mockImplementation(async options => { starts.push(now); const response = await fetch(options); now += 200; return response; });
-  expect(await new EdTransport(f.page as DiscoveryPage, limiter).read('/api/user')).toMatchObject({ kind: 'json' });
+  expect(await new EdTransport(f.page as EdPage, limiter).read('/api/user')).toMatchObject({ kind: 'json' });
   expect(f.page.goto).toHaveBeenCalledTimes(1);
   expect(starts).toEqual([0, 1200]); expect(limiter.attempts).toBe(3);
 });
@@ -115,7 +113,7 @@ it('replaces failing Playwright cookie call logs before errors or output can esc
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   const snapshot = vi.fn(async () => {});
   try {
-    const transport = new EdTransport(f.page as DiscoveryPage, budget());
+    const transport = new EdTransport(f.page as EdPage, budget());
     // Exercise the internal error boundary: read() suppressing the error is insufficient.
     const failure = await (transport as unknown as { bootstrap(): Promise<void> }).bootstrap().catch(error => error);
     expect(failure).toMatchObject({ name: 'CourseworkError', code: 'SOURCE_UNAVAILABLE', message: 'Ed navigation unavailable.' });
@@ -131,7 +129,7 @@ it('replaces failing Playwright cookie call logs before errors or output can esc
 it('refuses a second bootstrap document when the first exhausts the shared cap', async () => {
   const f = bootstrap(undefined, true); const limiter = budget();
   for (let i = 0; i < 299; i++) await limiter.attempt(async () => {});
-  await expect(new EdTransport(f.page as DiscoveryPage, limiter).read('/api/user')).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' });
+  await expect(new EdTransport(f.page as EdPage, limiter).read('/api/user')).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' });
   expect(f.route.fetch).toHaveBeenCalledTimes(1); expect(limiter.attempts).toBe(300);
   expect(f.page.evaluate).not.toHaveBeenCalled(); expect(f.page.unroute).toHaveBeenCalledTimes(1);
 });
@@ -140,7 +138,7 @@ it('cancels the second bootstrap document without fetching or leaking route erro
   const fetch = f.route.fetch.getMockImplementation()!;
   f.route.fetch.mockImplementation(async options => { const response = await fetch(options); controller.abort(); return response; });
   const limiter = budget();
-  await expect(new EdTransport(f.page as DiscoveryPage, limiter, controller.signal).read('/api/user')).rejects.toMatchObject({ name: 'AbortError' });
+  await expect(new EdTransport(f.page as EdPage, limiter, controller.signal).read('/api/user')).rejects.toMatchObject({ name: 'AbortError' });
   expect(f.route.fetch).toHaveBeenCalledTimes(1); expect(limiter.attempts).toBe(1);
   expect(f.page.evaluate).not.toHaveBeenCalled(); expect(f.page.unroute).toHaveBeenCalledTimes(1);
 });
@@ -151,7 +149,7 @@ it('preserves cancellation after a document succeeds while goto still waits for 
     await goto(destination); controller.abort();
     throw Error('Synthetic private cookie call log during load');
   });
-  await expect(new EdTransport(f.page as DiscoveryPage, budget(), controller.signal).read('/api/user'))
+  await expect(new EdTransport(f.page as EdPage, budget(), controller.signal).read('/api/user'))
     .rejects.toMatchObject({ name: 'AbortError', message: 'Capture cancelled.' });
   expect(f.page.evaluate).not.toHaveBeenCalled(); expect(f.page.unroute).toHaveBeenCalledTimes(1);
 });
@@ -161,7 +159,7 @@ it('blocks a cross-origin iframe navigation without failing the Ed bootstrap', a
   vi.stubGlobal('localStorage', { getItem: () => 'synthetic-secret' });
   vi.stubGlobal('fetch', vi.fn(async () => ({ status: 200, ok: true, json: async () => ({ courses: [] }) })));
   const f = bootstrap(undefined, false, 'https://widget.invalid/frame'); const limiter = budget();
-  expect(await discoverEd(f.page as DiscoveryPage, limiter)).toMatchObject({ status: 'available', courses: [] });
+  expect(await new EdTransport(f.page as EdPage, limiter).read('/api/user')).toMatchObject({ kind: 'json', body: [] });
   expect(f.requested).not.toContain('https://widget.invalid/frame');
   expect(f.route.abort).toHaveBeenCalled(); expect(f.page.unroute).toHaveBeenCalledTimes(1);
 });
