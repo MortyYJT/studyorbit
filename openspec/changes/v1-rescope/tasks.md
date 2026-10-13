@@ -30,10 +30,10 @@ Scope: deletions and the minimum rewiring to keep `main` green. No new behavior.
 
 ## 4. Issue C — Protocol integration without gates
 
-- [ ] 4.1 Rebase the useful parts of `claude/protocol-integration` onto A: production registry assembly and the integration tests that do not touch fill/submit/Q1; remove `note/issue-77-integration.md`; make tests use a temporary data directory, never the default one
-- [ ] 4.2 Failing tests for `autonomy.check` (no policy, prohibited, exam, unknown kind, wrong grant, audit failure → denied) and `audit.record` (L4 needs a confirmation method; no answer text stored)
-- [ ] 4.3 Failing tests: non-TTY owner commands are refused (planning settings also accept the #86 owner-token HTTP flow); one envelope per CLI call; MCP does not list owner-only commands
-- [ ] 4.4 Write the assessment skill: call `autonomy.check` first and stop on `denied`; list all answers in chat and wait for the owner's confirmation before an L4 submit (#97); use the highlight-then-click rule (#98); record each browser write with `audit.record`. It may read quiz and workshop pages unredacted (#112), never discussion pages
+- [x] 4.1 Rebase the useful parts of `claude/protocol-integration` onto A: production registry assembly and the integration tests that do not touch fill/submit/Q1; remove `note/issue-77-integration.md`; make tests use a temporary data directory, never the default one
+- [x] 4.2 Failing tests for `autonomy.check` (no policy, prohibited, exam, unknown kind, wrong grant, audit failure → denied) and `audit.record` (L4 needs a confirmation method; no answer text stored)
+- [x] 4.3 Failing tests: non-TTY owner commands are refused (planning settings also accept the #86 owner-token HTTP flow); one envelope per CLI call; MCP does not list owner-only commands
+- [x] 4.4 Write the assessment skill: call `autonomy.check` first and stop on `denied`; list all answers in chat and wait for the owner's confirmation before an L4 submit (#97); use the highlight-then-click rule (#98); record each browser write with `audit.record`. It may read quiz and workshop pages unredacted (#112), never discussion pages
 
 ## 5. Issue D — Revision skill (target 2026-10-26)
 

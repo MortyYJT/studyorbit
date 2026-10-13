@@ -17,8 +17,8 @@
 | M2 | agent 协议 | 命令注册表 → CLI / MCP / HTTP；读接口；带引文核对的写接口；政策、授权、审计 | 已完成 A–H（2026-10-14 归档）；收尾 I 并入 R-C | — | `v1-protocol`（已归档） |
 | R-A | 删掉被砍的代码 | `src/quiz/`、填写 / 提交关卡、Canvas 爬取、终端选课、变化检测 | 已完成（PR #86） | — | `v1-rescope` |
 | R-B | 常驻浏览器 | 常驻 Edge、可连接、登录状态、点击前高亮 | 代码已合并（PR #88） | 3.5 你在真机上登录并验证、记录登录能保持多久 | `v1-rescope` |
-| R-C | 协议收尾 | 生产组装（不带关卡）、`autonomy.check`、`audit.record`、作业技能 | 进行中（issue #89 已派给 Codex） | — | `v1-rescope` |
-| R-D | 复习技能 | 定时准备 + 对话复习；`source.fetch`；学习记录入 SQLite | 未开始，**目标 10/26** | R-B；装 `unpdf` 要你在场 | `v1-rescope` |
+| R-C | 协议收尾 | 生产组装（不带关卡）、`autonomy.check`、`audit.record`、作业技能 | 已完成（PR #91） | — | `v1-rescope` |
+| R-D | 复习技能 | 定时准备 + 对话复习；`source.fetch`；学习记录入 SQLite | issue #92 已写，等 Codex 用量恢复，**目标 10/26** | Codex 用量（10/14 7:20 恢复）；真机验收要 R-B 3.5 | `v1-rescope` |
 | R-E/F | 数据模型 + `coursework sync` | 新实体；Canvas JSON + Ed 写入本地库；按课程代码合并 | 未开始 | R-B | `v1-rescope` |
 | R-G/H | 批注 + 排期 | agent 带出处的批注、考核项绑定；可用时间 + 截止优先排期 | 未开始 | R-E | `v1-rescope` |
 | R-I/J | 界面读真实数据 + 验收 | 原型页面读本地数据；整体验收后归档 | 未开始 | R-F–H | `v1-rescope` |
