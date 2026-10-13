@@ -62,7 +62,8 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
     services: new ComposedServices({ 'policy.record': authorization.services, 'grant.record': authorization.services,
       ...(study ? { 'breakdown.write': study, 'revision.write': study, 'practice.write': study } : {}) }),
     evidence: new ComposedEvidence(studyEvidence ? { 'breakdown.write': studyEvidence, 'revision.write': studyEvidence, 'practice.write': studyEvidence } : {}),
-    privacy: { protect: async (_command, value) => evidence.protect(value) },
+    // Autonomy outputs are closed enums validated by their schemas; free-text filtering would only corrupt reason codes.
+    privacy: { protect: async (command, value) => command === 'autonomy.check' || command === 'audit.record' ? value : evidence.protect(value) },
     owner: options.owner ?? { assertOwner: async () => {
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },

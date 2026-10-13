@@ -99,11 +99,19 @@ it('denies unresolved targets and preserves unconfirmed L4 violations without re
   const store = { target: async () => { throw Error('private target failure'); } } as unknown as AuthorizationStore;
   const service = new AssessmentAutonomy(store, { record: async event => { events.push(event); } });
   const assessmentId = 'Jane.Doe/answer-is-42';
-  expect(await service.check({ assessmentId, level: 1 })).toEqual({ decision: 'denied', reason: 'authorization-unavailable' });
+  expect(await service.check({ assessmentId, level: 1 })).toEqual({ decision: 'denied', reason: 'assessment-unavailable' });
   expect(await service.record({ assessmentId, level: 4, action: 'submit', outcome: 'success' }))
     .toEqual({ recorded: true, outcome: 'violation' });
   expect(events).toHaveLength(2);
   for (const event of events) expect(event).not.toHaveProperty('assessmentId');
   expect(JSON.stringify(events)).not.toContain(assessmentId);
   expect(JSON.stringify(events)).not.toContain('private target failure');
+});
+it.each(['policy', 'grant'] as const)('keeps the resolved target in the audit when the %s read fails', async failing => {
+  const store = { target: async () => target,
+    policy: async () => { if (failing === 'policy') throw new Error('unreadable'); return { record: policy, ref: 'a'.repeat(64) }; },
+    grant: async () => { if (failing === 'grant') throw new Error('unreadable'); return { record: grant, ref: 'b'.repeat(64) }; } } as unknown as AuthorizationStore;
+  const events: unknown[] = []; const service = new AssessmentAutonomy(store, { record: async (event: unknown) => { events.push(event); } } as never);
+  expect(await service.check({ assessmentId: 'a', level: 3 })).toEqual({ decision: 'denied', reason: 'authorization-unavailable' });
+  expect(events[0]).toMatchObject({ assessmentId: 'a', courseId: 'c', decision: 'denied', reason: 'authorization-unavailable' });
 });

@@ -26,8 +26,7 @@ it.each(['autonomy.check', 'audit.record'])('omits unresolved name/answer-like I
   expect(events.length).toBeGreaterThan(0);
   for (const event of events) expect(event).not.toHaveProperty('assessmentId');
   if (command === 'autonomy.check') {
-    // The production privacy guard may withhold the denial reason; it must never allow the request.
-    expect(result).toMatchObject({ ok: false });
+    expect(result).toMatchObject({ ok: true, data: { decision: 'denied', reason: 'assessment-unavailable' } });
     expect(events).toContainEqual(expect.objectContaining({ level: 3, decision: 'denied', code: 'INVALID_INPUT' }));
   } else {
     expect(result).toMatchObject({ ok: true, data: { recorded: true, outcome: 'failure' } });

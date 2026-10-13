@@ -21,17 +21,17 @@ type RecordInput = z.infer<typeof autonomyContracts['audit.record']['input']>;
 type Decision = z.infer<typeof autonomyContracts['autonomy.check']['output']>;
 export class AssessmentAutonomy {
   constructor(private readonly store: AuthorizationStore, private readonly audit: { record(event: AuditEvent): Promise<void> }) {}
-  private async resolve(assessmentId: string) {
-    const target = await this.store.target(assessmentId);
-    const policy = await this.store.policy(target.courseId); const grant = await this.store.grant(target.assessmentId);
-    return { target, policy, grant, refs: { courseId: target.courseId, assessmentId: target.assessmentId,
-      ...(policy ? { policyRef: policy.ref } : {}), ...(grant ? { grantRef: grant.ref } : {}) } };
-  }
   async check(input: CheckInput, runId: string = randomUUID()): Promise<Decision> {
     const { assessmentId, level } = autonomyContracts['autonomy.check'].input.parse(input);
     let reason: Decision['reason'] = 'allowed'; let refs: Pick<AuditEvent, 'courseId' | 'assessmentId' | 'policyRef' | 'grantRef'> = {};
-    try {
-      const { target, policy, grant, refs: resolved } = await this.resolve(assessmentId); refs = resolved;
+    // Resolve the target first and keep its trusted references even if a permission read fails.
+    const target = await this.store.target(assessmentId).catch(() => undefined);
+    if (!target) reason = 'assessment-unavailable';
+    else try {
+      refs = { courseId: target.courseId, assessmentId: target.assessmentId };
+      const policy = await this.store.policy(target.courseId); const grant = await this.store.grant(target.assessmentId);
+      if (policy) refs.policyRef = policy.ref;
+      if (grant) refs.grantRef = grant.ref;
       if (level > 1) {
         if (!policy) reason = 'policy-missing';
         else if (policy.record.courseId !== target.courseId) reason = 'authorization-unavailable';
