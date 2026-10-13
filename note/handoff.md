@@ -6,7 +6,7 @@
 - **最后更新：** 2026-10-14，Q1 实测之后，分支 `claude/q1-decisions`。
 - **Q1 已完成**：COMP20003 Week 11 Workshop 由 Claude 直接操作托管 Edge 完成并提交（#94–#98），lesson 状态 completed。答案和理由在 `.local/study/COMP20003/`。做法：用远程调试端口打开托管档案，按网址选标签页、只读接口找 lesson（不带 `view`）、高亮后点击、读回完成状态；做完关掉窗口和端口。
 - **模式：** 用户在线时推进（#91，推翻 #79 的全自动）。看门狗定时任务 `coursework-dispatcher-watchdog` 已停用，不要重新打开。
-- **本轮做了什么：** 合并 4 份协议说明为 `docs/engineering/protocol.md`；删掉 11 份按 issue 写的过程证据笔记（#90）；补勾已合并 PR 对应的 tasks；修正 `openspec/config.yaml`（去 iCal、按 #56 写 L0–L4）；技术设计第 8 节改成在线推进；README 重写；roadmap 改成带「卡在哪」的进度表；dispatch 技能补上已知陷阱。
+- **本轮做了什么：** 10/13 先做了文档清理（PR #80：合并协议文档、删过程证据、按 #91 改成在线推进）；然后 Q1 实测（见下），并记录决定 #93–#99。
 
 ## 没合并的工作（都已推到远程）
 
