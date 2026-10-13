@@ -66,6 +66,43 @@ describe('trusted protocol reads', () => {
       }
     } finally { f.db.close(); }
   });
+  it.each(['revision.list', 'practice.list'] as const)('%s returns accepted records from the adapter', async name => {
+    const f = setup();
+    try {
+      const fixture = examples[name];
+      const record = fixture.output.items[0];
+      const result = await f.reads.read(name, { ...fixture.input, revision: record.revision, limit: 1 });
+      expect(result).toEqual({
+        ...fixture.output, evidence: [],
+        coverage: { complete: false, gaps: [{ code: 'MISSING_EVIDENCE' }] },
+      });
+      expect(result.items).toHaveLength(1);
+    } finally { f.db.close(); }
+  });
+  it.each(['revision.list', 'practice.list'] as const)('%s reports UNSUPPORTED without an accepted-record adapter', async name => {
+    const f = setup();
+    try {
+      const reads = new StoreProtocolReads(f.db, f.evidence);
+      expect(await reads.read(name, examples[name].input)).toEqual({
+        items: [], evidence: [], coverage: { complete: false, gaps: [{ code: 'UNSUPPORTED' }] },
+      });
+    } finally { f.db.close(); }
+  });
+  it.each([
+    'https://example.invalid/?email=synthetic@example.invalid',
+    'password=synthetic-secret',
+    '/Users/synthetic/private.pdf',
+  ])('rejects sensitive evidence locators: %s', async locator => {
+    const f = setup();
+    try {
+      const { page: _page, ...metadata } = f.metadata[0];
+      const safeLocator = 'https://example.invalid/guide';
+      const safe = new TrustedStoreEvidence(f.db, { metadata: [{ ...metadata, locator: safeLocator }] });
+      expect(await safe.get(f.source.id)).toMatchObject({ locator: safeLocator });
+      const unsafe = new TrustedStoreEvidence(f.db, { metadata: [{ ...metadata, locator }] });
+      await expect(unsafe.get(f.source.id)).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
+    } finally { f.db.close(); }
+  });
   it('exposes recorded run measurements only and sanitizes arbitrary adapter errors', async () => {
     const f = setup();
     try {

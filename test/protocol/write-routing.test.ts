@@ -9,11 +9,31 @@ import { DurableAudit } from '../../src/protocol/audit.js';
 import { createRegistry, dispatch } from '../../src/protocol/registry.js';
 import { protectRead } from '../../src/protocol/read-privacy.js';
 import { createFakeContext, examples } from '../../src/protocol/fakes.js';
+import { ComposedEvidence } from '../../src/protocol/writes.js';
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 
 describe('deferred dispatcher P3 fixes', () => {
+  it('rejects revision.write before writing when no composed evidence route is configured', async () => {
+    const context = createFakeContext();
+    context.evidence = new ComposedEvidence({});
+    const write = vi.spyOn(context.services, 'write');
+    const input = {
+      courseId: 'synthetic-course', week: 1, sourceRevision: hash('Synthetic source revision.'),
+      claims: [{ text: 'Synthetic revision claim.', citations: [{
+        sourceItemId: 'synthetic-source', locator: 'page:1', quote: 'Synthetic source text.',
+      }] }],
+    };
+    expect(await dispatch(createRegistry(), 'revision.write', input, context))
+      .toMatchObject({ ok: false, error: { code: 'SOURCE_UNAVAILABLE' } });
+    expect(write).not.toHaveBeenCalled();
+    expect(context.events).toEqual([expect.objectContaining({
+      command: 'revision.write', phase: 'denial', code: 'SOURCE_UNAVAILABLE',
+    })]);
+    expect(context.runEvents).toEqual(context.events);
+  });
+
   it('reports UNCERTAIN, not INTERNAL, when output or privacy validation fails after a successful write', async () => {
     const context = createFakeContext(); const write = vi.spyOn(context.services, 'write').mockResolvedValue({ invalid: true } as never);
     expect(await dispatch(createRegistry(), 'revision.write', examples['revision.write'].input, context)).toMatchObject({ ok: false, error: { code: 'UNCERTAIN', retryable: false } });
