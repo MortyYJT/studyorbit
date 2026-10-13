@@ -83,24 +83,6 @@ export const TaskSchema = z.object({
   }
 });
 
-export const ChangeSchema = z.object({
-  seq: z.number().int().positive(),
-  kind: z.enum(['created', 'updated', 'deleted']),
-  entity: z.enum(['course', 'assessment', 'source_item', 'task']),
-  entityId: IdSchema,
-  before: z.unknown().optional(),
-  after: z.unknown().optional(),
-  at: TimeSchema,
-}).superRefine((change, ctx) => {
-  const needsBefore = change.kind !== 'created';
-  const needsAfter = change.kind !== 'deleted';
-  for (const [field, required] of [['before', needsBefore], ['after', needsAfter]] as const) {
-    if ((change[field] !== undefined) !== required) {
-      ctx.addIssue({ code: 'custom', path: [field], message: `${change.kind} ${required ? 'requires' : 'forbids'} ${field}` });
-    }
-  }
-});
-
 const CountSchema = z.number().int().nonnegative();
 const coverageFields = {
   // Generated opaque scope references carry no course titles, URLs or person identifiers.
@@ -163,5 +145,4 @@ export type SourceItem = z.infer<typeof SourceItemSchema>;
 export type Citation = z.infer<typeof CitationSchema>;
 export type Step = z.infer<typeof StepSchema>;
 export type Task = z.infer<typeof TaskSchema>;
-export type Change = z.infer<typeof ChangeSchema>;
 export type Run = z.infer<typeof RunSchema>;
