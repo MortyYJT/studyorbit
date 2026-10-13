@@ -158,10 +158,7 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
       if (input !== null && typeof input === 'object' && ['owner', 'context', 'trustedContext', 'confirmed'].some(key => Object.hasOwn(input, key))) {
         reject(400); return;
       }
-      const { owner: _untrustedOwner, ...ports } = options.context;
-      const context: TrustedContext = { ...ports, ...(authorized ? { owner: { assertOwner: async () => {
-        if (closing) throw unavailable();
-      } } } : {}) };
+      const context = httpCommandContext(options.context, name, authorized, () => closing);
       // No deadline races against a mutation: dispatcher completion determines its real outcome.
       dispatching = true;
       // Receive-phase timeouts end here; the socket stays open until the dispatcher's real outcome is written.
@@ -207,4 +204,10 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
     })();
     return closed;
   } };
+}
+
+/** Transport-established authority only, never reconstructed from request JSON. */
+export function httpCommandContext(base: TrustedContext, name: string, authorized: boolean, closing: () => boolean): TrustedContext {
+  const { owner: _owner, ...ports } = base;
+  return { ...ports, ...(authorized && name === 'planning.settings.record' ? { owner: { assertOwner: async () => { if (closing()) throw unavailable(); } } } : {}) };
 }

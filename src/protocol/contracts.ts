@@ -57,7 +57,12 @@ export const GrantRecordSchema = z.strictObject({ version: z.literal(1), courseI
   category: z.enum(['assignment', 'ongoing', 'exam', 'unknown']), level: LevelSchema, date: z.iso.date() });
 export const AuditRecordSchema = z.strictObject({ id: z.uuid(), runId: z.uuid(), command: IdSchema,
   phase: z.enum(['intent', 'outcome', 'denial']), at: z.iso.datetime(), code: z.enum(['OK', ...Object.keys(retryable) as (keyof typeof retryable)[]]),
-  courseId: IdSchema.optional(), assessmentId: IdSchema.optional(), revision: z.uuid().optional(), policyRef: HashSchema.optional(), grantRef: HashSchema.optional() });
+  courseId: IdSchema.optional(), assessmentId: IdSchema.optional(), revision: z.uuid().optional(), policyRef: HashSchema.optional(), grantRef: HashSchema.optional(),
+  level: LevelSchema.optional(), decision: z.enum(['allowed', 'denied']).optional(),
+  reason: z.enum(['allowed', 'assessment-unavailable', 'policy-missing', 'course-prohibited', 'exam', 'kind-unknown',
+    'grant-missing', 'grant-mismatch', 'grant-revoked', 'grant-level', 'course-cap', 'authorization-unavailable', 'audit-unavailable']).optional(),
+  action: z.enum(['fill', 'submit', 'other']).optional(), outcome: z.enum(['success', 'failure', 'uncertain', 'violation']).optional(),
+  confirmation: z.enum(['owner-chat', 'owner-ui', 'owner-terminal']).optional() });
 export type AuditRecord = z.infer<typeof AuditRecordSchema>;
 export const PolicyReceiptSchema = z.discriminatedUnion('status', [
   z.strictObject({ recorded: z.literal('policy'), policyRef: HashSchema, courseId: IdSchema,
@@ -102,7 +107,7 @@ export type CommandName = keyof typeof contracts;
 export type CommandInput<N extends CommandName> = z.input<(typeof contracts)[N]['input']>;
 export type ParsedCommandInput<N extends CommandName> = z.output<(typeof contracts)[N]['input']>;
 export type CommandOutput<N extends CommandName> = z.output<(typeof contracts)[N]['output']>;
-export const ownerCommands: ReadonlySet<string> = new Set(['policy.record', 'grant.record', 'browser.start', 'browser.stop']);
+export const ownerCommands: ReadonlySet<string> = new Set(['policy.record', 'grant.record', 'browser.start', 'browser.stop', 'annotation.owner.record', 'planning.settings.record']);
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });
 export const FailureEnvelopeSchema = z.strictObject({ protocol: z.literal('coursework.agent/v1'), command: z.string(), meta,
   ok: z.literal(false), error: z.strictObject({ code: z.enum(Object.keys(retryable) as (keyof typeof retryable)[]), message: z.string(), retryable: z.boolean(), next: z.string().optional() }) }).refine(e => e.error.retryable === retryable[e.error.code]);

@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { startHttpTransport, httpStatus, type HttpTransport } from '../../src/protocol/http.js';
 import { Registry, dispatch } from '../../src/protocol/registry.js';
 import { createFakeContext, createFakeRegistry, examples, FakeServices } from '../../src/protocol/fakes.js';
-import { contracts } from '../../src/protocol/contracts.js';
+import { ownerCommands, contracts } from '../../src/protocol/contracts.js';
 import { CourseworkError, retryable } from '../../src/protocol/errors.js';
 
 const cleanup: (() => Promise<unknown>)[] = [];
@@ -73,8 +73,8 @@ describe('generated loopback HTTP transport', () => {
     for (const entry of createFakeRegistry().list()) registry.register(entry);
     for (const name of Object.keys(contracts) as (keyof typeof contracts)[]) {
       const response = await send(server, JSON.stringify(examples[name].input), { 'X-Coursework-Capability': token }, `/api/${name}`);
-      expect(response.status, name).toBe(200);
-      expect(response.body.ok, name).toBe(true);
+      expect(response.status, name).toBe(ownerCommands.has(name) ? 400 : 200);
+      expect(response.body.ok, name).toBe(!ownerCommands.has(name));
       expect(response.text).not.toContain(token);
     }
     expect((context.services as FakeServices).writes.length).toBeGreaterThan(0);
