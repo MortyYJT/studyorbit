@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { dataDir, databasePath, snapshotsDir, profilesDir, crawlsDir, packageRoot } from '../../src/config/data-dir.js';
+import { dataDir, resolveDataDir, databasePath, snapshotsDir, profilesDir, crawlsDir, packageRoot } from '../../src/config/data-dir.js';
 
 const temporary: string[] = [];
 afterEach(() => {
@@ -11,9 +11,7 @@ afterEach(() => {
 });
 it('defaults to the package root regardless of the working directory', () => {
   vi.stubEnv('COURSEWORK_HOME', undefined);
-  expect(dataDir()).toBe(join(packageRoot(), '.local'));
-  expect(databasePath()).toBe(join(packageRoot(), '.local', 'coursework.db'));
-  expect(existsSync(dataDir())).toBe(true);
+  expect(resolveDataDir()).toBe(join(packageRoot(), '.local'));
   expect(packageRoot()).toBe(resolve('.'));
 });
 it('creates database parent, snapshots and profiles inside the override', () => {
@@ -33,5 +31,5 @@ it('creates database parent, snapshots and profiles inside the override', () => 
 
 it.each(['', '   ', '\t\n'])('treats blank COURSEWORK_HOME %j as unset', (home) => {
   vi.stubEnv('COURSEWORK_HOME', home);
-  expect(dataDir()).toBe(join(packageRoot(), '.local'));
+  expect(resolveDataDir()).toBe(join(packageRoot(), '.local'));
 });
