@@ -2,8 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { AuditRecordSchema, type AuditRecord } from './contracts.js';
 import type { AuditEvent } from './context.js';
 import { CourseworkError } from './errors.js';
-import { QuizFiles } from '../quiz/files.js';
-import { auditSchema } from '../quiz/audit.js';
+import { ProtocolFiles } from './files.js';
+import { auditSchema } from './legacy-audit.js';
 import { RunSchema } from '../domain/schemas.js';
 const safeReference = /^[a-zA-Z0-9][a-zA-Z0-9_:/.-]{0,255}$/;
 function safe(record: AuditRecord): AuditRecord {
@@ -15,7 +15,7 @@ function safe(record: AuditRecord): AuditRecord {
 const unavailable = () => new CourseworkError('INTERNAL', 'Durable metadata recording is unavailable.');
 /** Uses the existing private append-only journal. Q1 lines are read, never rewritten. */
 export class DurableAudit {
-  constructor(private readonly files = new QuizFiles()) {}
+  constructor(private readonly files = new ProtocolFiles()) {}
   async record(event: AuditEvent): Promise<void> {
     try {
       const record = safe(AuditRecordSchema.parse({ ...event, id: randomUUID(), at: new Date().toISOString() }));
@@ -42,7 +42,7 @@ export class DurableAudit {
 /** Separate ledger. Only timings observed here are recorded; no fabricated source measurements. Steps count internal workflow steps (none in this sink). */
 export class DurableRuns {
   private readonly starts = new Map<string, string>();
-  constructor(private readonly files = new QuizFiles()) {}
+  constructor(private readonly files = new ProtocolFiles()) {}
   async record(event: AuditEvent): Promise<void> {
     try {
       const parsed = safe(AuditRecordSchema.parse({ ...event, id: randomUUID(), at: new Date().toISOString() }));
