@@ -15,13 +15,15 @@ const stateSchema = z.strictObject({
   pid: z.number().int().positive().safe(), browser: z.enum(['msedge', 'chrome', 'chromium']), startedAt: z.iso.datetime(),
 });
 export type BrowserState = z.infer<typeof stateSchema>;
+const processSchema = stateSchema.extend({ endpoint: stateSchema.shape.endpoint.optional() });
+type BrowserProcess = z.infer<typeof processSchema>;
 export const browserClock: RequestClock = { now: Date.now, sleep: ms => new Promise(resolve => setTimeout(resolve, ms)) };
 export interface ResidentOptions {
   directory?: string; clock?: RequestClock; ownerPid?: number; timeoutMs?: number;
   launch?: (executable: string, args: string[]) => Promise<number>;
   terminate?: (pid: number) => Promise<void>; isAlive?: (pid: number) => boolean;
   executable?: (browser: CaptureBrowser) => string; isInstalled?: (browser: CaptureBrowser) => boolean;
-  watchExit?: (state: BrowserState, directory: string) => Promise<void>;
+  watchExit?: (state: BrowserProcess, directory: string) => Promise<void>;
   override?: string; isTTY?: boolean; confirm?: () => Promise<boolean>;
 }
 function unavailable(): CourseworkError { return new CourseworkError('SOURCE_UNAVAILABLE', 'Resident browser unavailable.'); }
@@ -32,7 +34,7 @@ async function launch(executable: string, args: string[]): Promise<number> {
     child.once('spawn', () => { child.unref(); if (child.pid) resolve(child.pid); else reject(unavailable()); });
   });
 }
-async function watchExit(state: BrowserState, directory: string): Promise<void> {
+async function watchExit(state: BrowserProcess, directory: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(process.execPath, [fileURLToPath(new URL('./watch.js', import.meta.url)), directory, String(state.pid)], {
       detached: true, stdio: 'ignore',
@@ -52,25 +54,44 @@ export class ResidentBrowser {
     const directory = this.options.directory ?? resolveDataDir();
     return { directory, profiles: join(directory, 'profiles'), profile: join(directory, 'profiles/default'), state: join(directory, 'browser.json') };
   }
-  private read(): BrowserState | undefined {
+  private read(): BrowserProcess | undefined {
     const path = this.paths().state;
-    try { return stateSchema.parse(JSON.parse(readFileSync(path, 'utf8'))); }
+    try { return processSchema.parse(JSON.parse(readFileSync(path, 'utf8'))); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw unavailable(); }
   }
   current(): BrowserState | undefined {
+    const state = this.currentProcess();
+    return state?.endpoint ? stateSchema.parse(state) : undefined;
+  }
+  /** Includes a launched process whose debugging endpoint is not ready yet. */
+  currentProcess(): BrowserProcess | undefined {
     const state = this.read();
     if (!state || this.alive(state.pid)) return state;
     const paths = this.paths();
-    // Re-read identity before cleanup; an observer must never remove a replacement resident.
-    const identity = statSync(paths.state);
-    const latest = this.read();
-    if (latest?.pid === state.pid && !this.alive(state.pid)) {
-      const current = statSync(paths.state);
-      if (identity.ino === current.ino && identity.dev === current.dev) {
-        unlinkSync(paths.state); releaseProfileLock(state.pid, paths.profiles);
+    try {
+      // Re-read identity before cleanup; an observer must never remove a replacement resident.
+      const identity = statSync(paths.state);
+      const latest = this.read();
+      if (latest?.pid !== state.pid) return latest && this.alive(latest.pid) ? latest : undefined;
+      if (!this.alive(state.pid)) {
+        const current = statSync(paths.state);
+        if (identity.ino === current.ino && identity.dev === current.dev && this.read()?.pid === state.pid) {
+          unlinkSync(paths.state); releaseProfileLock(state.pid, paths.profiles);
+        }
       }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      releaseProfileLock(state.pid, paths.profiles);
     }
     return undefined;
+  }
+  private publish(state: BrowserProcess): void {
+    const paths = this.paths();
+    const temporary = join(paths.directory, `browser.json.${state.pid}.tmp`);
+    try {
+      writeFileSync(temporary, JSON.stringify(state) + '\n', { flag: 'wx', mode: 0o600 });
+      chmodSync(temporary, 0o600); renameSync(temporary, paths.state);
+    } finally { if (existsSync(temporary)) unlinkSync(temporary); }
   }
   private choose(profile: string, bundled: string): Promise<CaptureBrowser> {
     return chooseBrowser({ profile, override: this.options.override ?? process.env.COURSEWORK_BROWSER,
@@ -105,6 +126,9 @@ export class ResidentBrowser {
       ]);
       if (!Number.isSafeInteger(pid) || pid <= 0) throw unavailable();
       lock.transfer(pid);
+      const processState = { pid, browser, startedAt: new Date(this.clock.now()).toISOString() };
+      this.publish(processState);
+      await (this.options.watchExit ?? watchExit)(processState, paths.directory);
       recordBrowser(paths.profile, browser);
       const deadline = this.clock.now() + (this.options.timeoutMs ?? 10000);
       let port: number | undefined;
@@ -117,13 +141,8 @@ export class ResidentBrowser {
         await this.clock.sleep(50);
       }
       if (!port) throw unavailable();
-      const state = { endpoint: `http://127.0.0.1:${port}`, pid, browser, startedAt: new Date(this.clock.now()).toISOString() };
-      const temporary = join(paths.directory, `browser.json.${pid}.tmp`);
-      try {
-        writeFileSync(temporary, JSON.stringify(state) + '\n', { flag: 'wx', mode: 0o600 });
-        chmodSync(temporary, 0o600); renameSync(temporary, paths.state);
-      } finally { if (existsSync(temporary)) unlinkSync(temporary); }
-      await (this.options.watchExit ?? watchExit)(state, paths.directory);
+      const state = { ...processState, endpoint: `http://127.0.0.1:${port}` };
+      this.publish(state);
       return state;
     } catch (error) {
       if (pid && this.alive(pid)) {
