@@ -1,16 +1,13 @@
-import { z } from 'zod';
 import { queryPlan, type Collection, type QueryInput, type QueryItem, type QueryPage, type CurrentStateReader } from './queries.js';
-import { adapterFields, diffEntity, syncSchemas, invalidSync, type SyncValue } from '../sync/diff.js';
-import { validateScopes, assertScopeMember, canDeleteScope, type ReconcileScope } from '../sync/reconciliation.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import {
-  ModuleSchema, CourseSchema, AssessmentSchema, SourceItemSchema, TaskSchema, ChangeSchema, RunSchema,
-  type Module, type Course, type Assessment, type SourceItem, type Task, type Change, type Run,
+  ModuleSchema, CourseSchema, AssessmentSchema, SourceItemSchema, TaskSchema, RunSchema,
+  type Module, type Course, type Assessment, type SourceItem, type Task, type Run,
 } from '../domain/schemas.js';
 import { migrate } from './migrations/index.js';
-import type { ChangeInput, Repository, SaveBatch } from './repository.js';
+import type { Repository, SaveBatch } from './repository.js';
 
 interface EntitySchema<T> { parse(value: unknown): T }
 
@@ -62,7 +59,6 @@ export class SqliteRepository implements Repository, CurrentStateReader {
   loadTask(id: string): Task | undefined { return this.load('tasks', 'id', id, TaskSchema); }
   recordRun(value: Run): void { this.saveBatch({ runs: [value] }); }
   loadRun(id: string): Run | undefined { return this.load('runs', 'id', id, RunSchema); }
-  loadChange(seq: number): Change | undefined { return this.load('change_event', 'seq', seq, ChangeSchema); }
 
   query<K extends Collection>(collection: K, input: QueryInput<K>): QueryPage<QueryItem<K>> {
     const plan = queryPlan(collection, input);
@@ -72,68 +68,7 @@ export class SqliteRepository implements Repository, CurrentStateReader {
     return { items, ...(values.length > plan.limit ? { nextCursor: plan.cursorFor(items.at(-1)!.id) } : {}) };
   }
 
-  recordChange(value: ChangeInput): Change {
-    return this.saveBatch({ changes: [value] })[0];
-  }
-
-  private appendChange(input: ChangeInput): Change {
-    const largest = this.db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM change_event').get()!.seq as number;
-    const change = ChangeSchema.parse({ ...input, seq: largest + 1 });
-    const json = JSON.stringify(change);
-    // Unknown before/after payloads must still satisfy the schema after JSON encoding.
-    const persisted = ChangeSchema.parse(JSON.parse(json));
-    this.db.prepare('INSERT INTO change_event (seq, entity, entityId, at, json) VALUES (?, ?, ?, ?, ?)')
-      .run(persisted.seq, persisted.entity, persisted.entityId, persisted.at, json);
-    return persisted;
-  }
-
-  listChangesSince(seq: number, limit?: number): Change[] {
-    if (!Number.isSafeInteger(seq) || seq < 0 || limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)) throw invalidSync();
-    return this.db.prepare('SELECT json FROM change_event WHERE seq > ? ORDER BY seq ASC LIMIT ?').all(seq, limit ?? -1)
-      .map(row => ChangeSchema.parse(JSON.parse(row.json as string)));
-  }
-
-  /** Comparison is performed after acquiring the writer lock, never against a stale pre-read. */
-  reconcile(input: readonly ReconcileScope[], at: string): Change[] {
-    const scopes = validateScopes(input);
-    if (!z.iso.datetime({ offset: true }).safeParse(at).success) throw invalidSync();
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
-      const events: Change[] = [];
-      for (const scope of scopes) {
-        if (!scope.coverage.selected || !scope.coverage.enumerationComplete
-          || !scope.coverage.normalizationComplete || scope.coverage.codes.length !== 0) continue;
-        const table = { course: 'courses', assessment: 'assessments', source_item: 'source_items' }[scope.entity];
-        const incoming = new Map(scope.values.map(value => [value.id, value]));
-        for (const id of scope.ownedIds) {
-          const before = this.load<SyncValue>(table, 'id', id, syncSchemas[scope.entity]) as SyncValue | undefined;
-          if (before) assertScopeMember(scope, before);
-          const after = incoming.get(id);
-          if (!after && !canDeleteScope(scope.collection, scope.coverage)) continue;
-          // Only a scope that owns every adapter field owns the entity's existence;
-          // a field-subset scope (e.g. submissions: score/status) may update but never create or delete.
-          if ((!before || !after) && !adapterFields[scope.entity].every(field => scope.fields.includes(field))) continue;
-          const change = diffEntity(scope.entity, before, after, at, scope.fields);
-          if (!change) continue;
-          if (change.kind === 'deleted') this.db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
-          else {
-            const value = change.after as SyncValue;
-            if (scope.entity === 'course') this.write(table, CourseSchema, value as Course, ['moduleId']);
-            else if (scope.entity === 'assessment') this.write(table, AssessmentSchema, value as Assessment, ['courseId']);
-            else this.write(table, SourceItemSchema, value as SourceItem, ['platform', 'externalId', 'courseId']);
-          }
-          events.push(this.appendChange(change));
-        }
-      }
-      this.db.exec('COMMIT');
-      return events;
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
-  }
-
-  saveBatch(batch: SaveBatch): Change[] {
+  saveBatch(batch: SaveBatch): void {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       for (const value of batch.modules ?? []) this.write('modules', ModuleSchema, value);
@@ -142,9 +77,7 @@ export class SqliteRepository implements Repository, CurrentStateReader {
       for (const value of batch.sourceItems ?? []) this.write('source_items', SourceItemSchema, value, ['platform', 'externalId', 'courseId']);
       for (const value of batch.tasks ?? []) this.write('tasks', TaskSchema, value, ['moduleId', 'courseId', 'assessmentId']);
       for (const value of batch.runs ?? []) this.write('runs', RunSchema, value, ['command', 'startedAt']);
-      const changes = (batch.changes ?? []).map(value => this.appendChange(value));
       this.db.exec('COMMIT');
-      return changes;
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;

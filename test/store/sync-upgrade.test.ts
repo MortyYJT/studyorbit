@@ -53,7 +53,7 @@ function legacy(file: string, events = true) {
     kinds.forEach((kind, index) => {
       const event = { seq: index + 8, kind, entity: 'task', entityId: synthetic.task.id,
         ...(kind !== 'item.added' ? { before: synthetic.task } : {}),
-        ...(kind !== 'item.removed' ? { after: synthetic.task } : {}), at: synthetic.change.at };
+        ...(kind !== 'item.removed' ? { after: synthetic.task } : {}), at: synthetic.run.startedAt };
       statements.push({ sql: 'INSERT INTO changes VALUES (?, ?, ?, ?, ?)',
         params: [event.seq, event.entity, event.entityId, event.at, JSON.stringify(event)] });
     });
@@ -63,7 +63,7 @@ function legacy(file: string, events = true) {
 }
 function tables(file: string) { return fixture(file, [], "SELECT name, type FROM sqlite_master WHERE name IN ('changes', 'change_event') ORDER BY name"); }
 
-it('upgrades every historical operation and preserves entities, runs, snapshots and cursor (2.2/2.4)', () => {
+it('upgrades every historical operation and preserves entities, runs and historical snapshots (2.2/2.4)', () => {
   const file = path(); legacy(file);
   const oldEvents = fixture(file, [], 'SELECT json FROM changes ORDER BY seq').map((row: { json: string }) => JSON.parse(row.json));
   const store = new SqliteRepository(file);
@@ -75,10 +75,7 @@ it('upgrades every historical operation and preserves entities, runs, snapshots 
     expect(store.loadTask(synthetic.task.id)).toEqual(synthetic.task);
     expect(store.loadRun(synthetic.run.id)).toEqual(synthetic.run);
     const kinds = ['created', 'updated', 'updated', 'updated', 'deleted'];
-    expect(store.listChangesSince(0)).toEqual(oldEvents.map((event: object, index: number) => ({ ...event, kind: kinds[index] })));
-    expect(store.loadChange(12)?.kind).toBe('deleted');
-    const { seq: _seq, ...input } = synthetic.change;
-    expect(store.recordChange(input).seq).toBe(13);
+    expect(fixture(file, [], 'SELECT json FROM change_event ORDER BY seq').map((row: { json: string }) => JSON.parse(row.json))).toEqual(oldEvents.map((event: object, index: number) => ({ ...event, kind: kinds[index] })));
   } finally { store.close(); }
   expect(fixture(file)).toEqual([{ user_version: 2 }]);
   expect(tables(file)).toEqual([{ name: 'change_event', type: 'table' }]);
@@ -101,7 +98,7 @@ it.each(['column', 'json', 'both'])('stops for legacy iCal in %s before writes w
 
 it.each(['bad-kind', 'bad-snapshot', 'mismatched-seq', 'table-conflict'])('rolls back %s after preserving the original database (2.4)', failure => {
   const file = path(); legacy(file);
-  const broken = { ...synthetic.change, seq: failure === 'mismatched-seq' ? 900 : 12, kind: failure === 'bad-kind' ? 'private-token-sentinel' : 'item.removed',
+  const broken = { entity: 'task', entityId: synthetic.task.id, at: synthetic.run.startedAt, seq: failure === 'mismatched-seq' ? 900 : 12, kind: failure === 'bad-kind' ? 'private-token-sentinel' : 'item.removed',
     before: failure === 'bad-snapshot' ? undefined : synthetic.task, after: undefined };
   fixture(file, [failure === 'table-conflict'
     ? { sql: 'CREATE TABLE change_event (seq INTEGER PRIMARY KEY)' }
@@ -113,11 +110,11 @@ it.each(['bad-kind', 'bad-snapshot', 'mismatched-seq', 'table-conflict'])('rolls
   expect(fixture(file)).toEqual([{ user_version: 1 }]);
 });
 
-it('migrates an empty historical event table and starts at seq 1 (2.4)', () => {
+it('migrates an empty historical event table without adding events (2.4)', () => {
   const file = path(); legacy(file, false);
   const store = new SqliteRepository(file);
   try {
-    const { seq: _seq, ...input } = synthetic.change;
-    expect(store.recordChange(input).seq).toBe(1);
+    store.saveTask(synthetic.task);
+    expect(fixture(file, [], 'SELECT * FROM change_event')).toEqual([]);
   } finally { store.close(); }
 });

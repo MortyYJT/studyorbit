@@ -27,7 +27,6 @@ it('creates a fresh database with every migration applied and its version record
     store.saveBatch({ modules: [synthetic.module], courses: [synthetic.course],
       assessments: synthetic.assessments, sourceItems: [synthetic.sourceItem],
       tasks: [synthetic.task], runs: [synthetic.run] });
-    expect(store.listChangesSince(0)).toEqual([]);
   } finally { store.close(); }
   expect(version(file)).toBe(2);
 });
