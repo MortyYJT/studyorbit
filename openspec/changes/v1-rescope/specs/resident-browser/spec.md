@@ -34,7 +34,7 @@ Every command that needs the signed-in profile (sync, status, the revision skill
 - **THEN** status reports Canvas `signedOut` with a sign-in hint and Ed `signedIn`, and no body content appears in the output
 
 ### Requirement: Agent browser actions are visible
-Code that clicks or types on the owner's behalf SHALL go through one helper that brings the window to the front, outlines the target element in red, waits one second, and then acts (#98). The helper SHALL refuse to act on an element that is not visible. Agents that operate the browser directly SHALL follow the same rule through the assessment skill. An agent SHALL read raw pages directly only where the privacy red line allows it; reading quiz or workshop pages without redaction depends on the owner confirming decision #96, and discussion pages are never read raw. Read-only API calls are exempt.
+Code that clicks or types on the owner's behalf SHALL go through one helper that brings the window to the front, outlines the target element in red, waits one second, and then acts (#98). The helper SHALL refuse to act on an element that is not visible. Agents that operate the browser directly SHALL follow the same rule through the assessment skill. An agent SHALL read raw pages directly only where the privacy red line allows it: quiz and workshop pages may be read unredacted (#112), and discussion pages are never read raw. Read-only API calls are exempt.
 
 #### Scenario: Highlighted click
 - **WHEN** code clicks a synthetic button through the helper

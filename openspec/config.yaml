@@ -16,7 +16,8 @@ context: |
   `coursework ui`. npm.
   Red lines: no self-issued Canvas tokens; models never see or type passwords; strip
   classmates' personal data before parsed data is stored or reaches a model (configurable, on
-  by default; raw page captures stay unparsed in `.local/`); course data, browser profiles,
+  by default; raw page captures stay unparsed in `.local/`; exception #112: the agent may read
+  quiz and workshop pages unredacted, never discussion threads); course data, browser profiles,
   and tokens live only in `.local/` and never in the repo or fixtures; test fixtures are
   synthetic; metrics must be real.
   Autonomy (decision #56): L0 read, L1 assist, L2 draft, L3 fill for review, L4 submit.

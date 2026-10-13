@@ -1,7 +1,7 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 进度看 `note/product/roadmap.md`（唯一进度表）；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-rescope/`（唯一进行中的 change）；决定看 `note/decisions.md`（#1–#111）。
+> 进度看 `note/product/roadmap.md`（唯一进度表）；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-rescope/`（唯一进行中的 change）；决定看 `note/decisions.md`（#1–#113）。
 
 - **最后更新：** 2026-10-14，写完 `v1-rescope` 之后，分支 `claude/v1-rescope`。
 - **模式：** 用户在线时推进（#91）。看门狗定时任务 `coursework-dispatcher-watchdog` 已停用，不要重新打开。
@@ -25,9 +25,7 @@
 
 ## 等你决定
 
-- **#96**：quiz 页面不脱敏，讨论区仍须脱敏。要你明确确认后才改 `AGENTS.md` 的红线。**现在它会挡住** `v1-rescope` 任务 4.4：agent 直接读 quiz 页面。复习技能不受影响，它只读脱敏后的来源。
 - **复核 Claude 自主决定**：#110（规格整理方式）、#111（授权和审计的具体做法），以及旧的 #80–#89。
-- **#104 的理由**：你选了按课程代码自动合并（推翻 #85 O4 一部分），没写理由，可以补一句。
 - 授权能不能在聊天里确认后由 agent 记录（现在只能在本人终端记）：会改红线，你提出来才改。
 - dsh 出题方式：PR #29 起一直欠题。
 - 补决定理由：#6、#9、#15–18、#23、#27、#29、#53、#67、#70。
