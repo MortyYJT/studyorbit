@@ -2,9 +2,9 @@
 import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { parseProtocolCLI } from './protocol/cli.js';
-import { createRegistry } from './protocol/registry.js';
-import { browserCLIContext, browserCLIExitCode } from './browser/runtime.js';
-import { unavailableCLIContext } from './protocol/cli-context.js';
+import { fail } from './protocol/envelope.js';
+import { createProductionProtocol } from './protocol/production.js';
+import { browserCLIExitCode } from './browser/runtime.js';
 
 const { version } = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -15,15 +15,33 @@ const program = new Command()
   .description('Manage cited coursework tasks')
   .version(version);
 
-if (process.argv[2] === 'mcp' && process.argv.length === 3) {
-  // stdout is reserved for MCP framing: route any stray console output to stderr.
-  console.log = console.info = console.debug = (...args: unknown[]) => console.error(...args);
-  const { runMcpStdio } = await import('./protocol/mcp.js');
-  await runMcpStdio({ registry: createRegistry(), context: browserCLIContext(unavailableCLIContext()), version });
-} else if (['--version', '-V'].includes(process.argv[2] ?? '')) await program.parseAsync();
-else await parseProtocolCLI(process.argv.slice(2), { registry: createRegistry(), context: browserCLIContext(unavailableCLIContext()), program,
-  result: async response => {
-    if (response.command.startsWith('browser.')) process.exitCode = browserCLIExitCode(response);
-    return response;
-  },
-});
+if (['--version', '-V'].includes(process.argv[2] ?? '')) await program.parseAsync();
+else {
+  const isMcp = process.argv[2] === 'mcp' && process.argv.length === 3;
+  const isHttp = process.argv[2] === 'http' && process.argv.length === 3;
+  if (isMcp) {
+    // stdout is reserved for MCP framing, including during production initialization.
+    console.log = console.info = console.debug = (...args: unknown[]) => console.error(...args);
+  }
+  let host: ReturnType<typeof createProductionProtocol> | undefined;
+  try { host = createProductionProtocol(); }
+  catch {
+    process.exitCode = 1;
+    process.stderr.write('coursework: production storage is unavailable.\n');
+    if (!isMcp && !isHttp) console.log(JSON.stringify(fail('unknown', 'INTERNAL', 'Production storage is unavailable.')));
+  }
+  if (host) try {
+    if (isMcp) {
+      const { runMcpStdio } = await import('./protocol/mcp.js');
+      await runMcpStdio({ ...host, version });
+    } else if (isHttp) {
+      const { serveProductionHttp } = await import('./protocol/http-host.js');
+      await serveProductionHttp(host);
+    } else await parseProtocolCLI(process.argv.slice(2), { ...host, program,
+      result: async response => {
+        if (response.command.startsWith('browser.')) process.exitCode = browserCLIExitCode(response);
+        return response;
+      },
+    });
+  } finally { host.close(); }
+}
