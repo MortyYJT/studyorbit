@@ -12,7 +12,7 @@
 | --- | --- | --- | --- | --- | --- |
 | M0 | 基建 | Node 24 + TS 脚手架、vitest、zod、`node:sqlite` 仓储；`check.sh` 和 CI；浏览器抓取 | 进行中（代码全部合并） | 5.5 用户登录实测（登录能保持多久）→ 归档 | `v1-foundation` |
 | S0 | 选课 + Ed 抓取 | 只爬选定课程；Ed JSON 抓取 | 进行中（3.1–3.8 合并） | 3.9 用户登录实测 → 3.10 归档 | `capture-selection-ed` |
-| Q1 | 第一个真实 quiz | Ed quiz（**10/25 截止**）：读题 → agent 作答 → 终端审核 → Playwright 填页面 → **用户点提交**，同时记录 Ed 的提交请求 | 进行中（A–C 合并） | D 在分支 `codex/quiz-fill`，等用户选「填写怎么接管浏览器」；E 在 D 之后；5.4 真实结构检查要登录 | `ed-quiz-assist` |
+| Q1 | 第一个真实作业 | COMP20003 Week 11 Workshop（Ed，按完成度计分，截止 10/16 23:59，#95）：agent 直接操作浏览器读题、作答，用户确认后由 agent 提交（#94、#97） | 已完成（2026-10-13 实测：15 张幻灯片全部 completed，11 道单选已提交） | 脚本填写 D（`codex/quiz-fill`）和 E 已搁置，等架构讨论；change 是否改写或归档待定 | `ed-quiz-assist` |
 | M1 | 取数与同步 | Canvas `/api/v1` + Ed + 课件 PDF 文字；规范化、去个人信息、变化事件、`Run` 账本 | 进行中（1.1、B、D、F 合并） | 1.2 Canvas 实测要登录，C 在它之后；E 要装 `unpdf`；G、H 在 C–F 之后 | `v1-sync` |
 | M2 | agent 协议 | 一张命令注册表生成 CLI / MCP / HTTP；读接口；带引文核对的写接口；课程 AI 政策、授权和审计日志 | 进行中（A–H 合并） | I（收尾）在分支 `claude/protocol-integration`，修复后待复审；新记录的 SQLite 表要用户批准 | `v1-protocol` |
 | M3 | 界面 | 月历 / 周视图、任务、模块、成绩推算、EDF 排程、学习页、答案审核与提交确认、聊天窗口 | 进行中（change 合并） | issue A 清单在分支 `codex/ui-inventory` 待审查；Hermes 接口未实测 | `v1-ui` |
