@@ -148,3 +148,16 @@ it('stdio framing: stdout carries only JSON-RPC lines, diagnostics go to stderr,
   expect(diagnostics.length).toBeGreaterThan(0);
   expect(diagnostics.join('\n')).not.toContain('not-a-number');
 });
+
+it('browser.status is L0 over MCP and returns one safe per-site result without lifecycle tools', async () => {
+  const status = { canvas: { state: 'signedOut' as const, checkedAt: '2026-01-01T00:00:00.000Z',
+    hint: { code: 'AUTH_EXPIRED' as const, next: 'Sign in to Canvas by hand in the resident browser.' as const } },
+    ed: { state: 'signedIn' as const, checkedAt: '2026-01-01T00:00:00.000Z' } };
+  const { client } = await connect(createRegistry({ browser: { status: async () => status } }), createFakeContext());
+  const tools = (await client.listTools()).tools;
+  expect(tools.find(tool => tool.name === 'browser.status')).toBeDefined();
+  expect(tools.some(tool => ['browser.start', 'browser.stop'].includes(tool.name))).toBe(false);
+  const result = envelope(await client.callTool({ name: 'browser.status', arguments: {} }));
+  expect(result.body).toMatchObject({ ok: true, command: 'browser.status', data: status });
+  expect(result.text).not.toMatch(/endpoint|cookies|token|body/);
+});
