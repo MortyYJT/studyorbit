@@ -3,7 +3,7 @@
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 进度看 `note/product/roadmap.md`（唯一进度表）；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-rescope/`（唯一进行中的 change）；决定看 `note/decisions.md`（#1–#113）。
 
-- **最后更新：** 2026-10-14，写完 `v1-rescope` 之后，分支 `claude/v1-rescope`。
+- **最后更新：** 2026-10-14，`v1-rescope` 合并（PR #83）、确认 #96（#112）之后。
 - **模式：** 用户在线时推进（#91）。看门狗定时任务 `coursework-dispatcher-watchdog` 已停用，不要重新打开。
 - **本轮做了什么：** 规格整理（#110）：`v1-foundation`、`capture-selection-ed`、`v1-protocol` 连规格归档，现行规格 10 个能力；`v1-sync`、`ed-quiz-assist`、`v1-ui` 不同步规格关闭。写了 `v1-rescope`（proposal、design、15 个规格增量、tasks），`openspec validate --strict` 通过。用户答了 7 个设计问题（#103–#109）。
 
@@ -11,17 +11,15 @@
 
 | 分支 | 内容 | 下一步 |
 | --- | --- | --- |
-| `claude/v1-rescope` | 本轮的规格整理和 `v1-rescope` | 新上下文复审后合并（纯文档 PR） |
 | `claude/protocol-integration` | 旧 M2 I | 按 `v1-rescope` 任务 4.1 拿有用的部分重做，不带关卡 |
 | `codex/quiz-fill` | Q1 脚本填写 | 删除（任务 2.6） |
 | `codex/ui-inventory` | M3 A 清单 | 删除（任务 2.6，v1-ui 已关闭） |
 
 ## 下一步（按顺序）
 
-1. 合并 `claude/v1-rescope`。
-2. 派 `v1-rescope` issue A（删掉被砍的代码），然后 B（常驻浏览器）。
-3. C（协议收尾）→ D（复习技能，**10/26 前在一门真实课程上能用**）；D 可以和 E/F 并行。
-4. E（数据模型）→ F（`coursework sync`）→ G（批注）→ H（排期）→ I（界面）→ J（验收、归档）。
+1. 派 `v1-rescope` issue A（删掉被砍的代码），然后 B（常驻浏览器）。
+2. C（协议收尾）→ D（复习技能，**10/26 前在一门真实课程上能用**）；D 可以和 E/F 并行。
+3. E（数据模型）→ F（`coursework sync`）→ G（批注）→ H（排期）→ I（界面）→ J（验收、归档）。
 
 ## 等你决定
 
