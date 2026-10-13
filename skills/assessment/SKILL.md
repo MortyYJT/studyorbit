@@ -25,9 +25,10 @@ description: Assist with a recorded assessment using graded autonomy, visible br
    of those answers (#97). Silence, a grant, a previous confirmation, or a general request to help
    is not submission confirmation. If any answer changes, list all answers again and obtain
    fresh confirmation. Never submit without it.
-6. Use `highlightThenClick` in `src/browser/highlight.ts` for each click (#98): bring the page
-   forward, outline the visible target, wait at least one second, recheck visibility and click once.
-   If the agent host cannot invoke this helper, stop the write; do not silently bypass it.
+6. Code paths use `highlightThenClick` in `src/browser/highlight.ts` for each click (#98).
+   An agent using its own browser tools must follow the same visible rule through its host tools:
+   bring the window/tab to the front, outline the visible target in red, wait at least one second,
+   recheck visibility and click exactly once. Stop the write if these steps cannot be performed.
 7. Immediately after **each** browser write on Canvas or Ed, call
    `audit.record {assessmentId, level, action, outcome, confirmation?}`.
    Use action `fill`, `submit` or `other`; outcome `success`, `failure` or `uncertain` reflects

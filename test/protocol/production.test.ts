@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -14,6 +14,26 @@ async function setup() {
   host.store.saveBatch({ modules: [synthetic.module], courses: [synthetic.course], assessments: synthetic.assessments });
   return host;
 }
+it.each(['autonomy.check', 'audit.record'])('omits unresolved name/answer-like IDs from durable %s audit', async command => {
+  const host = await setup();
+  const assessmentId = 'Jane.Doe/answer-is-42';
+  const input = command === 'autonomy.check' ? { assessmentId, level: 3 }
+    : { assessmentId, level: 3, action: 'fill', outcome: 'success' };
+  const result = await dispatch(host.registry, command, input, host.context);
+  const raw = await readFile(join(process.env.COURSEWORK_HOME!, 'quiz', 'audit.jsonl'), 'utf8');
+  expect(raw).not.toContain(assessmentId);
+  const events = (await host.audit.list()).filter(event => event.command === command);
+  expect(events.length).toBeGreaterThan(0);
+  for (const event of events) expect(event).not.toHaveProperty('assessmentId');
+  if (command === 'autonomy.check') {
+    // The production privacy guard may withhold the denial reason; it must never allow the request.
+    expect(result).toMatchObject({ ok: false });
+    expect(events).toContainEqual(expect.objectContaining({ level: 3, decision: 'denied', code: 'INVALID_INPUT' }));
+  } else {
+    expect(result).toMatchObject({ ok: true, data: { recorded: true, outcome: 'failure' } });
+    expect(events).toContainEqual(expect.objectContaining({ level: 3, action: 'fill', outcome: 'failure', code: 'INVALID_INPUT' }));
+  }
+});
 it('production CLI reads real SQLite, uses private journals and survives reopen', async () => {
   const host = await setup(); const stdout: string[] = [];
   await parseProtocolCLI(['courses', 'list', '--json'], { ...host, stdout: value => stdout.push(value) });

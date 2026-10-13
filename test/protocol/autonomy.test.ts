@@ -79,3 +79,31 @@ it('records actual writes even when permission references cannot be read', async
   expect(events).toHaveLength(1); expect(events[0]).toMatchObject({ assessmentId: 'a', courseId: 'c', action: 'fill' });
   expect(JSON.stringify(events)).not.toContain('private');
 });
+it('audits only the canonical target reference and looks up its grant', async () => {
+  const events: unknown[] = [];
+  const grantLookup = vi.fn(async () => ({ record: grant, ref: 'b'.repeat(64) }));
+  const store = { target: async () => target, policy: async () => ({ record: policy, ref: 'a'.repeat(64) }),
+    grant: grantLookup } as unknown as AuthorizationStore;
+  const service = new AssessmentAutonomy(store, { record: async event => { events.push(event); } });
+  const assessmentId = 'synthetic-alias';
+  expect(await service.check({ assessmentId, level: 3 })).toEqual({ decision: 'allowed', reason: 'allowed' });
+  expect(await service.record({ assessmentId, level: 3, action: 'fill', outcome: 'success' }))
+    .toEqual({ recorded: true, outcome: 'success' });
+  expect(grantLookup.mock.calls).toEqual([['a'], ['a']]);
+  expect(events).toHaveLength(2);
+  for (const event of events) expect(event).toMatchObject({ assessmentId: 'a', courseId: 'c' });
+  expect(JSON.stringify(events)).not.toContain(assessmentId);
+});
+it('denies unresolved targets and preserves unconfirmed L4 violations without request references', async () => {
+  const events: unknown[] = [];
+  const store = { target: async () => { throw Error('private target failure'); } } as unknown as AuthorizationStore;
+  const service = new AssessmentAutonomy(store, { record: async event => { events.push(event); } });
+  const assessmentId = 'Jane.Doe/answer-is-42';
+  expect(await service.check({ assessmentId, level: 1 })).toEqual({ decision: 'denied', reason: 'authorization-unavailable' });
+  expect(await service.record({ assessmentId, level: 4, action: 'submit', outcome: 'success' }))
+    .toEqual({ recorded: true, outcome: 'violation' });
+  expect(events).toHaveLength(2);
+  for (const event of events) expect(event).not.toHaveProperty('assessmentId');
+  expect(JSON.stringify(events)).not.toContain(assessmentId);
+  expect(JSON.stringify(events)).not.toContain('private target failure');
+});
