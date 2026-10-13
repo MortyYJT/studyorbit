@@ -1,6 +1,10 @@
 import { CourseworkError } from '../protocol/errors.js';
-import { ED_ORIGIN } from './discovery.js';
-import type { DiscoveryPage } from './discovery-adapters.js';
+export const ED_ORIGIN = 'https://edstem.org';
+export interface EdPage {
+  url(): string;
+  goto(url: string, options: { waitUntil: 'load'; timeout: number }): Promise<unknown>;
+  evaluate<T>(expression: string | (() => T | Promise<T>)): Promise<T>;
+}
 import type { CaptureLimiter } from './limiter.js';
 import type { Page, Route } from 'playwright';
 
@@ -13,7 +17,7 @@ export function safeEdEndpoint(endpoint: string): boolean {
   return /^\/api\/(?:user|courses\/\d+\/(?:lessons|resources|threads\?limit=30&sort=new)|lessons\/(?:slides\/)?\d+)$/.test(endpoint);
 }
 export class EdTransport {
-  constructor(private readonly page: DiscoveryPage, private readonly limiter: CaptureLimiter, private readonly signal?: AbortSignal) {}
+  constructor(private readonly page: EdPage, private readonly limiter: CaptureLimiter, private readonly signal?: AbortSignal) {}
   async read(endpoint: string, options: { snapshot?: EdSnapshot } = {}): Promise<EdResponse> {
     if (!safeEdEndpoint(endpoint)) return { kind: 'gap', reason: 'unsafeEndpoint' };
     if (!this.page.url().startsWith(`${ED_ORIGIN}/`)) {
@@ -63,7 +67,7 @@ export class EdTransport {
   private async bootstrap(): Promise<void> {
     // Never retain Playwright errors: their call logs may contain Cookie/Set-Cookie.
     const unavailable = () => new CourseworkError('SOURCE_UNAVAILABLE', 'Ed navigation unavailable.');
-    const page = this.page as DiscoveryPage & Pick<Page, 'route' | 'unroute'>;
+    const page = this.page as EdPage & Pick<Page, 'route' | 'unroute'>;
     if (!page.route || !page.unroute) throw unavailable();
     let next: string | undefined;
     let stopped: unknown;

@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { runEdCapture, type EdReader, type EdOutcome } from '../capture/ed-capture.js';
+import { readEdScope, type EdReader, type EdOutcome } from './ed-reader.js';
 import type { EdSnapshot } from '../capture/ed-transport.js';
-import { ED_ORIGIN } from '../capture/discovery.js';
-import { validateSelection } from '../capture/selection-store.js';
+import { ED_ORIGIN } from '../capture/ed-transport.js';
+import { validateEdScope } from './ed-scope.js';
 import { SourceItemSchema, CitationSchema, type SourceItem } from '../domain/schemas.js';
-import { edId } from '../quiz/read/contracts.js';
-import { normalizeQuiz } from '../quiz/read/questions.js';
+import { edId } from '../protocol/policy.js';
+import { normalizeEdQuestions } from './ed-questions.js';
 import { redactNormalizedSources } from './privacy-boundary.js';
 import { createRedactor } from './redaction.js';
 import { CourseworkError } from '../protocol/errors.js';
@@ -25,7 +25,7 @@ export const sourceIdentity = (provider: 'canvas' | 'ed', origin: string, course
 export async function syncEd(options: {
   selection: unknown; transport: EdReader; snapshot?: EdSnapshot; fetchedAt: string; rules?: unknown;
 }): Promise<{ sources: SourceItem[]; citations: z.infer<typeof CitationSchema>[]; assessments: never[]; gaps: SyncGap[]; status: EdOutcome['status'] }> {
-  const selection = validateSelection(options.selection);
+  const selection = validateEdScope(options.selection);
   createRedactor([], options.rules);
   if (!z.iso.datetime({ offset: true }).safeParse(options.fetchedAt).success) throw new CourseworkError('INVALID_INPUT', 'Invalid sync time.');
   const bodies = new Map<string, Record<string, unknown>>();
@@ -68,7 +68,7 @@ export async function syncEd(options: {
     owner.set(endpoint, course); bodies.set(endpoint, body);
     return { ...response, body };
   } };
-  const outcome = await runEdCapture({ courses: selection.courses, transport, snapshot: options.snapshot ?? (async () => {}) });
+  const outcome = await readEdScope({ courses: selection.courses, transport, snapshot: options.snapshot ?? (async () => {}) });
   for (const g of outcome.gaps) gap(g.endpoint, g.reason === 'auth' ? 'AUTH_EXPIRED' : 'SOURCE_UNAVAILABLE');
   const redactor = createRedactor([...bodies.values()], options.rules);
   const sources: SourceItem[] = []; const citations: z.infer<typeof CitationSchema>[] = [];
@@ -122,7 +122,7 @@ export async function syncEd(options: {
       // Weight, exam/final/hurdle classification and owner grade shape remain unverified.
       gap(endpoint, 'UNSUPPORTED');
       try {
-        const quiz = normalizeQuiz({ target: { course, lesson: lesson.id }, lesson: { lesson: { id: lesson.id, slides: lesson.slides.map(s => ({ id: s.id })) } },
+        const quiz = normalizeEdQuestions({ target: { course, lesson: lesson.id }, lesson: { lesson: { id: lesson.id, slides: lesson.slides.map(s => ({ id: s.id })) } },
           slides: lesson.slides.map(s => {
             const raw = bodies.get(`/api/lessons/slides/${s.id}`)?.slide as Record<string, unknown> | undefined;
             if (!raw) return undefined;
