@@ -61,7 +61,7 @@ Implemented changes were archived with their specs so truth matches `main`, and 
 
 ## Open Questions
 
-- #96 (quiz pages read without redaction) still needs the owner's explicit confirmation before `AGENTS.md` changes. Until then the revision skill sees course content only through `source.fetch` and sync (both redact), and the assessment skill (task 4.4) may not read quiz pages raw.
+- Resolved (#112): the owner confirmed #96, so the assessment skill may read quiz and workshop pages unredacted; discussion pages stay redacted. The revision skill still reads only `source.fetch` and sync output.
 - Whether a chat confirmation may also record a per-assessment grant, instead of a TTY command, would change a red line; it stays TTY-only unless the owner decides otherwise.
 - Does Edge allow remote debugging on the existing managed profile directory? Answer in issue B; fallback in Decision 2.
 - Installing `unpdf@1.8.1` (pre-approved, #74) needs the owner present to approve the install prompt.
