@@ -38,7 +38,7 @@ Scope: deletions and the minimum rewiring to keep `main` green. No new behavior.
 ## 5. Issue D — Revision skill (target 2026-10-26)
 
 - [ ] 5.1 Failing tests for a SQLite `study_record` migration and store with compare-and-swap publication, surviving a reopen; replace `InMemoryStudyRecordStore` in production wiring
-- [ ] 5.2 Install pre-approved `unpdf@1.8.1` with the owner present; failing tests with generated synthetic PDFs and pages for `source.fetch` (same-origin only, redirect refusal, size bound, per-page SourceItems, redaction, private raw files, empty image-only pages)
+- [ ] 5.2 Install pre-approved `unpdf@1.8.1` with the owner present; failing tests with generated synthetic PDFs and pages for `source.fetch` (same-origin only, Canvas/Ed listing JSON allowed, discussion threads refused, redirect refusal, size bound, per-page SourceItems, redaction, private raw files, empty image-only pages)
 - [ ] 5.3 Write the skill file and scheduled-task prompt: status check first, find material only through L0 reads and `source.fetch` (no raw page reading), write cited notes and questions, notify with counts; interactive stage reads stored material and records weak topics in notes
 - [ ] 5.4 Synthetic end-to-end run with fake browser and synthetic course content: signed-out stop, rejected citation counted, notes readable after restart
 - [ ] 5.5 Owner acceptance on one real course by 2026-10-26: run the scheduled stage, then a tutoring session; record actual counts and problems in the PR, separately from synthetic results

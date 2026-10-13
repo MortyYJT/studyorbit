@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Scheduled preparation stage
-The repository SHALL ship an agent skill whose scheduled stage, run for one course, (1) checks `coursework browser status` and stops with an owner notification if the needed site is signed out; (2) finds the exam scope and course content only through L0 reads of synced data (modules, items, file links) and `source.fetch` results, storing each page or PDF it relies on through `source.fetch` (see "Code fetches citable sources"), and never reads raw pages in the browser itself; (3) writes revision notes and practice questions through the existing validated study-write commands, each claim cited to a stored redacted source; and (4) notifies the owner that material is ready, with counts of notes, questions and rejected writes. It MUST NOT answer graded work, run above L1, or store raw course content outside `.local/`. Classmates' personal data MUST be stripped before course content reaches the model, per the project privacy red line: the model sees course content only after `source.fetch` or sync has redacted it.
+The repository SHALL ship an agent skill whose scheduled stage, run for one course, (1) checks `coursework browser status` and stops with an owner notification if the needed site is signed out; (2) finds the exam scope and course content only through L0 reads of stored data and `source.fetch` results (before sync exists, by fetching Canvas `/api/v1` course listing JSON such as modules, pages and files, and Ed resources, through `source.fetch`; never discussion threads), storing each page or PDF it relies on through `source.fetch` (see "Code fetches citable sources"), and never reads raw pages in the browser itself; (3) writes revision notes and practice questions through the existing validated study-write commands, each claim cited to a stored redacted source; and (4) notifies the owner that material is ready, with counts of notes, questions and rejected writes. It MUST NOT answer graded work, run above L1, or store raw course content outside `.local/`. Classmates' personal data MUST be stripped before course content reaches the model, per the project privacy red line: the model sees course content only after `source.fetch` or sync has redacted it.
 
 #### Scenario: Signed out at schedule time
 - **WHEN** the scheduled stage starts and Canvas is signed out
@@ -19,11 +19,19 @@ When the owner opens a conversation, the skill's interactive stage SHALL read th
 - **THEN** the agent says the material does not cover it and offers to prepare it, without fabricating a citation
 
 ### Requirement: Code fetches citable sources
-A `source.fetch` command SHALL take a Canvas or Ed URL on the validated provider origins, read it through the resident browser with a same-origin GET (JSON, HTML page text, or a PDF), extract text (PDF text per one-based page with the pre-approved `unpdf`), redact it, and store it as SourceItems of kind `material` (one per PDF page) with a content hash. The agent SHALL NOT supply source text itself. Off-origin URLs, external redirects, non-GET methods and responses over a size bound SHALL be refused. Raw downloads SHALL stay private under `<data dir>/materials/` with owner-only permissions. Image-only pages SHALL be stored with empty text and reported, not guessed.
+A `source.fetch` command SHALL take a Canvas or Ed URL on the validated provider origins, read it through the resident browser with a same-origin GET (JSON, HTML page text, or a PDF), extract text (PDF text per one-based page with the pre-approved `unpdf`), redact it, and store it as SourceItems of kind `material` (one per PDF page) with a content hash. The agent SHALL NOT supply source text itself. Discussion threads and replies, off-origin URLs, external redirects, non-GET methods and responses over a size bound SHALL be refused. Raw downloads SHALL stay private under `<data dir>/materials/` with owner-only permissions. Image-only pages SHALL be stored with empty text and reported, not guessed.
 
 #### Scenario: Lecture PDF
 - **WHEN** the agent asks to fetch a synthetic three-page Canvas PDF
 - **THEN** three material SourceItems exist with page locators 1–3, and a note quoting page 2 passes the citation check
+
+#### Scenario: Find material before sync exists
+- **WHEN** the store has no synced data and the agent fetches a synthetic Canvas modules listing through `source.fetch`
+- **THEN** the redacted listing is stored as a source and the agent can fetch the PDFs it links to
+
+#### Scenario: Discussion thread
+- **WHEN** the agent asks `source.fetch` for an Ed or Canvas discussion thread
+- **THEN** it is refused, because discussion content is not a revision source
 
 #### Scenario: Off-origin link
 - **WHEN** the URL points outside the Canvas and Ed origins or redirects there
