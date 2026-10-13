@@ -1,3 +1,4 @@
+import { autonomyContracts, type AssessmentAutonomy } from './autonomy.js';
 import { safeBrowserChoiceMessage } from '../capture/browser.js';
 import { browserStatus, type BrowserStatus } from '../browser/status.js';
 import { ownerResidentBrowser } from '../browser/runtime.js';
@@ -64,7 +65,16 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   let refs: Pick<AuditEvent, 'courseId' | 'assessmentId' | 'revision' | 'policyRef' | 'grantRef'> = {};
   const record = async (phase: AuditEvent['phase'], code: AuditEvent['code']) => {
     const event = { ...refs, command: safeName, runId, phase, code };
-    await context.audit.record(event); await context.runs.record(event);
+    const selfAudited = ['autonomy.check', 'audit.record'].includes(name);
+    if (!selfAudited || phase === 'denial' && !executed) await context.audit.record(event);
+    try { await context.runs.record(event); }
+    catch (error) {
+      // A shared journal outage must reach the check's own safe audit-denial path.
+      // No successful permission is returned if the operational ledger alone fails.
+      if (name === 'autonomy.check' && (phase === 'intent' || result?.ok &&
+        (result.data as { reason?: string }).reason === 'audit-unavailable')) return;
+      throw error;
+    }
   };
   let result: Envelope;
   try {
@@ -81,7 +91,7 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
     if (entry.level >= 1 && name in contracts) await context.evidence.check(name as CommandName, parsed.data);
     await record('intent', 'OK');
     executed = true;
-    const raw = await entry.handler(parsed.data, context);
+    const raw = await entry.handler(parsed.data, { ...context, runId });
     handlerSucceeded = true;
     const validated = entry.output.safeParse(raw);
     if (!validated.success) throw new CourseworkError('INTERNAL', safeMessages.INTERNAL);
@@ -108,7 +118,7 @@ const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN)
 export interface BrowserServices {
   status(): Promise<BrowserStatus>; start(): Promise<BrowserState>; stop(): Promise<void>;
 }
-export function createRegistry(options: { browser?: Partial<BrowserServices> } = {}): Registry {
+export function createRegistry(options: { browser?: Partial<BrowserServices>; autonomy?: AssessmentAutonomy } = {}): Registry {
   const registry = new Registry();
   const handlers = new Map<string, Handler>();
   for (const name of Object.keys(contracts) as CommandName[]) {
@@ -153,5 +163,11 @@ export function createRegistry(options: { browser?: Partial<BrowserServices> } =
   registry.register({ name: 'browser.stop', ...browserContracts['browser.stop'], handler: async () => {
     await (options.browser?.stop ? options.browser.stop() : ownerResidentBrowser().stop()); return { running: false as const };
   } });
+  for (const name of Object.keys(autonomyContracts) as (keyof typeof autonomyContracts)[]) {
+    registry.register<z.ZodType, z.ZodType>({ name, ...autonomyContracts[name], handler: async (input, context) => {
+      if (!options.autonomy) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
+      return name === 'autonomy.check' ? options.autonomy.check(input as never, context.runId) : options.autonomy.record(input as never, context.runId);
+    } });
+  }
   return registry;
 }

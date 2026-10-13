@@ -376,3 +376,33 @@ Synthetic tests cover lifecycle, exit observation, detection errors, attachment 
 site checks, CLI/MCP and the HTTP routing callback without opening a socket, and highlighted
 clicks. They do not establish real-browser CDP compatibility, actual loopback binding,
 manual window visibility, university endpoint behavior or overnight session lifetime.
+
+## Production composition after v1-rescope
+
+`createProductionProtocol` mounts the real SQLite current-state reader, canonical owner policy/grant
+files, append-only audit and separate run journals for CLI, MCP and loopback HTTP. Browser status
+uses the resident attach path; lifecycle commands remain owner-terminal only. Missing study write
+ports fail closed until the revision milestone installs durable study storage. No fill/submit gates,
+Q1 services, proposal services or change-event adapters are mounted.
+
+Canonical policy/grant files use `protocol-policy-<hash>` and `protocol-grant-<hash>` names inside
+the existing private protocol file directory. SQLite supplies exact course/assessment identity and
+classification. Legacy Q1 records remain unchanged and cannot activate canonical grants: the owner
+must re-record policy and grants. Recording a level-zero grant revokes higher-level permission.
+
+`autonomy.check` is L0 and accepts `{assessmentId, level}`. L0/L1 do not require answering grants;
+L2–L4 require a recorded policy and exact grant within the course cap. Exams and unknown kinds
+are denied above L1. Each valid check writes safe decision metadata with policy/grant hashes and
+returns `{decision, reason}`; failed audit returns `denied` / `audit-unavailable`.
+
+`audit.record` accepts only structural assessment IDs, L0–L4, action `fill|submit|other`, outcome
+`success|failure|uncertain|violation`, and optional confirmation `owner-chat|owner-ui|owner-terminal`.
+L4 submit without confirmation is recorded as `violation`. Its single action entry shares the
+transport run ID and contains no answer text. These commands report agent actions, not code gates.
+The assessment skill is at `skills/assessment/SKILL.md`.
+
+Owner authority is established by the transport, never by request fields: CLI requires stdin and
+stderr TTYs; MCP hides and refuses owner commands. HTTP strips host owner authority and grants only
+`planning.settings.record` via its local capability token. That command is not mounted yet, so
+production HTTP still refuses it. Future `annotation.owner.record` and `planning.settings.record`
+are reserved owner-only names; registering other owner commands must extend `ownerCommands`.
