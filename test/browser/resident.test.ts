@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, existsSync, statSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, existsSync, statSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -179,5 +179,28 @@ it('the exit observer cleans a timed-out child when it later exits naturally', a
   await watchBrowserExit(resident, 12345, { now: () => 0, sleep });
   expect(sleep).toHaveBeenCalledExactlyOnceWith(1000);
   expect(existsSync(join(s.root, 'browser.json'))).toBe(false);
+  expect(existsSync(join(s.root, 'profiles/default.lock'))).toBe(false);
+});
+it('a failed first publication with an unkillable child names the pid and recovers once the window closes', async () => {
+  const s = setup();
+  s.launch.mockImplementation(async () => { chmodSync(s.root, 0o500); s.alive.add(12345); return 12345; });
+  const stubborn = new ResidentBrowser({ ...s.options, terminate: async () => {}, timeoutMs: 200 });
+  try {
+    await expect(stubborn.start()).rejects.toThrow(/12345/);
+  } finally { chmodSync(s.root, 0o700); }
+  expect(readFileSync(join(s.root, 'profiles/default.lock'), 'utf8')).toBe('12345');
+  s.alive.delete(12345);
+  s.launch.mockImplementation(async (_executable: string, args: string[]) => {
+    const profile = args.find(arg => arg.startsWith('--user-data-dir='))!.slice('--user-data-dir='.length);
+    writeFileSync(join(profile, 'DevToolsActivePort'), '43210\n/devtools/browser/synthetic\n');
+    s.alive.add(12346); return 12346;
+  });
+  expect((await new ResidentBrowser(s.options).start()).pid).toBe(12346);
+});
+it('stop treats state deleted by the exit observer as already cleaned up', async () => {
+  const s = setup(); await s.resident.start();
+  const state = join(s.root, 'browser.json');
+  const racing = new ResidentBrowser({ ...s.options, terminate: async (pid: number) => { s.alive.delete(pid); rmSync(state); } });
+  await expect(racing.stop()).resolves.toBeUndefined();
   expect(existsSync(join(s.root, 'profiles/default.lock'))).toBe(false);
 });

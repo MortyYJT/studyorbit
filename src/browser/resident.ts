@@ -118,6 +118,8 @@ export class ResidentBrowser {
         : browserExecutablePaths(browser, process.platform, process.env).find(path => existsSync(path)));
       if (!executable) throw unavailable();
       mkdirSync(paths.profile, { recursive: true, mode: 0o700 });
+      // Record the choice before launching so a failed start does not leave an unknown profile.
+      recordBrowser(paths.profile, browser);
       const portFile = join(paths.profile, 'DevToolsActivePort');
       if (existsSync(portFile)) unlinkSync(portFile);
       pid = await (this.options.launch ?? launch)(executable, [
@@ -129,7 +131,6 @@ export class ResidentBrowser {
       const processState = { pid, browser, startedAt: new Date(this.clock.now()).toISOString() };
       this.publish(processState);
       await (this.options.watchExit ?? watchExit)(processState, paths.directory);
-      recordBrowser(paths.profile, browser);
       const deadline = this.clock.now() + (this.options.timeoutMs ?? 10000);
       let port: number | undefined;
       while (this.alive(pid)) {
@@ -146,7 +147,14 @@ export class ResidentBrowser {
       return state;
     } catch (error) {
       if (pid && this.alive(pid)) {
-        try { await this.terminate(pid); } catch { throw new CourseworkError('LOCKED', 'Resident browser still owns the profile.'); }
+        try { await this.terminate(pid); } catch {
+          // Leave a record for `stop` if possible; otherwise the owner closes the window and the lock goes stale.
+          if (this.read()?.pid !== pid) {
+            try { this.publish({ pid, browser: this.read()?.browser ?? 'msedge', startedAt: new Date(this.clock.now()).toISOString() }); }
+            catch { /* the error below tells the owner which process to close */ }
+          }
+          throw new CourseworkError('LOCKED', `Resident browser (process ${pid}) could not be stopped; close its window, then retry.`);
+        }
       }
       if (pid && this.read()?.pid === pid && existsSync(paths.state)) unlinkSync(paths.state);
       lock(); throw error;
@@ -162,13 +170,19 @@ export class ResidentBrowser {
   }
   async stop(): Promise<void> {
     const state = this.read(); if (!state) return;
-    const paths = this.paths(); const identity = statSync(paths.state);
+    const paths = this.paths();
+    const gone = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
+    let identity: ReturnType<typeof statSync> | undefined;
+    try { identity = statSync(paths.state); } catch (error) { if (!gone(error)) throw error; }
     if (this.alive(state.pid)) await this.terminate(state.pid);
     // A concurrent start may have replaced the dead resident; preserve its state and lock.
-    if (existsSync(paths.state)) {
-      const current = statSync(paths.state);
-      if (identity.ino !== current.ino || identity.dev !== current.dev) return;
-      unlinkSync(paths.state);
+    // ENOENT means the exit observer already removed the state.
+    if (identity) {
+      try {
+        const current = statSync(paths.state);
+        if (identity.ino !== current.ino || identity.dev !== current.dev) return;
+        unlinkSync(paths.state);
+      } catch (error) { if (!gone(error)) throw error; }
     }
     releaseProfileLock(state.pid, paths.profiles);
   }

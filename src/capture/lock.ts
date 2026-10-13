@@ -1,4 +1,4 @@
-import { closeSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { profilesDir } from '../config/data-dir.js';
 
@@ -57,10 +57,10 @@ export function acquireProfileLock(options: ProfileLockOptions = {}): ProfileLoc
       const pid = Number(holder);
       if (!/^\d+$/.test(holder) || !Number.isSafeInteger(pid) || pid <= 0) throw locked(holder);
       if (!isAlive(pid)) {
-        // Recheck the inode so a replacement lock is not mistaken for the stale one.
+        // Recheck inode and holder: a replacement or a transferred lock is not the stale one.
         try {
           const current = statSync(path);
-          if (current.ino === identity.ino && current.dev === identity.dev) unlinkSync(path);
+          if (current.ino === identity.ino && current.dev === identity.dev && readFileSync(path, 'utf8') === holder) unlinkSync(path);
         } catch (removeError) { if (code(removeError) !== 'ENOENT') throw removeError; }
         continue;
       }
@@ -68,7 +68,7 @@ export function acquireProfileLock(options: ProfileLockOptions = {}): ProfileLoc
     }
     try { writeFileSync(descriptor, String(options.pid ?? process.pid)); }
     catch (error) { closeSync(descriptor); unlinkSync(path); throw error; }
-    const identity = statSync(path);
+    let identity = statSync(path);
     closeSync(descriptor);
     let released = false;
     const release = () => {
@@ -83,7 +83,12 @@ export function acquireProfileLock(options: ProfileLockOptions = {}): ProfileLoc
       if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Invalid lock owner.');
       const current = statSync(path);
       if (released || current.ino !== identity.ino || current.dev !== identity.dev) throw locked('unknown');
-      writeFileSync(path, String(pid), { mode: 0o600 });
+      // Replace atomically so the new holder gets a new inode that stale-lock checks can detect.
+      const temporary = `${path}.${pid}.tmp`;
+      writeFileSync(temporary, String(pid), { mode: 0o600 });
+      try { renameSync(temporary, path); }
+      catch (error) { try { unlinkSync(temporary); } catch { /* best effort */ } throw error; }
+      identity = statSync(path);
     } });
   }
 }

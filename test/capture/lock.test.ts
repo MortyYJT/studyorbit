@@ -67,3 +67,14 @@ it('keeps an old nonempty malformed lock locked', () => {
   expect(() => acquireProfileLock()).toThrow(CourseworkError);
   expect(readFileSync(path, 'utf8')).toBe('invalid');
 });
+it('does not reclaim a lock transferred to a live process during the stale check', () => {
+  const first = acquireProfileLock({ pid: 100, isAlive: () => true });
+  const path = join(profilesDir(), 'default.lock');
+  expect(() => acquireProfileLock({ pid: 333, isAlive: pid => {
+    if (pid === 100) { first.transfer(222); return false; }
+    return pid === 222;
+  } })).toThrow(/222/);
+  expect(readFileSync(path, 'utf8')).toBe('222');
+  first();
+  expect(existsSync(path)).toBe(false);
+});
