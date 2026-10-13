@@ -43,5 +43,5 @@ Two full dry runs on 2026-10-14 (one course's extraction and essay check; four c
 - **Code removed:** `src/capture/` crawl, picker, selection, discovery, spike, REPL session and command; `src/quiz/`; `src/protocol/actions.ts`; `src/sync/` diff, reconciliation and changes handler; their tests.
 - **Code kept and changed:** profile, lock and browser detection (now resident); Ed transport and limiter; domain model and grade projection; SQLite repository; redaction; Ed normalization (extended to Canvas); command registry with CLI, MCP and HTTP; authorization and audit (simplified).
 - **Data model:** additive SQLite migrations for the new entities. The old `change_event` table stops receiving writes but is not dropped, so no local data is deleted.
-- **Dependencies:** none new. `unpdf` stays pre-approved but is not needed by this change.
+- **Dependencies:** none outside the pre-approved list. `unpdf@1.8.1` (pre-approved, #74) is installed for `source.fetch`.
 - **Specs:** this change is the only open v1 change. `v1-foundation`, `capture-selection-ed` and `v1-protocol` are archived as current truth; `v1-sync`, `ed-quiz-assist` and `v1-ui` are closed without syncing specs.

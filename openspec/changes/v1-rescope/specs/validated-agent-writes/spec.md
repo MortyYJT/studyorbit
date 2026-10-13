@@ -1,3 +1,16 @@
+## MODIFIED Requirements
+
+### Requirement: Validate structured writes before publication
+Breakdown, revision-note, practice-question and annotation writes (including assessment creation and assessment–item links) SHALL pass strict schemas, trusted course/assessment binding, command authorization, privacy checks and citation validation before repository publication. Breakdown SHALL reuse Task-compatible steps; notes and practice explanations SHALL have source-derived claim units. Graded answers are not a write type: the agent enters them in the resident browser under `assessment-autonomy`. The core SHALL never call a model. Concurrent or stale source revisions SHALL fail without replacing previous accepted state.
+
+#### Scenario: Valid study write
+- **WHEN** an external agent sends a schema-valid synthetic course note or practice explanation with trusted citations
+- **THEN** the shared command stores a validated revision and evidence receipt without calling a model or granting assessment autonomy
+
+#### Scenario: Invalid or stale write
+- **WHEN** a write has invalid shape, wrong course binding, unsafe text or stale source identity
+- **THEN** publication is rejected, previous accepted records survive and a safe failure is recorded
+
 ## ADDED Requirements
 
 ### Requirement: Annotation writes use the same validation gate

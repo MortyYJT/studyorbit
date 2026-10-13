@@ -54,14 +54,14 @@ Implemented changes were archived with their specs so truth matches `main`, and 
 
 ## Migration Plan
 
-1. Done in this change's PR: archive `v1-foundation`, `capture-selection-ed`, `v1-protocol` with specs; close `v1-sync`, `ed-quiz-assist`, `v1-ui` with `--skip-specs`; record decisions #103–#107.
+1. Done in this change's PR: archive `v1-foundation`, `capture-selection-ed`, `v1-protocol` with specs; close `v1-sync`, `ed-quiz-assist`, `v1-ui` with `--skip-specs`; record decisions #103–#111.
 2. Delete `codex/quiz-fill`; redo `claude/protocol-integration` without the gates as issue C; drop `codex/ui-inventory`.
 3. Implement in order: cuts (A) → resident browser (B) → protocol integration (C) → revision skill (D, by 2026-10-26) → schema (E) → sync (F) → annotations (G) → planning (H) → UI (I) → acceptance and archive (J). D can run in parallel with E–F.
 4. Migrations are additive; the change-event table is kept. Rollback is reverting the PR; no local data is deleted.
 
 ## Open Questions
 
-- #96 (quiz pages read without redaction) still needs the owner's explicit confirmation before `AGENTS.md` changes. Until then the revision skill redacts everything it stores.
+- #96 (quiz pages read without redaction) still needs the owner's explicit confirmation before `AGENTS.md` changes. Until then the revision skill sees course content only through `source.fetch` and sync (both redact), and the assessment skill (task 4.4) may not read quiz pages raw.
 - Whether a chat confirmation may also record a per-assessment grant, instead of a TTY command, would change a red line; it stays TTY-only unless the owner decides otherwise.
 - Does Edge allow remote debugging on the existing managed profile directory? Answer in issue B; fallback in Decision 2.
 - Installing `unpdf@1.8.1` (pre-approved, #74) needs the owner present to approve the install prompt.

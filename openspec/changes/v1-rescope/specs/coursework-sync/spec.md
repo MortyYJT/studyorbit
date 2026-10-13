@@ -12,7 +12,7 @@
 - **THEN** only that course's endpoints are requested
 
 ### Requirement: Merge Canvas and Ed courses by normalized course code
-Sync SHALL derive a normalized code from each provider course by taking the single match of the pattern four capital letters followed by five digits (for example `ABCD10001` from `ABCD10001_2026_SM2`). A Canvas course and an Ed course in the same term with the same normalized code SHALL become one Course whose `sources` list both provider ids. A course with no match, or a code that matches more than one course on the same provider, SHALL stay a separate unmerged Course, and the run SHALL report the ambiguity. Merging MUST NOT use course names. An owner-recorded course mapping, if present, SHALL take precedence over the code rule.
+Sync SHALL derive a normalized code from each provider course by taking the single match of the pattern four capital letters followed by five digits (for example `ABCD10001` from `ABCD10001_2026_SM2`). A Canvas course and an Ed course in the same term with the same normalized code SHALL become one Course whose `sources` list both provider ids. A course with no match, or a code that matches more than one course on the same provider, SHALL stay a separate unmerged Course, and the run SHALL report the ambiguity. Merging MUST NOT use course names.
 
 #### Scenario: Same code on both providers
 - **WHEN** Canvas reports `ABCD10001_2026_SM2` and Ed reports `ABCD10001` in the same term
@@ -23,7 +23,7 @@ Sync SHALL derive a normalized code from each provider course by taking the sing
 - **THEN** neither merges with the Canvas course, each stays its own Course, and the run reports the ambiguity
 
 ### Requirement: Record platform facts, never guessed structure
-Sync SHALL store each gradable platform entry (Canvas assignment, Ed attempt lesson) as a SourceItem of kind `assignment` with platform facts copied from the response: due date (Ed `effective_due_at` when present, otherwise `due_at`), points possible, the owner's points and submitted state when the platform returns them. For a Canvas assignment group that has an explicit weight, sync SHALL create or update one sync-origin Assessment with that weight and link the group's assignments to it; the citation is the group's weight field. Sync MUST NOT divide a group weight across items, set a missing weight to zero, classify an item as exam or final, or set `assessmentsComplete`. Facts and assessments set by an annotation (see `agent-annotations`) MUST NOT be overwritten by sync.
+Sync SHALL store each gradable platform entry (Canvas assignment, Ed attempt lesson) as a SourceItem of kind `assignment` with platform facts copied from the response: due date (Ed `effective_due_at` when present, otherwise `due_at`), points possible, the owner's points and submitted state when the platform returns them. For a Canvas assignment group that has an explicit weight, sync SHALL create or update one sync-origin Assessment with that weight and link the group's assignments to it; the citation is the group's weight field. Sync MUST NOT divide a group weight across items, set a missing weight to zero, classify an item as exam or final, or set `assessmentsComplete`. Facts and assessments set by an annotation (see `agent-annotations`) MUST NOT be overwritten by sync, and sync MUST NOT re-link an item whose current link has origin `agent` or `owner`.
 
 #### Scenario: Weighted Canvas group
 - **WHEN** a synthetic Canvas group "Assignments" has `group_weight` 30 and two assignments
@@ -32,6 +32,10 @@ Sync SHALL store each gradable platform entry (Canvas assignment, Ed attempt les
 #### Scenario: Ed lesson without weight
 - **WHEN** an Ed attempt lesson has a due date and no weight information
 - **THEN** it is stored as a platform item with its due date, and no Assessment weight is invented
+
+#### Scenario: Agent link survives sync
+- **WHEN** the agent moved a Canvas assignment from its group's sync assessment to another assessment and sync runs again
+- **THEN** the item stays linked where the agent put it
 
 #### Scenario: Annotation survives sync
 - **WHEN** an owner annotation set an assessment's weight to 10 and the next sync sees a Canvas group weight of 15

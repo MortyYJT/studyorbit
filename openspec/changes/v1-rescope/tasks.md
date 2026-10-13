@@ -32,13 +32,14 @@ Scope: deletions and the minimum rewiring to keep `main` green. No new behavior.
 
 - [ ] 4.1 Rebase the useful parts of `claude/protocol-integration` onto A: production registry assembly and the integration tests that do not touch fill/submit/Q1; remove `note/issue-77-integration.md`; make tests use a temporary data directory, never the default one
 - [ ] 4.2 Failing tests for `autonomy.check` (no policy, prohibited, exam, unknown kind, wrong grant, audit failure → denied) and `audit.record` (L4 needs a confirmation method; no answer text stored)
-- [ ] 4.3 Failing tests: non-TTY owner commands are refused; one envelope per CLI call; MCP does not list owner-only commands
+- [ ] 4.3 Failing tests: non-TTY owner commands are refused (planning settings also accept the #86 owner-token HTTP flow); one envelope per CLI call; MCP does not list owner-only commands
+- [ ] 4.4 Write the assessment skill: call `autonomy.check` first and stop on `denied`; list all answers in chat and wait for the owner's confirmation before an L4 submit (#97); use the highlight-then-click rule (#98); record each browser write with `audit.record`. Reading quiz pages raw stays blocked until the owner confirms #96
 
 ## 5. Issue D — Revision skill (target 2026-10-26)
 
 - [ ] 5.1 Failing tests for a SQLite `study_record` migration and store with compare-and-swap publication, surviving a reopen; replace `InMemoryStudyRecordStore` in production wiring
 - [ ] 5.2 Install pre-approved `unpdf@1.8.1` with the owner present; failing tests with generated synthetic PDFs and pages for `source.fetch` (same-origin only, redirect refusal, size bound, per-page SourceItems, redaction, private raw files, empty image-only pages)
-- [ ] 5.3 Write the skill file and scheduled-task prompt: status check first, fetch sources, write cited notes and questions, notify with counts; interactive stage reads stored material and records weak topics in notes
+- [ ] 5.3 Write the skill file and scheduled-task prompt: status check first, find material only through L0 reads and `source.fetch` (no raw page reading), write cited notes and questions, notify with counts; interactive stage reads stored material and records weak topics in notes
 - [ ] 5.4 Synthetic end-to-end run with fake browser and synthetic course content: signed-out stop, rejected citation counted, notes readable after restart
 - [ ] 5.5 Owner acceptance on one real course by 2026-10-26: run the scheduled stage, then a tutoring session; record actual counts and problems in the PR, separately from synthetic results
 
@@ -52,7 +53,7 @@ Scope: deletions and the minimum rewiring to keep `main` green. No new behavior.
 
 - [ ] 7.1 Failing tests with synthetic Canvas JSON: active current-term enrollments, assignments, groups, owner submissions, modules; pagination bounded; no bearer header, no other students' submissions
 - [ ] 7.2 Failing tests for course merging: single code match merges; no match or duplicate codes stay separate and are reported; names ignored
-- [ ] 7.3 Failing tests for facts and sync assessments: Ed `effective_due_at` precedence; weighted Canvas groups create linked sync assessments; no split or zero weights; annotated fields not overwritten
+- [ ] 7.3 Failing tests for facts and sync assessments: Ed `effective_due_at` precedence; weighted Canvas groups create linked sync assessments; no split or zero weights; annotated fields and agent/owner links not overwritten
 - [ ] 7.4 Failing tests: one transaction per course; complete reads mark missing items removed; partial reads remove nothing; redaction before storing; source-isolated auth expiry; shared limiter; measured Run
 - [ ] 7.5 Wire `coursework sync [--course]` through the registry; owner live check on the real profile with results recorded in the PR
 
