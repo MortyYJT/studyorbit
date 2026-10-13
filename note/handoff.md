@@ -1,23 +1,24 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 进度看 `note/product/roadmap.md`（唯一进度表）；设计看 `docs/engineering/v1-technical-design.md`；决定看 `note/decisions.md`（#1–#92）。
+> 进度看 `note/product/roadmap.md`（唯一进度表）；设计看 `docs/engineering/v1-technical-design.md`；决定看 `note/decisions.md`（#1–#99）。
 
-- **最后更新：** 2026-10-13，文档清理会话，分支 `claude/docs-cleanup`。
+- **最后更新：** 2026-10-14，Q1 实测之后，分支 `claude/q1-decisions`。
+- **Q1 已完成**：COMP20003 Week 11 Workshop 由 Claude 直接操作托管 Edge 完成并提交（#94–#98），lesson 状态 completed。答案和理由在 `.local/study/COMP20003/`。做法：用远程调试端口打开托管档案，按网址选标签页、只读接口找 lesson（不带 `view`）、高亮后点击、读回完成状态；做完关掉窗口和端口。
 - **模式：** 用户在线时推进（#91，推翻 #79 的全自动）。看门狗定时任务 `coursework-dispatcher-watchdog` 已停用，不要重新打开。
-- **本轮做了什么：** 合并 4 份协议说明为 `docs/engineering/protocol.md`；删掉 11 份按 issue 写的过程证据笔记（#90）；补勾已合并 PR 对应的 tasks；修正 `openspec/config.yaml`（去 iCal、按 #56 写 L0–L4）；技术设计第 8 节改成在线推进；README 重写；roadmap 改成带「卡在哪」的进度表；dispatch 技能补上已知陷阱。
+- **本轮做了什么：** 10/13 先做了文档清理（PR #80：合并协议文档、删过程证据、按 #91 改成在线推进）；然后 Q1 实测（见下），并记录决定 #93–#99。
 
 ## 没合并的工作（都已推到远程）
 
 | 分支 | 内容 | 下一步 |
 | --- | --- | --- |
 | `claude/protocol-integration` | M2 I（issue #77）：生产组装 + 集成测试 + 验收清单 | 第 1 轮审查的 4 处 P2 已修（`11c35df`），要复审 → 本机跑 check（含 socket 测试）→ PR。合并前删掉 `note/issue-77-integration.md`。**复审时查**：它的 clone 里 23:23 出现了 `.local/coursework.db` 和合成快照，测试可能写进了默认数据目录而不是临时目录 |
-| `codex/quiz-fill` | Q1 D（issue #55）：L3 填写 + 被动记录提交请求 | 等用户选接管方式（见下）后返工 → 审查 → PR。合并前删掉 `note/issue-55-implementation.md` |
+| `codex/quiz-fill` | Q1 D：L3 脚本填写 + 被动记录提交请求 | **已搁置**（#94）：Q1 改由 agent 直接操作完成；架构讨论后决定保留、改写还是删除 |
 | `codex/ui-inventory` | M3 A（issue #79）：M2 契约缺口清单 | 审查 → PR；Hermes `--help` 没跑通，1.3 实测要用户 |
 
 ## 等你决定
 
-1. **Q1 填写怎么接管已登录的浏览器**（D 的检查点 10/20，quiz 截止 10/25）。A：在 capture 会话里加一条 `f` 命令；B：capture 开本地 Unix socket，`quiz fill` 发请求过去；C：fill 自己启动托管档案、等你打开 quiz 页面再填（capture 运行时返回 `LOCKED`）。推荐 C：改动最小、不加通道、10/20 前做得完。需要你选并说明理由。
+1. **架构讨论（下一步）**：这个项目到底做什么；哪些交给 agent 直接操作，哪些保留成固定命令；邮件作为入口（#99）；已写好的 M1/M2/Q1 代码怎么处理。#96 改动了隐私红线的适用范围，讨论时要你明确确认后再改 `AGENTS.md`。
 2. **M2 新记录落 SQLite**：已采纳的学习记录、每个考核的「已填写」状态、未用的提交确认，现在只在内存里。要加新表，属于改存储结构；M3 接真数据前要定。
 3. **M1 三个设计问题**（来自 v1-sync D/F）：Ed 的权重和 exam/hurdle 分类怎么映射到 Assessment；Ed/Canvas 课程和模块怎么对应；同步时实体归属（provider/course/collection）是否要一张绑定表。
 4. **复核自主决定 #80–#89**：可以整体认可，也可以逐条推翻。
@@ -26,8 +27,7 @@
 
 ## 等你动手
 
-- 登录 + MFA，一次做完：S0 3.9、M0 5.5（顺便测登录能保持多久）、M1 1.2（Canvas `/api/v1` 实测）、Q1 5.4（真实结构检查）。
-- 10/23 前在真实 quiz 上跑 Q1：看答案 → 自己点提交。
+- 登录 + MFA：Ed 在 10/13 仍是登录状态；Canvas 可能已过期（访问被跳到 `lms.unimelb.edu.au/canvas`）。S0 3.9、M0 5.5、M1 1.2 仍要实测，范围等架构讨论后再定。
 - 装 `unpdf@1.8.1`（已预批，#74）：M1 E 要用。上次被 auto 模式分类器拦下；你在场时可以直接批准我来装。
 - GitHub → Settings → Emails 打开「Keep my email addresses private」，否则网页合并会写入账号邮箱。
 
