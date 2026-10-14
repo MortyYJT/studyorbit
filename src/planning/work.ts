@@ -1,0 +1,65 @@
+import { z } from 'zod';
+import { AssessmentSchema } from '../domain/schemas.js';
+import type { SqliteRepository } from '../store/sqlite.js';
+import type { Collection, QueryInput, QueryItem } from '../store/queries.js';
+export interface WorkItem {
+  workId: string; title: string; courseId?: string; due?: string;
+  estimateMinutes?: number; estimateOrigin?: 'agent' | 'owner';
+  agentEstimate?: { minutes: number; reason?: string }; actualMinutes: number;
+}
+export interface Deadline { workId: string; title: string; courseId?: string; due?: string; date?: string; kind: 'exam' | 'all-day' }
+export function localDate(instant: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(instant));
+  return ['year', 'month', 'day'].map(key => parts.find(part => part.type === key)!.value).join('-');
+}
+function all<K extends Collection>(store: SqliteRepository, collection: K): QueryItem<K>[] {
+  const items: QueryItem<K>[] = []; let cursor: string | undefined;
+  do { const page = store.query(collection, { limit: 500, cursor } as QueryInput<K>); items.push(...page.items); cursor = page.nextCursor; } while (cursor);
+  return items;
+}
+export function effectiveWork(store: SqliteRepository, item: WorkItem): WorkItem {
+  const estimates = store.readEstimates(item.workId);
+  const agent = estimates.filter(row => row.origin === 'agent').at(-1);
+  const estimate = estimates.filter(row => row.origin === 'owner').at(-1) ?? (item.estimateOrigin === 'owner' && item.estimateMinutes !== undefined ? { minutes: item.estimateMinutes, origin: 'owner' as const } : agent);
+  return { ...item, ...(estimate ? { estimateMinutes: estimate.minutes, estimateOrigin: estimate.origin } : {}),
+    ...(agent ? { agentEstimate: { minutes: agent.minutes, reason: agent.reason } } : {}),
+    actualMinutes: store.readTimeLogs(item.workId).reduce((total, row) => total + row.minutes, 0) };
+}
+export function collectWork(store: SqliteRepository, term: string, timeZone: string) {
+  const courses = new Set(all(store, 'courses').filter(course => course.term === term).map(course => course.id));
+  const items: WorkItem[] = []; const deadlines: Deadline[] = []; const active = new Map<string, WorkItem>();
+  const links = new Map(store.listAssessmentLinks().map(link => [link.sourceItemId, link]));
+  for (const assessment of all(store, 'assessments')) {
+    if (!courses.has(assessment.courseId)) continue;
+    const sources = [...links.values()].filter(link => link.assessmentId === assessment.id).map(link => store.loadSourceItem(link.sourceItemId));
+    if (['submitted', 'graded'].includes(assessment.status) || sources.some(source => source?.facts?.submitted || source?.removed)) continue;
+    const field = <T>(name: string, schema: z.ZodType<T>, fallback: T): T => {
+      const rows = store.readAnnotations('assessment', assessment.id).filter(row => row.field === name);
+      const row = rows.filter(row => row.origin === 'owner').at(-1) ?? rows.filter(row => row.origin === 'agent').at(-1);
+      return row ? schema.parse(row.value ?? undefined) : fallback;
+    };
+    const due = field('due', AssessmentSchema.shape.due, assessment.due);
+    const title = field('name', AssessmentSchema.shape.name, assessment.name);
+    const kind = field('kind', AssessmentSchema.shape.kind, assessment.kind);
+    const base = { workId: assessment.id, title, courseId: assessment.courseId, due, actualMinutes: 0 };
+    if (kind === 'exam') { deadlines.push({ workId: base.workId, title, courseId: base.courseId, due, kind: 'exam', ...(due ? { date: localDate(due, timeZone) } : {}) }); continue; }
+    active.set(assessment.id, base); items.push(base);
+  }
+  for (const task of all(store, 'tasks')) {
+    if (task.done || task.courseId && !courses.has(task.courseId) || task.assessmentId && !active.has(task.assessmentId)) continue;
+    const due = task.due ?? (task.assessmentId ? active.get(task.assessmentId)?.due : undefined);
+    const base = { workId: task.id, title: task.title, courseId: task.courseId, due, actualMinutes: 0 };
+    if (task.source === 'manual') {
+      if (task.steps.every(step => step.done)) continue;
+      if (task.allDay) deadlines.push({ workId: base.workId, title: base.title, courseId: base.courseId, due, kind: 'all-day', date: localDate(due!, timeZone) });
+      else {
+        const minutes = task.steps.filter(step => !step.done).reduce((sum, step) => sum + step.estimateMinutes, 0);
+        items.push({ ...base, ...(minutes > 0 ? { estimateMinutes: minutes, estimateOrigin: 'owner' as const } : {}) });
+      }
+    } else task.steps.forEach((step, index) => {
+      if (!step.done) items.push({ ...base, workId: `${task.id}:step:${index}`, title: step.title,
+        ...(step.estimateMinutes > 0 ? { estimateMinutes: step.estimateMinutes, estimateOrigin: 'agent' as const } : {}) });
+    });
+  }
+  return { items: items.map(item => effectiveWork(store, item)).sort((a, b) => a.workId < b.workId ? -1 : a.workId > b.workId ? 1 : 0), deadlines };
+}

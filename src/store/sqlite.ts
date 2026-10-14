@@ -69,6 +69,7 @@ export class SqliteRepository implements Repository, CurrentStateReader {
   loadSourceItem(id: string): SourceItem | undefined { return this.load('source_items', 'id', id, SourceItemSchema); }
   saveTask(value: Task): void { this.saveBatch({ tasks: [value] }); }
   loadTask(id: string): Task | undefined { return this.load('tasks', 'id', id, TaskSchema); }
+  deleteManualTask(id: string): void { this.db.prepare("DELETE FROM tasks WHERE id = ? AND json_extract(json, '$.source') = 'manual'").run(id); }
   recordRun(value: Run): void { this.saveBatch({ runs: [value] }); }
   loadRun(id: string): Run | undefined { return this.load('runs', 'id', id, RunSchema); }
 
@@ -88,6 +89,7 @@ export class SqliteRepository implements Repository, CurrentStateReader {
 
   appendAssessmentLink(value: AssessmentLink): void { this.append('assessment_links', AssessmentLinkSchema, value, ['assessmentId', 'sourceItemId']); }
   readAssessmentLinks(assessmentId: string): AssessmentLink[] { return this.history('assessment_links', AssessmentLinkSchema, { assessmentId }); }
+  listAssessmentLinks(): AssessmentLink[] { return this.history('assessment_links', AssessmentLinkSchema, {}); }
   appendAnnotation(value: Annotation): void { this.append('annotations', AnnotationSchema, value, ['id', 'entity', 'entityId']); }
   readAnnotations(entity: string, entityId: string): Annotation[] { return this.history('annotations', AnnotationSchema, { entity, entityId }); }
   appendAnnotationVerdict(value: AnnotationVerdict): void { this.append('annotation_verdicts', AnnotationVerdictSchema, value, ['annotationId']); }
@@ -98,6 +100,8 @@ export class SqliteRepository implements Repository, CurrentStateReader {
   readEstimates(workId: string): Estimate[] { return this.history('estimates', EstimateSchema, { workId }); }
   appendStartTime(value: StartTime): void { this.append('start_times', StartTimeSchema, value, ['workId', 'date']); }
   readStartTimes(workId: string): StartTime[] { return this.history('start_times', StartTimeSchema, { workId }); }
+  listStartTimes(): StartTime[] { return this.history('start_times', StartTimeSchema, {}); }
+  clearStartTime(workId: string, date: string): void { this.db.prepare('DELETE FROM start_times WHERE workId = ? AND date = ?').run(workId, date); }
   appendTimeLog(value: TimeLog): void { this.append('time_logs', TimeLogSchema, value, ['workId']); }
   readTimeLogs(workId: string): TimeLog[] { return this.history('time_logs', TimeLogSchema, { workId }); }
   appendCourseAutonomy(value: CourseAutonomy): void { this.append('course_autonomy', CourseAutonomySchema, value, ['courseId']); }
