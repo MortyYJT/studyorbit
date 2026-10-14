@@ -37,7 +37,7 @@ export class StudyCitationService implements EvidenceService {
     const sources = new Map(snapshot.data.sources.map(source => [source.sourceItemId, source]));
     if (sources.size !== snapshot.data.sources.length || snapshot.data.sources.some(source => source.courseId !== target.courseId)) return citationMismatch();
     const claims = 'task' in data ? data.task.steps.map(step => ({ text: step.title, citations: step.citations }))
-      : 'claims' in data ? data.claims : data.questions.flatMap(question => question.explanation);
+      : 'topics' in data ? data.topics : 'claims' in data ? data.claims : data.questions.flatMap(question => question.explanation);
     const units = claims.map(claim => {
       if (!claim.citations.length) return citationMismatch();
       return { text: claim.text, citations: claim.citations.map(citation => {

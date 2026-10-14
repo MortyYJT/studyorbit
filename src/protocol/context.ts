@@ -1,6 +1,6 @@
 import type { CommandName, CommandOutput, ParsedCommandInput, Level, AuditRecord } from './contracts.js';
 import type { ErrorCode } from './errors.js';
-export type ReadCommand = Extract<CommandName, `${string}.list`> | 'sources.get';
+export type ReadCommand = Extract<CommandName, `${string}.list`> | 'sources.get' | 'revision.read' | 'practice.stats';
 export type WriteCommand = Exclude<CommandName, ReadCommand>;
 export interface ProtocolRepository {
   read<N extends ReadCommand>(name: N, input: ParsedCommandInput<N>): Promise<CommandOutput<N>>;

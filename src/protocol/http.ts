@@ -4,9 +4,9 @@ import type { Socket } from 'node:net';
 import { chmod, lstat, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
-import { ownerCommands } from './contracts.js';
 import type { TrustedContext } from './context.js';
-import { dispatch, type Registry } from './registry.js';
+import { ownerCommands } from './contracts.js';
+import { dispatch, writeNames, type Registry } from './registry.js';
 import { fail, type Envelope } from './envelope.js';
 import { CourseworkError, type ErrorCode } from './errors.js';
 
@@ -137,7 +137,7 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
     const supplied = header(req, 'x-coursework-capability');
     const authorized = headerCount(req, 'x-coursework-capability') === 1 && supplied !== undefined
       && Buffer.byteLength(supplied) === 64 && timingSafeEqual(Buffer.from(supplied), Buffer.from(token));
-    if ((entry.level > 0 || ownerCommands.has(name)) && !authorized) { reject(403); return; }
+    if ((entry.level > 0 || ownerCommands.has(name) || writeNames.has(name)) && !authorized) { reject(403); return; }
     const length = header(req, 'content-length');
     if (length !== undefined && Number(length) > 65536) { reject(413, 'LIMIT_EXCEEDED'); return; }
     const chunks: Buffer[] = []; let size = 0; let rejected = false;
