@@ -12,7 +12,7 @@ The agent's browser tools SHALL be: `browser.open` (navigate a tool-owned tab), 
 - **THEN** the tool returns `AUTH_EXPIRED` and types nothing
 
 ### Requirement: Reads respect the privacy boundary
-`browser.read` SHALL return quiz, lesson and workshop pages unredacted (#112), except any part that shows other students' answers or details, which SHALL be redacted. Discussion threads and replies SHALL be refused. Every other page SHALL pass the deterministic redaction before it is returned. Read output SHALL be bounded and SHALL NOT include cookies, tokens or hidden form values.
+`browser.read` SHALL return quiz and workshop pages (Canvas quizzes, Ed attempt lessons and their slides) unredacted (#112), except any part that shows other students' answers or details, which SHALL be redacted. Discussion threads and replies SHALL be refused. Every other page SHALL pass the deterministic redaction before it is returned. Read output SHALL be bounded and SHALL NOT include cookies, tokens or hidden form values.
 
 #### Scenario: Discussion thread
 - **WHEN** the agent asks to read an Ed discussion thread

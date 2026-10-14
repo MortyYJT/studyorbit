@@ -20,7 +20,7 @@ Levels SHALL be by type of work (#120): L0 read (information, planning, revision
 - **THEN** it is refused and nothing changes
 
 ### Requirement: Append-only audit and run records fail safely
-Policy and level changes, permission checks, denials and every agent browser write (click, fill, select, submit) SHALL produce append-only audit metadata linking run, conversation, target assessment, effective level, policy, and the observed outcome. A submit record SHALL state how it was confirmed: `owner-ui` after the owner confirmed in the frontend, or `not-required` when the owner switched confirmation off for that course (#121). A submit on a course that requires confirmation without an owner confirmation SHALL be recorded as a violation, not as success. Audit SHALL exclude prose, answers, quotes, personal data, raw errors and credentials. If the audit writer fails, `autonomy.check` SHALL return `denied` with an audit-unavailable reason. The run ledger SHALL remain separate and record citation failures and actual measurements only.
+Policy and level changes, permission checks, denials and every agent browser write (click, fill, select, submit) SHALL produce append-only audit metadata linking run, conversation, target assessment, effective level, policy, and the observed outcome. A submit record SHALL state how it was confirmed: `owner-ui` after the owner confirmed in the frontend, or `not-required` when the owner switched confirmation off for that course (#121). A submit on a course that requires confirmation without an owner confirmation SHALL be recorded as a violation, not as success. Only code SHALL write browser-action audit entries: the agent-callable `audit.record` command is removed, so no agent can record an action or a confirmation it did not go through. Audit SHALL exclude prose, answers, quotes, personal data, raw errors and credentials. If the audit writer fails, `autonomy.check` SHALL return `denied` with an audit-unavailable reason. The run ledger SHALL remain separate and record citation failures and actual measurements only.
 
 #### Scenario: Intent audit unavailable
 - **WHEN** the audit writer fails during `autonomy.check`
@@ -29,6 +29,10 @@ Policy and level changes, permission checks, denials and every agent browser wri
 #### Scenario: Completion failure after external action
 - **WHEN** a browser write completes and the audit append fails
 - **THEN** the tool reports the recording failure and the actual or uncertain browser state, and the write is not repeated
+
+#### Scenario: Agent cannot write audit entries
+- **WHEN** an agent tries to call `audit.record` through MCP or its tool set
+- **THEN** the command is not listed and the call fails, and no audit entry is written
 
 #### Scenario: Recorded submit
 - **WHEN** the agent submits a quiz at L1 after the owner pressed "confirm submit" in the frontend

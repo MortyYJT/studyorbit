@@ -12,21 +12,25 @@ The store SHALL hold one owner-editable planning settings record: time zone (def
 - **THEN** it receives a safe refusal and the settings are unchanged
 
 ### Requirement: Plannable work
-Plannable work SHALL be: every unsubmitted, not-removed assessment of the current term that is not an exam, every unfinished step of a stored task, and every unfinished manual task (#132). Each work item carries an id, a title, its course (if any), a due time (if any), an estimate in minutes (if any) and the estimate's origin. An exam SHALL appear only as a deadline in the week view, not as plannable work.
+Plannable work SHALL be: every unsubmitted, not-removed assessment of the current term that is not an exam, every unfinished step of a stored task, and every unfinished manual task that is not all-day (#132). Each work item carries an id, a title, its course (if any), a due time (if any), an estimate in minutes (if any) and the estimate's origin. An exam SHALL appear only as a deadline in the week view, not as plannable work. An all-day manual task SHALL appear only in the top row of its date and SHALL take no planned minutes (#143).
+
+#### Scenario: All-day task
+- **WHEN** the owner adds an all-day manual task "Career fair" on Thursday
+- **THEN** it appears in Thursday's top row and the plan assigns it no minutes
 
 #### Scenario: Submitted work drops out
 - **WHEN** a platform item linked to an assessment reports `submitted: true`
 - **THEN** that assessment is no longer plannable work
 
 ### Requirement: Estimates with reasons
-An agent SHALL be able to record an estimate in minutes for a work item with a short reason based on the item's requirements (#131). The owner SHALL be able to replace it from the frontend; the owner's estimate wins over the agent's. Reads SHALL return the effective estimate with its origin and the agent's reason. An item without an estimate SHALL stay unestimated; no default duration is guessed.
+An agent SHALL be able to record an estimate in minutes for a work item with a short reason based on the item's requirements (#131). The owner SHALL be able to replace it from the frontend or a TTY; the owner's estimate wins over the agent's. Reads SHALL return the effective estimate with its origin and the agent's reason. An item without an estimate SHALL stay unestimated; no default duration is guessed.
 
 #### Scenario: Owner overrides the agent
 - **WHEN** the agent estimated 240 minutes with a reason and the owner sets 180
 - **THEN** the plan uses 180 with origin `owner`, and the agent's estimate and reason remain readable
 
 ### Requirement: Manual tasks
-The owner SHALL be able to add, edit, complete and delete off-campus tasks from the frontend with a title, an optional due date and an optional estimate (#132). Manual tasks SHALL be planned together with coursework and SHALL NOT be created or changed by an agent.
+The owner SHALL be able to add, edit, complete and delete off-campus tasks from the frontend with a title, an optional due date, an optional estimate and an all-day flag (#132, #143). Manual tasks SHALL be planned together with coursework and SHALL NOT be created or changed by an agent.
 
 #### Scenario: Manual task in the plan
 - **WHEN** the owner adds "Internship application", due Friday, 120 minutes

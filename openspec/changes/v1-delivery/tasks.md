@@ -27,15 +27,16 @@ Covers: US-5 "MCP stays"; US-7 "only I set levels in the frontend". Spec: `web-u
 
 ## 4. Issue C — Autonomy by type of work
 
-Covers: US-7 items 1–4. Spec: `assessment-autonomy`. Depends on A.
+Covers: US-7 items 1–4. Spec: `assessment-autonomy`. Depends on A; owner-only tests use an injected owner context until B merges.
 
 - [ ] 4.1 Failing tests for `required(kind)`, cap and effective level: prohibited → L0 even with an L2 override; no policy → L2 cap; exam and unknown → L2; override for another assessment ignored
 - [ ] 4.2 Failing tests for owner commands: set course policy, default level, per-assessment override (set and clear), confirm-before-submit; each audited; agent and TTY calls refused
-- [ ] 4.3 Rework `autonomy.check` to the new rules (audit unavailable still denies); old grant rows ignored; update `skills/assessment/SKILL.md` to the new levels and to using the browser tools
+- [ ] 4.3 Remove `audit.record` from MCP and the agent tool set (browser tools write audit entries in group 11), with a test that it is not listed and cannot be called by an agent
+- [ ] 4.4 Rework `autonomy.check` to the new rules (audit unavailable still denies); old grant rows ignored; update `skills/assessment/SKILL.md` to the new levels and to using the browser tools
 
 ## 5. Issue D — `coursework sync`
 
-Covers: US-1 items 1–5. Spec: `coursework-sync`, `ed-capture`. Depends on A.
+Covers: US-1 items 1–5, item 6 manual part (email trigger deferred, #129). Spec: `coursework-sync`, `ed-capture`. Depends on A.
 
 - [ ] 5.1 Failing tests with synthetic Canvas JSON: active current-term enrollments, assignments, groups, own submissions, modules; bounded pagination; no bearer header; no other students' submissions
 - [ ] 5.2 Failing tests for course merging: single code match merges; no match or duplicates stay separate and are reported; names ignored
@@ -46,7 +47,7 @@ Covers: US-1 items 1–5. Spec: `coursework-sync`, `ed-capture`. Depends on A.
 
 ## 6. Issue E — Agent annotations and owner verdicts
 
-Covers: US-2 items 1–4. Spec: `agent-annotations`, `validated-agent-writes`. Depends on A.
+Covers: US-2 items 1–4. Spec: `agent-annotations`, `validated-agent-writes`. Depends on A; owner-only tests use an injected owner context until B merges.
 
 - [ ] 6.1 Failing tests: valid cited agent annotation applies; invented or stale quote rejected with nothing changed and a ledger entry
 - [ ] 6.2 Failing tests: syllabus-only assessment creation, one-to-many links, moving a link keeps history, cross-course links rejected
@@ -55,12 +56,12 @@ Covers: US-2 items 1–4. Spec: `agent-annotations`, `validated-agent-writes`. D
 
 ## 7. Issue F — Planning
 
-Covers: US-3 items 1–7. Spec: `study-planning`. Depends on A.
+Covers: US-3 items 1–7. Spec: `study-planning`. Depends on A; owner-only tests use an injected owner context until B merges.
 
 - [ ] 7.1 Failing tests for planning settings save/validation and agent refusal
 - [ ] 7.2 Failing tests for plannable work: submitted and removed items drop out; exams are deadlines only; manual tasks included
 - [ ] 7.3 Failing tests for the pure day-granular EDF planner: overdue first, undated last, splitting, stable ties, 180/120/60 overflow, unestimated, identical outputs, Melbourne day boundary
-- [ ] 7.4 Failing tests: agent estimate needs a reason; owner estimate wins; start times order a day (timed then untimed) and are dropped when the item leaves that day; time logs sum; manual task create/edit/complete/delete owner-only
+- [ ] 7.4 Failing tests: agent estimate needs a reason; owner estimate wins; start times order a day (timed then untimed) and are dropped when the item leaves that day; time logs sum; manual task create/edit/complete/delete owner-only; all-day manual tasks take no minutes and sit on their date
 - [ ] 7.5 Expose `plan.read` (with estimates, start times, actual totals, overflow, unestimated) and the owner commands through the registry
 
 ## 8. Issue G — Revision
@@ -96,14 +97,14 @@ Covers: US-5 items 3 and 6. Spec: `agent-chat`. Depends on H. New dependency app
 Covers: US-5 item 4; US-7 items 3–4. Spec: `agent-browser-tools`. Depends on C, H.
 
 - [ ] 11.1 Failing tests on synthetic pages with a fake resident browser: `browser.open` origin allow-list (frontend, localhost, login and off-origin refused), tool-owned tabs only, sign-in page → `AUTH_EXPIRED`
-- [ ] 11.2 Failing tests for `browser.read`: quiz/lesson pages unredacted except peer answers, discussion refused, other pages redacted, bounded, no hidden values
+- [ ] 11.2 Failing tests for `browser.read`: quiz and workshop pages (Ed attempt lessons) unredacted except peer answers, discussion refused, other pages redacted, bounded, no hidden values
 - [ ] 11.3 Failing tests for writes: course/platform mismatch refused before highlight; denied check types nothing and audits a denial; allowed write highlights ≥1 s, acts once, screenshots, audits; audit failure after action reports uncertain state without repeating
 - [ ] 11.4 Failing tests for `browser.submit`: pending confirmation created with summary and screenshot; owner confirm releases one click (`owner-ui`); cancel, timeout and restart leave it unsubmitted; confirmation via MCP or without session refused; single use; confirmation off → `not-required`
 - [ ] 11.5 Every tool call emits a conversation step with outcome, screenshot reference and "view in Edge"
 
 ## 12. Issue K1 — Frontend shell, status and settings
 
-Covers: US-1 item 5; US-7 item 5 (audit). Spec: `web-ui`. Depends on B; owner approval of `@types/react` and `@types/react-dom`.
+Covers: US-1 items 5–6 (status, manual sync button; email trigger deferred, #129); US-7 item 5 (audit). Spec: `web-ui`. Depends on B; owner approval of `@types/react` and `@types/react-dom`.
 
 - [ ] 12.1 Scaffold `web/` with pre-approved Vite, React, react-dom and `@vitejs/plugin-react`; build into `dist/ui`; typed envelope client with zod; owner-session handling with unit tests
 - [ ] 12.2 Top bar (This week, Agent, sync button with running state), avatar menu panels: sync and sign-in status with "bring sign-in page to front", audit records, settings (weekday hours, time zone, theme, language); empty-store message
@@ -111,7 +112,7 @@ Covers: US-1 item 5; US-7 item 5 (audit). Spec: `web-ui`. Depends on B; owner ap
 
 ## 13. Issue K2 — Week view
 
-Covers: US-1 item 3 (listing); US-3 items 1, 5–8. Spec: `web-ui`. Depends on F, K1.
+Covers: US-1 item 3 (listing); US-3 items 1, 5–8 (including all-day tasks in the top row). Spec: `web-ui`. Depends on F, K1.
 
 - [ ] 13.1 View-model tests: seven columns Monday–Sunday, deadline row, timed-then-untimed order, used/available hours, overflow and unestimated lists, "needs you" items
 - [ ] 13.2 Build the week view, week navigation, month calendar toggle, course side list with rings and next deadline, manual-task dialog, start-time and actual-time editing through the owner session
@@ -119,7 +120,7 @@ Covers: US-1 item 3 (listing); US-3 items 1, 5–8. Spec: `web-ui`. Depends on F
 
 ## 14. Issue K3 — Course page and assessment drawer
 
-Covers: US-1 items 3–4; US-2 item 1 (display); US-3 item 4; US-6 item 4; US-7 items 1, 5–6. Spec: `web-ui`. Depends on C, E, G, K1.
+Covers: US-1 items 3–4; US-2 item 1 (display); US-3 item 4; US-6 item 4; US-7 items 1, 5–6. Spec: `web-ui`. Depends on C, E, F, G, K1.
 
 - [ ] 14.1 Ring geometry tests (segments by weight, earned/lost/ungraded/unknown styles, centre total) and grade figures including `weights_unknown`
 - [ ] 14.2 Course header (policy, default level, confirm switch, L0 lock for prohibited), Assessments tab (exams show "—", no agent entry), overrides through the owner session
