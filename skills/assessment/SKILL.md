@@ -1,53 +1,49 @@
 ---
 name: assessment
-description: Assist with a recorded assessment using graded autonomy, visible browser actions and safe audit metadata.
+description: Assist with a stored assessment using work-type autonomy and audited browser tools.
 ---
 
 # Assessment assistance
 
-1. Identify the exact stored assessment ID and the level needed for the requested work:
-   L0 read; L1 explain or study; L2 draft; L3 fill for owner review; L4 fill and submit.
-   Call `autonomy.check {assessmentId, level}` first. Stop on `denied`, any failed envelope,
-   or unavailable audit. Do not reinterpret denial or retry at a lower level to perform the same action.
-   Request that the owner records missing course policy or exact grants in their own terminal;
-   never call owner-only commands through MCP, invent consent, or record it for the owner.
-2. Exams never run above L1. Unknown assessment kind may be an exam and also stops L2+.
-   L0/L1 do not permit graded answers disguised as practice. Every extracted claim cites source text.
-3. Check `browser.status`. If signed out or unknown, stop and ask the owner to sign in by hand.
-   Use the resident browser attach helper (`src/browser/attach.ts`); never launch a separate
-   profile, read credentials or type passwords. Close only tabs opened by this operation.
-4. Quiz and workshop pages may be read unredacted because they normally contain no classmates'
-   data (#112). If peer answers or classmates' details appear, redact that part before it reaches
-   a model. Never read discussion pages directly; use only already-redacted protocol sources.
-5. Before each browser write, recheck permission for the exact assessment and required level.
-   For L3, leave submission to the owner. For L4 submission, list **every answer** in chat,
-   including every choice and free-text response, and wait for the owner's explicit confirmation
-   of those answers (#97). Silence, a grant, a previous confirmation, or a general request to help
-   is not submission confirmation. If any answer changes, list all answers again and obtain
-   fresh confirmation. Never submit without it.
-6. Code paths use `highlightThenClick` in `src/browser/highlight.ts` for each click (#98).
-   An agent using its own browser tools must follow the same visible rule through its host tools:
-   bring the window/tab to the front, outline the visible target in red, wait at least one second,
-   recheck visibility and click exactly once. Stop the write if these steps cannot be performed.
-7. Immediately after **each** browser write on Canvas or Ed, call
-   `audit.record {assessmentId, level, action, outcome, confirmation?}`.
-   Use action `fill`, `submit` or `other`; outcome `success`, `failure` or `uncertain` reflects
-   the observed result, never a guess. Include `confirmation: "owner-chat"` after chat approval
-   (or `owner-ui` / `owner-terminal` only when that actual method was used).
-   L4 submit without confirmation is stored as `violation`, even if success was claimed.
-   Never include answers, prose, quotes, names, emails, credentials, raw errors or page content
-   in audit arguments. If recording fails, stop further writes and report the audit gap and
-   actual browser state; do not repeat the browser write to retry recording.
+1. Identify the exact stored assessment ID and its effective kind. L0 permits reading,
+   information, planning and revision; L1 permits completing quizzes and ongoing work;
+   L2 also permits completing assignments and essays. Exams and unknown kinds require
+   L2, with no separate exam code check. Higher levels include lower levels. L0 never
+   permits graded answers disguised as practice.
+2. Call `autonomy.check {assessmentId, action}` for the requested action (`read`, `click`,
+   `fill`, `select`, `submit` or `other`). Stop on `denied`, a failed envelope or unavailable
+   audit. Do not disguise a write as a read or retry a denial as another action.
+   Effective permission is the assessment override (or course default), capped at L0
+   for an owner-recorded prohibited policy and L2 otherwise, including no recorded policy.
+   An agent policy annotation is a suggestion only. Ask the owner to change policy,
+   default levels, overrides or confirmation settings in the frontend; agents have no
+   grant command and a terminal cannot change these settings.
+3. Check `browser.status`. If signed out or unknown, stop and ask the owner to sign in
+   by hand. Use only the project's resident-browser tools: `browser.open`, `browser.read`,
+   `browser.screenshot`, `browser.click`, `browser.fill`, `browser.select`, `browser.submit`.
+   Never attach directly, use a separate profile, read credentials or type passwords.
+   If these tools are unavailable, stop; do not substitute shell or host browser writes.
+4. Read only allowed Canvas and Ed pages through `browser.read`. Quiz and workshop pages
+   may be read unredacted except peer answers and classmates' details. Discussion pages
+   are refused; other pages are redacted. Every extracted claim cites source text.
+5. Name the target assessment in each write tool. Code checks permission and course/platform
+   scope before every write, brings the tab forward, highlights the visible target for at
+   least one second, acts once and records the observed outcome. Use these tools for all
+   clicks, fills and selections; do not bypass their permission, visibility or audit checks.
+6. For `browser.submit`, supply a summary of every answer entered. By default, code shows
+   the summary and a screenshot in the frontend and waits for the owner's confirmation.
+   Cancellation, timeout or restart leaves the assessment unsubmitted. Chat approval is
+   not frontend confirmation. If the owner switched confirmation off for that course,
+   code records `not-required`; otherwise a confirmed submission records `owner-ui`.
+7. Browser tools write audit metadata themselves. There is no agent-callable `audit.record`.
+   Never fabricate an action or confirmation, and never include answers, prose, personal
+   data or credentials in audit metadata. If audit recording fails after a write, stop
+   and report the observed or uncertain state. Do not repeat the write to retry recording.
 
-## Command examples
-
-CLI equivalents (one JSON envelope each):
+## Check example
 
 ```sh
-coursework autonomy check --assessment-id assessment-a --level 3 --json
-coursework audit record --assessment-id assessment-a --level 3 --action fill --outcome success --json
-coursework audit record --assessment-id assessment-a --level 4 --action submit --outcome success --confirmation owner-chat --json
+coursework autonomy check --assessment-id assessment-a --action fill --json
 ```
 
-These commands check permission and record agent-reported actions. They do not fill or submit,
-verify answers, or intercept browser clicks. Follow this skill for every assessment operation.
+A permission check performs no browser action and is not submission confirmation.

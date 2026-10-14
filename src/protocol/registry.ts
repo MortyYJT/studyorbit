@@ -15,6 +15,7 @@ export interface RegistryEntry<I extends z.ZodType = z.ZodType, O extends z.ZodT
   name: string; input: I; output: O; handler: Handler<z.output<I>, z.output<O>>; level: Level;
   /** Extensions declare owner gates here; transport adapters share this classification. */
   authority?: 'agent' | 'owner' | 'owner-session';
+  references?: (input: unknown) => Pick<AuditEvent, 'courseId' | 'assessmentId' | 'level' | 'policyRef' | 'grantRef'>;
 }
 export class Registry {
   private readonly entries = new Map<string, RegistryEntry>();
@@ -86,10 +87,10 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   const runId = randomUUID(); const started = performance.now(); let executed = false; let handlerSucceeded = false; let completionRecording = false;
   // Do not let oversized/invalid names inject request prose into the metadata journals.
   const safeName = registry.get(name)?.name ?? 'unknown';
-  let refs: Pick<AuditEvent, 'courseId' | 'assessmentId' | 'revision' | 'policyRef' | 'grantRef'> = {};
+  let refs: Pick<AuditEvent, 'courseId' | 'assessmentId' | 'revision' | 'level' | 'policyRef' | 'grantRef'> = {};
   const record = async (phase: AuditEvent['phase'], code: AuditEvent['code']) => {
     const event = { ...refs, command: safeName, runId, phase, code };
-    const selfAudited = ['autonomy.check', 'audit.record'].includes(name);
+    const selfAudited = name === 'autonomy.check';
     if (!selfAudited || phase === 'denial' && !executed) await context.audit.record(event);
     try { await context.runs.record(event); }
     catch (error) {
@@ -110,12 +111,12 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
       if (!context.owner) throw new CourseworkError('INVALID_INPUT', safeMessages.INVALID_INPUT);
       await context.owner.assertOwner(name);
     }
-    refs = await context.authorization.references?.(name, entry.level, parsed.data) ?? {};
+    refs = entry.references?.(parsed.data) ?? await context.authorization.references?.(name, entry.level, parsed.data) ?? {};
     await context.authorization.check(name, entry.level, parsed.data);
     if ((entry.level >= 1 || name === 'revision.write' || name === 'practice.write') && name in contracts) await context.evidence.check(name as CommandName, parsed.data);
     await record('intent', 'OK');
     executed = true;
-    const raw = await entry.handler(parsed.data, { ...context, runId });
+    const raw = await entry.handler(parsed.data, { ...context, runId, setAuditReferences: next => { refs = next; } });
     handlerSucceeded = true;
     const validated = entry.output.safeParse(raw);
     if (!validated.success) throw new CourseworkError('INTERNAL', safeMessages.INTERNAL);
@@ -127,7 +128,7 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
     await record('outcome', result.ok ? 'OK' : result.error.code);
   } catch (error) {
     // After a contract write/action returned, any later validation, privacy or recording failure is uncertainty.
-    let failure = handlerSucceeded && !readNames.has(name) && (completionRecording || writeNames.has(name))
+    let failure = handlerSucceeded && !readNames.has(name) && (completionRecording || writeNames.has(name) || isOwnerCommand(registry.get(name) ?? name))
       ? new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN) : safeError(error, name);
     try { await record(executed ? 'outcome' : 'denial', failure.code); }
     catch { if (failure.code !== 'UNCERTAIN') failure = new CourseworkError('INTERNAL', safeMessages.INTERNAL); }
@@ -189,9 +190,12 @@ export function createRegistry(options: { browser?: Partial<BrowserServices>; au
     await (options.browser?.stop ? options.browser.stop() : ownerResidentBrowser().stop()); return { running: false as const };
   } });
   for (const name of Object.keys(autonomyContracts) as (keyof typeof autonomyContracts)[]) {
-    registry.register<z.ZodType, z.ZodType>({ name, ...autonomyContracts[name], handler: async (input, context) => {
+    registry.register<z.ZodType, z.ZodType>({ name, ...autonomyContracts[name], ...(name !== 'autonomy.check' ? { authority: 'owner-session' as const, references: (input: unknown) => {
       if (!options.autonomy) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
-      return name === 'autonomy.check' ? options.autonomy.check(input as never, context.runId) : options.autonomy.record(input as never, context.runId);
+      return options.autonomy.references(name, input);
+    } } : {}), handler: async (input, context) => {
+      if (!options.autonomy) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
+      return name === 'autonomy.check' ? options.autonomy.check(input as never, context.runId) : options.autonomy.set(name, input, context);
     } });
   }
   return registry;

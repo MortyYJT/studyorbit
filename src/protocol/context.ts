@@ -40,6 +40,8 @@ export interface TrustedContext {
   /** Audit and operational runs are distinct; neither receives request prose or raw errors. */
   runs: { record(event: AuditEvent): Promise<void> };
   owner?: OwnerInteraction;
+  /** Host-only callback: capture a write's audit references before another request can mutate state. */
+  setAuditReferences?: (references: Pick<AuditEvent, 'courseId' | 'assessmentId' | 'level' | 'policyRef' | 'grantRef'>) => void;
   /** Dispatch identity passed only by the trusted host. */
   runId?: string;
 }

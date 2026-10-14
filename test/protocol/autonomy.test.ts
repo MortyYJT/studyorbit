@@ -1,117 +1,176 @@
-import { expect, it, vi } from 'vitest';
-import { AssessmentAutonomy } from '../../src/protocol/autonomy.js';
-import type { AuthorizationStore } from '../../src/protocol/authorization.js';
+import { afterEach, expect, it, vi } from 'vitest';
+import { AssessmentAutonomy, required, cap, effective } from '../../src/protocol/autonomy.js';
+import { SqliteRepository } from '../../src/store/sqlite.js';
 import { createRegistry, dispatch } from '../../src/protocol/registry.js';
 import { createFakeContext } from '../../src/protocol/fakes.js';
-const target = { assessmentId: 'a', courseId: 'c', category: 'assignment' as const };
-const policy = { version: 1, courseId: 'c', status: 'owner-attested', cap: 4, attestation: 'Synthetic', date: '2026-10-14' };
-const grant = { version: 1, ...target, level: 4, date: '2026-10-14' };
-function setup(p: unknown = policy, g: unknown = grant, t: unknown = target) {
-  const store = { target: async () => t, policy: async () => p && ({ record: p, ref: 'a'.repeat(64) }),
-    grant: async () => g && ({ record: g, ref: 'b'.repeat(64) }) } as unknown as AuthorizationStore;
-  const events: unknown[] = []; const audit = { record: vi.fn(async (event: unknown) => { events.push(event); }) };
-  return { service: new AssessmentAutonomy(store, audit), audit, events };
+import type { TrustedContext } from '../../src/protocol/context.js';
+import { httpCommandContext } from '../../src/protocol/http.js';
+import { parseProtocolCLI } from '../../src/protocol/cli.js';
+import { synthetic } from '../fixtures/synthetic.js';
+import { hash } from '../../src/citations/exact.js';
+const stores: SqliteRepository[] = [];
+afterEach(() => stores.splice(0).forEach(store => store.close()));
+function setup() {
+  const store = new SqliteRepository(':memory:'); stores.push(store);
+  store.saveBatch({ modules: [synthetic.module], courses: [synthetic.course], assessments: synthetic.assessments });
+  const context = createFakeContext({ owner: true });
+  const service = new AssessmentAutonomy(store, context.audit);
+  const registry = createRegistry({ autonomy: service });
+  const call = (name: string, input: unknown, ctx: TrustedContext = context) => dispatch(registry, name, input, ctx);
+  return { store, context, service, registry, call };
 }
-it.each([
-  ['policy-missing', null, grant, target],
-  ['course-prohibited', { ...policy, status: 'prohibited', cap: 1 }, grant, target],
-  ['exam', policy, grant, { ...target, category: 'exam' }],
-  ['kind-unknown', policy, grant, { ...target, category: 'unknown' }],
-  ['grant-missing', policy, null, target],
-  ['grant-mismatch', policy, { ...grant, assessmentId: 'b' }, target],
-  ['grant-mismatch', policy, { ...grant, courseId: 'other' }, target],
-  ['grant-revoked', policy, { ...grant, level: 0 }, target],
-  ['grant-level', policy, { ...grant, level: 2 }, target],
-  ['course-cap', { ...policy, cap: 2 }, grant, target],
-])('denies %s and appends safe metadata', async (reason, p, g, t) => {
-  const { service, events } = setup(p, g, t);
-  expect(await service.check({ assessmentId: 'a', level: 3 })).toEqual({ decision: 'denied', reason });
-  expect(events).toHaveLength(1);
-  expect(events[0]).toMatchObject({ assessmentId: 'a', level: 3, decision: 'denied', reason });
-  expect(JSON.stringify(events)).not.toContain('Synthetic');
+const courseId = synthetic.course.id;
+const writes = [
+  ['autonomy.policy.set', { courseId, status: 'allowed' }],
+  ['autonomy.default.set', { courseId, level: 1 }],
+  ['autonomy.override.set', { assessmentId: 'd', level: 2 }],
+  ['autonomy.override.clear', { assessmentId: 'd' }],
+  ['autonomy.confirmation.set', { courseId, confirmBeforeSubmit: false }],
+] as const;
+it('required kind, cap and effective level follow work type, not browser action', () => {
+  expect(['quiz', 'ongoing', 'assignment', 'exam', undefined].map(kind => required(kind))).toEqual([1, 1, 2, 2, 2]);
+  expect(cap('prohibited')).toBe(0); expect(cap(undefined)).toBe(2);
+  expect(effective(1, 2, 'prohibited')).toBe(0);
+  expect(effective(1, 2, undefined)).toBe(2);
+  expect(effective(2, 0, 'allowed')).toBe(0);
 });
-it('allows L0/L1 without policy and granted L2–L4, rereading revocation', async () => {
-  const low = setup(null, null);
-  for (const level of [0, 1] as const) expect(await low.service.check({ assessmentId: 'a', level })).toEqual({ decision: 'allowed', reason: 'allowed' });
-  const { service, events } = setup();
-  for (const level of [2, 3, 4] as const) expect(await service.check({ assessmentId: 'a', level })).toEqual({ decision: 'allowed', reason: 'allowed' });
-  expect(events).toHaveLength(3);
+it('prohibited caps L2 overrides at L0; clearing policy restores the uncapped override', async () => {
+  const { call, context } = setup();
+  await call('autonomy.override.set', { assessmentId: 'd', level: 2 });
+  await call('autonomy.policy.set', { courseId, status: 'prohibited' });
+  expect(await call('autonomy.check', { assessmentId: 'd', action: 'fill' })).toMatchObject({ ok: true, data: { decision: 'denied', reason: 'course-prohibited' } });
+  expect(context.events.at(-1)).toMatchObject({ courseId, assessmentId: 'd', level: 0, decision: 'denied' });
+  await call('autonomy.policy.set', { courseId, status: null });
+  expect(await call('autonomy.check', { assessmentId: 'd', action: 'submit' })).toMatchObject({ ok: true, data: { decision: 'allowed' } });
 });
-it('returns denied audit-unavailable even through dispatch when the journal is broken', async () => {
-  const { service, audit } = setup(); audit.record.mockRejectedValue(new Error('secret raw error'));
-  const context = createFakeContext(); context.audit.record = async () => { throw Error('secret'); };
-  const result = await dispatch(createRegistry({ autonomy: service }), 'autonomy.check', { assessmentId: 'a', level: 3 }, context);
-  expect(result).toMatchObject({ ok: true, data: { decision: 'denied', reason: 'audit-unavailable' } });
-  expect(JSON.stringify(result)).not.toContain('secret');
-});
-it.each([undefined, 'owner-chat'] as const)('records L4 submit with confirmation %s', async confirmation => {
-  const { service, events } = setup();
-  expect(await service.record({ assessmentId: 'a', level: 4, action: 'submit', outcome: 'success', ...(confirmation ? { confirmation } : {}) })).toEqual({ recorded: true, outcome: confirmation ? 'success' : 'violation' });
-  expect(events).toHaveLength(1);
-  expect(events[0]).toMatchObject({ level: 4, action: 'submit', outcome: confirmation ? 'success' : 'violation', policyRef: 'a'.repeat(64), grantRef: 'b'.repeat(64) });
-});
-it('refuses arbitrary prose, answers, personal data and confirmation text', async () => {
-  const { service, events } = setup(); const context = createFakeContext();
-  for (const extra of [{ answers: 'private' }, { outcome: 'email@example.invalid' }, { confirmation: 'my password' }, { assessmentId: 'email@example.invalid' }]) {
-    expect(await dispatch(createRegistry({ autonomy: service }), 'audit.record', { assessmentId: 'a', level: 3, action: 'fill', outcome: 'success', ...extra }, context)).toMatchObject({ ok: false });
+it('owner L1 default allows quizzes and ongoing work, but assignments require L2', async () => {
+  const { call, store } = setup();
+  await call('autonomy.policy.set', { courseId, status: 'allowed' });
+  await call('autonomy.default.set', { courseId, level: 1 });
+  for (const kind of ['quiz', 'ongoing', 'assignment'] as const) {
+    store.saveAssessment({ ...synthetic.assessments[3]!, kind });
+    expect(await call('autonomy.check', { assessmentId: 'd', action: 'fill' }))
+      .toMatchObject({ ok: true, data: { decision: kind === 'assignment' ? 'denied' : 'allowed' } });
   }
-  expect(events).toHaveLength(0);
 });
-it('shared journal outage returns audit-unavailable rather than preempting the check', async () => {
-  const { service, audit } = setup(); audit.record.mockRejectedValue(new Error('private storage failure'));
-  const context = createFakeContext();
-  context.runs.record = context.audit.record = async () => { throw new Error('private storage failure'); };
-  expect(await dispatch(createRegistry({ autonomy: service }), 'autonomy.check', { assessmentId: 'a', level: 3 }, context))
+it('exam and unknown need L2 without a separate denial; another assessment override is ignored', async () => {
+  const { call, store } = setup();
+  await call('autonomy.default.set', { courseId, level: 2 });
+  await call('autonomy.override.set', { assessmentId: 'a', level: 0 });
+  for (const kind of ['exam', undefined] as const) {
+    store.saveAssessment({ ...synthetic.assessments[3]!, kind });
+    expect(await call('autonomy.check', { assessmentId: 'd', action: 'fill' })).toMatchObject({ ok: true, data: { decision: 'allowed' } });
+  }
+});
+it('an override can raise or lower the default and clear returns to the course default', async () => {
+  const { call } = setup();
+  await call('autonomy.default.set', { courseId, level: 0 });
+  await call('autonomy.override.set', { assessmentId: 'd', level: 2 });
+  expect(await call('autonomy.check', { assessmentId: 'd', action: 'fill' })).toMatchObject({ data: { decision: 'allowed' } });
+  await call('autonomy.default.set', { courseId, level: 2 });
+  await call('autonomy.override.set', { assessmentId: 'd', level: 0 });
+  expect(await call('autonomy.check', { assessmentId: 'd', action: 'fill' })).toMatchObject({ data: { decision: 'denied' } });
+  await call('autonomy.override.clear', { assessmentId: 'd' });
+  expect(await call('autonomy.check', { assessmentId: 'd', action: 'fill' })).toMatchObject({ data: { decision: 'allowed' } });
+});
+it('agent policy suggestions are not authority; effective kind follows owner then agent then sync', async () => {
+  const { store, call } = setup();
+  await call('autonomy.default.set', { courseId, level: 1 });
+  const annotation = { id: 'suggestion', entity: 'assessment' as const, entityId: 'd', field: 'kind', value: 'quiz', origin: 'agent' as const,
+    citations: [{ sourceItemId: 's', quote: 'Synthetic', locator: '1' }], at: '2026-01-01T00:00:00Z' };
+  store.appendAnnotation(annotation);
+  store.appendAnnotation({ ...annotation, id: 'policy-suggestion', entity: 'course', entityId: courseId, field: 'aiPolicy', value: 'prohibited' });
+  expect(await call('autonomy.check', { assessmentId: 'd', action: 'fill' })).toMatchObject({ data: { decision: 'allowed' } });
+  store.appendAnnotation({ ...annotation, id: 'owner-kind', origin: 'owner', value: 'assignment', citations: [] });
+  store.appendAnnotation({ ...annotation, id: 'later-agent' });
+  expect(await call('autonomy.check', { assessmentId: 'd', action: 'fill' })).toMatchObject({ data: { decision: 'denied' } });
+});
+it.each(writes)('%s persists owner changes and audits the trusted target without prose', async (name, input) => {
+  const { call, context, store } = setup();
+  expect(await call(name, input)).toMatchObject({ ok: true, data: { recorded: true } });
+  expect(context.events).toEqual(expect.arrayContaining([
+    expect.objectContaining({ command: name, courseId, phase: 'intent' }),
+    expect.objectContaining({ command: name, courseId, phase: 'outcome' }),
+  ]));
+  expect(store.readCourseAutonomy(courseId).length + store.readAnnotations('course', courseId).length + store.readAnnotations('assessment', 'd').length).toBe(1);
+});
+it.each(writes)('%s refuses agent HTTP, agent tools, non-TTY and TTY with no mutation', async (name, input) => {
+  const { call, registry, context, store } = setup();
+  expect(await call(name, input, httpCommandContext(context, name, false, () => false))).toMatchObject({ ok: false });
+  const agent = registry.agentTools(context);
+  expect(agent.registry.get(name)).toBeUndefined();
+  expect(await dispatch(agent.registry, name, input, agent.context)).toMatchObject({ ok: false });
+  for (const isTTY of [false, true]) {
+    const out: string[] = [];
+    const args = name.split('.').concat(Object.entries(input).flatMap(([key, value]) => ['--' + key.replace(/[A-Z]/g, c => '-' + c.toLowerCase()), String(value)]));
+    await parseProtocolCLI(args, { registry, context, isTTY, stdout: s => out.push(s), stderr: () => {} });
+    expect(JSON.parse(out[0]!)).toMatchObject({ ok: false });
+  }
+  expect(store.readCourseAutonomy(courseId)).toEqual([]);
+  expect(store.readAnnotations('course', courseId)).toEqual([]); expect(store.readAnnotations('assessment', 'd')).toEqual([]);
+});
+it('submission confirmation defaults true and survives default-level edits when switched off', async () => {
+  const { service, call } = setup();
+  expect(service.settings(courseId).confirmBeforeSubmit).toBe(true);
+  await call('autonomy.confirmation.set', { courseId, confirmBeforeSubmit: false });
+  await call('autonomy.default.set', { courseId, level: 2 });
+  expect(service.settings(courseId)).toMatchObject({ defaultLevel: 2, confirmBeforeSubmit: false });
+  await call('autonomy.confirmation.set', { courseId, confirmBeforeSubmit: true });
+  expect(service.settings(courseId).confirmBeforeSubmit).toBe(true);
+});
+it('audit.record is absent and an agent cannot fabricate a browser action', async () => {
+  const { registry, context } = setup();
+  expect(registry.get('audit.record')).toBeUndefined();
+  const agent = registry.agentTools(context);
+  expect(await dispatch(agent.registry, 'audit.record', { assessmentId: 'd', action: 'submit', confirmation: 'owner-ui' }, agent.context)).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  expect(context.events.some(event => event.action || event.confirmation)).toBe(false);
+});
+it('audit unavailable denies even with both journals broken; settings do not change before intent audit', async () => {
+  const { registry, service, context, store } = setup();
+  context.audit.record = context.runs.record = vi.fn(async () => { throw Error('private failure'); });
+  const broken = createRegistry({ autonomy: new AssessmentAutonomy(store, context.audit) });
+  expect(await dispatch(broken, 'autonomy.check', { assessmentId: 'd', action: 'fill' }, context))
     .toMatchObject({ ok: true, data: { decision: 'denied', reason: 'audit-unavailable' } });
+  expect(await dispatch(broken, 'autonomy.default.set', { courseId, level: 2 }, context)).toMatchObject({ ok: false });
+  expect(store.readCourseAutonomy(courseId)).toEqual([]);
+  expect(service.settings(courseId).defaultLevel).toBe(0);
+  expect(registry.get('autonomy.check')).toBeDefined();
 });
-it('validation denials receive safe audit without echoing invalid input', async () => {
-  const { service } = setup(); const context = createFakeContext();
-  expect(await dispatch(createRegistry({ autonomy: service }), 'autonomy.check', { assessmentId: 'private prose', level: 9 }, context)).toMatchObject({ ok: false });
-  expect(context.events).toHaveLength(1);
-  expect(context.events[0]).toMatchObject({ command: 'autonomy.check', phase: 'denial', code: 'INVALID_INPUT' });
-  expect(JSON.stringify(context.events)).not.toContain('private prose');
+it('unresolved targets and invalid inputs omit request text from audits', async () => {
+  const { call, context } = setup();
+  expect(await call('autonomy.check', { assessmentId: 'Synthetic.Person/answer-42', action: 'fill' })).toMatchObject({ data: { decision: 'denied', reason: 'assessment-unavailable' } });
+  expect(await call('autonomy.check', { assessmentId: 'private prose', action: 'fill' })).toMatchObject({ ok: false });
+  expect(JSON.stringify(context.events)).not.toMatch(/Synthetic.Person|private prose/);
 });
-it('records actual writes even when permission references cannot be read', async () => {
-  const events: unknown[] = [];
-  const store = { target: async () => target, policy: async () => { throw Error('private'); }, grant: async () => { throw Error('private'); } } as unknown as AuthorizationStore;
-  const service = new AssessmentAutonomy(store, { record: async event => { events.push(event); } });
-  expect(await service.record({ assessmentId: 'a', level: 3, action: 'fill', outcome: 'success' })).toEqual({ recorded: true, outcome: 'success' });
-  expect(events).toHaveLength(1); expect(events[0]).toMatchObject({ assessmentId: 'a', courseId: 'c', action: 'fill' });
-  expect(JSON.stringify(events)).not.toContain('private');
+
+it('owner setting audits link the before and after authorization versions and effective level', async () => {
+  const { call, context, store } = setup();
+  await call('autonomy.policy.set', { courseId, status: 'allowed' });
+  const policyRef = hash(store.readAnnotations('course', courseId).at(-1)!);
+  await call('autonomy.default.set', { courseId, level: 1 });
+  const defaultRef = hash(store.readCourseAutonomy(courseId).at(-1)!);
+  expect(context.events.at(-1)).toMatchObject({ courseId, level: 1, policyRef, grantRef: defaultRef });
+  await call('autonomy.override.set', { assessmentId: 'd', level: 2 });
+  const overrideRef = hash(store.readAnnotations('assessment', 'd').at(-1)!);
+  expect(context.events.at(-2)).toMatchObject({ courseId, assessmentId: 'd', phase: 'intent', level: 1, policyRef, grantRef: defaultRef });
+  expect(context.events.at(-1)).toMatchObject({ courseId, assessmentId: 'd', phase: 'outcome', level: 2, policyRef, grantRef: overrideRef });
+  await call('autonomy.override.clear', { assessmentId: 'd' });
+  expect(context.events.at(-1)).toMatchObject({ level: 1, policyRef, grantRef: defaultRef });
+  await call('autonomy.policy.set', { courseId, status: 'prohibited' });
+  const prohibitedRef = hash(store.readAnnotations('course', courseId).at(-1)!);
+  expect(context.events.at(-1)).toMatchObject({ level: 0, policyRef: prohibitedRef });
+  await call('autonomy.check', { assessmentId: 'd', action: 'fill' });
+  expect(context.events.at(-1)).toMatchObject({ level: 0, policyRef: prohibitedRef, grantRef: defaultRef });
 });
-it('audits only the canonical target reference and looks up its grant', async () => {
-  const events: unknown[] = [];
-  const grantLookup = vi.fn(async () => ({ record: grant, ref: 'b'.repeat(64) }));
-  const store = { target: async () => target, policy: async () => ({ record: policy, ref: 'a'.repeat(64) }),
-    grant: grantLookup } as unknown as AuthorizationStore;
-  const service = new AssessmentAutonomy(store, { record: async event => { events.push(event); } });
-  const assessmentId = 'synthetic-alias';
-  expect(await service.check({ assessmentId, level: 3 })).toEqual({ decision: 'allowed', reason: 'allowed' });
-  expect(await service.record({ assessmentId, level: 3, action: 'fill', outcome: 'success' }))
-    .toEqual({ recorded: true, outcome: 'success' });
-  expect(grantLookup.mock.calls).toEqual([['a'], ['a']]);
-  expect(events).toHaveLength(2);
-  for (const event of events) expect(event).toMatchObject({ assessmentId: 'a', courseId: 'c' });
-  expect(JSON.stringify(events)).not.toContain(assessmentId);
-});
-it('denies unresolved targets and preserves unconfirmed L4 violations without request references', async () => {
-  const events: unknown[] = [];
-  const store = { target: async () => { throw Error('private target failure'); } } as unknown as AuthorizationStore;
-  const service = new AssessmentAutonomy(store, { record: async event => { events.push(event); } });
-  const assessmentId = 'Jane.Doe/answer-is-42';
-  expect(await service.check({ assessmentId, level: 1 })).toEqual({ decision: 'denied', reason: 'assessment-unavailable' });
-  expect(await service.record({ assessmentId, level: 4, action: 'submit', outcome: 'success' }))
-    .toEqual({ recorded: true, outcome: 'violation' });
-  expect(events).toHaveLength(2);
-  for (const event of events) expect(event).not.toHaveProperty('assessmentId');
-  expect(JSON.stringify(events)).not.toContain(assessmentId);
-  expect(JSON.stringify(events)).not.toContain('private target failure');
-});
-it.each(['policy', 'grant'] as const)('keeps the resolved target in the audit when the %s read fails', async failing => {
-  const store = { target: async () => target,
-    policy: async () => { if (failing === 'policy') throw new Error('unreadable'); return { record: policy, ref: 'a'.repeat(64) }; },
-    grant: async () => { if (failing === 'grant') throw new Error('unreadable'); return { record: grant, ref: 'b'.repeat(64) }; } } as unknown as AuthorizationStore;
-  const events: unknown[] = []; const service = new AssessmentAutonomy(store, { record: async (event: unknown) => { events.push(event); } } as never);
-  expect(await service.check({ assessmentId: 'a', level: 3 })).toEqual({ decision: 'denied', reason: 'authorization-unavailable' });
-  expect(events[0]).toMatchObject({ assessmentId: 'a', courseId: 'c', decision: 'denied', reason: 'authorization-unavailable' });
+
+it('concurrent owner settings audit each call’s own persisted authorization version', async () => {
+  const { call, context, store } = setup();
+  const results = await Promise.all([2, 0].map(level => call('autonomy.override.set', { assessmentId: 'd', level })));
+  const versions = store.readAnnotations('assessment', 'd');
+  for (const [index, level] of [2, 0].entries()) {
+    const result = results[index]!;
+    expect(result.ok).toBe(true);
+    const event = context.events.find(row => row.runId === result.meta?.runId && row.phase === 'outcome');
+    expect(event).toMatchObject({ level, grantRef: hash(versions.find(row => row.value === level)!) });
+  }
 });
