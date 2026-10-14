@@ -1,3 +1,4 @@
+import { materialMetadata } from '../revision/source-fetch.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { AcceptedRecordReader } from '../store/accepted-records.js';
@@ -33,9 +34,14 @@ export class TrustedStoreEvidence implements SourceEvidenceReader {
   }
   protect(value: unknown): unknown { return protectRead(value, this.scope); }
   async get(id: string): Promise<Evidence> {
+    return this.getSync(id);
+  }
+  getSync(id: string): Evidence {
     const matches = this.metadata.filter(m => m.sourceItemId === id || m.legacySourceItemId === id);
     if (matches.length > 1) throw unsafeSource();
-    const metadata = matches[0];
+    const stored = this.store.loadSourceItem(id);
+    const fetched = stored?.kind === 'material' ? materialMetadata(stored.externalId) : undefined;
+    const metadata = matches[0] ?? (fetched && stored?.courseId ? { sourceItemId: id, courseId: stored.courseId, provenance: stored.platform, sourceHash: stored.contentHash, ...fetched } : undefined);
     if (metadata && metadata.sourceItemId !== id && this.store.loadSourceItem(id)) throw unsafeSource();
     const source = this.store.loadSourceItem(metadata?.sourceItemId ?? id);
     if (!source || !source.courseId || metadata && (metadata.courseId !== source.courseId || metadata.provenance !== source.platform)) throw unsafeSource();
@@ -53,7 +59,7 @@ export class TrustedStoreEvidence implements SourceEvidenceReader {
     } else if (/^page[: ]/i.test(locator)) throw unsafeSource();
     const evidence = SourceEvidenceSchema.parse({ sourceItemId: source.id, courseId: source.courseId,
       text: safe.text, sourceHash, locator, ...(metadata?.page !== undefined ? { page: metadata.page } : {}),
-      provenance: source.platform, redacted: true });
+      provenance: source.platform, ...(safe.url ? { url: safe.url } : {}), redacted: true });
     // Revalidation cannot change text, locators or identity under already accepted hashes/offsets.
     if (JSON.stringify(this.protect(evidence)) !== JSON.stringify(evidence)) throw unsafeSource();
     return evidence;
@@ -61,6 +67,7 @@ export class TrustedStoreEvidence implements SourceEvidenceReader {
 }
 export interface AuxiliaryReadPorts {
   accepted?: AcceptedRecordReader;
+  revision?: { read<N extends 'revision.read' | 'practice.stats'>(name: N, input: ParsedCommandInput<N>): Promise<CommandOutput<N>> };
   /** Future D audit adapter and existing Q1 managed-profile read, explicitly mounted by a host. */
   audit?: { read(input: ParsedCommandInput<'audit.list'>): Promise<CommandOutput<'audit.list'>> };
   /** M1 entities do not store source links except Task citations; never infer them by name. */
@@ -93,6 +100,10 @@ export class StoreProtocolReads implements ProtocolRepository {
     }
   }
   private async execute(name: ReadCommand, input: unknown): Promise<unknown> {
+    if (name === 'revision.read' || name === 'practice.stats') {
+      if (!this.ports.revision) throw unavailable();
+      return this.ports.revision.read(name, input as never);
+    }
     if (name === 'sources.get') return this.evidence.get((input as ParsedCommandInput<'sources.get'>).sourceItemId);
     if (name === 'revision.list' || name === 'practice.list') {
       if (!this.ports.accepted) { return unsupported(); }

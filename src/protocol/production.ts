@@ -1,3 +1,6 @@
+import { SqliteStudyRecordStore } from '../store/study-records.js';
+import { RevisionService, StoreStudyEvidence } from '../revision/service.js';
+import type { SourceTransport } from '../revision/source-fetch.js';
 import { databasePath } from '../config/data-dir.js';
 import { SqliteRepository } from '../store/sqlite.js';
 import { ProtocolFiles } from './files.js';
@@ -15,9 +18,9 @@ import { CourseworkError } from './errors.js';
 export interface ProductionOptions {
   store?: SqliteRepository; files?: ProtocolFiles; metadata?: readonly EvidenceMetadata[]; privacyScope?: unknown;
   reads?: AuxiliaryReadPorts; study?: { provider: StudyEvidenceProvider; store: StudyRecordStore };
-  owner?: TrustedContext['owner'];
+  owner?: TrustedContext['owner']; sourceTransport?: SourceTransport;
 }
-/** Compose real storage once for all transports; unmounted study ports fail closed. */
+/** Compose durable storage and validated revision services once for all transports. */
 export function createProductionProtocol(options: ProductionOptions = {}) {
   const store = options.store ?? new SqliteRepository(databasePath());
   const files = options.files ?? new ProtocolFiles();
@@ -26,10 +29,15 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const authorization = new SharedAuthorization(authorizationStore, audit);
   const autonomy = new AssessmentAutonomy(store, audit);
   const evidence = new TrustedStoreEvidence(store, { metadata: options.metadata, privacyScope: options.privacyScope });
-  const study = options.study && new StudyWriteService(options.study);
-  const studyEvidence = options.study && new StudyCitationService(options.study.provider);
+  const accepted = new SqliteStudyRecordStore(store, evidence);
+  const provider = options.study?.provider ?? new StoreStudyEvidence(store, evidence);
+  const study = new StudyWriteService({ provider, store: options.study?.store ?? accepted });
+  const studyEvidence = new StudyCitationService(provider);
+  const revision = new RevisionService(store, evidence, { transport: options.sourceTransport });
   const repository = new StoreProtocolReads(store, evidence, {
     ...options.reads,
+    accepted: options.reads?.accepted ?? accepted,
+    revision: { read: (name, input) => revision.read(name, input) },
     audit: options.reads?.audit ?? { read: async input => {
       // Freeze the append-only prefix so this command's own audit rows do not invalidate paging.
       const rows = (await audit.list()).filter(row => (!input.command || row.command === input.command)
@@ -60,8 +68,8 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const context: TrustedContext = {
     repository, authorization, audit, runs,
     services: new ComposedServices({ 'policy.record': authorization.services, 'grant.record': authorization.services,
-      ...(study ? { 'breakdown.write': study, 'revision.write': study, 'practice.write': study } : {}) }),
-    evidence: new ComposedEvidence(studyEvidence ? { 'breakdown.write': studyEvidence, 'revision.write': studyEvidence, 'practice.write': studyEvidence } : {}),
+      'breakdown.write': study, 'revision.write': study, 'practice.write': study, 'source.fetch': revision, 'practice.attempt.record': revision }),
+    evidence: new ComposedEvidence({ 'breakdown.write': studyEvidence, 'revision.write': studyEvidence, 'practice.write': studyEvidence }),
     // Autonomy outputs are closed enums validated by their schemas; free-text filtering would only corrupt reason codes.
     privacy: { protect: async (command, value) => command.startsWith('autonomy.') ? value : evidence.protect(value) },
     owner: options.owner ?? { assertOwner: async name => {
