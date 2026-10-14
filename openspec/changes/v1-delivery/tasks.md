@@ -5,16 +5,16 @@ Each numbered group after 1 is one GitHub issue: one standalone clone on a `code
 - [x] 1.1 Archive `v1-rescope` with only the specs `main` implements (A–C); move its unimplemented deltas here; delete the empty `course-selection` spec; `openspec validate --specs --strict` passes
 - [x] 1.2 Write this change's proposal, design, specs and tasks; `openspec validate v1-delivery --strict` passes
 - [x] 1.3 Record the owner's 2026-10-15 choices (#147–#150) and Claude's choices (#151–#153) in `note/decisions.md`; update `note/handoff.md` and `note/product/roadmap.md`
-- [ ] 1.4 During dispatch: create one issue per group below with its "Covers" checklist; close superseded issues #31, #44, #46, #55, #77, #79 and #92 with a pointer here; decide whether the unpushed `codex/revision-skill` clone is reused for group 8 (it only installs `unpdf@1.8.1`)
+- [x] 1.4 During dispatch: create one issue per group below with its "Covers" checklist; close superseded issues #31, #44, #46, #55, #77, #79 and #92 with a pointer here; decide whether the unpushed `codex/revision-skill` clone is reused for group 8 (it only installs `unpdf@1.8.1`)
 
 ## 2. Issue A — Schema and store
 
 Covers: foundation for all stories. Spec: `domain-model`, `local-store`.
 
-- [ ] 2.1 Failing schema tests for every new entity and field in `domain-model` "Entity fields", including the `quiz` kind, agent estimate without reason, level out of range, agent annotation without citation, `platform: "ical"`
-- [ ] 2.2 Failing tests: course weight validation with unknown weights; grade projection `weights_unknown` first in the unavailable order
-- [ ] 2.3 Failing migration test on a synthetic database with change-event rows and an old L4 grant: one additive migration creates all new tables and columns, old rows unchanged
-- [ ] 2.4 Repository methods (read and append) for each new entity, with tests on the in-memory store; data-directory paths for `materials/`, `screenshots/`, `agent-workspace/` with owner-only permissions and git-ignore tests
+- [x] 2.1 Failing schema tests for every new entity and field in `domain-model` "Entity fields", including the `quiz` kind, agent estimate without reason, level out of range, agent annotation without citation, `platform: "ical"`
+- [x] 2.2 Failing tests: course weight validation with unknown weights; grade projection `weights_unknown` first in the unavailable order
+- [x] 2.3 Failing migration test on a synthetic database with change-event rows and an old L4 grant: one additive migration creates all new tables and columns, old rows unchanged
+- [x] 2.4 Repository methods (read and append) for each new entity, with tests on the in-memory store; data-directory paths for `materials/`, `screenshots/`, `agent-workspace/` with owner-only permissions and git-ignore tests
 
 ## 3. Issue B — Owner session, HTTP host and agent tool set
 
