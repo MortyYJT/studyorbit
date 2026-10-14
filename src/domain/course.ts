@@ -6,10 +6,12 @@ export const CourseAssessmentsSchema = z.object({
   course: CourseSchema,
   assessments: z.array(AssessmentSchema),
 }).superRefine(({ course, assessments }, ctx) => {
-  const sum = assessments.reduce((total, assessment) => total + assessment.weight, 0);
+  const sum = assessments.reduce((total, assessment) => total + (assessment.weight ?? 0), 0);
   // Allow only accumulated floating point error, not a missing assessment weight.
   const tolerance = Number.EPSILON * 100 * Math.max(1, assessments.length);
-  if (course.assessmentsComplete && Math.abs(sum - 100) > tolerance) {
+  if (course.assessmentsComplete && assessments.some(assessment => assessment.weight === undefined)) {
+    ctx.addIssue({ code: 'custom', path: ['assessments'], message: `Course ${course.code} (${course.id}) has unknown assessment weights` });
+  } else if (course.assessmentsComplete && Math.abs(sum - 100) > tolerance) {
     ctx.addIssue({ code: 'custom', path: ['assessments'], message: `Course ${course.code} (${course.id}) assessment weights sum to ${sum}; expected 100` });
   }
   if (assessments.filter(assessment => assessment.isFinal).length > 1) {

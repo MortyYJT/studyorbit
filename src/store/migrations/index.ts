@@ -2,7 +2,9 @@ import type { DatabaseSync } from 'node:sqlite';
 import { up as initial } from './001-initial.js';
 import { up as syncEvents } from './002-sync-events.js';
 
-const migrations = [initial, syncEvents] as const;
+import { up as delivery } from './003-delivery.js';
+
+const migrations = [initial, syncEvents, delivery] as const;
 export const latestVersion = migrations.length;
 
 function currentVersion(db: DatabaseSync): number {

@@ -4,13 +4,13 @@ import type { Assessment, Course, Module, SourceItem, Task, Run } from '../../sr
 // Entirely invented data. No captured course pages or real student information.
 export const syntheticCourse: Course = {
   id: 'course-1', moduleId: 'module-1', code: 'COMP90099',
-  name: 'Fictional computing', term: '2026-S1', assessmentsComplete: true,
+  name: 'Fictional computing', term: '2026-S1', assessmentsComplete: true, sources: [],
 };
 
 export function syntheticAssessment(id: string, weight: number, score?: number, isFinal = false, hurdleMin?: number): Assessment {
   return { id, courseId: syntheticCourse.id, name: `Fictional ${id}`,
     kind: isFinal ? 'exam' : 'assignment', weight, score, isFinal, hurdleMin,
-    status: score === undefined ? 'not_started' : 'graded' };
+    origin: 'sync', status: score === undefined ? 'not_started' : 'graded' };
 }
 
 export const syntheticAssessments: Assessment[] = [
@@ -24,11 +24,11 @@ const sourceItem: SourceItem = {
   id: 'source-1', platform: 'manual', externalId: 'fictional-brief-1',
   courseId: syntheticCourse.id, kind: 'assignment', title: 'Fictional assignment brief',
   url: 'https://example.invalid/brief', text,
-  contentHash: createHash('sha256').update(text).digest('hex'), fetchedAt: at,
+  contentHash: createHash('sha256').update(text).digest('hex'), fetchedAt: at, removed: false,
 };
 const task: Task = {
   id: 'task-1', moduleId: syntheticCourse.moduleId, courseId: syntheticCourse.id,
-  assessmentId: 'd', title: 'Outline the fictional assignment', source: 'coursework',
+  assessmentId: 'd', title: 'Outline the fictional assignment', source: 'coursework', done: false,
   steps: [{ title: 'Read the brief', estimateMinutes: 15, done: false,
     citations: [{ sourceItemId: sourceItem.id, quote: text, locator: 'paragraph 1' }] }],
 };

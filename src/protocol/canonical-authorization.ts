@@ -14,7 +14,7 @@ export class CanonicalAuthorizationStore implements AuthorizationStore {
     const assessment = this.repository.loadAssessment(id); if (!assessment) return denyAuthorization();
     this.course(assessment.courseId);
     return { courseId: assessment.courseId, assessmentId: assessment.id,
-      category: ['assignment', 'ongoing', 'exam'].includes(assessment.kind) ? assessment.kind : 'unknown' };
+      category: assessment.kind === 'assignment' || assessment.kind === 'ongoing' || assessment.kind === 'exam' ? assessment.kind : 'unknown' };
   }
   async resolve(input: unknown) { return this.target(z.object({ assessmentId: z.string() }).parse(input).assessmentId); }
   normalizePolicy(input: unknown) { const record = PolicyRecordSchema.parse(input); this.course(record.courseId); return record; }
