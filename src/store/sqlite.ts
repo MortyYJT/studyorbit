@@ -170,6 +170,7 @@ export class SqliteRepository implements Repository, CurrentStateReader {
       for (const value of batch.sourceItems ?? []) this.write('source_items', SourceItemSchema, value, ['platform', 'externalId', 'courseId', 'facts', 'removed']);
       for (const value of batch.tasks ?? []) this.write('tasks', TaskSchema, value, ['moduleId', 'courseId', 'assessmentId', 'done', 'allDay']);
       for (const value of batch.runs ?? []) this.write('runs', RunSchema, value, ['command', 'startedAt', 'conversationId', 'turns']);
+      for (const value of batch.assessmentLinks ?? []) this.appendAssessmentLink(value);
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');

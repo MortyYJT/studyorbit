@@ -1,4 +1,6 @@
 import { PlanningService } from '../planning/service.js';
+import { productionSync } from '../sync/runtime.js';
+import type { SyncCommands } from './sync.js';
 import { SqliteStudyRecordStore } from '../store/study-records.js';
 import { RevisionService, StoreStudyEvidence } from '../revision/service.js';
 import type { SourceTransport } from '../revision/source-fetch.js';
@@ -19,6 +21,7 @@ import { CourseworkError } from './errors.js';
 export interface ProductionOptions {
   store?: SqliteRepository; files?: ProtocolFiles; metadata?: readonly EvidenceMetadata[]; privacyScope?: unknown;
   reads?: AuxiliaryReadPorts; study?: { provider: StudyEvidenceProvider; store: StudyRecordStore };
+  sync?: SyncCommands;
   owner?: TrustedContext['owner']; sourceTransport?: SourceTransport;
 }
 /** Compose durable storage and validated revision services once for all transports. */
@@ -78,5 +81,5 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
-  return { registry: createRegistry({ autonomy, planning: new PlanningService(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
+  return { registry: createRegistry({ autonomy, planning: new PlanningService(store), sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
 }

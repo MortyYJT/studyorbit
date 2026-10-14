@@ -1,7 +1,7 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#157）。
+> 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#159）。
 
 - **最后更新：** 2026-10-15 07:40，无人值守调度员（#155），分支 `claude/dispatch-handoff-2026-10-15-b`。
 - **模式：** 开发中。定时调度员每小时一次，按 `v1-delivery` 推进；调度细节在本机 `.local/dispatcher/HANDOFF.md`。
@@ -19,21 +19,16 @@
 
 1. 合并 PR #121（D）；收尾 F。
 2. 派 H（#106，G 已合并）、E（#103）。
-3. K1（#109）要等你批准 `@types/react`、`@types/react-dom`。
+3. K1（#109）可以派了（`@types/react`、`@types/react-dom` 已批，#158）。
 
 ## 等你决定
 
-- 装 `@types/react`、`@types/react-dom`？（K1 前要）
-- 补理由：#150（完整内置工具）、#154（接受完整工具的隐私后果）、#125、#127、#129、#132、#145，以及旧的 #6、#9、#15–18、#23、#27、#29、#53、#67、#70。
-- 复核 Claude 自主决定 #110、#111、#151、#152、#153。
-- dsh 出题方式：PR #29 起一直欠题（PR #115、#116、#118、#119 也没排测验）。
+- 补理由：#127、#158，以及旧的 #6、#9、#15–18、#23、#27、#29、#53、#67、#70。
 
 ## 等你动手
 
 - R-B 3.5（任务 17.2）：终端里跑 `node dist/cli.js browser start`，登录 Canvas 和 Ed，跑 `browser status`，放一夜看登录能保持多久。
 - D 合并后，任务 5.6：在真实 profile 上跑一次 `coursework sync`，把实际数量和问题记进 PR。
-- GitHub → Settings → Emails 打开「Keep my email addresses private」。
-- 同意删除已合并的旧 clone：`../unimelb-coursework-agent-rescope-cuts`、`-resident-browser`、`-autonomy`、`-schema`、`-owner-session`（安全钩子拦递归删除）。
 
 ## 运行与验证
 
