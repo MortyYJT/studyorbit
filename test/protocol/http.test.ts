@@ -68,12 +68,12 @@ describe('generated loopback HTTP transport', () => {
     await expect(stat(server.capabilityFile)).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(send(server)).rejects.toBeDefined();
   });
-  it('derives all routes from the registry and supplies owner authority only after local capability verification', async () => {
+  it('derives all routes from the registry and refuses owner authority from the local capability file', async () => {
     const { server, registry, token, context } = await setup();
     for (const entry of createFakeRegistry().list()) registry.register(entry);
     for (const name of Object.keys(contracts) as (keyof typeof contracts)[]) {
       const response = await send(server, JSON.stringify(examples[name].input), { 'X-Coursework-Capability': token }, `/api/${name}`);
-      expect(response.status, name).toBe(ownerCommands.has(name) ? 400 : 200);
+      expect(response.status, name).toBe(ownerCommands.has(name) ? 403 : 200);
       expect(response.body.ok, name).toBe(!ownerCommands.has(name));
       expect(response.text).not.toContain(token);
     }
@@ -198,7 +198,7 @@ describe('HTTP security and dispatcher parity', () => {
       const input = JSON.stringify(examples[name].input);
       expect((await send(server, input, {}, `/api/${name}`)).status).toBe(403);
       expect((await send(server, input, { 'X-Coursework-Capability': 'wrong' }, `/api/${name}`)).status).toBe(403);
-      expect((await send(server, JSON.stringify({ ...examples[name].input, owner: true }), { 'X-Coursework-Capability': token }, `/api/${name}`)).status).toBe(400);
+      expect((await send(server, JSON.stringify({ ...examples[name].input, owner: true }), { 'X-Coursework-Capability': token }, `/api/${name}`)).status).toBe(name === 'policy.record' ? 403 : 400);
     }
     expect((context.services as FakeServices).writes).toEqual([]); expect(context.actionCalls).toEqual([]);
   });

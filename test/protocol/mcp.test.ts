@@ -39,7 +39,7 @@ it('discovers the registry minus owner-only commands, with zod-derived object in
   const { client } = await connect(registry, createFakeContext());
   const { tools } = await client.listTools();
   expect(tools.map(tool => tool.name).sort())
-    .toEqual(registry.list().map(entry => entry.name).filter(name => !ownerCommands.has(name)).sort());
+    .toEqual(registry.list().map(entry => entry.name).filter(name => !ownerCommands.has(name) && !['audit.record', 'sync.run'].includes(name)).sort());
   expect(tools.some(tool => ownerCommands.has(tool.name))).toBe(false);
   for (const tool of tools) {
     const entry = registry.get(tool.name)!;
@@ -116,7 +116,7 @@ it.each(['policy.record', 'grant.record'] as const)(
     const { client } = await connect(createRegistry(), context);
     for (const args of [examples[name].input, { ...examples[name].input, owner: true }]) {
       const { body } = envelope(await client.callTool({ name, arguments: args as Record<string, unknown> }));
-      expect(body).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+      expect(body).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
     }
     expect(ownerCalls).toBe(0);
     expect((context.services as FakeServices).writes).toHaveLength(0);

@@ -4,9 +4,10 @@ import type { Socket } from 'node:net';
 import { chmod, lstat, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
+import type { OwnerSession } from './owner-session.js';
+import { readStaticUI } from './static-ui.js';
 import type { TrustedContext } from './context.js';
-import { ownerCommands } from './contracts.js';
-import { dispatch, writeNames, type Registry } from './registry.js';
+import { dispatch, isOwnerCommand, writeNames, type Registry } from './registry.js';
 import { fail, type Envelope } from './envelope.js';
 import { CourseworkError, type ErrorCode } from './errors.js';
 
@@ -26,6 +27,8 @@ export interface HttpOptions {
   registry: Registry;
   context: TrustedContext;
   port?: number;
+  ownerSession?: OwnerSession;
+  staticDirectory?: string;
   /** Trusted host storage, default .local; tests use private temporary directories. */
   capabilityDirectory?: string;
   /** Host may tighten bounds, never enlarge them. */
@@ -108,7 +111,7 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
       if (req.socket) answered.add(req.socket);
       let text = JSON.stringify(envelope);
       // The transport's own bootstrap credential must never escape even through an injected port.
-      if (text.includes(token)) { status = 500; text = JSON.stringify(fail('unknown', 'INTERNAL', 'The command could not complete safely.')); }
+      if (text.includes(token) || options.ownerSession?.containsSecret(text)) { status = 500; text = JSON.stringify(fail('unknown', 'INTERNAL', 'The command could not complete safely.')); }
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(text),
         'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', Connection: 'close',
         ...(status === 405 ? { Allow: 'POST' } : {}) });
@@ -128,6 +131,17 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
       reject(403); return;
     }
     if ((req.url?.length ?? 0) > 1024) { reject(414); return; }
+    if (options.staticDirectory && !req.url?.startsWith('/api/')) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') { reject(405); return; }
+      void readStaticUI(options.staticDirectory, req.url ?? '').then(file => {
+        if (!file) { reject(404, 'NOT_FOUND'); return; }
+        if (res.destroyed || res.writableEnded || closing) return;
+        res.writeHead(200, { 'Content-Type': file.contentType, 'Content-Length': file.body.length,
+          'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', Connection: 'close' });
+        res.end(req.method === 'HEAD' ? undefined : file.body);
+      }).catch(() => reject(404, 'NOT_FOUND'));
+      return;
+    }
     const name = req.url?.startsWith('/api/') ? req.url.slice(5) : '';
     const entry = options.registry.get(name);
     if (!entry) { reject(404, 'NOT_FOUND'); return; }
@@ -137,7 +151,9 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
     const supplied = header(req, 'x-coursework-capability');
     const authorized = headerCount(req, 'x-coursework-capability') === 1 && supplied !== undefined
       && Buffer.byteLength(supplied) === 64 && timingSafeEqual(Buffer.from(supplied), Buffer.from(token));
-    if ((entry.level > 0 || ownerCommands.has(name) || writeNames.has(name)) && !authorized) { reject(403); return; }
+    const sessionAuthorized = headerCount(req, 'x-coursework-session') === 1
+      && options.ownerSession?.accepts(header(req, 'x-coursework-session')) === true;
+    if (isOwnerCommand(entry) ? !sessionAuthorized : (entry.level > 0 || writeNames.has(name)) && !authorized && !sessionAuthorized) { reject(403); return; }
     const length = header(req, 'content-length');
     if (length !== undefined && Number(length) > 65536) { reject(413, 'LIMIT_EXCEEDED'); return; }
     const chunks: Buffer[] = []; let size = 0; let rejected = false;
@@ -158,7 +174,7 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
       if (input !== null && typeof input === 'object' && ['owner', 'context', 'trustedContext', 'confirmed'].some(key => Object.hasOwn(input, key))) {
         reject(400); return;
       }
-      const context = httpCommandContext(options.context, name, authorized, () => closing);
+      const context = httpCommandContext(options.context, name, sessionAuthorized, () => closing);
       // No deadline races against a mutation: dispatcher completion determines its real outcome.
       dispatching = true;
       // Receive-phase timeouts end here; the socket stays open until the dispatcher's real outcome is written.
@@ -209,5 +225,5 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
 /** Transport-established authority only, never reconstructed from request JSON. */
 export function httpCommandContext(base: TrustedContext, name: string, authorized: boolean, closing: () => boolean): TrustedContext {
   const { owner: _owner, ...ports } = base;
-  return { ...ports, ...(authorized && name === 'planning.settings.record' ? { owner: { assertOwner: async () => { if (closing()) throw unavailable(); } } } : {}) };
+  return { ...ports, ...(authorized ? { owner: { assertOwner: async () => { if (closing()) throw unavailable(); } } } : {}) };
 }

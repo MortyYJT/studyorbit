@@ -63,7 +63,7 @@ it('generates every registered route, and capability gates all mutations/owner c
     const body = JSON.stringify(examples[name].input);
     if (contracts[name].level > 0 || ownerCommands.has(name)) expect((await send(server, body, [], `/api/${name}`)).status, name).toBe(403);
     const response = await send(server, body, ['X-Coursework-Capability', token], `/api/${name}`);
-    expect(response.status, name).toBe(ownerCommands.has(name) ? 400 : 200); expect(response.body.ok, name).toBe(!ownerCommands.has(name));
+    expect(response.status, name).toBe(ownerCommands.has(name) ? 403 : 200); expect(response.body.ok, name).toBe(!ownerCommands.has(name));
   }
   expect((context.services as FakeServices).writes.length).toBeGreaterThan(0);
 });

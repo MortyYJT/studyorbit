@@ -40,17 +40,17 @@ function toResult(envelope: Envelope): CallToolResult {
 export function createMcpServer(options: McpOptions): McpServer {
   const stderr = options.stderr ?? (line => process.stderr.write(`${line}\n`));
   // Host-owned context without owner authority: MCP arguments can never establish an owner.
-  const { owner: _owner, ...context } = options.context;
+  const { registry, context } = options.registry.agentTools(options.context);
   const server = new McpServer({ name: 'coursework', version: options.version ?? '0.0.0' }, { capabilities: { tools: {} } });
   // Low-level handlers keep advertised schemas derived from zod while leaving validation to dispatch().
   server.server.setRequestHandler(ListToolsRequestSchema, () => ({
     // Decision #87: agents never see owner-only tools; calling one by name is still refused below.
-    tools: options.registry.list().filter(entry => !ownerCommands.has(entry.name)).map(entry => ({ name: entry.name, description: describe(entry), inputSchema: inputSchema(entry) })),
+    tools: registry.list().map(entry => ({ name: entry.name, description: describe(entry), inputSchema: inputSchema(entry) })),
   }));
   server.server.setRequestHandler(CallToolRequestSchema, async request => {
     let envelope: Envelope;
     try {
-      envelope = await dispatch(options.registry, request.params.name, request.params.arguments ?? {}, context);
+      envelope = await dispatch(registry, request.params.name, request.params.arguments ?? {}, context);
     } catch {
       envelope = fail('unknown', 'INTERNAL', 'The command could not complete safely.');
     }
