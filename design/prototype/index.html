@@ -265,7 +265,7 @@
 // ===================== i18n =====================
 const STR = {
   zh: { sync: "↻ 同步", syncing: "同步中…", week: "本周", agent: "Agent", plan: "计划", month: "月历", needYou: "需要你处理", review: "去确认", relogin: "重新登录",
-    courses: "课程", next: "下一个截止", none: "无", graded: "已出分", addExt: "＋ 校外任务", ext: "校外", over: "排不下", due: "截止", h: "h", allDay: "全天", timed: "按时间",
+    courses: "课程", next: "下一个截止", none: "无", graded: "已出分", addExt: "＋ 校外任务", ext: "校外", over: "排不下", due: "截止", h: "h", allDay: "全天", timed: "当天", noTime: "未定时间",
     back: "← 本周", policy: "AI 政策", allow: "允许", forbid: "禁止", level: "等级", confirmFirst: "提交前要我确认", locked: "锁在 L0",
     levelNote: "L0 只读 · L1 自动完成 quiz · L2 自动完成作业和论文", earned: "已拿到", avg: "当前平均", needFinal: "期末需要", unreachable: "已无法达到", safe: "已稳",
     kEarned: "已拿到", kLost: "丢掉", kPend: "未出分", kUnk: "权重未知", tabA: "考核项", tabR: "复习", unknownW: "未知", follow: "跟随课程",
@@ -278,7 +278,7 @@ const STR = {
     newExt: "新建校外任务", name: "名称", estH: "预计小时", start: "开始时间", create: "创建", cancel: "取消", actual: "实际用时（小时）", save: "保存", phExt: "例如：投递 3 家实习",
     send: "发送", chatPh: "问 agent…", history: "对话", newChat: "＋ 新对话", presetSent: "预设提示词", submit: "确认提交", submitted: "已提交，已写入审计记录。", cancelled: "已取消，没有提交。", answers: "等你确认 · 答案汇总" },
   en: { sync: "↻ Sync", syncing: "Syncing…", week: "This week", agent: "Agent", plan: "Plan", month: "Month", needYou: "Needs you", review: "Review", relogin: "Sign in",
-    courses: "Courses", next: "Next due", none: "None", graded: "Graded", addExt: "＋ Personal task", ext: "personal", over: "Doesn't fit", due: "Due", h: "h", allDay: "All day", timed: "Timed",
+    courses: "Courses", next: "Next due", none: "None", graded: "Graded", addExt: "＋ Personal task", ext: "personal", over: "Doesn't fit", due: "Due", h: "h", allDay: "All day", timed: "Day", noTime: "no time set",
     back: "← This week", policy: "AI policy", allow: "Allowed", forbid: "Prohibited", level: "Level", confirmFirst: "Ask me before submitting", locked: "Locked at L0",
     levelNote: "L0 read · L1 complete quizzes · L2 complete assignments and essays", earned: "Earned", avg: "Current avg", needFinal: "Needed on final", unreachable: "Out of reach", safe: "Secured",
     kEarned: "Earned", kLost: "Lost", kPend: "Not graded", kUnk: "Weight unknown", tabA: "Assessments", tabR: "Revision", unknownW: "Unknown", follow: "Course default",
@@ -325,15 +325,15 @@ const courses = [
     review: null },
 ];
 const avail = store.get("avail", [3, 2, 3, 3, 2, 4, 2]);
-// Plan blocks: `at` is a start time ("HH:MM"); no `at` means an all-day task (#143).
+// Plan blocks: the scheduler only picks the day (#145); `at` is a start time the owner set, `allDay` marks an all-day task.
 const plan = [
   { d: 12, at: "14:00", title: "A2 · 预订逻辑", course: "COMP90099", h: 2, act: 2.5, done: true },
-  { d: 13, title: "投递 2 家实习", ext: true, h: 1, act: 1, done: true },
+  { d: 13, title: "投递 2 家实习", ext: true, allDay: true, h: 1, act: 1, done: true },
   { d: 15, at: "10:00", title: "Weekly quiz 11", course: "COMP90099", h: 0.5, waiting: true },
   { d: 15, at: "14:00", title: "A2 · 设计说明", course: "COMP90099", h: 1.5 },
   { d: 15, at: "20:00", title: "系统设计复习", ext: true, h: 1 },
-  { d: 16, at: "09:00", title: "A2 · 检查并提交", course: "COMP90099", h: 1 },
-  { d: 17, at: "13:00", title: "Essay 2 · 初稿", course: "ARTS90012", h: 3 },
+  { d: 16, title: "A2 · 检查并提交", course: "COMP90099", h: 1 },
+  { d: 17, title: "Essay 2 · 初稿", course: "ARTS90012", h: 3 },
 ];
 const overflow = [{ title: "Essay 2 · 改稿", course: "ARTS90012", h: 3, due: D(10, 18) }];
 const audit = [["10/15 09:41", "Weekly quiz 11", "填写，未提交", "等你确认"], ["10/08 10:02", "Weekly quiz 10", "填写并提交", "前端确认"]];
@@ -427,14 +427,14 @@ function renderWeek() {
   if (weekView === "month") return head + box + `<div class="card">${renderMonth()}</div>`;
   const past = (d) => d < TODAY && !same(d, TODAY) ? "col-past" : "";
   const blk = (p) => `<button type="button" class="blk ${p.done ? "done" : ""} ${p.ext ? "ext" : ""} ${p.waiting && runState === "waiting" ? "waiting" : ""}" data-plan="${plan.indexOf(p)}">
-    ${p.at ? `<div class="tm">${p.at}–${endAt(p.at, p.h)}</div>` : ""}<div class="tt">${esc(p.title)}</div><div class="cr">${p.ext ? t("ext") : p.course}${p.act != null ? ` · ${p.act}/${p.h}${t("h")}` : ""}</div></button>`;
+    ${p.at ? `<div class="tm">${p.at}–${endAt(p.at, p.h)}</div>` : p.allDay ? "" : `<div class="tm">${t("noTime")} · ${p.h}${t("h")}</div>`}<div class="tt">${esc(p.title)}</div><div class="cr">${p.ext ? t("ext") : p.course}${p.act != null ? ` · ${p.act}/${p.h}${t("h")}` : ""}</div></button>`;
   const labels = `<div class="dcol labels"><div class="lbl"></div><div class="lbl">${t("allDay")}</div><div class="lbl">${t("timed")}</div></div>`;
   const cols = days.map((d, i) => {
     const used = plan.filter((p) => p.d === d.getDate()).reduce((x, p) => x + p.h, 0);
     const dues = courses.flatMap((c) => c.assess.filter((a) => a.due && same(a.due, d)).map((a) => `<div class="due" title="${c.code} · ${esc(a.n)}">${t("due")} ${esc(a.n)}</div>`));
     return `<div class="dcol ${past(d)}"><div class="wh ${same(d, TODAY) ? "today" : ""}"><b>${settings.lang === "en" ? DOW.en[i] : "周" + DOW.zh[i]} ${d.getDate()}</b><span class="cap n">${used}/${avail[i]}${t("h")}</span></div>
-      <div class="allday">${dues.join("")}${plan.filter((p) => p.d === d.getDate() && !p.at).map(blk).join("")}</div>
-      <div class="timed">${plan.filter((p) => p.d === d.getDate() && p.at).sort((a, b) => a.at.localeCompare(b.at)).map(blk).join("")}</div></div>`;
+      <div class="allday">${dues.join("")}${plan.filter((p) => p.d === d.getDate() && p.allDay).map(blk).join("")}</div>
+      <div class="timed">${plan.filter((p) => p.d === d.getDate() && !p.allDay).sort((a, b) => (a.at || "99").localeCompare(b.at || "99")).map(blk).join("")}</div></div>`;
   }).join("");
   const grid = labels + cols;
   const over = `<div class="over"><span class="sub">${t("over")}</span>${overflow.map((o) => `<span class="pill">${o.course} · ${esc(o.title)} · ${o.h}${t("h")} · ${t("due")} ${md(o.due)}</span>`).join("")}</div>`;
@@ -554,7 +554,7 @@ function openAddExt() {
   $("#modal").innerHTML = `<div class="mh"><h2>${t("newExt")}</h2><button class="icon-btn" data-close type="button">✕</button></div>
     <div class="mb"><form class="grid" id="extForm"><label class="f full">${t("name")}<input name="title" required placeholder="${t("phExt")}"></label>
       <label class="f">${t("dueL")}<input name="due" type="date" value="2026-10-17" required></label>
-      <label class="f">${t("start")}<select name="at"><option value="">${t("allDay")}</option>${["09:00", "13:00", "19:00"].map((x) => `<option>${x}</option>`).join("")}</select></label>
+      <label class="f">${t("start")}<input name="at" type="time"></label>
       <label class="f">${t("estH")}<input name="h" type="number" min="0.5" step="0.5" value="1"></label>
       <div class="full" style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" type="button" data-close>${t("cancel")}</button><button class="btn ink" type="submit">${t("create")}</button></div></form></div>`;
   showLayer("#modal"); setTimeout(() => $("#extForm input").focus(), 50);
@@ -563,8 +563,9 @@ function openPlan(i) {
   const p = plan[i];
   $("#modal").innerHTML = `<div class="mh"><h2>${esc(p.title)}</h2><button class="icon-btn" data-close type="button">✕</button></div>
     <div class="mb"><p class="sub">${p.ext ? t("ext") : p.course} · ${p.at ? p.at + "–" + endAt(p.at, p.h) : t("allDay")} · ${t("est")} ${p.h}${t("h")}</p><form class="grid" id="actForm" data-i="${i}">
+      <label class="f">${t("start")}<input name="at" type="time" value="${p.at ?? ""}"></label>
       <label class="f">${t("actual")}<input name="act" type="number" min="0" step="0.25" value="${p.act ?? ""}"></label>
-      <div style="display:flex;align-items:end;justify-content:flex-end;gap:8px"><button class="btn" type="button" data-close>${t("cancel")}</button><button class="btn ink" type="submit">${t("save")}</button></div></form></div>`;
+      <div class="full" style="display:flex;align-items:end;justify-content:flex-end;gap:8px"><button class="btn" type="button" data-close>${t("cancel")}</button><button class="btn ink" type="submit">${t("save")}</button></div></form></div>`;
   showLayer("#modal");
 }
 function showLayer(sel) { $("#scrim").classList.add("on"); $(sel).classList.add("on"); }
@@ -628,7 +629,7 @@ document.addEventListener("submit", (e) => {
   e.preventDefault(); const f = new FormData(e.target);
   if (e.target.id === "chatForm") { const q = $("#chatText").value.trim(); if (!q) return; const cv = convs.find((c) => c.id === current); cv.msgs.push({ who: "me", text: q }); agentSay(cv, settings.lang === "en" ? "Got it. (Prototype: sample reply.)" : "收到。（原型：示例回复）"); return; }
   if (e.target.id === "extForm") { const d = Number(f.get("due").split("-")[2]); plan.push({ d: d >= 12 && d <= 18 ? d : 17, at: f.get("at") || undefined, title: f.get("title"), ext: true, h: Number(f.get("h")) || 1 }); closeLayers(); render(); return; }
-  if (e.target.id === "actForm") { const p = plan[+e.target.dataset.i]; p.act = f.get("act") === "" ? undefined : Number(f.get("act")); p.done = p.act != null || p.done; closeLayers(); render(); }
+  if (e.target.id === "actForm") { const p = plan[+e.target.dataset.i]; p.at = f.get("at") || undefined; p.act = f.get("act") === "" ? undefined : Number(f.get("act")); p.done = p.act != null || p.done; closeLayers(); render(); }
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeLayers(); $("#menu").classList.remove("open"); } });
 
