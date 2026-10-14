@@ -13,6 +13,8 @@ import { CourseworkError, retryable, type ErrorCode } from './errors.js';
 export type Handler<I = unknown, O = unknown> = (input: I, context: TrustedContext) => O | Promise<O>;
 export interface RegistryEntry<I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType> {
   name: string; input: I; output: O; handler: Handler<z.output<I>, z.output<O>>; level: Level;
+  /** Extensions declare owner gates here; transport adapters share this classification. */
+  authority?: 'agent' | 'owner' | 'owner-session';
 }
 export class Registry {
   private readonly entries = new Map<string, RegistryEntry>();
@@ -23,8 +25,26 @@ export class Registry {
     // Snapshot/freeze registration so discovery and dispatch cannot drift via caller mutation.
     this.entries.set(entry.name, Object.freeze({ ...entry }) as RegistryEntry);
   }
+  agentTools(base: TrustedContext): { registry: Registry; context: AgentContext } {
+    const registry = new Registry();
+    for (const entry of this.list()) if (!isOwnerCommand(entry) && !['sync.run', 'audit.record'].includes(entry.name)) registry.register(entry);
+    const { owner: _owner, ...ports } = base;
+    const context: AgentContext = Object.freeze(ports);
+    return { registry, context };
+  }
   get(name: string): RegistryEntry | undefined { return this.entries.get(name); }
   list(): readonly RegistryEntry[] { return [...this.entries.values()]; }
+}
+export type AgentContext = Omit<TrustedContext, 'owner'> & { readonly owner?: never };
+export function sessionOnlyCommand(entry: RegistryEntry | string): boolean {
+  const name = typeof entry === 'string' ? entry : entry.name;
+  return typeof entry !== 'string' && entry.authority === 'owner-session'
+    || ['policy.record', 'grant.record'].includes(name)
+    || name.startsWith('confirmation.') || name.startsWith('autonomy.') && name !== 'autonomy.check';
+}
+export function isOwnerCommand(entry: RegistryEntry | string): boolean {
+  return sessionOnlyCommand(entry) || ownerCommands.has(typeof entry === 'string' ? entry : entry.name)
+    || typeof entry !== 'string' && entry.authority === 'owner';
 }
 const safeMessages: Record<ErrorCode, string> = {
   UNCERTAIN: 'The write may have completed but mandatory recording failed; inspect local state before retrying.',
@@ -42,7 +62,7 @@ function safeError(error: unknown, command?: string): CourseworkError {
       && /^Browser profile is locked by process [1-9]\d*\.$/.test(error.message)) return new CourseworkError('LOCKED', error.message);
   }
   const code = error instanceof CourseworkError && Object.hasOwn(retryable, error.code) ? error.code : 'INTERNAL';
-  return new CourseworkError(code, safeMessages[code]);
+  return new CourseworkError(code, error instanceof CourseworkError && error.message === 'Open coursework ui to perform this owner action.' ? error.message : safeMessages[code]);
 }
 /** Explicitly adapt legacy envelopes; ordinary command data is never duck-typed as an envelope. */
 export function adaptLegacyHandler(handler: Handler<unknown, Envelope>): Handler {
@@ -82,7 +102,7 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
     if (!entry) throw new CourseworkError('NOT_FOUND', safeMessages.NOT_FOUND);
     const parsed = entry.input.safeParse(input);
     if (!parsed.success) throw new CourseworkError('INVALID_INPUT', safeMessages.INVALID_INPUT);
-    if (ownerCommands.has(name)) {
+    if (isOwnerCommand(entry)) {
       if (!context.owner) throw new CourseworkError('INVALID_INPUT', safeMessages.INVALID_INPUT);
       await context.owner.assertOwner(name);
     }
