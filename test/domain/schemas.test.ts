@@ -6,7 +6,7 @@ import {
 } from '../../src/domain/schemas.js';
 
 const step = { title: 'Read fictional brief', estimateMinutes: 15, done: false, citations: [] };
-const task = { id: 'task-1', moduleId: 'module-1', title: 'Synthetic task', source: 'manual', steps: [step] };
+const task = { id: 'task-1', moduleId: 'module-1', title: 'Synthetic task', source: 'manual', steps: [step], done: false };
 const citation = { sourceItemId: 'source-1', quote: 'A fictional requirement.', locator: 'paragraph 1' };
 const assessment = { id: 'assessment-1', courseId: 'course-1', name: 'Fictional assignment', kind: 'assignment', weight: 40, isFinal: false, status: 'not_started' };
 const at = '2026-01-01T00:00:00Z';
@@ -66,7 +66,7 @@ describe('entity schemas', () => {
 });
 
 describe('supported source providers (2.1)', () => {
-  const source = { id: 'source-1', externalId: 'external-1', kind: 'material', title: 'Synthetic brief', text: '', contentHash: 'fake-hash', fetchedAt: at };
+  const source = { id: 'source-1', externalId: 'external-1', kind: 'material', title: 'Synthetic brief', text: '', contentHash: 'fake-hash', fetchedAt: at, removed: false };
   it.each(['canvas', 'ed', 'manual'])('accepts %s without changing other fields', platform => {
     expect(SourceItemSchema.parse({ ...source, platform })).toEqual({ ...source, platform });
   });
