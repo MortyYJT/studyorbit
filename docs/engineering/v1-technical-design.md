@@ -2,7 +2,7 @@
 
 Status: approved by the owner on 2026-10-12 (decisions #55–#77 in `note/decisions.md`). Later decisions
 refine it: #78 (repository private), #80–#89 (milestone details chosen during autonomous runs, pending owner
-review), #91 (development runs only while the owner is present; overrides #79).
+review), #91 (development only while the owner is present; itself overridden by #155, unattended scheduled dispatch).
 **Rescoped on 2026-10-14 (#100–#111):** the agent now understands and operates web pages; code keeps
 memory, scheduling, views and guardrails. **Re-planned on 2026-10-15 (#114–#153):** the PRD
 (`note/product/prd.md`) defines v1; the frontend hosts an agent chat through the Claude Agent SDK, and
@@ -186,11 +186,11 @@ Rejected: computer use (screenshot-driven clicking): slow, costly, non-determini
 
 ## 8. How development runs
 
-Development runs while the owner is online (#91, overriding the unattended mode of #79); there is no
-scheduled watchdog. Claude dispatches, reviews and merges as below, and asks the owner at the points listed.
+Development runs unattended through a scheduled dispatcher session (#155, overriding #91); questions for
+the owner are queued, not awaited. Claude dispatches, reviews and merges as below, and asks the owner at the points listed.
 
-Per milestone: OpenSpec change (Codex drafts, Claude reviews) → issues → Codex implements with TDD in a separate
-clone → fresh-context Codex review → Claude commits, pushes, opens the PR → CI green → Claude merges (#48) →
+Per milestone: OpenSpec change (Codex drafts, Claude reviews) → issues → Codex implements (TDD for logic, #156) in a separate
+clone → fresh-context Codex review → Claude commits, pushes, opens the PR → CI green for code PRs → Claude merges (#48) →
 archive the change → acceptance checklist to the owner. Implementation and verification evidence goes in the
 PR description, not in repository files (#90).
 
