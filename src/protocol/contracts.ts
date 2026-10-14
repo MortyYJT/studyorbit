@@ -19,7 +19,7 @@ export const ClaimSchema = z.strictObject({ text, citations: z.array(CitationInp
 const sourceText = z.string().min(1).max(100000).refine(value => value.trim().length > 0);
 export const SourceEvidenceSchema = z.strictObject({ sourceItemId: IdSchema, courseId: IdSchema, text: sourceText,
   sourceHash: HashSchema, locator: text, page: z.number().int().positive().safe().optional(),
-  provenance: z.enum(['canvas', 'ed', 'manual']), redacted: z.literal(true) });
+  provenance: z.enum(['canvas', 'ed', 'manual']), url: z.url().max(2048).optional(), redacted: z.literal(true) });
 export const CoverageSchema = z.strictObject({ complete: z.boolean(), gaps: z.array(z.strictObject({
   code: z.enum(['MISSING_EVIDENCE', 'UNSUPPORTED', 'INCOMPLETE']), reference: IdSchema.optional(),
 })).max(500) });
@@ -31,14 +31,19 @@ const courseWeek = { courseId: IdSchema, week: z.number().int().min(1).max(53).o
 const studyWrite = { ...courseWeek, sourceRevision: HashSchema, previousRevision: z.uuid().optional() };
 const receipt = z.strictObject({ id: IdSchema, revision: z.uuid(), sourceRevision: HashSchema,
   citations: z.array(VerifiedCitationSchema).min(1).max(500), limitations: z.array(text).max(100) });
-export const RevisionRecordSchema = z.strictObject({ id: IdSchema, revision: z.uuid(), ...studyWrite,
-  claims: z.array(ClaimSchema).min(1).max(300), citations: z.array(VerifiedCitationSchema).min(1).max(500),
-  limitations: z.array(text).max(100) });
+const revisionFields = { id: IdSchema, revision: z.uuid(), ...studyWrite,
+  citations: z.array(VerifiedCitationSchema).min(1).max(500), limitations: z.array(text).max(100) };
+export const ExamScopeRecordSchema = z.strictObject({ ...revisionFields, type: z.literal('exam-scope'), topics: z.array(ClaimSchema).min(1).max(300) }).refine(value => value.week === undefined, 'Exam scope is per course');
+export const RevisionRecordSchema = z.union([
+  z.strictObject({ ...revisionFields, type: z.literal('note').optional(), claims: z.array(ClaimSchema).min(1).max(300) }),
+  ExamScopeRecordSchema,
+]);
 export const PracticeQuestionSchema = z.strictObject({ id: IdSchema, prompt: text,
   kind: z.enum(['objective', 'open']), options: z.array(z.strictObject({ id: IdSchema, text })).min(2).max(100).optional(),
   answer: text, explanation: z.array(ClaimSchema).min(1).max(100) }).refine(q => q.kind !== 'objective' || q.options !== undefined);
+const practiceQuestions = z.array(PracticeQuestionSchema).min(1).max(300).refine(questions => new Set(questions.map(q => q.id)).size === questions.length, 'Practice question ids must be unique');
 export const PracticeRecordSchema = z.strictObject({ id: IdSchema, revision: z.uuid(), ...studyWrite,
-  questions: z.array(PracticeQuestionSchema).min(1).max(300), citations: z.array(VerifiedCitationSchema).min(1).max(500),
+  questions: practiceQuestions, citations: z.array(VerifiedCitationSchema).min(1).max(500),
   limitations: z.array(text).max(100) });
 // Strict boundary copies retain M1 refinements and inferred Task structure without changing M1.
 const task = TaskSchema.strict().safeExtend({ id: IdSchema, moduleId: IdSchema, courseId: IdSchema.optional(),
@@ -77,6 +82,10 @@ const courses = { input: z.strictObject({ ...paging, term: text.optional() }), o
 const policy = { input: PolicyRecordSchema, output: PolicyReceiptSchema, level: 0 } as const;
 const grant = { input: GrantRecordSchema, output: GrantReceiptSchema, level: 0 } as const;
 export const contracts = {
+  'revision.read': { input: z.strictObject({ courseId: IdSchema }), output: z.strictObject({ sourceRevision: HashSchema, examScope: ExamScopeRecordSchema.nullable(), examTime: z.iso.datetime({ offset: true }).optional(), finalAssessmentId: IdSchema.optional() }), level: 0 },
+  'practice.stats': { input: z.strictObject({ courseId: IdSchema }), output: z.strictObject({ questions: count, attempted: count, correct: count, incorrect: count, wrongQuestions: z.array(z.strictObject({ questionId: IdSchema, revision: z.uuid() })).max(500) }), level: 0 },
+  'practice.attempt.record': { input: z.strictObject({ questionId: IdSchema, revision: z.uuid(), outcome: z.enum(['correct', 'incorrect', 'skipped']), at: z.iso.datetime({ offset: true }) }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
+  'source.fetch': { input: z.strictObject({ courseId: IdSchema, url: z.url().max(2048) }), output: z.strictObject({ items: z.array(SourceEvidenceSchema).max(500), emptyPages: z.array(z.number().int().positive()).max(500), sourceRevision: HashSchema }), level: 0 },
   'courses.list': courses,
   'assessments.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }), output: page(AssessmentSchema.strict()), level: 0 },
   'tasks.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), assessmentId: IdSchema.optional(), moduleId: IdSchema.optional() }), output: page(task), level: 0 },
@@ -86,8 +95,8 @@ export const contracts = {
   'revision.list': { input: z.strictObject({ ...paging, ...courseWeek, revision: z.uuid().optional() }), output: page(RevisionRecordSchema), level: 0 },
   'practice.list': { input: z.strictObject({ ...paging, ...courseWeek, revision: z.uuid().optional() }), output: page(PracticeRecordSchema), level: 0 },
   'breakdown.write': { input: z.strictObject({ assessmentId: IdSchema, sourceRevision: HashSchema, previousRevision: z.uuid().optional(), task: breakdown }).refine(i => i.assessmentId === i.task.assessmentId), output: receipt, level: 1 },
-  'revision.write': { input: z.strictObject({ ...studyWrite, claims: z.array(ClaimSchema).min(1).max(300) }), output: receipt, level: 1 },
-  'practice.write': { input: z.strictObject({ ...studyWrite, questions: z.array(PracticeQuestionSchema).min(1).max(300) }), output: receipt, level: 1 },
+  'revision.write': { input: z.union([z.strictObject({ ...studyWrite, type: z.literal('note').optional(), claims: z.array(ClaimSchema).min(1).max(300) }), z.strictObject({ ...studyWrite, type: z.literal('exam-scope'), topics: z.array(ClaimSchema).min(1).max(300) }).refine(value => value.week === undefined, 'Exam scope is per course')]), output: receipt, level: 0 },
+  'practice.write': { input: z.strictObject({ ...studyWrite, questions: practiceQuestions }), output: receipt, level: 0 },
   'policy.record': policy,
   'grant.record': grant,
   'audit.list': { input: z.strictObject({ ...paging, assessmentId: IdSchema.optional(), command: IdSchema.optional() }), output: page(AuditRecordSchema), level: 0 },

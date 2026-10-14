@@ -1,6 +1,6 @@
 import type { CommandName, CommandOutput, ParsedCommandInput, Level, AuditRecord } from './contracts.js';
 import type { ErrorCode } from './errors.js';
-export type ReadCommand = Extract<CommandName, `${string}.list`> | 'sources.get';
+export type ReadCommand = Extract<CommandName, `${string}.list`> | 'sources.get' | 'revision.read' | 'practice.stats';
 export type WriteCommand = Exclude<CommandName, ReadCommand>;
 export interface ProtocolRepository {
   read<N extends ReadCommand>(name: N, input: ParsedCommandInput<N>): Promise<CommandOutput<N>>;
@@ -40,6 +40,8 @@ export interface TrustedContext {
   /** Audit and operational runs are distinct; neither receives request prose or raw errors. */
   runs: { record(event: AuditEvent): Promise<void> };
   owner?: OwnerInteraction;
+  /** Host-only callback: capture a write's audit references before another request can mutate state. */
+  setAuditReferences?: (references: Pick<AuditEvent, 'courseId' | 'assessmentId' | 'level' | 'policyRef' | 'grantRef'>) => void;
   /** Dispatch identity passed only by the trusted host. */
   runId?: string;
 }

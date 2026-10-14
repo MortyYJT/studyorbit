@@ -67,7 +67,7 @@ it('coursework mcp over real stdio pipes writes only MCP frames to stdout and ex
   const frames = stdout.split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, any>);
   expect(frames.map(frame => frame.id)).toEqual([1, 2, 3, 4]);
   for (const frame of frames) expect(frame.jsonrpc).toBe('2.0');
-  expect(frames[1]!.result.tools.length).toBe(15); // Agent commands (incl. sync.status) exclude owner tools, sync.run and audit.record
+  expect(frames[1]!.result.tools.length).toBe(19); // Agent commands (incl. sync.status, revision reads, attempts and source.fetch) exclude owner tools, sync.run and audit.record
   expect(JSON.parse(frames[2]!.result.content[0].text)).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
   expect(JSON.parse(frames[3]!.result.content[0].text)).toMatchObject({ ok: true, data: { items: [] } });
   expect(stderr).toContain('coursework mcp');

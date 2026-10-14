@@ -132,12 +132,12 @@ describe('8.1 validated study writes', () => {
     expect(store.size()).toBe(0);
   });
 
-  it('rechecks L1 authorization in the service and preserves state on denial', async () => {
+  it('rechecks L0 revision authorization in the service and preserves state on denial', async () => {
     const { store, context } = setup();
     context.authorization.check = vi.fn(async () => { throw new CourseworkError('INVALID_INPUT', 'denied'); });
     const service = new StudyWriteService({ provider: provider(), store });
     await expect(service.write('revision.write', inputs['revision.write'] as never, context)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
-    expect(context.authorization.check).toHaveBeenCalledWith('revision.write', 1, expect.anything());
+    expect(context.authorization.check).toHaveBeenCalledWith('revision.write', 0, expect.anything());
     expect(store.size()).toBe(0);
   });
 

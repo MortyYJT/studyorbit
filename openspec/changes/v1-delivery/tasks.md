@@ -29,10 +29,10 @@ Covers: US-5 "MCP stays"; US-7 "only I set levels in the frontend". Spec: `web-u
 
 Covers: US-7 items 1–4. Spec: `assessment-autonomy`. Depends on A; owner-only tests use an injected owner context until B merges.
 
-- [ ] 4.1 Failing tests for `required(kind)`, cap and effective level: prohibited → L0 even with an L2 override; no policy → L2 cap; exam and unknown → L2; override for another assessment ignored
-- [ ] 4.2 Failing tests for owner commands: set course policy, default level, per-assessment override (set and clear), confirm-before-submit; each audited; agent and TTY calls refused
-- [ ] 4.3 Remove `audit.record` from MCP and the agent tool set (browser tools write audit entries in group 11), with a test that it is not listed and cannot be called by an agent
-- [ ] 4.4 Rework `autonomy.check` to the new rules (audit unavailable still denies); old grant rows ignored; update `skills/assessment/SKILL.md` to the new levels and to using the browser tools
+- [x] 4.1 Failing tests for `required(kind)`, cap and effective level: prohibited → L0 even with an L2 override; no policy → L2 cap; exam and unknown → L2; override for another assessment ignored
+- [x] 4.2 Failing tests for owner commands: set course policy, default level, per-assessment override (set and clear), confirm-before-submit; each audited; agent and TTY calls refused
+- [x] 4.3 Remove `audit.record` from MCP and the agent tool set (browser tools write audit entries in group 11), with a test that it is not listed and cannot be called by an agent
+- [x] 4.4 Rework `autonomy.check` to the new rules (audit unavailable still denies); old grant rows ignored; update `skills/assessment/SKILL.md` to the new levels and to using the browser tools
 
 ## 5. Issue D — `coursework sync`
 
@@ -68,10 +68,10 @@ Covers: US-3 items 1–7. Spec: `study-planning`. Depends on A; owner-only tests
 
 Covers: US-6 items 1–3 (backend). Spec: `revision`. Depends on A.
 
-- [ ] 8.1 Failing tests: SQLite study-record store with compare-and-swap, surviving a reopen; replaces `InMemoryStudyRecordStore` in production wiring
-- [ ] 8.2 Install pre-approved `unpdf@1.8.1` with the owner present; failing tests with generated synthetic PDFs and pages for `source.fetch` (same-origin only, discussion refused, redirect refusal, size bound, per-page SourceItems, redaction, private raw files, image-only pages)
-- [ ] 8.3 Failing tests: `exam-scope` record with cited topics (one bad quote rejects the write); exam time from the final's effective due; `practice.attempt.record` without answer text; per-course counts and wrong-answer list
-- [ ] 8.4 Write `skills/revision/SKILL.md` for the prepare, tutor and wrong-only presets: status check first, L0 reads and `source.fetch` only, cited writes, attempt recording, no fabricated sources, no graded work
+- [x] 8.1 Failing tests: SQLite study-record store with compare-and-swap, surviving a reopen; replaces `InMemoryStudyRecordStore` in production wiring
+- [x] 8.2 Install pre-approved `unpdf@1.8.1` with the owner present; failing tests with generated synthetic PDFs and pages for `source.fetch` (same-origin only, discussion refused, redirect refusal, size bound, per-page SourceItems, redaction, private raw files, image-only pages)
+- [x] 8.3 Failing tests: `exam-scope` record with cited topics (one bad quote rejects the write); exam time from the final's effective due; `practice.attempt.record` without answer text; per-course counts and wrong-answer list
+- [x] 8.4 Write `skills/revision/SKILL.md` for the prepare, tutor and wrong-only presets: status check first, L0 reads and `source.fetch` only, cited writes, attempt recording, no fabricated sources, no graded work
 
 ## 9. Issue H — Chat backend
 

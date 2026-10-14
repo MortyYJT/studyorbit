@@ -12,7 +12,18 @@ export const BreakdownRecordSchema = z.strictObject({ id: IdSchema, revision: z.
   assessmentId: IdSchema, sourceRevision: HashSchema, task: contracts['breakdown.write'].input.shape.task,
   citations: z.array(VerifiedCitationSchema).min(1).max(500), limitations: z.array(z.string().min(1)).max(100) });
 export type StudyRecord = z.infer<typeof RevisionRecordSchema> | z.infer<typeof PracticeRecordSchema> | z.infer<typeof BreakdownRecordSchema>;
-const recordSchemas = { 'revision.write': RevisionRecordSchema, 'practice.write': PracticeRecordSchema, 'breakdown.write': BreakdownRecordSchema } as const;
+export const recordSchemas = { 'revision.write': RevisionRecordSchema, 'practice.write': PracticeRecordSchema, 'breakdown.write': BreakdownRecordSchema } as const;
+
+/** Reserve envelope metadata headroom, as with other paginated protocol reads. */
+export function studyPageFits(items: readonly StudyRecord[], nextCursor?: string): boolean {
+  return Buffer.byteLength(JSON.stringify({ items, evidence: [], coverage: { complete: true, gaps: [] },
+    ...(nextCursor ? { nextCursor } : {}) }), 'utf8') <= 64 * 1024 - 1024;
+}
+/** Leave room for the longest generated continuation even when this record is read last today. */
+export function assertStudyRecordReadable(record: StudyRecord): void {
+  const cursor = Buffer.from(`${Number.MAX_SAFE_INTEGER}:${'0'.repeat(64)}`).toString('base64url');
+  if (!studyPageFits([record], cursor)) throw new CourseworkError('LIMIT_EXCEEDED', 'Study record exceeds the read response bound.');
+}
 
 /** Versioned operational persistence port. Implementations publish atomically and never via agent SQL.
  * `publish` is compare-and-swap: it must refuse unless the current revision equals `expected`.
@@ -23,7 +34,7 @@ export interface StudyRecordStore {
   publish(command: StudyCommand, id: string, expected: string | undefined, record: StudyRecord): Promise<void>;
 }
 const conflict = () => new CourseworkError('CONFLICT', 'The accepted record or its sources changed; refresh before retrying.');
-/** Synthetic/in-process store only. A durable backend needs an owner-approved storage layout. */
+/** Synthetic/in-process store only. Production uses the SQLite implementation. */
 export class InMemoryStudyRecordStore implements StudyRecordStore {
   private readonly records = new Map<string, StudyRecord>();
   private readonly locks = new Set<string>();
@@ -38,12 +49,14 @@ export class InMemoryStudyRecordStore implements StudyRecordStore {
   }
   async publish(command: StudyCommand, id: string, expected: string | undefined, record: StudyRecord): Promise<void> {
     if (this.records.get(`${command}:${id}`)?.revision !== expected) throw conflict();
-    this.records.set(`${command}:${id}`, structuredClone(recordSchemas[command].parse(record)));
+    const value = recordSchemas[command].parse(record);
+    assertStudyRecordReadable(value);
+    this.records.set(`${command}:${id}`, structuredClone(value));
   }
 }
 
 const study = new Set<string>(['breakdown.write', 'revision.write', 'practice.write']);
-/** Validated L1 study writes. No model call, direct SQL or request-supplied evidence is accepted. */
+/** Validated study writes at their registered levels. No model call, direct SQL or request-supplied evidence is accepted. */
 export class StudyWriteService implements ProtocolServices {
   private readonly citations: StudyCitationService;
   private readonly privacy: (value: unknown) => unknown;
@@ -57,13 +70,13 @@ export class StudyWriteService implements ProtocolServices {
     const parsed = contracts[command].input.safeParse(input);
     if (!parsed.success) throw new CourseworkError('INVALID_INPUT', 'Invalid study write.');
     const data = parsed.data;
-    // Rechecked here so a direct service call cannot skip the L1 gate or privacy boundary.
-    await context.authorization.check(command, 1, data);
+    // Rechecked here so a direct service call cannot skip the registered authorization gate or privacy boundary.
+    await context.authorization.check(command, contracts[command].level, data);
     let safe: unknown;
     try { safe = this.privacy(data); } catch { safe = undefined; }
     if (JSON.stringify(safe) !== JSON.stringify(data)) throw new CourseworkError('INVALID_INPUT', 'Study write contains unsafe personal or private text.');
     const target = 'task' in data ? { courseId: data.task.courseId!, assessmentId: data.assessmentId } : { courseId: data.courseId };
-    const id = 'task' in data ? data.task.id : `${command.split('.')[0]}-${hash([data.courseId, data.week ?? null]).slice(0, 32)}`;
+    const id = 'task' in data ? data.task.id : `${command.split('.')[0]}-${hash([data.courseId, data.week ?? null, ...('topics' in data ? ['exam-scope'] : [])]).slice(0, 32)}`;
     return this.options.store.exclusive(`${command}:${id}`, async () => {
       // Publication-time recheck: current source revision first, then every citation unit.
       const snapshot = await this.options.provider.resolve(target);
@@ -76,7 +89,8 @@ export class StudyWriteService implements ProtocolServices {
       const base = { id, revision, sourceRevision: data.sourceRevision, ...(current ? { previousRevision: current.revision } : {}),
         citations: verified.citations, limitations: verified.limitations };
       const record: StudyRecord = 'task' in data ? { ...base, assessmentId: data.assessmentId, task: data.task }
-        : 'claims' in data ? { ...base, courseId: data.courseId, ...(data.week !== undefined ? { week: data.week } : {}), claims: data.claims }
+        : 'topics' in data ? { ...base, courseId: data.courseId, type: 'exam-scope', ...(data.week !== undefined ? { week: data.week } : {}), topics: data.topics }
+        : 'claims' in data ? { ...base, courseId: data.courseId, ...(data.week !== undefined ? { week: data.week } : {}), claims: data.claims, ...('type' in data ? { type: data.type } : {}) }
           : { ...base, courseId: data.courseId, ...(data.week !== undefined ? { week: data.week } : {}), questions: data.questions };
       const valid = recordSchemas[command].safeParse(record);
       if (!valid.success) throw new CourseworkError('INVALID_INPUT', 'Study write cannot be stored safely.');

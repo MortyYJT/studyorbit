@@ -7,7 +7,7 @@ import { TextDecoder } from 'node:util';
 import type { OwnerSession } from './owner-session.js';
 import { readStaticUI } from './static-ui.js';
 import type { TrustedContext } from './context.js';
-import { dispatch, isOwnerCommand, type Registry } from './registry.js';
+import { dispatch, isOwnerCommand, writeNames, type Registry } from './registry.js';
 import { fail, type Envelope } from './envelope.js';
 import { CourseworkError, type ErrorCode } from './errors.js';
 
@@ -153,7 +153,7 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
       && Buffer.byteLength(supplied) === 64 && timingSafeEqual(Buffer.from(supplied), Buffer.from(token));
     const sessionAuthorized = headerCount(req, 'x-coursework-session') === 1
       && options.ownerSession?.accepts(header(req, 'x-coursework-session')) === true;
-    if (isOwnerCommand(entry) ? !sessionAuthorized : entry.level > 0 && !authorized && !sessionAuthorized) { reject(403); return; }
+    if (isOwnerCommand(entry) ? !sessionAuthorized : (entry.level > 0 || writeNames.has(name)) && !authorized && !sessionAuthorized) { reject(403); return; }
     const length = header(req, 'content-length');
     if (length !== undefined && Number(length) > 65536) { reject(413, 'LIMIT_EXCEEDED'); return; }
     const chunks: Buffer[] = []; let size = 0; let rejected = false;
