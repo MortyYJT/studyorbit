@@ -1,3 +1,5 @@
+import { productionSync } from '../sync/runtime.js';
+import type { SyncCommands } from './sync.js';
 import { databasePath } from '../config/data-dir.js';
 import { SqliteRepository } from '../store/sqlite.js';
 import { ProtocolFiles } from './files.js';
@@ -15,6 +17,7 @@ import { CourseworkError } from './errors.js';
 export interface ProductionOptions {
   store?: SqliteRepository; files?: ProtocolFiles; metadata?: readonly EvidenceMetadata[]; privacyScope?: unknown;
   reads?: AuxiliaryReadPorts; study?: { provider: StudyEvidenceProvider; store: StudyRecordStore };
+  sync?: SyncCommands;
   owner?: TrustedContext['owner'];
 }
 /** Compose real storage once for all transports; unmounted study ports fail closed. */
@@ -68,5 +71,5 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
-  return { registry: createRegistry({ autonomy }), context, audit, store, close: () => { if (!options.store) store.close(); } };
+  return { registry: createRegistry({ autonomy, sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
 }
