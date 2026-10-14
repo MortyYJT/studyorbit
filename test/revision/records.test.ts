@@ -88,3 +88,34 @@ it('selects the final using owner-over-agent annotations in both directions and 
   host.store.appendAnnotation({ id: 'due-new', entity: 'assessment', entityId: 'new', field: 'due', value: '2026-02-03T00:00:00Z', origin: 'owner', citations: [], at: '2026-01-01T00:00:00Z' });
   expect(await call('revision.read', { courseId: 'c' })).toMatchObject({ ok: true, data: { finalAssessmentId: 'new', examTime: '2026-02-03T00:00:00Z' } });
 });
+
+it('refuses unreadable study publication and pages readable records by response bytes after restart', async () => {
+  const { host, call } = await setup();
+  const quote = 'x'.repeat(35_000);
+  host.store.saveSourceItem({ id: 's', externalId: 's', courseId: 'c', platform: 'canvas', kind: 'announcement', title: 'Synthetic large source', text: quote, contentHash: hash(quote), fetchedAt: '2026-01-01T00:00:00Z' });
+  const sourceRevision = (await call('revision.read', { courseId: 'c' }) as { data: { sourceRevision: string } }).data.sourceRevision;
+  const initial = await call('revision.write', { courseId: 'c', sourceRevision, claims: [claim('x')] });
+  expect(initial).toMatchObject({ ok: true });
+  const revision = (initial as { data: { revision: string } }).data.revision;
+  expect(await call('revision.write', { courseId: 'c', sourceRevision, previousRevision: revision, claims: [{ ...claim(quote), text: 'Synthetic claim' }] })).toMatchObject({ ok: false, error: { code: 'LIMIT_EXCEEDED' } });
+  const accepted = [];
+  for (const week of [1, 2]) {
+    const result = await call('revision.write', { courseId: 'c', week, sourceRevision, claims: [{ ...claim(quote.slice(0, 20_000)), text: 'Synthetic claim' }] });
+    expect(result).toMatchObject({ ok: true });
+    accepted.push((result as { data: { revision: string } }).data.revision);
+  }
+  host.close(); const next = createProductionProtocol(); hosts.push(next);
+  let cursor: string | undefined;
+  const items: { revision: string }[] = [];
+  let pages = 0;
+  do {
+    const result = await dispatch(next.registry, 'revision.list', { courseId: 'c', limit: 100, cursor }, next.context);
+    expect(result).toMatchObject({ ok: true });
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(64 * 1024);
+    const data = (result as { data: { items: { revision: string }[]; nextCursor?: string } }).data;
+    items.push(...data.items); cursor = data.nextCursor; pages++;
+    expect(pages).toBeLessThanOrEqual(3);
+  } while (cursor);
+  expect(pages).toBeGreaterThan(1);
+  expect(items.map(item => item.revision).sort()).toEqual([revision, ...accepted].sort());
+});

@@ -80,7 +80,17 @@ export class SourceFetcher {
     const externalId = (platform === 'canvas'
       ? /^\/(?:api\/v1\/)?courses\/([^/]+)\//
       : /^\/(?:au\/|api\/)?courses\/([^/]+)\//).exec(path)?.[1];
-    if (!externalId || !course.sources?.some(source => source.platform === platform && source.externalId === externalId)) {
+    let bound = externalId !== undefined && !!course.sources?.some(source => source.platform === platform && source.externalId === externalId);
+    // Ed lesson APIs omit the course id; only a stored same-course URL can establish ownership.
+    if (!externalId && platform === 'ed') {
+      let cursor: string | undefined;
+      do {
+        const page = store.query('sourceItems', { courseId, limit: 500, cursor });
+        bound = page.items.some(item => item.platform === 'ed' && !item.removed && item.kind !== 'post' && item.url === url.href);
+        cursor = page.nextCursor;
+      } while (!bound && cursor);
+    }
+    if (!bound) {
       throw new CourseworkError('INVALID_INPUT', 'Source URL does not match a trusted course mapping.');
     }
     const response = await (this.options.transport ?? new ResidentSourceTransport()).read(url.href);

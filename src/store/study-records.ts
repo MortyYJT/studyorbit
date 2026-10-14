@@ -2,7 +2,7 @@ import { hash } from '../citations/exact.js';
 import type { StudyCommand } from '../protocol/citations.js';
 import { contracts, type CommandOutput, type ParsedCommandInput } from '../protocol/contracts.js';
 import { CourseworkError } from '../protocol/errors.js';
-import type { StudyRecord, StudyRecordStore } from '../protocol/study-writes.js';
+import { studyPageFits, type StudyRecord, type StudyRecordStore } from '../protocol/study-writes.js';
 import type { AcceptedRead, AcceptedRecordReader } from './accepted-records.js';
 import type { SqliteRepository } from './sqlite.js';
 import { TrustedStoreEvidence } from '../protocol/reads.js';
@@ -37,7 +37,16 @@ export class SqliteStudyRecordStore implements StudyRecordStore, AcceptedRecordR
       }
       offset = Number(match[1]);
     }
-    const items = records.slice(offset, offset + limit);
+    const items: StudyRecord[] = [];
+    for (const record of records.slice(offset, offset + limit)) {
+      const next = offset + items.length + 1;
+      const nextCursor = next < records.length ? Buffer.from(`${next}:${scope}`).toString('base64url') : undefined;
+      if (!studyPageFits([...items, record], nextCursor)) {
+        if (!items.length) throw new CourseworkError('LIMIT_EXCEEDED', 'Study record exceeds the read response bound.');
+        break;
+      }
+      items.push(record);
+    }
     const next = offset + items.length;
     return contracts[name].output.parse({ items, evidence: [], coverage: { complete: true, gaps: [] },
       ...(next < records.length ? { nextCursor: Buffer.from(`${next}:${scope}`).toString('base64url') } : {}) }) as CommandOutput<N>;

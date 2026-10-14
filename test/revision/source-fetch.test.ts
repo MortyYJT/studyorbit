@@ -127,3 +127,25 @@ it('fetches lecture pages and files with thread words while refusing discussion 
   }
   expect(read).toHaveBeenCalledTimes(3);
 });
+
+it('fetches unscoped Ed APIs only for an active same-course stored source URL', async () => {
+  const { fetcher, read, store } = await setup(new Uint8Array(Buffer.from('Synthetic lesson')), 'text/plain');
+  store.saveCourse({ id: 'other', moduleId: 'm', code: 'OTHER', name: 'Other', term: 'test', assessmentsComplete: true, sources: [{ platform: 'ed', externalId: '2' }] });
+  // Exercise mapping lookup past the first repository page.
+  for (let i = 0; i < 501; i++) store.saveSourceItem({ id: `a-${i}`, externalId: `${i}`, courseId: 'c', platform: 'ed', kind: 'material', title: 'Synthetic', text: '', contentHash: hash(''), fetchedAt: '2026-01-01T00:00:00Z' });
+  for (const [i, path] of ['/api/lessons/10', '/api/lessons/slides/20'].entries()) {
+    const target = `https://edstem.org${path}`;
+    store.saveSourceItem({ id: `z-${i}`, externalId: `${i}`, courseId: 'c', platform: 'ed', kind: 'material', title: 'Synthetic', url: target, text: '', contentHash: hash(''), fetchedAt: '2026-01-01T00:00:00Z' });
+    await expect(fetcher.fetch({ courseId: 'other', url: target })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(read).toHaveBeenCalledTimes(i);
+    read.mockResolvedValueOnce({ url: target, status: 200, contentType: 'text/plain', body: new Uint8Array(Buffer.from('Synthetic lesson')) });
+    expect((await fetcher.fetch({ courseId: 'c', url: target })).items[0]!.text).toBe('Synthetic lesson');
+  }
+  for (const [id, removed, platform] of [['removed', true, 'ed'], ['wrong-platform', false, 'canvas']] as const) {
+    const target = `https://edstem.org/api/lessons/${id}`;
+    store.saveSourceItem({ id, externalId: id, courseId: 'c', platform, kind: 'material', title: 'Synthetic', url: target, removed, text: '', contentHash: hash(''), fetchedAt: '2026-01-01T00:00:00Z' });
+    await expect(fetcher.fetch({ courseId: 'c', url: target })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  }
+  await expect(fetcher.fetch({ courseId: 'c', url: 'https://edstem.org/api/lessons/99' })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  expect(read).toHaveBeenCalledTimes(2);
+});

@@ -1,4 +1,4 @@
-import { recordSchemas, type StudyRecord } from '../protocol/study-writes.js';
+import { assertStudyRecordReadable, recordSchemas, type StudyRecord } from '../protocol/study-writes.js';
 import type { StudyCommand } from '../protocol/citations.js';
 import { CourseworkError } from '../protocol/errors.js';
 import { TrustedStoreEvidence } from '../protocol/reads.js';
@@ -51,6 +51,7 @@ export class SqliteRepository implements Repository, CurrentStateReader {
     evidence = new TrustedStoreEvidence(this)): void {
     const value = recordSchemas[command].parse(record);
     if (value.id !== id) throw new CourseworkError('INVALID_INPUT', 'Study identity mismatch.');
+    assertStudyRecordReadable(value);
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const courseId = 'courseId' in value ? value.courseId : value.task.courseId;

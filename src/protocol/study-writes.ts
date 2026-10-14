@@ -14,6 +14,17 @@ export const BreakdownRecordSchema = z.strictObject({ id: IdSchema, revision: z.
 export type StudyRecord = z.infer<typeof RevisionRecordSchema> | z.infer<typeof PracticeRecordSchema> | z.infer<typeof BreakdownRecordSchema>;
 export const recordSchemas = { 'revision.write': RevisionRecordSchema, 'practice.write': PracticeRecordSchema, 'breakdown.write': BreakdownRecordSchema } as const;
 
+/** Reserve envelope metadata headroom, as with other paginated protocol reads. */
+export function studyPageFits(items: readonly StudyRecord[], nextCursor?: string): boolean {
+  return Buffer.byteLength(JSON.stringify({ items, evidence: [], coverage: { complete: true, gaps: [] },
+    ...(nextCursor ? { nextCursor } : {}) }), 'utf8') <= 64 * 1024 - 1024;
+}
+/** Leave room for the longest generated continuation even when this record is read last today. */
+export function assertStudyRecordReadable(record: StudyRecord): void {
+  const cursor = Buffer.from(`${Number.MAX_SAFE_INTEGER}:${'0'.repeat(64)}`).toString('base64url');
+  if (!studyPageFits([record], cursor)) throw new CourseworkError('LIMIT_EXCEEDED', 'Study record exceeds the read response bound.');
+}
+
 /** Versioned operational persistence port. Implementations publish atomically and never via agent SQL.
  * `publish` is compare-and-swap: it must refuse unless the current revision equals `expected`.
  */
@@ -38,7 +49,9 @@ export class InMemoryStudyRecordStore implements StudyRecordStore {
   }
   async publish(command: StudyCommand, id: string, expected: string | undefined, record: StudyRecord): Promise<void> {
     if (this.records.get(`${command}:${id}`)?.revision !== expected) throw conflict();
-    this.records.set(`${command}:${id}`, structuredClone(recordSchemas[command].parse(record)));
+    const value = recordSchemas[command].parse(record);
+    assertStudyRecordReadable(value);
+    this.records.set(`${command}:${id}`, structuredClone(value));
   }
 }
 
