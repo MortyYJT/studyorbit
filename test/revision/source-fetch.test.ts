@@ -28,7 +28,7 @@ const url = 'https://canvas.lms.unimelb.edu.au/courses/1/files/2/download';
 async function setup(body: Uint8Array, type = 'application/pdf') {
   const root = await mkdtemp(join(tmpdir(), 'revision-source-')); roots.push(root);
   const store = new SqliteRepository(join(root, 'data.db')); stores.push(store);
-  store.saveCourse({ id: 'c', moduleId: 'm', code: 'SYN', name: 'Synthetic', term: 'test', assessmentsComplete: true });
+  store.saveCourse({ id: 'c', moduleId: 'm', code: 'SYN', name: 'Synthetic', term: 'test', assessmentsComplete: true, sources: [{ platform: 'canvas', externalId: '1' }, { platform: 'ed', externalId: '1' }] });
   const read = vi.fn(async () => ({ url, status: 200, contentType: type, body }));
   const fetcher = new SourceFetcher({ store, directory: root, transport: { read } });
   return { root, store, read, fetcher };
@@ -103,4 +103,27 @@ it('retains browser-harvested author scope when the response is JSON containing 
   const { root, store } = await setup(new Uint8Array(), 'application/json');
   const fetcher = new SourceFetcher({ store, directory: root, transport: { read: async () => ({ url, status: 200, contentType: 'application/json', body: new Uint8Array(Buffer.from(JSON.stringify({ body: '<span class="author">Fictional Peer</span><p>Fictional Peer discussed recursion.</p>' }))), text: 'Fictional Peer discussed recursion.', privacyScope: { authors: [{ name: 'Fictional Peer' }] } }) } });
   expect((await fetcher.fetch({ courseId: 'c', url })).items[0]!.text).toBe('[redacted] discussed recursion.');
+});
+
+it('rejects another course and unscoped provider URLs before reading or storing', async () => {
+  const { fetcher, read, store } = await setup(pdf(['Synthetic']));
+  for (const target of ['https://canvas.lms.unimelb.edu.au/courses/2/pages/lecture',
+    'https://edstem.org/au/courses/2/lessons/1', 'https://canvas.lms.unimelb.edu.au/files/2/download']) {
+    await expect(fetcher.fetch({ courseId: 'c', url: target })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  }
+  expect(read).not.toHaveBeenCalled();
+  expect(store.query('sourceItems', { limit: 100 }).items).toEqual([]);
+});
+it('fetches lecture pages and files with thread words while refusing discussion routes', async () => {
+  const { fetcher, read } = await setup(new Uint8Array(Buffer.from('Synthetic lecture')), 'text/plain');
+  for (const target of ['https://canvas.lms.unimelb.edu.au/courses/1/pages/multithreading',
+    'https://canvas.lms.unimelb.edu.au/courses/1/files/lecture-threads.pdf',
+    'https://canvas.lms.unimelb.edu.au/courses/1/pages/threads']) {
+    read.mockResolvedValueOnce({ url: target, status: 200, contentType: 'text/plain', body: new Uint8Array(Buffer.from('Synthetic lecture')) });
+    expect((await fetcher.fetch({ courseId: 'c', url: target })).items[0]!.text).toBe('Synthetic lecture');
+  }
+  for (const route of ['discussion_topics/2', 'threads/2', 'replies/2', '%2564iscussion_topics/2']) {
+    await expect(fetcher.fetch({ courseId: 'c', url: `https://canvas.lms.unimelb.edu.au/courses/1/${route}` })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  }
+  expect(read).toHaveBeenCalledTimes(3);
 });

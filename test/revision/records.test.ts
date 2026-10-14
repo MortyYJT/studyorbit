@@ -10,7 +10,7 @@ afterEach(async () => { hosts.splice(0).forEach(h => h.close()); vi.unstubAllEnv
 async function setup() {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'revision-records-'))); roots.push(root); vi.stubEnv('COURSEWORK_HOME', root);
   const host = createProductionProtocol(); hosts.push(host);
-  host.store.saveCourse({ id: 'c', moduleId: 'm', code: 'SYN', name: 'Synthetic', term: 'test', assessmentsComplete: true });
+  host.store.saveCourse({ id: 'c', moduleId: 'm', code: 'SYN', name: 'Synthetic', term: 'test', assessmentsComplete: true, sources: [{ platform: 'canvas', externalId: '1' }] });
   host.store.saveSourceItem({ id: 's', externalId: 's', courseId: 'c', platform: 'canvas', kind: 'announcement', title: 'Synthetic exam scope', text: 'Trees. Recursion. Sorting.', contentHash: hash('Trees. Recursion. Sorting.'), fetchedAt: '2026-01-01T00:00:00Z' });
   const call = (name: string, input: unknown) => dispatch(host.registry, name, input, host.context);
   const sourceRevision = ((await call('revision.read', { courseId: 'c' })) as { data: { sourceRevision: string } }).data?.sourceRevision;
@@ -76,4 +76,15 @@ it('reports external redirect refusals through the production command', async ()
   const { host } = await setup();
   const mounted = createProductionProtocol({ store: host.store, sourceTransport: { read: async () => ({ url: 'https://example.org/file', status: 302, contentType: 'text/plain', body: new Uint8Array() }) } }); hosts.push(mounted);
   expect(await dispatch(mounted.registry, 'source.fetch', { courseId: 'c', url: 'https://canvas.lms.unimelb.edu.au/courses/1/pages/lecture' }, mounted.context)).toMatchObject({ ok: false, error: { message: expect.stringContaining('Redirects') } });
+});
+
+it('selects the final using owner-over-agent annotations in both directions and reads its effective due', async () => {
+  const { host, call } = await setup();
+  for (const [id, isFinal] of [['old', true], ['new', false]] as const) {
+    host.store.saveAssessment({ id, courseId: 'c', name: 'Synthetic final', kind: 'exam', isFinal, due: '2026-02-01T00:00:00Z', status: 'not_started' });
+    host.store.appendAnnotation({ id: `owner-${id}`, entity: 'assessment', entityId: id, field: 'isFinal', value: !isFinal, origin: 'owner', citations: [], at: '2026-01-01T00:00:00Z' });
+    host.store.appendAnnotation({ id: `agent-${id}`, entity: 'assessment', entityId: id, field: 'isFinal', value: isFinal, origin: 'agent', citations: claim('Trees.').citations, at: '2026-01-02T00:00:00Z' });
+  }
+  host.store.appendAnnotation({ id: 'due-new', entity: 'assessment', entityId: 'new', field: 'due', value: '2026-02-03T00:00:00Z', origin: 'owner', citations: [], at: '2026-01-01T00:00:00Z' });
+  expect(await call('revision.read', { courseId: 'c' })).toMatchObject({ ok: true, data: { finalAssessmentId: 'new', examTime: '2026-02-03T00:00:00Z' } });
 });

@@ -45,7 +45,12 @@ export class RevisionService implements ProtocolServices {
       const finals = []; let cursor: string | undefined;
       do {
         const page = this.store.query('assessments', { courseId, limit: 500, cursor });
-        finals.push(...page.items.filter(a => a.isFinal)); cursor = page.nextCursor;
+        finals.push(...page.items.filter(a => {
+          const annotations = this.store.readAnnotations('assessment', a.id).filter(item => item.field === 'isFinal');
+          const effective = annotations.filter(item => item.origin === 'owner').at(-1)
+            ?? annotations.filter(item => item.origin === 'agent').at(-1);
+          return effective ? z.boolean().parse(effective.value) : a.isFinal;
+        })); cursor = page.nextCursor;
       } while (cursor);
       if (finals.length > 1) throw new CourseworkError('CONFLICT', 'Multiple final assessments; exam time is ambiguous.');
       const final = finals[0]; let due: string | undefined = final?.due;

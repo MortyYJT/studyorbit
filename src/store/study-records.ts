@@ -5,11 +5,12 @@ import { CourseworkError } from '../protocol/errors.js';
 import type { StudyRecord, StudyRecordStore } from '../protocol/study-writes.js';
 import type { AcceptedRead, AcceptedRecordReader } from './accepted-records.js';
 import type { SqliteRepository } from './sqlite.js';
+import { TrustedStoreEvidence } from '../protocol/reads.js';
 
 /** The SQL statement is the cross-process CAS; the lock avoids duplicate in-process validation. */
 export class SqliteStudyRecordStore implements StudyRecordStore, AcceptedRecordReader {
   private readonly locks = new Set<string>();
-  constructor(private readonly store: SqliteRepository) {}
+  constructor(private readonly store: SqliteRepository, private readonly evidence = new TrustedStoreEvidence(store)) {}
   async exclusive<T>(key: string, fn: () => Promise<T>): Promise<T> {
     if (this.locks.has(key)) throw new CourseworkError('LOCKED', 'Another study write is active.');
     this.locks.add(key);
@@ -17,7 +18,7 @@ export class SqliteStudyRecordStore implements StudyRecordStore, AcceptedRecordR
   }
   async current(command: StudyCommand, id: string): Promise<StudyRecord | undefined> { return this.store.loadStudyRecord(command, id); }
   async publish(command: StudyCommand, id: string, expected: string | undefined, record: StudyRecord): Promise<void> {
-    this.store.publishStudyRecord(command, id, expected, record);
+    this.store.publishStudyRecord(command, id, expected, record, this.evidence);
   }
   async read<N extends AcceptedRead>(name: N, input: ParsedCommandInput<N>): Promise<CommandOutput<N>> {
     const { cursor, limit, ...filters } = contracts[name].input.parse(input);

@@ -34,6 +34,9 @@ export class TrustedStoreEvidence implements SourceEvidenceReader {
   }
   protect(value: unknown): unknown { return protectRead(value, this.scope); }
   async get(id: string): Promise<Evidence> {
+    return this.getSync(id);
+  }
+  getSync(id: string): Evidence {
     const matches = this.metadata.filter(m => m.sourceItemId === id || m.legacySourceItemId === id);
     if (matches.length > 1) throw unsafeSource();
     const stored = this.store.loadSourceItem(id);

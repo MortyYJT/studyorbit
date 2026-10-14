@@ -24,7 +24,9 @@ export function sourceURL(value: string): URL {
     for (let i = 0; i < 4 && /%[a-f0-9]{2}/i.test(decoded); i++) decoded = decodeURIComponent(decoded);
   } catch { throw new CourseworkError('INVALID_INPUT', 'Invalid source URL encoding.'); }
   if (![CANVAS_ORIGIN, ED_ORIGIN].includes(url.origin)) throw new CourseworkError('INVALID_INPUT', 'Off-origin source URLs are refused.');
-  if (/discussion|threads?|replies/i.test(decoded)) throw new CourseworkError('INVALID_INPUT', 'Discussion threads and replies are refused.');
+  if (/^\/(?:api\/v1\/|api\/|au\/)?(?:courses\/[^/]+\/)?(?:discussion(?:_topics|s)?|threads?|replies)(?:\/|[?#]|$)/i.test(decoded)) {
+    throw new CourseworkError('INVALID_INPUT', 'Discussion threads and replies are refused.');
+  }
   if (url.username || url.password || /%[a-f0-9]{2}|\\|\/login|\/auth|token|password|credential/i.test(decoded)) {
     throw new CourseworkError('INVALID_INPUT', 'Authentication URLs and credentials are refused.');
   }
@@ -43,7 +45,8 @@ export function materialMetadata(externalId: string): { locator: string; page?: 
     return { locator: data.locator, ...(data.page ? { page: data.page as number } : {}) };
   } catch { return undefined; }
 }
-export async function courseEvidence(store: SqliteRepository, evidence: TrustedStoreEvidence, courseId: string) {
+/** Synchronous snapshot so publication can recheck it without yielding its SQLite write lock. */
+export function courseEvidenceSnapshot(store: SqliteRepository, evidence: TrustedStoreEvidence, courseId: string) {
   if (!store.loadCourse(courseId)) throw new CourseworkError('NOT_FOUND', 'Course not found.');
   const sources: CommandOutput<'sources.get'>[] = [];
   let cursor: string | undefined;
@@ -52,13 +55,16 @@ export async function courseEvidence(store: SqliteRepository, evidence: TrustedS
     for (const item of page.items) {
       if (item.removed || !item.text.trim() || item.kind === 'post') continue;
       if (item.url) { try { sourceURL(item.url); } catch { continue; } }
-      try { sources.push(await evidence.get(item.id)); }
+      try { sources.push(evidence.getSync(item.id)); }
       catch (error) { if (!(error instanceof CourseworkError) || error.code !== 'SOURCE_UNAVAILABLE') throw error; }
     }
     cursor = page.nextCursor;
   } while (cursor);
   if (sources.length > 500) throw new CourseworkError('LIMIT_EXCEEDED', 'Too many sources in the course evidence snapshot.');
   return { target: { courseId }, sources, sourceRevision: hash(sources.map(s => [s.sourceItemId, s.sourceHash, s.locator])) };
+}
+export async function courseEvidence(store: SqliteRepository, evidence: TrustedStoreEvidence, courseId: string) {
+  return courseEvidenceSnapshot(store, evidence, courseId);
 }
 export class SourceFetcher {
   constructor(private readonly options: { store: SqliteRepository; directory?: string; transport?: SourceTransport }) {}
@@ -67,7 +73,16 @@ export class SourceFetcher {
     if (!parsed.success) throw new CourseworkError('INVALID_INPUT', 'source.fetch accepts only a course and provider URL.');
     const { courseId, url: value } = parsed.data; const url = sourceURL(value);
     const store = this.options.store;
-    if (!store.loadCourse(courseId)) throw new CourseworkError('NOT_FOUND', 'Course not found.');
+    const course = store.loadCourse(courseId);
+    if (!course) throw new CourseworkError('NOT_FOUND', 'Course not found.');
+    const platform = url.origin === CANVAS_ORIGIN ? 'canvas' : 'ed';
+    const path = decodeURIComponent(url.pathname);
+    const externalId = (platform === 'canvas'
+      ? /^\/(?:api\/v1\/)?courses\/([^/]+)\//
+      : /^\/(?:au\/|api\/)?courses\/([^/]+)\//).exec(path)?.[1];
+    if (!externalId || !course.sources?.some(source => source.platform === platform && source.externalId === externalId)) {
+      throw new CourseworkError('INVALID_INPUT', 'Source URL does not match a trusted course mapping.');
+    }
     const response = await (this.options.transport ?? new ResidentSourceTransport()).read(url.href);
     if (response.status === 401 || response.status === 403) throw new CourseworkError('AUTH_EXPIRED', 'Sign in to the provider.');
     if (response.url !== url.href || response.status < 200 || response.status >= 300) {
@@ -118,11 +133,11 @@ export class SourceFetcher {
     await mkdir(directory, { recursive: true, mode: 0o700 });
     if ((await lstat(directory)).isSymbolicLink()) throw new CourseworkError('SOURCE_UNAVAILABLE', 'Private materials directory cannot be a symlink.');
     await chmod(directory, 0o700);
-    const path = join(directory, `${hash(url.href)}.raw`);
+    const rawPath = join(directory, `${hash(url.href)}.raw`);
     // O_NOFOLLOW prevents following a pre-existing raw-file symlink.
     const { constants } = await import('node:fs');
-    await writeFile(path, response.body, { flag: constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, mode: 0o600 });
-    await chmod(path, 0o600);
+    await writeFile(rawPath, response.body, { flag: constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, mode: 0o600 });
+    await chmod(rawPath, 0o600);
     const old = store.query('sourceItems', { courseId, kind: 'material', limit: 500 }).items
       .filter(item => item.url === safeURL && materialMetadata(item.externalId) && !sourceItems.some(current => current.id === item.id))
       .map(item => ({ ...item, removed: true }));
