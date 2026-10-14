@@ -1,3 +1,4 @@
+import { PlanningService } from '../planning/service.js';
 import { databasePath } from '../config/data-dir.js';
 import { SqliteRepository } from '../store/sqlite.js';
 import { ProtocolFiles } from './files.js';
@@ -69,5 +70,5 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
-  return { registry: createRegistry({ autonomy }), context, audit, store, close: () => { if (!options.store) store.close(); } };
+  return { registry: createRegistry({ autonomy, planning: new PlanningService(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
 }
