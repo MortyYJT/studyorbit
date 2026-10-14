@@ -1,3 +1,4 @@
+import { syncContracts, type SyncCommands } from './sync.js';
 import { autonomyContracts, type AssessmentAutonomy } from './autonomy.js';
 import { safeBrowserChoiceMessage } from '../capture/browser.js';
 import { browserStatus, type BrowserStatus } from '../browser/status.js';
@@ -136,7 +137,7 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   }
   return result;
 }
-const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'browser.status']));
+const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'browser.status', 'sync.status']));
 /** Contract commands that change state; transports require credentials for these whatever their autonomy level. */
 export const writeNames: ReadonlySet<string> = new Set<string>(Object.keys(contracts).filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
@@ -144,7 +145,7 @@ const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN)
 export interface BrowserServices {
   status(): Promise<BrowserStatus>; start(): Promise<BrowserState>; stop(): Promise<void>;
 }
-export function createRegistry(options: { browser?: Partial<BrowserServices>; autonomy?: AssessmentAutonomy } = {}): Registry {
+export function createRegistry(options: { browser?: Partial<BrowserServices>; autonomy?: AssessmentAutonomy; sync?: SyncCommands } = {}): Registry {
   const registry = new Registry();
   const handlers = new Map<string, Handler>();
   for (const name of Object.keys(contracts) as CommandName[]) {
@@ -198,5 +199,13 @@ export function createRegistry(options: { browser?: Partial<BrowserServices>; au
       return name === 'autonomy.check' ? options.autonomy.check(input as never, context.runId) : options.autonomy.set(name, input, context);
     } });
   }
+  for (const name of ['sync.run', 'sync.status'] as const) registry.register<z.ZodType, z.ZodType>({ name, ...syncContracts[name], handler: async (input, context) => {
+    if (name === 'sync.run') {
+      if (!context.owner) throw new CourseworkError('INVALID_INPUT', safeMessages.INVALID_INPUT);
+      await context.owner.assertOwner(name);
+    }
+    if (!options.sync) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
+    return name === 'sync.run' ? options.sync.run(input as { course?: string }) : options.sync.status();
+  } });
   return registry;
 }

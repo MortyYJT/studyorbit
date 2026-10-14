@@ -38,11 +38,11 @@ Covers: US-7 items 1–4. Spec: `assessment-autonomy`. Depends on A; owner-only 
 
 Covers: US-1 items 1–5, item 6 manual part (email trigger deferred, #129). Spec: `coursework-sync`, `ed-capture`. Depends on A.
 
-- [ ] 5.1 Failing tests with synthetic Canvas JSON: active current-term enrollments, assignments, groups, own submissions, modules; bounded pagination; no bearer header; no other students' submissions
-- [ ] 5.2 Failing tests for course merging: single code match merges; no match or duplicates stay separate and are reported; names ignored
-- [ ] 5.3 Failing tests for facts and sync assessments: Ed `effective_due_at` precedence; weighted Canvas groups create linked sync assessments; no split or zero weights; annotated fields and agent/owner links not overwritten
-- [ ] 5.4 Failing tests: one transaction per course; complete reads mark missing items removed; partial reads remove nothing; redaction before storing; provider-isolated `AUTH_EXPIRED`; shared limiter; measured Run; Ed reads limited to sync scope
-- [ ] 5.5 Failing tests for `sync.run`: one run at a time (`LOCKED`), last run and last success per provider readable; wire `coursework sync [--course]`
+- [x] 5.1 Failing tests with synthetic Canvas JSON: active current-term enrollments, assignments, groups, own submissions, modules; bounded pagination; no bearer header; no other students' submissions
+- [x] 5.2 Failing tests for course merging: single code match merges; no match or duplicates stay separate and are reported; names ignored
+- [x] 5.3 Failing tests for facts and sync assessments: Ed `effective_due_at` precedence; weighted Canvas groups create linked sync assessments; no split or zero weights; annotated fields and agent/owner links not overwritten
+- [x] 5.4 Failing tests: one transaction per course; complete reads mark missing items removed; partial reads remove nothing; redaction before storing; provider-isolated `AUTH_EXPIRED`; shared limiter; measured Run; Ed reads limited to sync scope
+- [x] 5.5 Failing tests for `sync.run`: one run at a time (`LOCKED`), last run and last success per provider readable; wire `coursework sync [--course]`
 - [ ] 5.6 Owner live check on the real profile; record actual counts and problems in the PR, separately from synthetic results
 
 ## 6. Issue E — Agent annotations and owner verdicts

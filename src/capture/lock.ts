@@ -13,7 +13,7 @@ function code(error: unknown): string | undefined {
 }
 
 export interface ProfileLockOptions {
-  directory?: string; pid?: number; isAlive?: (pid: number) => boolean; now?: () => number;
+  directory?: string; name?: 'default.lock' | 'sync.lock'; pid?: number; isAlive?: (pid: number) => boolean; now?: () => number;
 }
 export type ProfileLock = (() => void) & { transfer(pid: number): void };
 export function processIsAlive(pid: number): boolean {
@@ -31,7 +31,7 @@ export function releaseProfileLock(pid: number, directory: string): void {
   catch (error) { if (code(error) !== 'ENOENT') throw error; }
 }
 export function acquireProfileLock(options: ProfileLockOptions = {}): ProfileLock {
-  const path = join(options.directory ?? profilesDir(), 'default.lock');
+  const path = join(options.directory ?? profilesDir(), options.name ?? 'default.lock');
   const now = options.now ?? Date.now;
   const isAlive = options.isAlive ?? processIsAlive;
   for (;;) {

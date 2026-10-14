@@ -95,7 +95,7 @@ export async function parseProtocolCLI(args: string[], options: ProtocolCLIOptio
     },
   } };
   for (const entry of options.registry.list()) {
-    const parts = entry.name.split('.'); let parent = program;
+    const parts = entry.name === 'sync.run' ? ['sync'] : entry.name.split('.'); let parent = program;
     for (let index = 0; index < parts.length; index++) {
       const key = parts.slice(0, index + 1).join('.'); let node = nodes.get(key);
       if (!node) { node = parent.command(parts[index]!).description(key); nodes.set(key, node); }
