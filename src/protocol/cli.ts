@@ -2,9 +2,8 @@ import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { Command, CommanderError, Option } from 'commander';
 import { z } from 'zod';
-import { dispatch, type Registry, type RegistryEntry } from './registry.js';
+import { dispatch, isOwnerCommand, sessionOnlyCommand, type Registry, type RegistryEntry } from './registry.js';
 import type { TrustedContext } from './context.js';
-import { ownerCommands } from './contracts.js';
 import { CourseworkError } from './errors.js';
 import { fail, ok, type Envelope, type FailureEnvelope } from './envelope.js';
 
@@ -90,6 +89,7 @@ export async function parseProtocolCLI(args: string[], options: ProtocolCLIOptio
   let response: Envelope | undefined; let selected: RegistryEntry | undefined;
   const context: TrustedContext = { ...options.context, owner: {
     assertOwner: async name => {
+      if (sessionOnlyCommand(options.registry.get(name) ?? name)) throw new CourseworkError('INVALID_INPUT', 'Open coursework ui to perform this owner action.');
       if (!(options.isTTY ?? (process.stdin.isTTY === true && process.stderr.isTTY === true)) || !options.context.owner) return invalid();
       await options.context.owner.assertOwner(name);
     },
@@ -102,7 +102,7 @@ export async function parseProtocolCLI(args: string[], options: ProtocolCLIOptio
       parent = node;
     }
     const command = parent; leaves.set(command, entry);
-    command.description(`${entry.name} (L${entry.level}${ownerCommands.has(entry.name) ? ', owner terminal' : ''})`)
+    command.description(`${entry.name} (L${entry.level}${sessionOnlyCommand(entry) ? ', owner frontend' : isOwnerCommand(entry) ? ', owner terminal or frontend' : ''})`)
       .option('--json', 'Print one coursework.agent/v1 envelope')
       .option('--input <path>', `Strict JSON input file (maximum ${MAX_INPUT_BYTES} bytes; exclusive with field flags)`);
     command.options.find(option => option.long === '--input')!.argParser((value: string, previous: unknown) => {
