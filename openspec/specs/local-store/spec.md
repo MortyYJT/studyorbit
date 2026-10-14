@@ -26,7 +26,7 @@ The store SHALL apply numbered migrations in order on open and record the applie
 - **THEN** opening fails with an error naming both versions and the file is unchanged
 
 ### Requirement: Data lives in .local only
-The data directory SHALL be the `COURSEWORK_HOME` environment variable when set, otherwise `.local/` inside the package root (the nearest ancestor of the running module that contains this package's `package.json`). The data directory holds `coursework.db`, `snapshots/`, `profiles/`, and `crawls/` (crawl summaries from `page-capture`); each is created when first needed. The `.local/` directory MUST be ignored by git.
+The data directory SHALL be the `COURSEWORK_HOME` environment variable when set, otherwise `.local/` inside the package root (the nearest ancestor of the running module that contains this package's `package.json`). The data directory holds `coursework.db`, `snapshots/`, `profiles/` and `browser.json` (the resident browser endpoint); each is created when first needed. A `crawls/` directory left by the removed Canvas crawl SHALL be left in place, not deleted. The `.local/` directory MUST be ignored by git.
 
 #### Scenario: Default location
 - **WHEN** no override is set
@@ -34,18 +34,11 @@ The data directory SHALL be the `COURSEWORK_HOME` environment variable when set,
 
 #### Scenario: Override
 - **WHEN** `COURSEWORK_HOME` is set to a directory
-- **THEN** the database, snapshots, and profiles all resolve inside that directory
+- **THEN** the database, snapshots, profiles and `browser.json` all resolve inside that directory
 
 #### Scenario: Git ignores local data
 - **WHEN** the check command runs
-- **THEN** a test confirms `git check-ignore .local/coursework.db` succeeds
-
-### Requirement: The store assigns change sequence numbers
-Recording a Change SHALL assign it a `seq` one greater than the largest stored `seq` (starting at 1), inside the same transaction as the write that caused it. Listing changes since a `seq` SHALL return them in ascending order.
-
-#### Scenario: Sequence numbers increase
-- **WHEN** two changes are recorded one after another
-- **THEN** the second has a larger `seq` than the first, and listing since the first returns only the second
+- **THEN** a test confirms `git check-ignore` succeeds for `.local/coursework.db` and `.local/browser.json`
 
 ### Requirement: Writes validate before storing
 The repository SHALL parse every entity with its domain schema before writing and MUST reject invalid entities without a partial write.

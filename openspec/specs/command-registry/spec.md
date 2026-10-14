@@ -15,7 +15,7 @@ Each command SHALL have one registry entry `{ name, input: zod, output: zod, han
 - **THEN** registration or dispatch fails safely and no business mutation occurs
 
 ### Requirement: Shared dispatch preserves the agent envelope
-Dispatch SHALL validate input, enforce authorization, invoke a handler at most once, validate output and apply redaction before returning the bounded `coursework.agent/v1` envelope with command, ok, data or safe error, runId and durationMs. Existing Q1 error codes/retry semantics and the 64 KiB limit SHALL remain compatible. Envelope-returning legacy handlers SHALL be adapted without double wrapping. Raw exceptions, unsafe output and credentials MUST NOT escape on success or failure; validation failures SHALL be safely audited where applicable.
+Dispatch SHALL validate input, enforce authorization, invoke a handler at most once, validate output and apply redaction before returning the bounded `coursework.agent/v1` envelope with command, ok, data or safe error, runId and durationMs. Error codes and retry semantics SHALL follow `agent-envelope`, and the 64 KiB limit SHALL apply. Raw exceptions, unsafe output and credentials MUST NOT escape on success or failure; validation failures SHALL be safely audited where applicable.
 
 #### Scenario: Equivalent request across transports
 - **WHEN** the same authorized synthetic input is sent by CLI, MCP and HTTP
@@ -24,17 +24,6 @@ Dispatch SHALL validate input, enforce authorization, invoke a handler at most o
 #### Scenario: Handler output is invalid or oversized
 - **WHEN** a handler returns invalid data or an envelope exceeding 64 KiB
 - **THEN** a safe failure replaces it, no raw output escapes and no false successful receipt is returned
-
-### Requirement: Generated CLI preserves Q1 syntax
-Commander subcommands SHALL dispatch through the registry. JSON mode SHALL print exactly one envelope on stdout with diagnostics on stderr. Existing `quiz read`, `quiz policy`, `quiz grant`, `quiz prerequisites`, `quiz propose` file-input syntax and `quiz review` assessment/revision/page/attempt syntax SHALL remain compatible. Owner recording/review SHALL retain trusted-terminal constraints; non-TTY calls SHALL never prompt for credentials or invent approval.
-
-#### Scenario: Legacy quiz proposal invocation
-- **WHEN** a valid synthetic Q1 proposal file is passed using existing CLI syntax
-- **THEN** the shared handler validates it and returns the existing `quiz.propose` receipt without a second registry or envelope
-
-#### Scenario: Agent attempts terminal approval
-- **WHEN** a non-TTY caller invokes an owner recording or review command
-- **THEN** it receives a safe refusal without policy/grant/approval changes
 
 ### Requirement: Official SDK provides stdio MCP
 `coursework mcp` SHALL use only pre-approved `@modelcontextprotocol/sdk` for MCP stdio. Registered tools SHALL advertise input schemas derived from zod and invoke the shared dispatcher. Stdout SHALL contain only MCP frames; diagnostics SHALL use stderr. MCP calls MUST NOT acquire owner interaction authority from input arguments.
@@ -53,4 +42,11 @@ Commander subcommands SHALL dispatch through the registry. JSON mode SHALL print
 #### Scenario: Hostile browser request
 - **WHEN** a cross-origin browser or forged owner flag attempts a write
 - **THEN** it is rejected before mutation or grant issuance, even though the server is loopback-bound
+
+### Requirement: Generated CLI keeps one envelope
+Commander subcommands SHALL dispatch through the registry. JSON mode SHALL print exactly one envelope on stdout with diagnostics on stderr. Owner-only commands (policy, grant, owner annotations, planning settings) SHALL require a trusted owner interaction: a TTY, or for planning settings only, the local HTTP owner-token flow (#86) used by the owner's UI. Other non-TTY calls, including every MCP call, SHALL get a safe refusal and SHALL never prompt for credentials or invent approval.
+
+#### Scenario: Agent attempts an owner command
+- **WHEN** a non-TTY caller invokes `grant.record`
+- **THEN** it receives a safe refusal and no grant is stored
 
