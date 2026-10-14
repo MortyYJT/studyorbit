@@ -18,6 +18,8 @@ const program = new Command()
 if (['--version', '-V'].includes(process.argv[2] ?? '')) await program.parseAsync();
 else {
   const isMcp = process.argv[2] === 'mcp' && process.argv.length === 3;
+  const isUi = process.argv[2] === 'ui' && process.argv.length === 3;
+  program.command('ui').description('Open the local owner frontend');
   const isHttp = process.argv[2] === 'http' && process.argv.length === 3;
   if (isMcp) {
     // stdout is reserved for MCP framing, including during production initialization.
@@ -28,12 +30,16 @@ else {
   catch {
     process.exitCode = 1;
     process.stderr.write('coursework: production storage is unavailable.\n');
-    if (!isMcp && !isHttp) console.log(JSON.stringify(fail('unknown', 'INTERNAL', 'Production storage is unavailable.')));
+    if (!isMcp && !isHttp && !isUi) console.log(JSON.stringify(fail('unknown', 'INTERNAL', 'Production storage is unavailable.')));
   }
   if (host) try {
     if (isMcp) {
       const { runMcpStdio } = await import('./protocol/mcp.js');
       await runMcpStdio({ ...host, version });
+    } else if (isUi) {
+      const { serveProductionUI } = await import('./protocol/http-host.js');
+      try { await serveProductionUI(host); }
+      catch { process.exitCode = 1; process.stderr.write('coursework ui: frontend build or local HTTP host unavailable. Build dist/ui and retry.\n'); }
     } else if (isHttp) {
       const { serveProductionHttp } = await import('./protocol/http-host.js');
       await serveProductionHttp(host);

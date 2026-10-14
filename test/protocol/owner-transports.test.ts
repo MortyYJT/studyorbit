@@ -13,13 +13,13 @@ function setup() {
   for (const name of names) registry.register({ name, input: z.strictObject({}), output: z.strictObject({}), level: 0, handler });
   return { registry, handler, context: createFakeContext({ owner: true }) };
 }
-it('HTTP owner capability only grants planning settings, never policies/grants/annotations/lifecycle', async () => {
+it('HTTP session grants owner commands and refuses unauthenticated requests', async () => {
   const { registry, handler, context } = setup();
   for (const name of names) {
     const result = await dispatch(registry, name, {}, httpCommandContext(context, name, true, () => false));
-    expect(result.ok).toBe(name === 'planning.settings.record');
+    expect(result.ok).toBe(true);
   }
-  expect(handler).toHaveBeenCalledTimes(1);
+  expect(handler).toHaveBeenCalledTimes(names.length);
   expect(await dispatch(registry, 'planning.settings.record', {}, httpCommandContext(context, 'planning.settings.record', false, () => false))).toMatchObject({ ok: false });
 });
 it('all current and reserved owner commands refuse non-TTY CLI and print exactly once', async () => {

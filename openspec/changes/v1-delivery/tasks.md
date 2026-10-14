@@ -20,10 +20,10 @@ Covers: foundation for all stories. Spec: `domain-model`, `local-store`.
 
 Covers: US-5 "MCP stays"; US-7 "only I set levels in the frontend". Spec: `web-ui` (owner session), `command-registry`.
 
-- [ ] 3.1 Failing tests: `coursework ui` creates an in-memory secret, opens the system browser with it in the fragment (injected opener), prints the URL on failure; no file under a temporary data directory contains it; restart invalidates it
-- [ ] 3.2 Failing tests: owner commands accept only the session header (constant-time compare); autonomy settings and confirmations refuse TTY; other owner commands accept TTY or session; the capability-file token is no longer accepted for owner commands; Host/Origin checks unchanged
-- [ ] 3.3 Failing tests: static serving of `dist/ui` with an allow-list, traversal and symlink refusal, API routes take precedence
-- [ ] 3.4 Failing tests: the registry builds an agent tool set with agent commands only and an agent context that cannot carry owner authority; MCP stdio still lists no owner commands
+- [x] 3.1 Failing tests: `coursework ui` creates an in-memory secret, opens the system browser with it in the fragment (injected opener), prints the URL on failure; no file under a temporary data directory contains it; restart invalidates it
+- [x] 3.2 Failing tests: owner commands accept only the session header (constant-time compare); autonomy settings and confirmations refuse TTY; other owner commands accept TTY or session; the capability-file token is no longer accepted for owner commands; Host/Origin checks unchanged
+- [x] 3.3 Failing tests: static serving of `dist/ui` with an allow-list, traversal and symlink refusal, API routes take precedence
+- [x] 3.4 Failing tests: the registry builds an agent tool set with agent commands only and an agent context that cannot carry owner authority; MCP stdio still lists no owner commands
 
 ## 4. Issue C — Autonomy by type of work
 

@@ -39,7 +39,8 @@ export async function mcpChild(preload?: string) {
     expect(frames.map(frame => frame.id)).toEqual([1, 2, 3, 4]);
     for (const frame of frames) expect(frame.jsonrpc).toBe('2.0');
     expect(frames[1]!.result.tools.map((tool: { name: string }) => tool.name)).not.toContain('policy.record');
-    expect(JSON.parse(frames[2]!.result.content[0].text)).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(frames[1]!.result.tools.map((tool: { name: string }) => tool.name)).not.toContain('audit.record');
+    expect(JSON.parse(frames[2]!.result.content[0].text)).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
     expect(JSON.parse(frames[3]!.result.content[0].text)).toMatchObject({ ok: true, data: { items: [] } });
     return { stdout, stderr, frames };
   } finally { child.stdin.destroy(); child.kill(); }
