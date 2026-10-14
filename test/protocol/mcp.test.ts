@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { envelopeSchema, ownerCommands } from '../../src/protocol/contracts.js';
-import { Registry, createRegistry } from '../../src/protocol/registry.js';
+import { Registry, createRegistry, isOwnerCommand } from '../../src/protocol/registry.js';
 import { createFakeContext, examples, FakeServices } from '../../src/protocol/fakes.js';
 import { createMcpServer, runMcpStdio } from '../../src/protocol/mcp.js';
 import type { TrustedContext } from '../../src/protocol/context.js';
@@ -39,7 +39,7 @@ it('discovers the registry minus owner-only commands, with zod-derived object in
   const { client } = await connect(registry, createFakeContext());
   const { tools } = await client.listTools();
   expect(tools.map(tool => tool.name).sort())
-    .toEqual(registry.list().map(entry => entry.name).filter(name => !ownerCommands.has(name) && !['audit.record', 'sync.run'].includes(name)).sort());
+    .toEqual(registry.list().map(entry => entry.name).filter(name => !isOwnerCommand(name) && !['audit.record', 'sync.run'].includes(name)).sort());
   expect(tools.some(tool => ownerCommands.has(tool.name))).toBe(false);
   for (const tool of tools) {
     const entry = registry.get(tool.name)!;
@@ -160,4 +160,13 @@ it('browser.status is L0 over MCP and returns one safe per-site result without l
   const result = envelope(await client.callTool({ name: 'browser.status', arguments: {} }));
   expect(result.body).toMatchObject({ ok: true, command: 'browser.status', data: status });
   expect(result.text).not.toMatch(/endpoint|cookies|token|body/);
+});
+
+it('audit.record is neither advertised nor callable over MCP and cannot attest an action', async () => {
+  const context = createFakeContext({ owner: true });
+  const { client } = await connect(createRegistry(), context);
+  expect((await client.listTools()).tools.map(tool => tool.name)).not.toContain('audit.record');
+  const { body } = envelope(await client.callTool({ name: 'audit.record', arguments: { assessmentId: 'd', action: 'submit', outcome: 'success', confirmation: 'owner-ui' } }));
+  expect(body).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  expect(context.events.some(event => event.action || event.confirmation)).toBe(false);
 });
