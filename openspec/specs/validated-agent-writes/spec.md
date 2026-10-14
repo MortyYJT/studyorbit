@@ -4,7 +4,7 @@
 TBD - created by archiving change v1-protocol. Update Purpose after archive.
 ## Requirements
 ### Requirement: Validate structured writes before publication
-Breakdown, revision-note, practice-question and quiz-answer writes SHALL pass strict schemas, trusted course/assessment binding, command authorization, privacy checks and citation validation before repository publication. Breakdown SHALL reuse Task-compatible steps; notes and practice explanations SHALL have source-derived claim units fixed in issue A. Quiz answers/drafts SHALL remain versioned proposals tied to the exact assessment, not implicit fills/submissions. The core SHALL never call a model. Concurrent/stale source or proposal revisions SHALL fail without replacing previous accepted state.
+Breakdown, revision-note and practice-question writes SHALL pass strict schemas, trusted course/assessment binding, command authorization, privacy checks and citation validation before repository publication. Breakdown SHALL reuse Task-compatible steps; notes and practice explanations SHALL have source-derived claim units. Graded answers are not a write type: the agent enters them in the resident browser under `assessment-autonomy`. The core SHALL never call a model. Concurrent or stale source revisions SHALL fail without replacing previous accepted state.
 
 #### Scenario: Valid study write
 - **WHEN** an external agent sends a schema-valid synthetic course note or practice explanation with trusted citations
@@ -24,15 +24,4 @@ For every breakdown step, source-derived revision claim and practice explanation
 #### Scenario: Wrong source or PDF page
 - **WHEN** a quote is absent, empty, assigned to another course or claims a page inconsistent with trusted provenance
 - **THEN** the complete write is rejected with `CITATION_MISMATCH`, safe failure records and no replacement of the previous accepted revision
-
-### Requirement: Q1 answer provenance and review remain intact
-Each quiz proposal SHALL cite its own supported question and every material-derived statement in both answer and rationale. Existing statement coverage/provenance checks and prompt-only limitations SHALL remain. Trusted Q1 snapshots and M1 material pages SHALL be resolved through compatibility adapters, never trusted from proposal payloads. Exact-review approvals SHALL bind proposal/source/policy/grant/page/attempt identities and become stale when those identities change. Literal citation success MUST NOT be described as correctness proof.
-
-#### Scenario: Another question citation
-- **WHEN** an answer cites a matching quote from another question or material only
-- **THEN** it is rejected because its own question provenance is absent
-
-#### Scenario: Prompt-only answer and later source change
-- **WHEN** a synthetic answer has only valid question provenance and the trusted source later changes after approval
-- **THEN** the receipt first displays the prompt-only limitation and the later fill preflight refuses the stale approval
 

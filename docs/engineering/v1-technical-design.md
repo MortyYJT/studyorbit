@@ -4,9 +4,11 @@ Status: approved by the owner on 2026-10-12 (decisions #55–#77 in `note/decisi
 refine it: #78 (repository private), #80–#89 (milestone details chosen during autonomous runs, pending owner
 review), #91 (development runs only while the owner is present; overrides #79).
 **Rescoped on 2026-10-14 (#100–#111):** the agent now understands and operates web pages; code keeps
-memory, scheduling, views and guardrails. Where this file conflicts with
-`openspec/changes/v1-rescope/` (crawling, terminal course selection, change events, fill/submit gates,
-the Q1 workflow, the M3 review and chat screens), the change wins.
+memory, scheduling, views and guardrails. **Re-planned on 2026-10-15 (#114–#153):** the PRD
+(`note/product/prd.md`) defines v1; the frontend hosts an agent chat through the Claude Agent SDK, and
+autonomy levels are L0/L1/L2 by type of work. Where this file conflicts with `openspec/changes/v1-delivery/`
+or the archived `v1-rescope` (crawling, terminal course selection, change events, Hermes, the L0–L4 table,
+the Q1 workflow, the M3 screens), the change wins.
 This document is the standing reference for development of version 1. Each milestone still gets
 its own OpenSpec change, written just before work starts; that change refines, never contradicts, this file.
 If a change needs a choice this file does not cover and an interviewer could ask "why", stop and ask the owner.

@@ -14,17 +14,6 @@ L0 commands SHALL provide bounded course, assessment, task, source/material-page
 - **WHEN** a requested synthetic record has incomplete material coverage or no resolvable source
 - **THEN** output reports the gap or safe missing-source failure without manufacturing a citation, grade or completeness claim
 
-### Requirement: Bounded paging never skips change evidence
-Every list SHALL validate filters, limits and continuation semantics fixed in issue A. `changes` SHALL preserve an exclusive nonnegative safe integer cursor, ascending sequence order and the existing bounded handler behavior. Empty results SHALL retain the input cursor. An oversized first event SHALL return `LIMIT_EXCEEDED` without cursor advancement; a later oversized event SHALL remain pending after the preceding bounded page. New-list cursors SHALL follow the recorded O1 contract without altering change cursors.
-
-#### Scenario: Oversized event remains pending
-- **WHEN** a synthetic change exceeds the response bound
-- **THEN** it is not silently omitted or marked consumed, and querying its preceding cursor fails safely or first returns only preceding fitting events
-
-#### Scenario: Stored runs include historical unmeasured records
-- **WHEN** measured and historical unmeasured runs are listed
-- **THEN** actual counts are returned where recorded and missing measurements remain absent, without guessed time/cost/accuracy
-
 ### Requirement: Every read respects the model privacy boundary
 Persisted redacted evidence SHALL be revalidated as safe at model-facing output boundaries, including textual entity fields, citations, locators, URLs, change before/after snapshots and diagnostics. Default-on deterministic M1 redaction SHALL be reused; unsafe/unproven content SHALL be withheld. Neither agent arguments nor owner redaction configuration SHALL bypass the model boundary. No self-issued Canvas token or model password input SHALL be accepted. Any live Q1 read SHALL keep the existing managed-profile selection/authentication contracts and Q1-specific prerequisites.
 
