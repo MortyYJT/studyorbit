@@ -1,3 +1,11 @@
+import {
+  AssessmentLinkSchema, type AssessmentLink, AnnotationSchema, type Annotation,
+  AnnotationVerdictSchema, type AnnotationVerdict, PlanningSettingsSchema, type PlanningSettings,
+  EstimateSchema, type Estimate, StartTimeSchema, type StartTime,
+  TimeLogSchema, type TimeLog, CourseAutonomySchema, type CourseAutonomy,
+  ConversationSchema, type Conversation, MessageSchema, type Message,
+  PendingConfirmationSchema, type PendingConfirmation, PracticeAttemptSchema, type PracticeAttempt
+} from '../domain/schemas.js';
 import { queryPlan, type Collection, type QueryInput, type QueryItem, type QueryPage, type CurrentStateReader } from './queries.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -36,10 +44,14 @@ export class SqliteRepository implements Repository, CurrentStateReader {
   private write<T extends { id: string }>(table: string, schema: EntitySchema<T>, input: T, columns: readonly (keyof T & string)[] = []): void {
     const value = schema.parse(input);
     const names = ['id', ...columns, 'json'];
-    const params = [value.id, ...columns.map(column => value[column] ?? null), JSON.stringify(value)];
+    const params = [value.id, ...columns.map(column => {
+      const field = value[column];
+      return field === undefined ? null : typeof field === 'boolean' ? Number(field)
+        : typeof field === 'object' ? JSON.stringify(field) : field;
+    }), JSON.stringify(value)];
     this.db.prepare(`INSERT INTO ${table} (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})
       ON CONFLICT(id) DO UPDATE SET ${names.slice(1).map(name => `${name} = excluded.${name}`).join(', ')}`)
-      .run(...params as (string | null)[]);
+      .run(...params as (string | number | null)[]);
   }
 
   private load<T>(table: string, key: string, id: string | number, schema: EntitySchema<T>): T | undefined {
@@ -60,6 +72,45 @@ export class SqliteRepository implements Repository, CurrentStateReader {
   recordRun(value: Run): void { this.saveBatch({ runs: [value] }); }
   loadRun(id: string): Run | undefined { return this.load('runs', 'id', id, RunSchema); }
 
+  /** Identifiers here are fixed by repository methods, never caller-supplied SQL. */
+  private append<T>(table: string, schema: EntitySchema<T>, input: T, columns: readonly string[]): void {
+    const value = schema.parse(input) as T & Record<string, unknown>;
+    const names = [...columns.map(column => column === 'seq' ? 'messageSeq' : column), 'json'];
+    this.db.prepare(`INSERT INTO ${table} (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})`)
+      .run(...columns.map(column => value[column] ?? null) as (string | number | null)[], JSON.stringify(value));
+  }
+
+  private history<T>(table: string, schema: EntitySchema<T>, filters: Record<string, string>): T[] {
+    const keys = Object.keys(filters);
+    return this.db.prepare(`SELECT json FROM ${table}${keys.length ? ` WHERE ${keys.map(key => `${key} = ?`).join(' AND ')}` : ''} ORDER BY seq`)
+      .all(...Object.values(filters)).map(row => schema.parse(JSON.parse(row.json as string)));
+  }
+
+  appendAssessmentLink(value: AssessmentLink): void { this.append('assessment_links', AssessmentLinkSchema, value, ['assessmentId', 'sourceItemId']); }
+  readAssessmentLinks(assessmentId: string): AssessmentLink[] { return this.history('assessment_links', AssessmentLinkSchema, { assessmentId }); }
+  appendAnnotation(value: Annotation): void { this.append('annotations', AnnotationSchema, value, ['id', 'entity', 'entityId']); }
+  readAnnotations(entity: string, entityId: string): Annotation[] { return this.history('annotations', AnnotationSchema, { entity, entityId }); }
+  appendAnnotationVerdict(value: AnnotationVerdict): void { this.append('annotation_verdicts', AnnotationVerdictSchema, value, ['annotationId']); }
+  readAnnotationVerdicts(annotationId: string): AnnotationVerdict[] { return this.history('annotation_verdicts', AnnotationVerdictSchema, { annotationId }); }
+  appendPlanningSettings(value: PlanningSettings): void { this.append('planning_settings', PlanningSettingsSchema, value, []); }
+  readPlanningSettings(): PlanningSettings[] { return this.history('planning_settings', PlanningSettingsSchema, {  }); }
+  appendEstimate(value: Estimate): void { this.append('estimates', EstimateSchema, value, ['workId']); }
+  readEstimates(workId: string): Estimate[] { return this.history('estimates', EstimateSchema, { workId }); }
+  appendStartTime(value: StartTime): void { this.append('start_times', StartTimeSchema, value, ['workId', 'date']); }
+  readStartTimes(workId: string): StartTime[] { return this.history('start_times', StartTimeSchema, { workId }); }
+  appendTimeLog(value: TimeLog): void { this.append('time_logs', TimeLogSchema, value, ['workId']); }
+  readTimeLogs(workId: string): TimeLog[] { return this.history('time_logs', TimeLogSchema, { workId }); }
+  appendCourseAutonomy(value: CourseAutonomy): void { this.append('course_autonomy', CourseAutonomySchema, value, ['courseId']); }
+  readCourseAutonomy(courseId: string): CourseAutonomy[] { return this.history('course_autonomy', CourseAutonomySchema, { courseId }); }
+  appendConversation(value: Conversation): void { this.append('conversations', ConversationSchema, value, ['id', 'courseId', 'updatedAt']); }
+  readConversations(): Conversation[] { return this.history('conversations', ConversationSchema, {  }); }
+  appendMessage(value: Message): void { this.append('messages', MessageSchema, value, ['id', 'conversationId', 'seq']); }
+  readMessages(conversationId: string): Message[] { return this.history('messages', MessageSchema, { conversationId }); }
+  appendPendingConfirmation(value: PendingConfirmation): void { this.append('pending_confirmations', PendingConfirmationSchema, value, ['id', 'conversationId', 'assessmentId']); }
+  readPendingConfirmations(conversationId: string): PendingConfirmation[] { return this.history('pending_confirmations', PendingConfirmationSchema, { conversationId }); }
+  appendPracticeAttempt(value: PracticeAttempt): void { this.append('practice_attempts', PracticeAttemptSchema, value, ['questionId', 'revision']); }
+  readPracticeAttempts(questionId: string): PracticeAttempt[] { return this.history('practice_attempts', PracticeAttemptSchema, { questionId }); }
+
   query<K extends Collection>(collection: K, input: QueryInput<K>): QueryPage<QueryItem<K>> {
     const plan = queryPlan(collection, input);
     const values = this.db.prepare(plan.sql).all(...plan.params)
@@ -72,11 +123,11 @@ export class SqliteRepository implements Repository, CurrentStateReader {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       for (const value of batch.modules ?? []) this.write('modules', ModuleSchema, value);
-      for (const value of batch.courses ?? []) this.write('courses', CourseSchema, value, ['moduleId']);
-      for (const value of batch.assessments ?? []) this.write('assessments', AssessmentSchema, value, ['courseId']);
-      for (const value of batch.sourceItems ?? []) this.write('source_items', SourceItemSchema, value, ['platform', 'externalId', 'courseId']);
-      for (const value of batch.tasks ?? []) this.write('tasks', TaskSchema, value, ['moduleId', 'courseId', 'assessmentId']);
-      for (const value of batch.runs ?? []) this.write('runs', RunSchema, value, ['command', 'startedAt']);
+      for (const value of batch.courses ?? []) this.write('courses', CourseSchema, value, ['moduleId', 'sources']);
+      for (const value of batch.assessments ?? []) this.write('assessments', AssessmentSchema, value, ['courseId', 'origin', 'kind', 'weight']);
+      for (const value of batch.sourceItems ?? []) this.write('source_items', SourceItemSchema, value, ['platform', 'externalId', 'courseId', 'facts', 'removed']);
+      for (const value of batch.tasks ?? []) this.write('tasks', TaskSchema, value, ['moduleId', 'courseId', 'assessmentId', 'done', 'allDay']);
+      for (const value of batch.runs ?? []) this.write('runs', RunSchema, value, ['command', 'startedAt', 'conversationId', 'turns']);
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');

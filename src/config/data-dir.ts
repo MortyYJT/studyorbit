@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, chmodSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -37,3 +37,12 @@ export function snapshotsDir(): string { return subdirectory('snapshots'); }
 export function profilesDir(): string { return subdirectory('profiles'); }
 
 export function crawlsDir(): string { return subdirectory('crawls'); }
+
+function privateSubdirectory(name: string): string {
+  const directory = subdirectory(name);
+  chmodSync(directory, 0o700);
+  return directory;
+}
+export function materialsDir(): string { return privateSubdirectory('materials'); }
+export function screenshotsDir(): string { return privateSubdirectory('screenshots'); }
+export function agentWorkspaceDir(): string { return privateSubdirectory('agent-workspace'); }
