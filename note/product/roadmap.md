@@ -31,7 +31,7 @@
 
 实现说明：M2 已实现的接口见 `docs/engineering/protocol.md`；Canvas 探针见 `docs/engineering/canvas-student-session-spike.md`。
 
-**并行（#76、#91）：** V-A 之后最多三条线：{B、C、F}、{D、E}、{G、H}（见 `v1-delivery` 设计 13）；最多 3 个 Codex 在独立 clone 里并行，Claude 在用户在线时调度。
+**并行（#76、#155）：** V-A 之后最多三条线：{B、C、F}、{D、E}、{G、H}（见 `v1-delivery` 设计 13）；最多 3 个 Codex 在独立 clone 里并行，由定时调度员无人值守调度（#155，推翻 #91）。
 
 **风险项：** 登录能保持多久（R-B 实测）；Edge 是否允许在托管档案上开远程调试（R-B）；Ed 接口无文档、可能改版；仓库转私有后没有分支保护。
 
