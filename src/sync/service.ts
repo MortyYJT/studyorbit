@@ -133,7 +133,10 @@ export class SyncService {
         }
       }
       const discovered = [...canvas.courses, ...ed];
-      const merged = mergeCourses(discovered, this.all('courses')); ambiguities = merged.ambiguities;
+      const incompleteDiscovery: Provider[] = [];
+      if (!canvas.complete) incompleteDiscovery.push('canvas');
+      if (discovery.kind !== 'json') incompleteDiscovery.push('ed');
+      const merged = mergeCourses(discovered, this.all('courses'), incompleteDiscovery); ambiguities = merged.ambiguities;
       const scoped = merged.courses.filter(c => !input.course || c.code === input.course);
       for (const course of scoped) {
         for (const origin of course.sources ?? []) {

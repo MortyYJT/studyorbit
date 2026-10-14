@@ -3,6 +3,7 @@ import { SqliteRepository } from '../../src/store/sqlite.js';
 import { SyncService } from '../../src/sync/service.js';
 import { at, bodies, clock, json, readers } from './delivery-fixture.js';
 import type { JsonReader } from '../../src/sync/canvas-reader.js';
+import { CourseworkError } from '../../src/protocol/errors.js';
 const stores: SqliteRepository[] = [];
 afterEach(() => stores.splice(0).forEach(s => s.close()));
 function setup(input = bodies()) {
@@ -13,6 +14,39 @@ function setup(input = bodies()) {
   }) });
   return { store, service, ...ports, input };
 }
+it('102 retains the merged course and its relationships when Canvas discovery is unavailable', async () => {
+  for (const failure of ['auth', 'gap', 'invalid', 'not-started'] as const) {
+    const { store, service, input, read } = setup();
+    await service.run({});
+    const original = store.query('courses', { limit: 100 }).items[0]!;
+    store.saveCourse({ ...original, assessmentsComplete: true });
+    const annotation = { id: 'discovery-name', entity: 'course' as const, entityId: original.id, field: 'name', value: 'Owner name', origin: 'owner' as const, citations: [], at };
+    store.appendAnnotation(annotation);
+    const assessments = store.query('assessments', { limit: 100 }).items;
+    const links = assessments.map(a => store.readAssessmentLinks(a.id));
+    const sources = store.query('sourceItems', { limit: 100 }).items;
+    read.mockImplementation(async p => {
+      if (!p.startsWith('/api/v1/courses?')) return json(input[p]);
+      if (failure === 'auth') return { kind: 'auth', code: 'AUTH_EXPIRED' };
+      if (failure === 'gap') return { kind: 'gap', reason: 'unavailable' };
+      if (failure === 'not-started') throw new CourseworkError('LIMIT_EXCEEDED', 'Synthetic discovery limit');
+      return json({ malformed: true });
+    });
+    const result = await service.run({});
+    expect(result.providers.canvas.status).toBe(failure === 'auth' ? 'AUTH_EXPIRED' : failure === 'not-started' ? 'LIMIT_EXCEEDED' : 'PARTIAL');
+    expect(result.providers.ed.status).toBe('OK');
+    expect(store.query('courses', { limit: 100 }).items).toHaveLength(1);
+    expect(store.loadCourse(original.id)).toMatchObject({ name: 'Owner name', assessmentsComplete: true });
+    expect(store.loadCourse(original.id)?.sources).toEqual(expect.arrayContaining(original.sources!));
+    expect(store.readAnnotations('course', original.id)).toEqual([annotation]);
+    expect(store.query('assessments', { limit: 100 }).items).toEqual(assessments);
+    expect(assessments.map(a => store.readAssessmentLinks(a.id))).toEqual(links);
+    const after = store.query('sourceItems', { limit: 100 }).items;
+    expect(after).toHaveLength(sources.length);
+    expect(after.every(s => s.courseId === original.id && !s.removed)).toBe(true);
+    expect(after.filter(s => s.platform === 'canvas')).toEqual(sources.filter(s => s.platform === 'canvas'));
+  }
+});
 it('102 preserves persisted course identity and manual links when a merged code becomes ambiguous', async () => {
   for (const edFirst of [false, true]) {
     const { store, service, input, read } = setup();
