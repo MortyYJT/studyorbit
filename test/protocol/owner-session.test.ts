@@ -31,3 +31,11 @@ it('agent tools omit owner, sync and audit commands and cannot regain owner auth
   expect((await dispatch(agent.registry, 'browser.submit', {}, agent.context)).ok).toBe(true);
   expect(ownerWrites).toBe(0);
 });
+
+it('opens the system browser through an absolute opener path, never a PATH lookup', async () => {
+  const { systemBrowserCommand } = await import('../../src/protocol/http-host.js');
+  for (const platform of ['darwin', 'linux', 'win32'] as const) {
+    const { command } = systemBrowserCommand(platform);
+    expect(command === '/usr/bin/open' || command === '/usr/bin/xdg-open' || command === 'C:\\Windows\\System32\\rundll32.exe').toBe(true);
+  }
+});

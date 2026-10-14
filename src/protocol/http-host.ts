@@ -31,12 +31,21 @@ export interface OwnerUIOptions {
   output?: (url: string) => void;
   isTTY?: boolean;
 }
-/** No shell interpolation, captured diagnostics, or resident browser attachment. */
+/**
+ * No shell interpolation, captured diagnostics, or resident browser attachment.
+ * Absolute opener paths and a minimal environment keep a caller-controlled PATH or BROWSER
+ * from receiving the owner secret in the URL.
+ */
+export function systemBrowserCommand(platform: NodeJS.Platform = process.platform): { command: string; args: string[] } {
+  if (platform === 'darwin') return { command: '/usr/bin/open', args: [] };
+  if (platform === 'win32') return { command: 'C:\\Windows\\System32\\rundll32.exe', args: ['url.dll,FileProtocolHandler'] };
+  return { command: '/usr/bin/xdg-open', args: [] };
+}
 async function systemBrowser(url: string): Promise<void> {
-  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'rundll32' : 'xdg-open';
-  const args = process.platform === 'win32' ? ['url.dll,FileProtocolHandler', url] : [url];
+  const { command, args } = systemBrowserCommand();
+  const env = { HOME: process.env.HOME ?? '', DISPLAY: process.env.DISPLAY ?? '', WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY ?? '' };
   await new Promise<void>((resolve, reject) => {
-    execFile(command, args, { windowsHide: true }, error => error ? reject(new Error('Browser opener failed.')) : resolve());
+    execFile(command, [...args, url], { windowsHide: true, env }, error => error ? reject(new Error('Browser opener failed.')) : resolve());
   });
 }
 export async function startOwnerUI(host: Pick<ReturnType<typeof createProductionProtocol>, 'registry' | 'context'>, options: OwnerUIOptions = {}) {
