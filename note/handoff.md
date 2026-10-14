@@ -12,12 +12,12 @@
 
 | 分支 / clone | 内容 | 下一步 |
 | --- | --- | --- |
-| `codex/v1-sync`（`../unimelb-coursework-agent-sync`，未推送） | D：tasks 5.1–5.5；第 1 轮 3 处已修（c284fa6）；第 2 轮剩 1 处（Canvas 登录过期时已合并课程被拆），Codex 返工中 | 调度员核对返工 → 合并 main → PR → CI → 合并；5.6 等你真机 |
+| PR #121 `codex/v1-sync` | D：tasks 5.1–5.5；两轮审查共修 4 处，已并入最新 main（MCP 工具数 19） | CI 通过后合并；5.6 等你真机 |
 | `codex/v1-planning`（`../unimelb-coursework-agent-planning`，未推送） | F：tasks 7.1–7.5，Codex 实现中 | 本机 check → 提交 → 审查 → PR |
 
 ## 下一步（按顺序）
 
-1. 收尾 D、F。
+1. 合并 PR #121（D）；收尾 F。
 2. 派 H（#106，G 已合并）、E（#103）。
 3. K1（#109）要等你批准 `@types/react`、`@types/react-dom`。
 
