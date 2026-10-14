@@ -1,3 +1,6 @@
+import { recordSchemas, type StudyRecord } from '../protocol/study-writes.js';
+import type { StudyCommand } from '../protocol/citations.js';
+import { CourseworkError } from '../protocol/errors.js';
 import {
   AssessmentLinkSchema, type AssessmentLink, AnnotationSchema, type Annotation,
   AnnotationVerdictSchema, type AnnotationVerdict, PlanningSettingsSchema, type PlanningSettings,
@@ -32,6 +35,25 @@ export class SqliteRepository implements Repository, CurrentStateReader {
       this.db.close();
       throw error;
     }
+  }
+
+  loadStudyRecord(command: StudyCommand, id: string): StudyRecord | undefined {
+    const row = this.db.prepare('SELECT json FROM study_records WHERE command = ? AND id = ?').get(command, id);
+    return row ? recordSchemas[command].parse(JSON.parse(row.json as string)) : undefined;
+  }
+  listStudyRecords(command: StudyCommand): StudyRecord[] {
+    return this.db.prepare('SELECT json FROM study_records WHERE command = ? ORDER BY id').all(command)
+      .map(row => recordSchemas[command].parse(JSON.parse(row.json as string)));
+  }
+  publishStudyRecord(command: StudyCommand, id: string, expected: string | undefined, record: StudyRecord): void {
+    const value = recordSchemas[command].parse(record);
+    if (value.id !== id) throw new CourseworkError('INVALID_INPUT', 'Study identity mismatch.');
+    const result = expected === undefined
+      ? this.db.prepare('INSERT INTO study_records (command, id, revision, json) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING')
+        .run(command, id, value.revision, JSON.stringify(value))
+      : this.db.prepare('UPDATE study_records SET revision = ?, json = ? WHERE command = ? AND id = ? AND revision = ?')
+        .run(value.revision, JSON.stringify(value), command, id, expected);
+    if (result.changes !== 1) throw new CourseworkError('CONFLICT', 'Study revision changed; refresh before retrying.');
   }
 
   close(): void {
