@@ -14,24 +14,16 @@ async function setup() {
   host.store.saveBatch({ modules: [synthetic.module], courses: [synthetic.course], assessments: synthetic.assessments });
   return host;
 }
-it.each(['autonomy.check', 'audit.record'])('omits unresolved name/answer-like IDs from durable %s audit', async command => {
-  const host = await setup();
-  const assessmentId = 'Jane.Doe/answer-is-42';
-  const input = command === 'autonomy.check' ? { assessmentId, level: 3 }
-    : { assessmentId, level: 3, action: 'fill', outcome: 'success' };
-  const result = await dispatch(host.registry, command, input, host.context);
+it('omits unresolved name/answer-like IDs from durable autonomy audit', async () => {
+  const host = await setup(); const assessmentId = 'Synthetic.Person/answer-is-42';
+  expect(await dispatch(host.registry, 'autonomy.check', { assessmentId, action: 'fill' }, host.context))
+    .toMatchObject({ ok: true, data: { decision: 'denied', reason: 'assessment-unavailable' } });
   const raw = await readFile(join(process.env.COURSEWORK_HOME!, 'quiz', 'audit.jsonl'), 'utf8');
   expect(raw).not.toContain(assessmentId);
-  const events = (await host.audit.list()).filter(event => event.command === command);
-  expect(events.length).toBeGreaterThan(0);
-  for (const event of events) expect(event).not.toHaveProperty('assessmentId');
-  if (command === 'autonomy.check') {
-    expect(result).toMatchObject({ ok: true, data: { decision: 'denied', reason: 'assessment-unavailable' } });
-    expect(events).toContainEqual(expect.objectContaining({ level: 3, decision: 'denied', code: 'INVALID_INPUT' }));
-  } else {
-    expect(result).toMatchObject({ ok: true, data: { recorded: true, outcome: 'failure' } });
-    expect(events).toContainEqual(expect.objectContaining({ level: 3, action: 'fill', outcome: 'failure', code: 'INVALID_INPUT' }));
-  }
+  const events = (await host.audit.list()).filter(event => event.command === 'autonomy.check');
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({ level: 0, decision: 'denied', code: 'INVALID_INPUT' });
+  expect(events[0]).not.toHaveProperty('assessmentId');
 });
 it('production CLI reads real SQLite, uses private journals and survives reopen', async () => {
   const host = await setup(); const stdout: string[] = [];
@@ -41,16 +33,26 @@ it('production CLI reads real SQLite, uses private journals and survives reopen'
   host.close(); const next = createProductionProtocol(); closes.push(next.close);
   expect(await dispatch(next.registry, 'courses.list', {}, next.context)).toMatchObject({ ok: true, data: { items: [synthetic.course] } });
 });
-it('owner terminal records canonical policy and grant; live revocation takes effect', async () => {
+it('new owner settings survive reopen and legacy L4 grants remain unread and unchanged', async () => {
   const host = await setup();
   const call = (name: string, input: unknown) => dispatch(host.registry, name, input, host.context);
   const policy = { version: 1, courseId: synthetic.course.id, status: 'owner-attested', attestation: 'Synthetic only', date: '2026-10-14', cap: 4 };
   const grant = { version: 1, courseId: synthetic.course.id, assessmentId: 'd', category: 'assignment', level: 4, date: '2026-10-14' };
   expect(await call('policy.record', policy)).toMatchObject({ ok: true });
   expect(await call('grant.record', grant)).toMatchObject({ ok: true });
-  expect(await call('autonomy.check', { assessmentId: 'd', level: 4 })).toMatchObject({ ok: true, data: { decision: 'allowed' } });
-  expect(await call('grant.record', { ...grant, level: 0 })).toMatchObject({ ok: true });
-  expect(await call('autonomy.check', { assessmentId: 'd', level: 4 })).toMatchObject({ ok: true, data: { decision: 'denied', reason: 'grant-revoked' } });
+  expect(await call('autonomy.check', { assessmentId: 'd', action: 'fill' })).toMatchObject({ data: { decision: 'denied', reason: 'grant-level' } });
+  await call('autonomy.default.set', { courseId: synthetic.course.id, level: 2 });
+  await call('autonomy.confirmation.set', { courseId: synthetic.course.id, confirmBeforeSubmit: false });
+  await call('autonomy.override.set', { assessmentId: 'd', level: 0 });
+  host.close();
+  const next = createProductionProtocol({ owner: { assertOwner: async () => {} } }); closes.push(next.close);
+  expect(next.store.readCourseAutonomy(synthetic.course.id).at(-1)).toMatchObject({ defaultLevel: 2, confirmBeforeSubmit: false });
+  expect(await dispatch(next.registry, 'autonomy.check', { assessmentId: 'd', action: 'fill' }, next.context)).toMatchObject({ data: { decision: 'denied' } });
+  await dispatch(next.registry, 'autonomy.override.clear', { assessmentId: 'd' }, next.context);
+  expect(await dispatch(next.registry, 'autonomy.check', { assessmentId: 'd', action: 'fill' }, next.context)).toMatchObject({ data: { decision: 'allowed' } });
+  const { ProtocolFiles } = await import('../../src/protocol/files.js');
+  const { hash } = await import('../../src/citations/exact.js');
+  expect(await new ProtocolFiles().read(`protocol-grant-${hash('d')}`)).toEqual(grant);
 });
 it('non-TTY CLI refuses both owner writes in one envelope without storing records', async () => {
   const host = await setup();
@@ -61,7 +63,7 @@ it('non-TTY CLI refuses both owner writes in one envelope without storing record
     await parseProtocolCLI([name, 'record', ...input], { ...host, isTTY: false, stdout: s => stdout.push(s), stderr: () => {} });
     expect(stdout).toHaveLength(1); expect(JSON.parse(stdout[0]!)).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
   }
-  expect(await dispatch(host.registry, 'autonomy.check', { assessmentId: 'd', level: 3 }, host.context)).toMatchObject({ ok: true, data: { reason: 'policy-missing' } });
+  expect(await dispatch(host.registry, 'autonomy.check', { assessmentId: 'd', action: 'fill' }, host.context)).toMatchObject({ ok: true, data: { reason: 'grant-level' } });
 });
 it('shared production file writer failure yields denied audit-unavailable', async () => {
   const host = await setup();
@@ -71,6 +73,6 @@ it('shared production file writer failure yields denied audit-unavailable', asyn
     override async append(): Promise<void> { throw new CourseworkError('INTERNAL', 'Synthetic writer outage'); }
   }
   const broken = createProductionProtocol({ store: host.store, files: new BrokenFiles(process.env.COURSEWORK_HOME) }); closes.push(broken.close);
-  expect(await dispatch(broken.registry, 'autonomy.check', { assessmentId: 'd', level: 3 }, broken.context))
+  expect(await dispatch(broken.registry, 'autonomy.check', { assessmentId: 'd', action: 'fill' }, broken.context))
     .toMatchObject({ ok: true, data: { decision: 'denied', reason: 'audit-unavailable' } });
 });

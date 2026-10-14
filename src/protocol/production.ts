@@ -1,7 +1,7 @@
 import { databasePath } from '../config/data-dir.js';
 import { SqliteRepository } from '../store/sqlite.js';
 import { ProtocolFiles } from './files.js';
-import { createRegistry } from './registry.js';
+import { createRegistry, sessionOnlyCommand } from './registry.js';
 import { StoreProtocolReads, TrustedStoreEvidence, type AuxiliaryReadPorts, type EvidenceMetadata } from './reads.js';
 import { SharedAuthorization } from './authorization.js';
 import { CanonicalAuthorizationStore } from './canonical-authorization.js';
@@ -24,7 +24,7 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const audit = new DurableAudit(files); const runs = new DurableRuns(files);
   const authorizationStore = new CanonicalAuthorizationStore(files, store);
   const authorization = new SharedAuthorization(authorizationStore, audit);
-  const autonomy = new AssessmentAutonomy(authorizationStore, audit);
+  const autonomy = new AssessmentAutonomy(store, audit);
   const evidence = new TrustedStoreEvidence(store, { metadata: options.metadata, privacyScope: options.privacyScope });
   const study = options.study && new StudyWriteService(options.study);
   const studyEvidence = options.study && new StudyCitationService(options.study.provider);
@@ -63,8 +63,9 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       ...(study ? { 'breakdown.write': study, 'revision.write': study, 'practice.write': study } : {}) }),
     evidence: new ComposedEvidence(studyEvidence ? { 'breakdown.write': studyEvidence, 'revision.write': studyEvidence, 'practice.write': studyEvidence } : {}),
     // Autonomy outputs are closed enums validated by their schemas; free-text filtering would only corrupt reason codes.
-    privacy: { protect: async (command, value) => command === 'autonomy.check' || command === 'audit.record' ? value : evidence.protect(value) },
-    owner: options.owner ?? { assertOwner: async () => {
+    privacy: { protect: async (command, value) => command.startsWith('autonomy.') ? value : evidence.protect(value) },
+    owner: options.owner ?? { assertOwner: async name => {
+      if (sessionOnlyCommand(name)) throw new CourseworkError('INVALID_INPUT', 'Open coursework ui to perform this owner action.');
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
