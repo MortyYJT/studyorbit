@@ -186,8 +186,8 @@ Rejected: computer use (screenshot-driven clicking): slow, costly, non-determini
 
 ## 8. How development runs
 
-Development runs while the owner is online (#91, overriding the unattended mode of #79); there is no
-scheduled watchdog. Claude dispatches, reviews and merges as below, and asks the owner at the points listed.
+Development runs unattended through a scheduled dispatcher session (#155, overriding #91); questions for
+the owner are queued, not awaited. Claude dispatches, reviews and merges as below, and asks the owner at the points listed.
 
 Per milestone: OpenSpec change (Codex drafts, Claude reviews) → issues → Codex implements with TDD in a separate
 clone → fresh-context Codex review → Claude commits, pushes, opens the PR → CI green → Claude merges (#48) →
