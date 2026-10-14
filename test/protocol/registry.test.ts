@@ -7,7 +7,7 @@ import { ok, fail } from '../../src/protocol/envelope.js';
 import { CourseworkError, retryable } from '../../src/protocol/errors.js';
 
 const names = ['courses.list', 'assessments.list', 'tasks.list', 'sources.get', 'materials.list', 'runs.list',
-  'revision.list', 'practice.list', 'breakdown.write', 'revision.write', 'practice.write', 'policy.record', 'grant.record', 'audit.list'];
+  'revision.read', 'practice.stats', 'practice.attempt.record', 'source.fetch', 'revision.list', 'practice.list', 'breakdown.write', 'revision.write', 'practice.write', 'policy.record', 'grant.record', 'audit.list'];
 
 describe('issue A contracts for M3', () => {
   it('exports every command with strict schema-valid synthetic examples and inferred consumer types', () => {
@@ -49,7 +49,7 @@ describe('issue A contracts for M3', () => {
   });
   it('keeps retained command levels', () => {
     const registry = createFakeRegistry();
-    for (const [name, level] of [['courses.list', 0], ['breakdown.write', 1], ['revision.write', 1], ['practice.write', 1],
+    for (const [name, level] of [['courses.list', 0], ['breakdown.write', 1], ['revision.write', 0], ['practice.write', 0],
       ['policy.record', 0], ['grant.record', 0]] as const) expect(registry.get(name)!.level).toBe(level);
   });
 });

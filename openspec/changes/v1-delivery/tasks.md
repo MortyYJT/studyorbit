@@ -68,10 +68,10 @@ Covers: US-3 items 1–7. Spec: `study-planning`. Depends on A; owner-only tests
 
 Covers: US-6 items 1–3 (backend). Spec: `revision`. Depends on A.
 
-- [ ] 8.1 Failing tests: SQLite study-record store with compare-and-swap, surviving a reopen; replaces `InMemoryStudyRecordStore` in production wiring
-- [ ] 8.2 Install pre-approved `unpdf@1.8.1` with the owner present; failing tests with generated synthetic PDFs and pages for `source.fetch` (same-origin only, discussion refused, redirect refusal, size bound, per-page SourceItems, redaction, private raw files, image-only pages)
-- [ ] 8.3 Failing tests: `exam-scope` record with cited topics (one bad quote rejects the write); exam time from the final's effective due; `practice.attempt.record` without answer text; per-course counts and wrong-answer list
-- [ ] 8.4 Write `skills/revision/SKILL.md` for the prepare, tutor and wrong-only presets: status check first, L0 reads and `source.fetch` only, cited writes, attempt recording, no fabricated sources, no graded work
+- [x] 8.1 Failing tests: SQLite study-record store with compare-and-swap, surviving a reopen; replaces `InMemoryStudyRecordStore` in production wiring
+- [x] 8.2 Install pre-approved `unpdf@1.8.1` with the owner present; failing tests with generated synthetic PDFs and pages for `source.fetch` (same-origin only, discussion refused, redirect refusal, size bound, per-page SourceItems, redaction, private raw files, image-only pages)
+- [x] 8.3 Failing tests: `exam-scope` record with cited topics (one bad quote rejects the write); exam time from the final's effective due; `practice.attempt.record` without answer text; per-course counts and wrong-answer list
+- [x] 8.4 Write `skills/revision/SKILL.md` for the prepare, tutor and wrong-only presets: status check first, L0 reads and `source.fetch` only, cited writes, attempt recording, no fabricated sources, no graded work
 
 ## 9. Issue H — Chat backend
 

@@ -58,6 +58,10 @@ const safeMessages: Record<ErrorCode, string> = {
   LIMIT_EXCEEDED: 'The response exceeds 64 KiB.', INTERNAL: 'The command could not complete safely.',
 };
 function safeError(error: unknown, command?: string): CourseworkError {
+  if (command === 'source.fetch' && error instanceof CourseworkError
+    && ['Off-origin source URLs are refused.', 'Discussion threads and replies are refused.',
+      'Authentication URLs and credentials are refused.', 'Redirects and unsuccessful source responses are refused.',
+      'Source download exceeds 10 MiB.'].includes(error.message)) return new CourseworkError(error.code, error.message);
   if (command === 'browser.start') {
     const choice = safeBrowserChoiceMessage(error);
     if (choice) return new CourseworkError('INVALID_INPUT', choice);
@@ -111,7 +115,7 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
     }
     refs = entry.references?.(parsed.data) ?? await context.authorization.references?.(name, entry.level, parsed.data) ?? {};
     await context.authorization.check(name, entry.level, parsed.data);
-    if (entry.level >= 1 && name in contracts) await context.evidence.check(name as CommandName, parsed.data);
+    if ((entry.level >= 1 || name === 'revision.write' || name === 'practice.write') && name in contracts) await context.evidence.check(name as CommandName, parsed.data);
     await record('intent', 'OK');
     executed = true;
     const raw = await entry.handler(parsed.data, { ...context, runId, setAuditReferences: next => { refs = next; } });
@@ -134,8 +138,9 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   }
   return result;
 }
-const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'browser.status', 'plan.read', 'planning.settings.read']));
-const writeNames = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts)].filter(n => !readNames.has(n)));
+const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'browser.status', 'plan.read', 'planning.settings.read']));
+/** Contract commands that change state; transports require credentials for these whatever their autonomy level. */
+export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts)].filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
 /** Bind the settled contract surface to injected ports; no production service is selected here. */
 export interface BrowserServices {

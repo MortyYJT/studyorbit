@@ -1,6 +1,6 @@
 import type { CommandOutput, ParsedCommandInput } from '../protocol/contracts.js';
 export type AcceptedRead = 'revision.list' | 'practice.list';
-/** D supplies the eventual private accepted-record backend. B owns no persistence layout or writes.
+/** Accepted-record readers return validated current records from private storage.
  * Implementations must apply exact course/week/revision filters and filter-bound opaque cursors.
  */
 export interface AcceptedRecordReader {

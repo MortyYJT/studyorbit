@@ -21,10 +21,10 @@
 | R-C | 协议收尾 | 生产组装（不带关卡）、`autonomy.check`、`audit.record`、作业技能 | 已完成（PR #91） | — | `v1-rescope`（已归档） |
 | V-0 | 拆任务 | PRD → OpenSpec change `v1-delivery`；建 GitHub issue | 已完成（PR #97；issue #99–#114） | — | `v1-delivery` |
 | V-A | 数据模型 | 所有新实体和一次性加表迁移 | 已完成（PR #115） | — | `v1-delivery` |
-| V-B/C | 前端会话 + 等级 | 前端会话密钥、HTTP 托管、agent 工具集；按作业类型分等级 | B 已完成（PR #116）；C 未开始 | — | `v1-delivery` |
-| V-D/E | 同步 + 批注 | `coursework sync`（按钮触发）；agent 批注和你的判定 | D 进行中（已实现，待审查）；E 未开始 | D 5.6 你在真机上跑一次同步 | `v1-delivery` |
-| V-F/G | 排期 + 复习 | 按天排期、预计 / 实际用时、校外任务；学习记录、`source.fetch`、考试范围、练习统计 | G 进行中（已实现，待审查）；F 未开始 | — | `v1-delivery` |
-| V-H/I/J | agent 对话 | 适配器接口和对话存储；Claude Agent SDK 适配器和策略钩子；我们自己的浏览器工具和提交确认 | 未开始 | V-A、V-B、V-C | `v1-delivery` |
+| V-B/C | 前端会话 + 等级 | 前端会话密钥、HTTP 托管、agent 工具集；按作业类型分等级 | 已完成（B PR #116；C PR #118） | — | `v1-delivery` |
+| V-D/E | 同步 + 批注 | `coursework sync`（按钮触发）；agent 批注和你的判定 | D 进行中（PR #121 待合并）；E 未开始 | D 5.6 你在真机上跑一次同步 | `v1-delivery` |
+| V-F/G | 排期 + 复习 | 按天排期、预计 / 实际用时、校外任务；学习记录、`source.fetch`、考试范围、练习统计 | G 已完成（PR #119）；F 进行中（Codex 实现中） | — | `v1-delivery` |
+| V-H/I/J | agent 对话 | 适配器接口和对话存储；Claude Agent SDK 适配器和策略钩子；我们自己的浏览器工具和提交确认 | 未开始（H 可以开工） | I 等 H；J 等 H | `v1-delivery` |
 | V-K1–K4 | 前端 | 外壳和菜单、七列周视图、课程页和抽屉、Agent 对话页 | 未开始 | V-B 及各自的数据 | `v1-delivery` |
 | V-L/M | 指标 + 验收 | 四项指标；你按 PRD 逐条验收后归档 | 未开始 | 以上全部；R-B 3.5 | `v1-delivery` |
 | 以后 | 邮件入口 | 邮件作为新的信息来源（#99） | 未开始 | — | 未写 |
