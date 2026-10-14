@@ -14,7 +14,7 @@ Commander subcommands SHALL dispatch through the registry. JSON mode SHALL print
 ## ADDED Requirements
 
 ### Requirement: The chat agent gets agent commands only
-The registry SHALL be able to build an in-process MCP tool set for the chat agent that contains the L0 reads, the validated agent writes, `source.fetch` and the browser tools, and no owner-only command. It SHALL NOT contain `sync.run` (sync is started only by the owner, #128) or `audit.record`: audit entries for browser writes are written by the browser tools themselves, so an agent cannot record or forge an owner confirmation. The MCP stdio server SHALL likewise no longer list `audit.record`. Calls through it SHALL run with an agent context that can never carry owner authority, whatever the input says.
+The registry SHALL be able to build an in-process MCP tool set for the chat agent that contains the L0 reads, the validated agent writes, `source.fetch` and the browser tools, and no owner-only command. It SHALL NOT contain `sync.run` (sync is started only by the owner, #128) or `audit.record`: audit entries for browser writes are written by the browser tools themselves, so an agent cannot record or forge an owner confirmation. The MCP stdio server SHALL likewise no longer list `audit.record`, and SHALL list the browser tools, so external agents (US-5) also act on Canvas and Ed only through code that checks, highlights and audits. Calls through it SHALL run with an agent context that can never carry owner authority, whatever the input says.
 
 #### Scenario: Tool list
 - **WHEN** the chat agent's tool list is built

@@ -31,7 +31,7 @@ The schemas SHALL contain at least these fields (ids are non-empty strings; time
 - PracticeAttempt: `questionId`, `revision`, `outcome` (`correct` | `incorrect` | `skipped`), `at` (no answer text).
 - Citation: `sourceItemId`, `quote`, `locator`.
 - Step: `title`, `estimateMinutes`, `done`, `citations` (array, may be empty only for manual tasks).
-- Task: `id`, `moduleId`, `courseId?`, `assessmentId?`, `title`, `source` (`coursework` | `manual`), `due?`, `repeat?` (`daily` | `weekly`), `steps`, `done` (manual tasks are completed as a whole), `allDay` (manual tasks only; an all-day task occupies its due date as a whole, for example a career fair).
+- Task: `id`, `moduleId`, `courseId?`, `assessmentId?`, `title`, `source` (`coursework` | `manual`), `due?`, `repeat?` (`daily` | `weekly`), `steps`, `done` (manual tasks are completed as a whole), `allDay?` (manual tasks only, and requires `due` when true; an all-day task occupies its due date as a whole, for example a career fair).
 - Run: `id`, `command`, `startedAt`, `endedAt`, `steps`, `outcome` (`ok` | `error`), `errorCode?`, `costUsd?`, for agent replies `conversationId` and `turns`, and for sync runs the measured `pages`, `requests`, `failures` and per-source `coverage`.
 
 #### Scenario: Unknown enum value
