@@ -1,7 +1,7 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#158）。
+> 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#159）。
 
 - **最后更新：** 2026-10-15 07:40，无人值守调度员（#155），分支 `claude/dispatch-handoff-2026-10-15-b`。
 - **模式：** 开发中。定时调度员每小时一次，按 `v1-delivery` 推进；调度细节在本机 `.local/dispatcher/HANDOFF.md`。
@@ -24,7 +24,6 @@
 ## 等你决定
 
 - 补理由：#127、#158，以及旧的 #6、#9、#15–18、#23、#27、#29、#53、#67、#70。
-- dsh 出题方式：PR #29 起一直欠题（PR #115、#116、#118、#119 也没排测验）。
 
 ## 等你动手
 
