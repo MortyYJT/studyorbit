@@ -8,8 +8,8 @@ import { CanvasCourseSchema, CanvasAssignmentSchema, CanvasGroupSchema, CanvasMo
 import { mergeCourses, normalizeCourseCode, type ProviderCourse } from './merge.js';
 import { readEdScope } from './ed-reader.js';
 import { EdAttemptSchema, normalizeCanvas, normalizeEdAttempt, source } from './normalize.js';
-import { ED_ORIGIN } from './ed-scope.js';
-import { scopeHash } from './ed-adapter.js';
+import { CANVAS_ORIGIN, ED_ORIGIN } from './ed-scope.js';
+import { scopeHash, sourceIdentity } from './ed-adapter.js';
 import { createRedactor } from './redaction.js';
 import type { Collection, QueryInput, QueryItem } from '../store/queries.js';
 
@@ -103,7 +103,7 @@ export class SyncService {
         }
         c.attempted = limiter.attempts - before; providers[provider].requests += c.attempted;
         if (response.kind === 'json') {
-          providers[provider].pages++; raw.push(response.body);
+          raw.push(response.body);
           if (schema) {
             const parsed = schema.safeParse(response.body);
             if (!parsed.success) response = { kind: 'gap', reason: 'invalidJson' };
@@ -114,7 +114,7 @@ export class SyncService {
         else if (response.kind === 'gap') {
           if (response.status === 404 || response.status === 405) { c.skipped++; c.codes.push('SKIPPED'); mark(provider, 'INCOMPLETE', c); }
           else { c.failed++; providers[provider].failures++; mark(provider, 'SOURCE_UNAVAILABLE', c); }
-        } else c.completed++;
+        } else { c.completed++; providers[provider].pages++; }
         return response;
       };
       const canvasReader: JsonReader = { read: p => read('canvas', p, z.array(CanvasCourseSchema).max(100)) };
@@ -133,7 +133,7 @@ export class SyncService {
         }
       }
       const discovered = [...canvas.courses, ...ed];
-      const merged = mergeCourses(discovered); ambiguities = merged.ambiguities;
+      const merged = mergeCourses(discovered, this.all('courses')); ambiguities = merged.ambiguities;
       const scoped = merged.courses.filter(c => !input.course || c.code === input.course);
       for (const course of scoped) {
         for (const origin of course.sources ?? []) {
@@ -161,7 +161,7 @@ export class SyncService {
               const detail = (body.lesson ?? body.slide) as { id: string; slides?: { id: string }[] } | undefined;
               const list = (body.lessons ?? body.threads ?? body.resources) as { id: string; kind?: string }[] | undefined;
               if (detail && (detail.id !== endpoint.split('/').at(-1) || !owned.has(endpoint)) || list && new Set(list.map(r => r.id)).size !== list.length) {
-                const c = coverage.at(-1)!; c.completed--; c.failed++; providers.ed.failures++; mark('ed', 'SOURCE_UNAVAILABLE', c);
+                const c = coverage.at(-1)!; c.completed--; providers.ed.pages--; c.failed++; providers.ed.failures++; mark('ed', 'SOURCE_UNAVAILABLE', c);
                 return { kind: 'gap', reason: 'invalidJson' };
               }
               for (const lesson of (body.lessons ?? []) as { id: string; kind: string }[]) if (lesson.kind === 'attempt') owned.set(`/api/lessons/${lesson.id}`, origin.externalId);
@@ -188,16 +188,21 @@ export class SyncService {
         }
       }
       const redactor = createRedactor(raw, this.options.rules);
+      // Link precedence belongs to the item, including links to assessments in another course.
+      const existingLinks = this.all('assessments').flatMap(a => this.store.readAssessmentLinks(a.id));
+      const existingSources = this.all('sourceItems');
       for (const incomingCourse of scoped) {
         const previous = this.store.loadCourse(incomingCourse.id);
+        const activeSources = incomingCourse.sources?.filter(s => providers[s.platform].status !== 'AUTH_EXPIRED');
+        const preservedSources = previous?.sources?.filter(s => !activeSources?.some(i => i.platform === s.platform && i.externalId === s.externalId)
+          && (providers[s.platform].status === 'AUTH_EXPIRED' || !merged.courses.some(c => c.term === incomingCourse.term && c.sources?.some(i => i.platform === s.platform && i.externalId === s.externalId)))) ?? [];
         let course = CourseSchema.parse({ ...incomingCourse, name: redactor.text(incomingCourse.name),
-          ...(previous ? { assessmentsComplete: previous.assessmentsComplete, sources: [...incomingCourse.sources ?? [], ...previous.sources?.filter(s => !incomingCourse.sources?.some(i => i.platform === s.platform && i.externalId === s.externalId)) ?? []] } : {}) });
+          sources: [...activeSources ?? [], ...preservedSources],
+          ...(previous ? { assessmentsComplete: previous.assessmentsComplete } : {}) });
         for (const a of this.store.readAnnotations('course', course.id).sort((a, b) => (a.origin === 'owner' ? 1 : 0) - (b.origin === 'owner' ? 1 : 0) || Date.parse(a.at) - Date.parse(b.at))) {
           course = CourseSchema.parse({ ...course, [a.field]: a.value });
         }
         const sourceItems: SourceItem[] = []; const assessments: Assessment[] = []; const assessmentLinks: AssessmentLink[] = [];
-        const existingAssessments = this.all('assessments', { courseId: course.id });
-        const existingLinks = existingAssessments.flatMap(a => this.store.readAssessmentLinks(a.id));
         for (const stage of stages.filter(s => s.course.id === course.id)) {
           if (providers[stage.provider].status === 'AUTH_EXPIRED') continue;
           citations.push(...stage.citations.map(c => ({ ...c, quote: redactor.text(c.quote) })));
@@ -211,9 +216,11 @@ export class SyncService {
             const title = safeText(s.title); const text = safeText(s.text);
             sourceItems.push(SourceItemSchema.parse({ ...s, title, text, url: s.url ? redactor.url(s.url) : undefined, contentHash: scopeHash(JSON.stringify([title, text, s.facts ?? null])) }));
           }
-          if (stage.complete) for (const old of this.all('sourceItems', { courseId: course.id })) {
+          for (const old of existingSources.filter(s => s.platform === stage.provider && stage.course.sources?.some(origin =>
+            origin.platform === s.platform && sourceIdentity(s.platform, s.platform === 'canvas' ? CANVAS_ORIGIN : ED_ORIGIN, origin.externalId, s.externalId) === s.id))) {
             // The bounded first thread page is not a complete thread collection.
-            if (old.platform === stage.provider && old.kind !== 'post' && !stage.sources.some(s => s.id === old.id)) sourceItems.push({ ...old, removed: true });
+            if (!stage.sources.some(s => s.id === old.id)) sourceItems.push({ ...old, courseId: course.id,
+              removed: stage.complete && old.kind !== 'post' ? true : old.removed });
           }
           for (const fresh of stage.assessments) {
             const old = this.store.loadAssessment(fresh.id);
@@ -233,7 +240,7 @@ export class SyncService {
             assessmentLinks.push(link);
           }
         }
-        if (sourceItems.length || assessments.length || !previous && Object.values(providers).some(p => p.status === 'OK')) {
+        if (sourceItems.length || assessments.length || !previous && activeSources?.length) {
           this.store.saveBatch({ modules: [{ id: 'school', name: 'Coursework', glyph: 'book', auto: true }], courses: [course], sourceItems, assessments, assessmentLinks });
         }
       }

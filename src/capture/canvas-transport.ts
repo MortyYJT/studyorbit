@@ -43,7 +43,7 @@ export class CanvasTransport {
     const guard = async (route: Route) => {
       try {
         const request = route.request();
-        if (!request.isNavigationRequest()) { await route.continue(); return; }
+        if (!request.isNavigationRequest() || request.frame().parentFrame() !== null) { await route.continue(); return; }
         const target = new URL(request.url());
         if (target.origin !== CANVAS_ORIGIN || target.username || target.password) {
           failure = { kind: 'auth', code: 'AUTH_EXPIRED' }; await route.abort(); return;

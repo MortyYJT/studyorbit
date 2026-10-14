@@ -50,3 +50,20 @@ it('5.1 bootstraps a new resident tab with budgeted navigation and refuses sign-
   expect(page.goto).toHaveBeenCalledTimes(1);
   expect(page.unroute).toHaveBeenCalledTimes(1);
 });
+it('102 allows third-party iframe navigation without expiring the Canvas session', async () => {
+  let url = 'about:blank'; let handler!: (route: any) => Promise<void>;
+  const limiter = new RequestLimiter(clock());
+  const childContinue = vi.fn(async () => {}); const childAbort = vi.fn(async () => {});
+  const page = { url: () => url, route: async (_pattern: string, guard: typeof handler) => { handler = guard; }, unroute: async () => {},
+    goto: async (target: string) => {
+      await handler({ request: () => ({ isNavigationRequest: () => true, url: () => target, frame: () => ({ parentFrame: () => null }) }),
+        fetch: async () => ({ status: () => 200, headers: () => ({}), dispose: async () => {} }), fulfill: async () => { url = target; }, abort: async () => {} });
+      await handler({ request: () => ({ isNavigationRequest: () => true, url: () => 'https://embed.invalid/tool', frame: () => ({ parentFrame: () => ({}) }) }),
+        continue: childContinue, abort: childAbort });
+    }, evaluate: async <T>() => json([]) as T };
+  const transport = new CanvasTransport(page, limiter);
+  expect(await transport.read('/api/v1/courses/1/modules?per_page=100&page=1')).toMatchObject({ kind: 'json' });
+  expect(await transport.read('/api/v1/courses/1/assignments?per_page=100&page=1')).toMatchObject({ kind: 'json' });
+  expect(childContinue).toHaveBeenCalledOnce(); expect(childAbort).not.toHaveBeenCalled();
+  expect(limiter.attempts).toBe(3);
+});

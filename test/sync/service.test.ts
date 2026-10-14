@@ -13,6 +13,65 @@ function setup(input = bodies()) {
   }) });
   return { store, service, ...ports, input };
 }
+it('102 preserves persisted course identity and manual links when a merged code becomes ambiguous', async () => {
+  for (const edFirst of [false, true]) {
+    const { store, service, input, read } = setup();
+    if (edFirst) {
+      const endpoint = '/api/v1/courses?enrollment_type=student&enrollment_state=active&include[]=term&per_page=100&page=1';
+      const discovery = input[endpoint]; input[endpoint] = []; await service.run({});
+      const edOnly = store.query('courses', { limit: 100 }).items[0]!;
+      // Historical Ed-anchored IDs must remain usable after Canvas joins.
+      input[endpoint] = discovery;
+      await service.run({});
+      expect(store.query('courses', { limit: 100 }).items).toHaveLength(1);
+      expect(store.loadCourse(edOnly.id)?.sources).toHaveLength(2);
+    } else await service.run({});
+    const original = store.query('courses', { limit: 100 }).items[0]!;
+    const group = store.query('assessments', { limit: 100 }).items[0]!;
+    const assignment = store.query('sourceItems', { limit: 100 }).items.find(s => s.externalId === 'assignment:7')!;
+    store.saveCourse({ id: 'manual-course', moduleId: 'school', code: 'IJKL30003', name: 'Manual', term: original.term, assessmentsComplete: false });
+    store.saveAssessment({ ...group, id: 'manual-assessment', courseId: 'manual-course', origin: 'owner' });
+    store.appendAssessmentLink({ assessmentId: 'manual-assessment', sourceItemId: assignment.id, origin: 'owner', at: '2026-10-16T00:00:00Z' });
+    store.saveCourse({ ...original, assessmentsComplete: true });
+    store.appendAnnotation({ id: 'identity-name', entity: 'course', entityId: original.id, field: 'name', value: 'Owner name', origin: 'owner', citations: [], at });
+    const links = store.readAssessmentLinks(group.id);
+    (input['/api/user'] as unknown[]).push({ course: { id: 15, code: 'ABCD10001', name: 'Second Ed course', status: 'active', year: 2026, session: 'S2' } });
+    input['/api/courses/15/lessons'] = { lessons: [] };
+    input['/api/courses/15/threads?limit=30&sort=new'] = { threads: [] };
+    input['/api/courses/15/resources'] = { resources: [] };
+    const beforeAuth = store.query('sourceItems', { limit: 100 }).items.filter(s => s.platform === 'ed');
+    read.mockImplementation(async p => p === '/api/courses/9/lessons' ? { kind: 'auth', code: 'AUTH_EXPIRED' } : json(input[p]));
+    await service.run({});
+    expect(store.loadCourse(original.id)?.sources).toHaveLength(2);
+    expect(store.query('courses', { limit: 100 }).items.filter(c => c.id !== 'manual-course')).toHaveLength(1);
+    expect(store.query('sourceItems', { limit: 100 }).items.filter(s => s.platform === 'ed')).toEqual(beforeAuth);
+    read.mockImplementation(async p => json(input[p]));
+    const result = await service.run({});
+    const courses = store.query('courses', { limit: 100 }).items.filter(c => c.id !== 'manual-course');
+    expect(courses).toHaveLength(3);
+    expect(store.loadCourse(original.id)).toMatchObject({ name: 'Owner name', assessmentsComplete: true, sources: [{ platform: 'canvas', externalId: '1' }] });
+    expect(store.loadSourceItem(assignment.id)?.courseId).toBe(original.id);
+    const edCourse = courses.find(c => c.sources?.some(s => s.platform === 'ed' && s.externalId === '9'))!;
+    expect(store.query('sourceItems', { limit: 100 }).items.filter(s => s.platform === 'ed').every(s => s.courseId === edCourse.id && !s.removed)).toBe(true);
+    expect(result.ambiguities).toContain(original.id);
+    expect(store.query('assessments', { limit: 100 }).items.filter(a => a.origin === 'sync')).toHaveLength(1);
+    expect(store.readAssessmentLinks(group.id)).toEqual(links);
+    expect(store.readAssessmentLinks('manual-assessment')).toHaveLength(1);
+  }
+});
+it('102 uses the same measured pages in run and durable status after an invalid Ed slide', async () => {
+  const input = bodies(); input['/api/lessons/slides/21'] = { slide: { id: 21, questions: [{ id: 31, type: 'text', prompt: 5 }] } };
+  const { store, service } = setup(input); const result = await service.run({});
+  const restarted = new SyncService({ store, readers: async () => { throw Error('Status must not read providers'); } });
+  const status = restarted.status();
+  expect(status.ed.lastRun).toMatchObject({ id: result.run.id, ...result.providers.ed });
+  expect(status.ed.lastRun?.status).toBe('PARTIAL');
+  expect(status.canvas.lastRun).toMatchObject({ id: result.run.id, ...result.providers.canvas });
+  expect(result.providers.ed.pages).toBe(6);
+  expect(store.loadRun(result.run.id)?.pages).toBe(result.providers.canvas.pages + result.providers.ed.pages);
+  expect(result.run.pages).toBe(status.canvas.lastRun!.pages + status.ed.lastRun!.pages);
+  expect(result.providers.ed.failures).toBe(1);
+});
 it('5.4 two sources use one course transaction, shared limiter and measured durable run', async () => {
   const { store, service, read } = setup(); const save = vi.spyOn(store, 'saveBatch');
   const result = await service.run({});
