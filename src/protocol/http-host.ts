@@ -29,6 +29,7 @@ export interface OwnerUIOptions {
   capabilityDirectory?: string;
   opener?: (url: string) => Promise<void>;
   output?: (url: string) => void;
+  isTTY?: boolean;
 }
 /** No shell interpolation, captured diagnostics, or resident browser attachment. */
 async function systemBrowser(url: string): Promise<void> {
@@ -44,8 +45,14 @@ export async function startOwnerUI(host: Pick<ReturnType<typeof createProduction
   const ownerSession = createOwnerSession();
   const transport = await startHttpTransport({ registry: host.registry, context: host.context, ownerSession, staticDirectory,
     capabilityDirectory: options.capabilityDirectory ?? dataDir() });
-  try { await openOwnerBrowser(transport.origin, ownerSession, options.opener ?? systemBrowser, options.output ?? (url => process.stderr.write(`${url}\n`))); }
-  catch { await transport.close(); throw new CourseworkError('INTERNAL', 'UI bootstrap failed.'); }
+  const isTTY = options.isTTY ?? (process.stdin.isTTY && process.stderr.isTTY);
+  try {
+    await openOwnerBrowser(transport.origin, ownerSession, options.opener ?? systemBrowser, url => {
+      if (!isTTY) throw new Error('Interactive terminal required.');
+      (options.output ?? (value => process.stderr.write(`${value}\n`)))(url);
+    });
+  }
+  catch { await transport.close(); throw new CourseworkError('INTERNAL', 'UI bootstrap failed. Run coursework ui from a terminal.'); }
   return transport;
 }
 export async function serveProductionUI(host: Pick<ReturnType<typeof createProductionProtocol>, 'registry' | 'context'>): Promise<void> {

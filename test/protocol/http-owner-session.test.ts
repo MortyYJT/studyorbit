@@ -9,14 +9,14 @@ import { createFakeContext } from '../../src/protocol/fakes.js';
 import { createOwnerSession } from '../../src/protocol/owner-session.js';
 import { startHttpTransport } from '../../src/protocol/http.js';
 // Replace only the OS socket boundary; all routing, authentication and disk reads are real.
-const socket = vi.hoisted(() => ({ listener: undefined as any }));
+const socket = vi.hoisted(() => ({ listener: undefined as any, close: vi.fn() }));
 vi.mock('node:http', () => ({ createServer: (_options: unknown, listener: unknown) => {
   socket.listener = listener;
   const server = new EventEmitter() as any;
   server.listen = (_port: number, _host: string, cb: () => void) => cb();
   server.address = () => ({ address: '127.0.0.1', port: 1234 });
   server.setTimeout = () => {};
-  server.close = (cb?: () => void) => cb?.();
+  server.close = (cb?: () => void) => { socket.close(); cb?.(); };
   return server;
 } }));
 const cleanup: (() => Promise<void>)[] = [];
@@ -109,4 +109,31 @@ it('withholds the owner session from agent read responses even without a session
   const response = await request('/api/synthetic.read');
   expect(response.status).toBe(500);
   expect(response.body).not.toContain(secret);
+});
+
+it.each([false, true])('UI opener failure only exposes the fallback URL to a TTY (isTTY=%s)', async isTTY => {
+  const { ui, dir, registry } = await setup();
+  const { startOwnerUI } = await import('../../src/protocol/http-host.js');
+  const messages: string[] = []; let attempted = '';
+  const closesBefore = socket.close.mock.calls.length;
+  const options = {
+    staticDirectory: ui, capabilityDirectory: dir, isTTY,
+    opener: async (url: string) => { attempted = url; throw new Error(`Opener failed: ${url}`); },
+    output: (value: string) => messages.push(value),
+  };
+  const result = await startOwnerUI({ registry, context: createFakeContext() }, options)
+    .then(transport => { cleanup.push(() => transport.close()); return { transport, error: undefined }; },
+      (error: unknown) => ({ transport: undefined, error }));
+  const secret = new URL(attempted).hash.slice(3);
+  expect(secret).toMatch(/^[a-f0-9]{64}$/);
+  if (isTTY) {
+    expect(result.error).toBeUndefined();
+    expect(messages).toEqual([attempted]);
+    expect(socket.close.mock.calls.length).toBe(closesBefore);
+  } else {
+    expect.soft(messages.some(message => message.includes(secret))).toBe(false);
+    expect.soft(socket.close.mock.calls.length).toBe(closesBefore + 1);
+    expect.soft(result.error).toMatchObject({ code: 'INTERNAL', message: expect.stringContaining('Run coursework ui from a terminal') });
+    expect(String(result.error).includes(secret)).toBe(false);
+  }
 });
