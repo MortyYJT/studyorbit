@@ -3,23 +3,23 @@
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#159）。
 
-- **最后更新：** 2026-10-15 09:20，无人值守调度员（#155），分支 `claude/dispatch-handoff-2026-10-15-c`。
+- **最后更新：** 2026-10-15 12:45，无人值守调度员（#155），分支 `claude/handoff-f-h`。
 - **模式：** 开发中。定时调度员每小时一次，按 `v1-delivery` 推进；调度细节在本机 `.local/dispatcher/HANDOFF.md`。
-- **已合并：** A（PR #115）、B（PR #116）、C（PR #118：按作业类型分 L0–L2、课程默认等级和单项覆盖、只能从前端会话改的 owner 设置、去掉 `audit.record`）、G（PR #119：SQLite 学习记录、`source.fetch`、考试范围、练习统计、复习技能；两轮审查共修 6 处）、D（PR #121：Canvas/Ed 同步、`sync.run`/`sync.status`；两轮审查共修 4 处）。tasks 4.1–4.4、5.1–5.5、8.1–8.4 已勾。
-- **注意：** Codex 两次越界改了 `note/handoff.md`（一次还写了一条用户没做过的「用户选择」）和 OpenSpec 规格，调度员都已还原；PR #119 里提到的两个规格场景留给 issue M 决定是否补进规格。
+- **已合并：** A（PR #115）、B（PR #116）、C（PR #118）、G（PR #119）、D（PR #121）、F（PR #126：按天 EDF 排期、估时要理由、开始时间和实际用时、只能 owner 改的校外任务、`plan.read` 分页；两轮审查后调度员自修 1 处隐私问题）、H（PR #127：适配器接口、对话存储、可续传 SSE、停止、预设只发一次、每次回复记录轮数和费用；两轮审查后调度员自修 2 处）。tasks 4.x、5.1–5.5、7.x、8.x、9.x 已勾。
+- **注意：** F 的 `plan.read` 现在是游标分页，日程行只带 `workId` 引用、完整字段在 `work` 里，K2 周视图要按 `nextCursor` 读完再拼。对话恢复（把上一进程没写完的回复标成已停止）只在 `coursework ui` 启动时做。
 
 ## 没合并的工作
 
 | 分支 / clone | 内容 | 下一步 |
 | --- | --- | --- |
-| `codex/v1-planning`（`../unimelb-coursework-agent-planning`，未推送） | F：tasks 7.1–7.5；已并入最新 main（MCP 工具数 22）；第 1 轮审查需改 3 处 | Codex 额度 12:18 恢复后派返工 → 第 2 轮审查 → PR |
-| `codex/v1-chat`、`codex/v1-annotations`（`../unimelb-coursework-agent-chat`、`-annotations`，已 npm ci） | H（#106）、E（#103）：未开始 | Codex 额度恢复后派实现 |
+| `codex/v1-annotations`（`../unimelb-coursework-agent-annotations`，未推送） | E（#103）：实现 + 第 1 轮返工已提交 | 并入最新 main（预计 4 处冲突：production、registry、sqlite、cli 工具数）→ 第 2 轮审查 → PR |
+| `codex/v1-ui-shell`（`../unimelb-coursework-agent-ui`，未推送） | K1（#109）：12.1–12.2 已提交，第 1 轮审查在跑 | 看审查 → 返工 → 本机真浏览器检查 12.3（390/1440 px、明暗）→ PR。「把登录页带到前台」后端没有命令，按钮暂时禁用 |
 
 ## 下一步（按顺序）
 
-1. 收尾 F（返工 → 审查 → PR）。
-2. 派 H（#106）、E（#103）。
-3. K1（#109）可以派了（`@types/react`、`@types/react-dom` 已批，#158）。
+1. 收尾 E、K1。
+2. I（#107）、J（#108）可以派了（H 已合并）；I 要装 `@anthropic-ai/claude-agent-sdk`（已预批，钉死版本）。
+3. K2（#110）等 K1。
 
 ## 等你决定
 
