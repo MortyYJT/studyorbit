@@ -1,3 +1,4 @@
+import { AnnotationService } from './annotations.js';
 import { ConversationService } from '../agent/conversations.js';
 import { unavailableAdapter, type AgentAdapter, type AgentTool } from '../agent/adapter.js';
 import { PlanningService } from '../planning/service.js';
@@ -35,15 +36,19 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const audit = new DurableAudit(files); const runs = new DurableRuns(files);
   const authorizationStore = new CanonicalAuthorizationStore(files, store);
   const authorization = new SharedAuthorization(authorizationStore, audit);
-  const autonomy = new AssessmentAutonomy(store, audit);
   const evidence = new TrustedStoreEvidence(store, { metadata: options.metadata, privacyScope: options.privacyScope });
   const accepted = new SqliteStudyRecordStore(store, evidence);
   const provider = options.study?.provider ?? new StoreStudyEvidence(store, evidence);
   const study = new StudyWriteService({ provider, store: options.study?.store ?? accepted });
   const studyEvidence = new StudyCitationService(provider);
   const revision = new RevisionService(store, evidence, { transport: options.sourceTransport });
+  const annotations = new AnnotationService(store, evidence);
+  const effectiveKind = (id: string) => annotations.read({ entity: 'assessment', entityId: id, limit: 0 }).fields.kind!.value as string | null;
+  const autonomy = new AssessmentAutonomy(store, audit, effectiveKind);
   const repository = new StoreProtocolReads(store, evidence, {
     ...options.reads,
+    assessments: { query: input => store.queryEffectiveAssessments(input, effectiveKind) },
+    project: (entity, value) => annotations.project(entity, value),
     accepted: options.reads?.accepted ?? accepted,
     revision: { read: (name, input) => revision.read(name, input) },
     audit: options.reads?.audit ?? { read: async input => {
@@ -85,5 +90,5 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
-  return { chat, registry: createRegistry({ autonomy, planning: new PlanningService(store), sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
+  return { chat, registry: createRegistry({ autonomy, annotations, planning: new PlanningService(store, annotations), sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
 }
