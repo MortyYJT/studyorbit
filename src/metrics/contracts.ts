@@ -14,7 +14,9 @@ const totals = { steps: count, turns: count, cost };
 export const metricsContracts = {
   'metrics.read': {
     // Half-open instants: runs use startedAt, verdicts/logs use at. Estimates are effective before to.
-    input: z.strictObject({ from: z.iso.datetime({ offset: true }), to: z.iso.datetime({ offset: true }) })
+    // cursor is a zero-based conversation offset; omit it for the first page (default/max 25).
+    input: z.strictObject({ from: z.iso.datetime({ offset: true }), to: z.iso.datetime({ offset: true }),
+      cursor: count.safe().optional(), limit: z.number().int().min(1).max(25).optional() })
       .refine(value => Date.parse(value.from) < Date.parse(value.to), 'from must precede to'),
     output: z.strictObject({
       from: z.iso.datetime({ offset: true }), to: z.iso.datetime({ offset: true }),
@@ -23,6 +25,7 @@ export const metricsContracts = {
       estimates: z.union([unavailable('no_items'), z.strictObject({ available: z.literal(true), count, medianRatio: number, meanRatio: number })]),
       agent: z.union([unavailable('no_conversations'), z.strictObject({ available: z.literal(true), count, cost,
         conversations: z.array(z.strictObject({ conversationId: z.string().min(1).max(256), kind, ...totals })),
+        nextCursor: count.safe().optional(),
         byKind: z.array(z.strictObject({ kind, count, ...totals })),
       })]),
     }), level: 0,

@@ -21,7 +21,7 @@ export class MetricsService {
     return rows;
   }
   read(input: MetricsInput): MetricsOutput {
-    const { from, to } = metricsContracts['metrics.read'].input.parse(input);
+    const { from, to, cursor = 0, limit = 25 } = metricsContracts['metrics.read'].input.parse(input);
     const end = Date.parse(to); const start = Date.parse(from);
     const inRange = (at: string) => Date.parse(at) >= start && Date.parse(at) < end;
     const runs = this.all('runs').filter(run => inRange(run.startedAt));
@@ -49,13 +49,18 @@ export class MetricsService {
         const minutes = sum(task.steps.map(step => step.estimateMinutes)); work.set(task.id, !task.allDay && minutes > 0 ? minutes : undefined);
       } else task.steps.forEach((_step, index) => work.set(`${task.id}:step:${index}`, undefined));
     }
+    // Retained actuals discover historical work even after its task has been deleted.
+    const logsByWork = new Map<string, number[]>();
+    for (const log of this.store.listTimeLogs().filter(row => inRange(row.at))) {
+      const minutes = logsByWork.get(log.workId) ?? [];
+      minutes.push(log.minutes); logsByWork.set(log.workId, minutes);
+    }
     const ratios: number[] = [];
-    for (const [workId, fallback] of work) {
+    for (const [workId, logs] of logsByWork) {
       const estimates = this.store.readEstimates(workId).filter(row => Date.parse(row.at) < end);
       const estimate = estimates.filter(row => row.origin === 'owner').at(-1)?.minutes
-        ?? fallback ?? estimates.filter(row => row.origin === 'agent').at(-1)?.minutes;
-      const logs = this.store.readTimeLogs(workId).filter(row => inRange(row.at));
-      if (estimate !== undefined && logs.length) ratios.push(sum(logs.map(row => row.minutes)) / estimate);
+        ?? work.get(workId) ?? estimates.filter(row => row.origin === 'agent').at(-1)?.minutes;
+      if (estimate !== undefined && logs.length) ratios.push(sum(logs) / estimate);
     }
     const conversations = new Map(this.store.readConversations().map(row => [row.id, row]));
     const grouped = new Map<string, ConversationTotals>();
@@ -71,7 +76,11 @@ export class MetricsService {
       row.steps += run.steps; row.turns += run.turns;
       if (run.costUsd === undefined) row.unknown = true; else row.costs.push(run.costUsd);
     }
-    const rows = [...grouped.values()].sort((a, b) => a.conversationId.localeCompare(b.conversationId));
+    const rows = [...grouped.values()].sort((a, b) => a.conversationId < b.conversationId ? -1 : a.conversationId > b.conversationId ? 1 : 0);
+    // Only detail is paged; every aggregate covers the full selected range.
+    const remaining = rows.slice(cursor);
+    const page = remaining.slice(0, limit);
+    const nextCursor = remaining.length > page.length ? cursor + page.length : undefined;
     // Counts are conversations: a partially reported conversation contributes to both counts.
     const costs = (items: ConversationTotals[]) => {
       const known = items.filter(row => row.costs.length); const unknownCount = items.filter(row => row.unknown).length;
@@ -83,7 +92,7 @@ export class MetricsService {
       accuracy: verdicts.length ? { available: true, count: verdicts.length, correct, incorrect: verdicts.length - correct, value: correct / verdicts.length } : unavailable('no_labels'),
       estimates: ratios.length ? { available: true, count: ratios.length, medianRatio: median(ratios), meanRatio: sum(ratios) / ratios.length } : unavailable('no_items'),
       agent: rows.length ? { available: true, count: rows.length, cost: costs(rows),
-        conversations: rows.map(row => ({ conversationId: row.conversationId, kind: row.kind, ...totals([row]) })),
+        nextCursor, conversations: page.map(row => ({ conversationId: row.conversationId, kind: row.kind, ...totals([row]) })),
         byKind: [...new Set(rows.map(row => row.kind))].sort().map(kind => {
           const items = rows.filter(row => row.kind === kind); return { kind, count: items.length, ...totals(items) };
         }) } : unavailable('no_conversations'),

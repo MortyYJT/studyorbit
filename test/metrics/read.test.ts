@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { createProductionProtocol } from '../../src/protocol/production.js';
 import { dispatch } from '../../src/protocol/registry.js';
 import { synthetic } from '../fixtures/synthetic.js';
+import { PlanningService } from '../../src/planning/service.js';
 import type { Run } from '../../src/domain/schemas.js';
 
 const roots: string[] = []; const closes: (() => void)[] = [];
@@ -110,4 +111,49 @@ it('includes explicit estimates and actuals even when a manual task is now all-d
   store.appendEstimate({ workId: 'all-day', origin: 'owner', minutes: 60, at });
   store.appendTimeLog({ workId: 'all-day', minutes: 90, at });
   expect(await read()).toMatchObject({ ok: true, data: { estimates: { available: true, count: 1, medianRatio: 1.5, meanRatio: 1.5 } } });
+});
+
+it('keeps historical estimate ratios after manual.delete removes the task', async () => {
+  const { store, read } = await setup();
+  store.saveTask({ id: 'deleted-task', moduleId: synthetic.module.id, title: 'Synthetic work', source: 'manual',
+    steps: [{ title: 'Step', done: false, estimateMinutes: 0, citations: [] }] });
+  store.appendEstimate({ workId: 'deleted-task', origin: 'owner', minutes: 60, at });
+  store.appendTimeLog({ workId: 'deleted-task', minutes: 90, at });
+  const expected = { ok: true, data: { estimates: { available: true, count: 1, medianRatio: 1.5, meanRatio: 1.5 } } };
+  expect(await read()).toMatchObject(expected);
+  await new PlanningService(store).execute('manual.delete', { id: 'deleted-task' }, { assertOwner: async () => {} });
+  expect(store.loadTask('deleted-task')).toBeUndefined();
+  expect(store.readEstimates('deleted-task')).toHaveLength(1);
+  expect(store.readTimeLogs('deleted-task')).toHaveLength(1);
+  expect(await read()).toMatchObject(expected);
+});
+
+it('pages all conversation metrics within the envelope limit while retaining full-range aggregates', async () => {
+  const { store, read } = await setup();
+  const ids = Array.from({ length: 60 }, (_, i) => `${String(i).padStart(3, '0')}${'界\\'.repeat(125)}`);
+  for (const [i, conversationId] of ids.entries()) {
+    store.appendConversation({ id: conversationId, title: 'Synthetic conversation', adapter: 'synthetic',
+      assessmentId: i % 2 ? 'a' : undefined, createdAt: at, updatedAt: at });
+    store.recordRun({ id: `reply-${i}`, command: 'agent.reply', conversationId,
+      startedAt: at, endedAt: at, outcome: 'ok', steps: 2, turns: 1, costUsd: i % 2 ? 1 : undefined });
+  }
+  store.recordRun({ id: 'outside-range', command: 'agent.reply', conversationId: 'outside', startedAt: to, endedAt: to,
+    outcome: 'ok', steps: 99, turns: 99, costUsd: 99 });
+  const seen: string[] = []; let cursor: number | undefined; let pages = 0;
+  do {
+    const result = await read({ from, to, ...(cursor ? { cursor, limit: 25 } : {}) });
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(64 * 1024);
+    if (!result.ok) throw new Error(JSON.stringify(result));
+    const data = result.data as { agent: { conversations: { conversationId: string }[]; nextCursor?: number } };
+    expect(data).toMatchObject({ sync: { canvas: { reason: 'no_runs' } }, accuracy: { reason: 'no_labels' }, estimates: { reason: 'no_items' },
+      agent: { available: true, count: 60, cost: { totalUsd: 30, count: 30, unknownCount: 30 },
+        byKind: expect.arrayContaining([{ kind: 'assignment', count: 30, steps: 60, turns: 30,
+          cost: { available: true, totalUsd: 30, count: 30, unknownCount: 0 } }]) } });
+    expect(data.agent.conversations.length).toBeLessThanOrEqual(25);
+    seen.push(...data.agent.conversations.map(row => row.conversationId));
+    cursor = data.agent.nextCursor;
+    expect(++pages).toBeLessThanOrEqual(3);
+  } while (cursor);
+  expect(seen).toEqual(ids);
+  for (const limit of [0, 26, 1.5]) expect(await read({ from, to, limit })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
 });

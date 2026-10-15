@@ -52,6 +52,7 @@ export interface Repository {
   clearStartTime(workId: string, date: string): void;
   appendTimeLog(value: TimeLog): void;
   readTimeLogs(workId: string): TimeLog[];
+  listTimeLogs(): TimeLog[];
   appendCourseAutonomy(value: CourseAutonomy): void;
   readCourseAutonomy(courseId: string): CourseAutonomy[];
   appendConversation(value: Conversation): void;

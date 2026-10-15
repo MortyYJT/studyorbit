@@ -148,6 +148,7 @@ export class SqliteRepository implements Repository, CurrentStateReader {
   clearStartTime(workId: string, date: string): void { this.db.prepare('DELETE FROM start_times WHERE workId = ? AND date = ?').run(workId, date); }
   appendTimeLog(value: TimeLog): void { this.append('time_logs', TimeLogSchema, value, ['workId']); }
   readTimeLogs(workId: string): TimeLog[] { return this.history('time_logs', TimeLogSchema, { workId }); }
+  listTimeLogs(): TimeLog[] { return this.history('time_logs', TimeLogSchema, {}); }
   appendCourseAutonomy(value: CourseAutonomy): void { this.append('course_autonomy', CourseAutonomySchema, value, ['courseId']); }
   readCourseAutonomy(courseId: string): CourseAutonomy[] { return this.history('course_autonomy', CourseAutonomySchema, { courseId }); }
   appendConversation(value: Conversation): void { this.append('conversations', ConversationSchema, value, ['id', 'courseId', 'updatedAt']); }
