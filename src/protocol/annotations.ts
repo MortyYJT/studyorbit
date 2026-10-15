@@ -140,7 +140,7 @@ export class AnnotationService {
   /** List consumers receive effective facts and field provenance; sync storage remains untouched. */
   project(entity: 'assessment' | 'course', value: { id: string }) {
     const detail = this.read({ entity, entityId: value.id, limit: 0 });
-    const result: Record<string, unknown> = { ...value, fields: detail.fields };
+    const result: Record<string, unknown> = { ...value, fields: detail.fields, coverage: detail.coverage };
     for (const [field, effective] of Object.entries(detail.fields)) {
       if (field === 'aiPolicy') continue; // Policy text is an annotation, not an autonomy grant or Course field.
       if (effective.value === null) {

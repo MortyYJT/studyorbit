@@ -1,3 +1,4 @@
+import type { AnnotationService } from '../protocol/annotations.js';
 import { randomUUID } from 'node:crypto';
 import { TaskSchema, type PlanningSettings } from '../domain/schemas.js';
 import type { SqliteRepository } from '../store/sqlite.js';
@@ -9,8 +10,8 @@ import { settingsInput, planningInputs, planScope, planReadInput, type PlanScope
 import { pagePlan } from './page.js';
 const invalid = () => new CourseworkError('INVALID_INPUT', 'Invalid planning input.');
 export class PlanningService {
-  constructor(readonly store: SqliteRepository) {}
-  work(term: string) { return collectWork(this.store, term, this.settings()?.timeZone ?? 'Australia/Melbourne'); }
+  constructor(readonly store: SqliteRepository, private readonly annotations?: AnnotationService) {}
+  work(term: string) { return collectWork(this.store, term, this.settings()?.timeZone ?? 'Australia/Melbourne', this.annotations); }
   settings(): PlanningSettings | undefined { return this.store.readPlanningSettings().at(-1); }
   /** Free text is redacted whole before paging can split it; the dispatcher still protects each page. */
   async read(input: unknown, protect: (text: string) => Promise<string> = async text => text) {

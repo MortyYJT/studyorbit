@@ -2,6 +2,8 @@ import { mkdtemp, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
+import { SyncService } from '../../src/sync/service.js';
+import { bodies, clock, readers } from '../sync/delivery-fixture.js';
 import { hash } from '../../src/citations/exact.js';
 import { SqliteRepository } from '../../src/store/sqlite.js';
 import { ProtocolFiles } from '../../src/protocol/files.js';
@@ -197,4 +199,50 @@ it('review 3: pages growing history within the byte bound without losing effecti
   } while (cursor);
   expect(ids).toEqual([template.id, ...Array.from({ length: 200 }, (_, index) => `history-${index}`)]);
   expect(await f.call('annotation.confirm', { entity: 'assessment', entityId: 'a', field: 'weight', annotationId: 'history-199' }, true)).toMatchObject({ ok: true });
+});
+
+it('review 4: sync keeps platform weight independent of an agent claim that later loses evidence', async () => {
+  const f = await fixture();
+  const ports = readers(bodies());
+  const sync = new SyncService({ store: f.store, clock: clock(), readers: async () => ports });
+  await sync.run({});
+  const assessment = f.store.query('assessments', { limit: 100 }).items.find(item => item.courseId !== 'c')!;
+  f.store.saveSourceItem({ ...f.store.loadSourceItem('syllabus')!, courseId: assessment.courseId });
+  const sourceRevision = courseEvidenceSnapshot(f.store, new TrustedStoreEvidence(f.store), assessment.courseId).sourceRevision;
+  expect(await f.call('annotation.record', { entity: 'assessment', entityId: assessment.id, field: 'weight', value: 40,
+    sourceRevision, citations: f.cite() })).toMatchObject({ ok: true });
+  await sync.run({});
+  expect(await f.read(assessment.id)).toMatchObject({ ok: true, data: { fields: { weight: { value: 40, origin: 'agent', citations: f.cite() } } } });
+  const text = 'Revised syllabus';
+  f.store.saveSourceItem({ ...f.store.loadSourceItem('syllabus')!, text, contentHash: hash(text) });
+  expect(await f.read(assessment.id)).toMatchObject({ ok: true, data: { fields: { weight: { value: 30, origin: 'sync', citations: [] } } } });
+  expect(f.store.loadAssessment(assessment.id)?.weight).toBe(30);
+});
+it('review 5: list retains missing weight evidence when kind still has valid evidence', async () => {
+  const f = await fixture();
+  expect(await f.annotate()).toMatchObject({ ok: true });
+  expect(await f.annotate('kind', 'quiz', { citations: [{ sourceItemId: 'item-0', locator: 'item-0', quote: 'Workshop' }] })).toMatchObject({ ok: true });
+  const text = 'Revised syllabus';
+  f.store.saveSourceItem({ ...f.store.loadSourceItem('syllabus')!, text, contentHash: hash(text) });
+  expect(await f.read()).toMatchObject({ ok: true, data: { coverage: { complete: false, gaps: [{ code: 'MISSING_EVIDENCE', reference: 'syllabus' }] } } });
+  expect(await f.call('assessments.list', { courseId: 'c', kind: 'quiz' })).toMatchObject({ ok: true, data: {
+    items: [expect.objectContaining({ id: 'a', kind: 'quiz', weight: 20 })],
+    coverage: { complete: false, gaps: [{ code: 'MISSING_EVIDENCE', reference: 'syllabus' }] },
+  } });
+});
+it('review 6: planner shares effective kind, name and due resolution after evidence expires', async () => {
+  const f = await fixture();
+  expect(await f.annotate('kind', 'exam')).toMatchObject({ ok: true });
+  expect(await f.annotate('name', 'Final exam')).toMatchObject({ ok: true });
+  expect(await f.annotate('due', '2026-10-20T00:00:00Z')).toMatchObject({ ok: true });
+  expect(await f.call('planning.settings.set', { weekdayMinutes: [60, 60, 60, 60, 60, 0, 0],
+    teachingWeekAnchor: '2026-10-19', breakWeeks: [], timeZone: 'Australia/Melbourne' }, true)).toMatchObject({ ok: true });
+  const scope = { term: 'Synthetic', startDate: '2026-10-19', horizonDays: 7 };
+  expect(await f.call('plan.read', scope)).toMatchObject({ ok: true, data: { deadlines: [expect.objectContaining({ workId: 'a', kind: 'exam', title: 'Final exam' })] } });
+  const text = 'Revised syllabus';
+  f.store.saveSourceItem({ ...f.store.loadSourceItem('syllabus')!, text, contentHash: hash(text) });
+  expect(await f.read()).toMatchObject({ ok: true, data: { fields: { kind: { value: null }, name: { value: 'Synthetic assessment' }, due: { value: null } } } });
+  const plan = await f.call('plan.read', scope);
+  expect(plan).toMatchObject({ ok: true, data: { deadlines: [], work: expect.arrayContaining([expect.objectContaining({ workId: 'a', title: 'Synthetic assessment' })]) } });
+  if (plan.ok) expect((plan.data as { work: { workId: string; due?: string }[] }).work.find(item => item.workId === 'a')?.due).toBeUndefined();
 });

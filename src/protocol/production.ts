@@ -90,5 +90,5 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
-  return { chat, registry: createRegistry({ autonomy, annotations, planning: new PlanningService(store), sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
+  return { chat, registry: createRegistry({ autonomy, annotations, planning: new PlanningService(store, annotations), sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
 }

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { AcceptedRecordReader } from '../store/accepted-records.js';
 import type { Repository } from '../store/repository.js';
 import type { CurrentStateReader, Collection, QueryInput } from '../store/queries.js';
-import { contracts, AnnotationFieldsSchema, SourceEvidenceSchema, IdSchema, HashSchema, type CommandOutput, type ParsedCommandInput } from './contracts.js';
+import { contracts, CoverageSchema, AnnotationFieldsSchema, SourceEvidenceSchema, IdSchema, HashSchema, type CommandOutput, type ParsedCommandInput } from './contracts.js';
 import type { ProtocolRepository, ReadCommand } from './context.js';
 import { CourseworkError, retryable } from './errors.js';
 import { ok } from './envelope.js';
@@ -152,6 +152,11 @@ export class StoreProtocolReads implements ProtocolRepository {
       let included: unknown = this.evidence.protect(
         (collection === 'courses' || collection === 'assessments') && this.ports.project
           ? this.ports.project(collection === 'courses' ? 'course' : 'assessment', item) : item);
+      if ((collection === 'courses' || collection === 'assessments') && included && typeof included === 'object' && 'coverage' in included) {
+        itemGaps.push(...CoverageSchema.parse(included.coverage).gaps);
+        const { coverage: _coverage, ...projected } = included;
+        included = projected;
+      }
       if (collection === 'sourceItems') {
         try {
           const resolved = await this.evidence.get(item.id);
