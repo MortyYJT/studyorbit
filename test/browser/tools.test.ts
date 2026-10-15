@@ -192,3 +192,17 @@ it('11.5 step journal failure after acting reports uncertainty without retry or 
   await expect(s.write(tab)).rejects.toMatchObject({ code: 'UNCERTAIN', message: expect.not.stringContaining('SQLite') });
   expect(s.page.calls.filter(c => c === 'fill')).toHaveLength(1);
 });
+
+it('11.2 quiz privacy removes contact details and rejects credential syntax without losing mathematics', async () => {
+  const s = setup(); const tab = await s.open();
+  s.page.snapshot.people = ['Alex Fixture'];
+  s.page.snapshot.text = 'Alex Fixture alex.fixture@example.invalid +61 412 345 678 student id: 7654321; x < 12345678';
+  s.page.snapshot.targets[0]!.description = 'alex.fixture@example.invalid';
+  const result = await s.read(tab);
+  expect(result.text).toContain('x < 12345678');
+  expect(JSON.stringify(result)).not.toMatch(/Alex Fixture|example\.invalid|412 345 678|7654321/);
+  for (const credential of ['Authorization: Bearer synthetic-private', 'Bearer synthetic-private', 'x-token: synthetic-private', 'api-key=synthetic-private', 'session_id=synthetic-private', 'https://example.invalid/?access_token=synthetic-private']) {
+    s.page.snapshot.text = credential;
+    await expect(s.read(tab)).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
+  }
+});

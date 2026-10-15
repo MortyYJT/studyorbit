@@ -63,7 +63,7 @@ const safeMessages: Record<ErrorCode, string> = {
   LOCKED: 'The target is locked.', CITATION_MISMATCH: 'Citation provenance could not be verified.',
   LIMIT_EXCEEDED: 'The response exceeds 64 KiB.', INTERNAL: 'The command could not complete safely.',
 };
-function safeError(error: unknown, command?: string): CourseworkError {
+export function safeError(error: unknown, command?: string): CourseworkError {
   if (command === 'source.fetch' && error instanceof CourseworkError
     && ['Off-origin source URLs are refused.', 'Discussion threads and replies are refused.',
       'Authentication URLs and credentials are refused.', 'Redirects and unsuccessful source responses are refused.',

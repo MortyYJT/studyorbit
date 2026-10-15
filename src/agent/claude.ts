@@ -28,6 +28,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const pending: AgentEvent[] = []; let wake = () => {}; let finished = false;
     const emit = (event: AgentEvent) => { pending.push(event); wake(); };
     const denied = new Set<string>(); const calls = new Map<string, { tool: string; input: unknown }>();
+    const serviceSteps = new Set(input.tools.filter(t => t.recordsSteps).flatMap(t => [t.name, `mcp__coursework__${t.name}`]));
     let streamed = false;
     const consume = async () => {
       const server = createSdkMcpServer({ name: 'coursework', version: '1.0.0' });
@@ -102,7 +103,7 @@ export class ClaudeAdapter implements AgentAdapter {
         for (const block of message.message.content) {
           if (block.type !== 'tool_result') continue;
           const call = calls.get(block.tool_use_id); calls.delete(block.tool_use_id);
-          if (call && !denied.has(block.tool_use_id)) emit({ type: 'tool_step', tool: call.tool, outcome: block.is_error ? 'error' : 'ok',
+          if (call && !denied.has(block.tool_use_id) && !serviceSteps.has(call.tool)) emit({ type: 'tool_step', tool: call.tool, outcome: block.is_error ? 'error' : 'ok',
             ...(call.input === undefined ? {} : { input: JSON.parse(JSON.stringify(call.input)) }),
             ...(block.content === undefined ? {} : { output: JSON.parse(JSON.stringify(block.content)) }) });
         }

@@ -31,7 +31,7 @@ it('11.4 reclassifies implicit submit buttons at action time and never clicks vi
   expect(submissionControl(node as unknown as Node)).toBe(true);
   expect(submissionControl({ ...node, tagName: 'INPUT', type: 'image' } as unknown as Node)).toBe(true);
   const handle = { isVisible: async () => true, evaluate: async (fn: Function, arg?: unknown) => fn(Object.assign(node, { form: submit ? {} : null, type: submit ? 'submit' : 'button' }), arg), click };
-  const page = { locator: (selector: string) => selector === 'body' ? { evaluate: async () => 'Synthetic' } : selector.includes('.author') ? { evaluateAll: async () => [] } : { elementHandles: async () => [handle] } };
+  const page = { evaluate: async () => false, locator: (selector: string) => selector === 'body' ? { evaluate: async () => 'Synthetic' } : selector.includes('.author') ? { evaluateAll: async () => [] } : { elementHandles: async () => [handle] } };
   const adapter = new PlaywrightToolPage(page as unknown as Page);
   const snapshot = await adapter.read(); submit = true;
   await expect(adapter.act('click', snapshot.targets[0]!.ref)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
@@ -65,4 +65,33 @@ it('11.2 describes form targets with public labels while withholding answer valu
   expect(visibleText(textarea as unknown as globalThis.Element)).toBe('Question two');
   const select = Object.assign(new Element('SELECT'), { labels: [label], value: 'hidden-option-id' });
   expect(visibleText(select as unknown as globalThis.Element).trim()).toBe('Question one');
+});
+
+it('11.4 intercepts custom Finish requestSubmit and native submit before submission, releasing only browser.submit', async () => {
+  vi.stubGlobal('Element', Element); vi.stubGlobal('getComputedStyle', (e: Element) => e.style);
+  const submitted = vi.fn(); let redirect = false; let listener: ((event: any) => void) | undefined;
+  const document = { addEventListener: (_name: string, fn: typeof listener) => { listener = fn; } };
+  class Form {
+    requestSubmit() {
+      const event = { preventDefault: vi.fn(), stopImmediatePropagation: vi.fn() }; listener?.(event);
+      if (!event.preventDefault.mock.calls.length) {
+        if (redirect) { event.preventDefault(); this.submit(); } else submitted();
+      }
+    }
+    submit() { submitted(); }
+  }
+  vi.stubGlobal('HTMLFormElement', Form); vi.stubGlobal('document', document); vi.stubGlobal('window', {});
+  const form = new Form(); let native = false;
+  const node = Object.assign(new Element('BUTTON', [], 'Finish'), { type: 'button', form });
+  const handle = { isVisible: async () => true, evaluate: async (fn: Function, arg?: unknown) => fn(node, arg),
+    click: async () => { if (native) form.submit(); else form.requestSubmit(); } };
+  const page = { evaluate: async (fn: Function, arg?: unknown) => fn(arg),
+    locator: (selector: string) => selector === 'body' ? { evaluate: async () => 'Synthetic' } : selector.includes('.author') ? { evaluateAll: async () => [] } : { elementHandles: async () => [handle] } };
+  const adapter = new PlaywrightToolPage(page as unknown as Page); const ref = (await adapter.read()).targets[0]!.ref;
+  await expect(adapter.act('click', ref)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  expect(submitted).not.toHaveBeenCalled();
+  native = true; await expect(adapter.act('click', ref)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  expect(submitted).not.toHaveBeenCalled();
+  native = false; redirect = true; await adapter.act('submit', ref); expect(submitted).toHaveBeenCalledOnce();
+  form.requestSubmit(); form.submit(); expect(submitted).toHaveBeenCalledOnce();
 });

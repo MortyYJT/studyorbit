@@ -4,12 +4,16 @@ import type { ToolScope } from '../browser/tools/ports.js';
 import type { BrowserTools } from '../browser/tools/service.js';
 import { toolContracts, confirmationInput } from '../browser/tools/contracts.js';
 import type { AgentTool } from '../agent/adapter.js';
-import type { Registry } from './registry.js';
+import { safeError, type Registry } from './registry.js';
+import { fail } from './envelope.js';
 import { CourseworkError } from './errors.js';
 
 export function browserAgentTools(service: BrowserTools): AgentTool[] {
   return Object.entries(toolContracts).map(([name, contract]) => ({ name, description: name,
-    inputSchema: z.toJSONSchema(contract.input), execute: (input, scope) => service.execute(name, input, scope) }));
+    recordsSteps: true, inputSchema: z.toJSONSchema(contract.input), execute: async (input, scope) => {
+      try { return await service.execute(name, input, scope); }
+      catch (error) { const safe = safeError(error, name); return fail(name, safe.code, safe.message, safe.next); }
+    } }));
 }
 export function registerBrowserTools(registry: Registry, service?: BrowserTools, scope?: () => ToolScope) {
   const available = () => { if (!service) throw new CourseworkError('SOURCE_UNAVAILABLE', 'Browser tools unavailable.'); return service; };

@@ -40,6 +40,34 @@ export function submissionControl(node: Node): boolean {
     || /submit|hand[ -]?in|finish\s+(?:quiz|attempt|test)|提交|交卷/i.test(`${e.textContent ?? ''} ${e.getAttribute('aria-label') ?? ''} ${e.getAttribute('name') ?? ''}`);
 }
 
+/** Runs in the page. Submission defaults to blocked, even after an action finishes. */
+export function formSubmissionGuard(permission: boolean | 'status'): boolean {
+  const host = window as unknown as { courseworkSubmissionGuard?: { allowed: boolean; blocked: boolean } };
+  let state = host.courseworkSubmissionGuard;
+  if (!state) {
+    state = host.courseworkSubmissionGuard = { allowed: false, blocked: false };
+    const gate = state;
+    const permitted = () => {
+      if (!gate.allowed) { gate.blocked = true; return false; }
+      return true;
+    };
+    // Capture before application handlers, including requestSubmit() and implicit submission.
+    document.addEventListener('submit', event => {
+      if (!permitted()) { event.preventDefault(); event.stopImmediatePropagation(); }
+    }, true);
+    const nativeSubmit = HTMLFormElement.prototype.submit;
+    const nativeRequestSubmit = HTMLFormElement.prototype.requestSubmit;
+    // submit() bypasses the submit event; requestSubmit() must be checked before page handlers run.
+    HTMLFormElement.prototype.submit = function () { if (permitted()) nativeSubmit.call(this); };
+    HTMLFormElement.prototype.requestSubmit = function (submitter) {
+      if (!gate.allowed) { gate.blocked = true; return; }
+      nativeRequestSubmit.call(this, submitter);
+    };
+  }
+  if (permission !== 'status') { state.allowed = permission; state.blocked = false; }
+  return state.blocked;
+}
+
 export class PlaywrightToolPage implements ToolPage {
   private readonly targets = new Map<string, ElementHandle<HTMLElement | SVGElement>>();
   private blocked?: CourseworkError;
@@ -99,10 +127,18 @@ export class PlaywrightToolPage implements ToolPage {
   async act(action: 'click' | 'fill' | 'select' | 'submit', ref: string, value?: string) {
     const handle = this.target(ref);
     if (action !== 'submit' && await handle.evaluate(submissionControl)) throw new CourseworkError('INVALID_INPUT', 'Use browser.submit for submission controls.');
-    // Element handles bind identity. No selector re-resolution or application-level retry.
-    if (action === 'click' || action === 'submit') await handle.click({ timeout: 2000, noWaitAfter: true });
-    else if (action === 'fill') await handle.fill(value!, { timeout: 2000 });
-    else await handle.selectOption(value!, { timeout: 2000 });
+    // Install before dispatching any event: custom buttons and keyboard input can submit forms too.
+    await this.page.evaluate(formSubmissionGuard, action === 'submit');
+    try {
+      // Element handles bind identity. No selector re-resolution or application-level retry.
+      if (action === 'click' || action === 'submit') await handle.click({ timeout: 2000, noWaitAfter: true });
+      else if (action === 'fill') await handle.fill(value!, { timeout: 2000 });
+      else await handle.selectOption(value!, { timeout: 2000 });
+      if (await this.page.evaluate(formSubmissionGuard, 'status' as const)) throw new CourseworkError('INVALID_INPUT', 'Form submission blocked. Use browser.submit for confirmation.');
+    } finally {
+      // Navigation destroys the old guard; a surviving document returns to deny by default.
+      await this.page.evaluate(formSubmissionGuard, false).catch(() => {});
+    }
   }
   async screenshot(): Promise<string> {
     browserURL(this.url());

@@ -96,16 +96,7 @@ export class BrowserTools {
             const redactor = createRedactor({ people: snapshot.people.map(name => ({ name })) });
             const protect = (value: string): string => {
               for (const peer of snapshot.peers) if (peer) value = value.split(peer).join('[redacted]');
-              if (quizPage(url)) {
-                for (const person of snapshot.people) if (person.trim()) {
-                  const escaped = person.trim().split(/\s+/u).map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+');
-                  value = value.replace(new RegExp(escaped, 'giu'), '[redacted]');
-                }
-                if (/[\p{C}]/u.test(value.replace(/[\t\n\r]/g, ''))) throw denied('Sensitive page content withheld.');
-                if (/\b(?:password|csrf|access_token|authToken)\b|\b(?:token|cookie|secret|api_key)\s*[:=]/i.test(value)) throw denied('Sensitive page content withheld.');
-                return value;
-              }
-              return redactor.readText(value);
+              return redactor.readText(value, { preserveMathematics: quizPage(url) });
             };
             const targets: PageTarget[] = snapshot.targets.slice(0, 50).map(t => ({ ref: t.ref, kind: t.kind, description: protect(t.description).slice(0, 200) }));
             tab.refs = new Map(targets.map(t => [t.ref, t]));
