@@ -3,34 +3,35 @@
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#159）。
 
-- **最后更新：** 2026-10-15 13:35，无人值守调度员（#155），分支 `claude/handoff-e`。
+- **最后更新：** 2026-10-15 18:05，无人值守调度员（#155），分支 `claude/handoff-i-l`。
 - **模式：** 开发中。定时调度员每小时一次，按 `v1-delivery` 推进；调度细节在本机 `.local/dispatcher/HANDOFF.md`。
-- **已合并：** A（PR #115）、B（PR #116）、C（PR #118）、G（PR #119）、D（PR #121）、F（PR #126：按天 EDF 排期、估时要理由、开始时间和实际用时、只能 owner 改的校外任务、`plan.read` 分页；两轮审查后调度员自修 1 处隐私问题）、H（PR #127：适配器接口、对话存储、可续传 SSE、停止、预设只发一次、每次回复记录轮数和费用；两轮审查后调度员自修 2 处）、E（PR #129：带引用的 agent 批注、owner 确认/改值、有效值 owner > 有证据的 agent > 同步；第 2 轮审查 3 处已修，排期也改用同一个有效值解析）。tasks 4.x、5.1–5.5、6.x、7.x、8.x、9.x 已勾。
-- **注意：** F 的 `plan.read` 现在是游标分页，日程行只带 `workId` 引用、完整字段在 `work` 里，K2 周视图要按 `nextCursor` 读完再拼。对话恢复（把上一进程没写完的回复标成已停止）只在 `coursework ui` 启动时做。E 之后，同步不再把 agent 批注写进平台值；排期和列表都通过 `AnnotationService` 取有效值；MCP agent 工具数是 26。
+- **已合并：** A（PR #115）、B（PR #116）、C（PR #118）、G（PR #119）、D（PR #121）、F（PR #126）、H（PR #127）、E（PR #129）、I（PR #131：Claude Agent SDK 0.3.300 适配器、PreToolUse 策略、生产接线；两轮审查后调度员自修 3 处 + 子代理复核 1 处）、L 后端（PR #132：`metrics.read`，对话明细分页）。tasks 4.x、5.1–5.5、6.x、7.x、8.x、9.x、10.1–10.3、16.1 已勾。
+- **注意：** 生产对话现在默认启动已登录的 Claude（`ClaudeAdapter`），工具集取自 `registry.agentTools()`（与 MCP 同一条无 owner 权限的 dispatch 路径）；策略钩子每次调用时读 UI 端口（UI/HTTP 宿主监听后写入 `agentRuntime`）和常驻浏览器调试端口。`metrics.read` 的对话明细是偏移游标分页（每页最多 25），但这个分页参数还没写进 metrics 规格。F 的 `plan.read` 是游标分页，K2 要读完再拼。MCP agent 工具数：main 上 27（26 + `metrics.read`），J 合并后再加 7 个浏览器工具。
 
 ## 没合并的工作
 
 | 分支 / clone | 内容 | 下一步 |
 | --- | --- | --- |
-| `codex/v1-ui-shell`（`../unimelb-coursework-agent-ui`，未推送） | K1（#109）：12.1–12.2 已提交；第 1 轮审查唯一问题：「把登录页带到前台」按钮没接后端 | 等你决定这个后端命令放哪（见「等你决定」）→ 返工 → 并 main → 本机真浏览器检查 12.3 → PR |
-| `codex/v1-agent-sdk`（`../unimelb-coursework-agent-agent-sdk`，未提交） | I（#107）：SDK 0.3.300 已精确钉死安装；Codex 写了一半（`src/agent/claude.ts`、`policy.ts`、测试）撞额度 | Codex 额度恢复（17:20）后在原工作区继续 |
-| `codex/v1-browser-tools`（`../unimelb-coursework-agent-browser-tools`，未提交） | J（#108）：Codex 写了一半（`src/browser/tools/`、确认、测试）撞额度 | 同上 |
+| `codex/v1-browser-tools`（`../unimelb-coursework-agent-browser-tools`，未推送，HEAD 0816dd2） | J（#108）：11.1–11.5 已实现并提交，已并 main（I 之后）；第 1 轮审查 4 处已返工；第 2 轮审查撞 Codex 额度没出结论 | 只读 Claude 子代理做第 2 轮审查 → 修 → 并 main（会和 L 的 registry / cli 工具数冲突）→ PR；真浏览器检查未做 |
+| `codex/v1-ui-shell`（`../unimelb-coursework-agent-ui`，未推送） | K1（#109）：12.1–12.2 已提交；第 1 轮审查唯一问题：「把登录页带到前台」按钮没接后端 | 等你决定后端命令放哪 → 返工 → 并 main → 本机真浏览器检查 12.3 → PR |
 
 ## 下一步（按顺序）
 
-1. 17:20 后续派 I、J（在原 clone 里接着做）→ 审查 → PR。
+1. J 第 2 轮审查（Codex 22:21 恢复前用只读 Claude 子代理）→ PR → 合并。
 2. K1 等你决定登录页按钮的后端命令。
-3. K2（#110）等 K1；K3（#111）等 K1（E、F 已完成）；L（#113）等 I。
+3. K2（#110）、K3（#111）等 K1；K4（#112）等 J、K1；L 面板 16.2 等 K1；M（#114）最后。
 
 ## 等你决定
 
 - K1「把登录页带到前台」需要一个新的后端 owner 命令（规格 web-ui 要求有按钮）：放进 J（#108）还是 K1 自己做？调度员推荐放进 J（它管常驻浏览器的标签页）。
+- `metrics.read` 的分页参数（`cursor`、`limit`，每页最多 25）要不要写进 metrics 规格（调度员撤回了 Codex 擅自加的规格场景）。
 - 补理由：#127、#158、#159，以及旧的 #6、#9、#15–18、#23、#27、#29、#53、#67、#70。
 
 ## 等你动手
 
 - R-B 3.5（任务 17.2）：终端里跑 `node dist/cli.js browser start`，登录 Canvas 和 Ed，跑 `browser status`，放一夜看登录能保持多久。
 - 任务 5.6（D 已合并）：在真实 profile 上跑一次 `coursework sync`，把实际数量和问题记进 PR。
+- 任务 10.4（I 已合并）：先 `claude` 登录，再 `coursework ui` 发一条真实对话，记下步骤数和费用。
 
 ## 运行与验证
 
