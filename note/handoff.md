@@ -12,7 +12,7 @@
 
 | 分支 / clone | 内容 | 下一步 |
 | --- | --- | --- |
-| `codex/v1-browser-tools`（`../unimelb-coursework-agent-browser-tools`，未推送，HEAD 0816dd2） | J（#108）：11.1–11.5 已实现并提交，已并 main（I 之后）；第 1 轮审查 4 处已返工；第 2 轮审查撞 Codex 额度没出结论 | 只读 Claude 子代理做第 2 轮审查 → 修 → 并 main（会和 L 的 registry / cli 工具数冲突）→ PR；真浏览器检查未做 |
+| `codex/v1-browser-tools`（`../unimelb-coursework-agent-browser-tools`，未推送，HEAD 0816dd2） | J（#108）：11.1–11.5 已实现并提交，已把 main（含 I，4fcd269）合进本分支；第 1 轮审查 4 处已返工；第 2 轮审查撞 Codex 额度没出结论 | 只读 Claude 子代理做第 2 轮审查 → 修 → 并 main（会和 L 的 registry / cli 工具数冲突）→ PR；真浏览器检查未做 |
 | `codex/v1-ui-shell`（`../unimelb-coursework-agent-ui`，未推送） | K1（#109）：12.1–12.2 已提交；第 1 轮审查唯一问题：「把登录页带到前台」按钮没接后端 | 等你决定后端命令放哪 → 返工 → 并 main → 本机真浏览器检查 12.3 → PR |
 
 ## 下一步（按顺序）
