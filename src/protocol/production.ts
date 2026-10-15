@@ -1,3 +1,4 @@
+import { AnnotationService } from './annotations.js';
 import { productionSync } from '../sync/runtime.js';
 import type { SyncCommands } from './sync.js';
 import { SqliteStudyRecordStore } from '../store/study-records.js';
@@ -37,8 +38,11 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const study = new StudyWriteService({ provider, store: options.study?.store ?? accepted });
   const studyEvidence = new StudyCitationService(provider);
   const revision = new RevisionService(store, evidence, { transport: options.sourceTransport });
+  const annotations = new AnnotationService(store, evidence);
   const repository = new StoreProtocolReads(store, evidence, {
     ...options.reads,
+    assessments: { query: input => store.queryEffectiveAssessments(input) },
+    project: (entity, value) => annotations.project(entity, value),
     accepted: options.reads?.accepted ?? accepted,
     revision: { read: (name, input) => revision.read(name, input) },
     audit: options.reads?.audit ?? { read: async input => {
@@ -80,5 +84,5 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
-  return { registry: createRegistry({ autonomy, sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
+  return { registry: createRegistry({ autonomy, annotations, sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
 }

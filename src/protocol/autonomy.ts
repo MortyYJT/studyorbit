@@ -55,7 +55,9 @@ export class AssessmentAutonomy {
     return this.store.readAnnotations(entity, id).filter(row => row.origin === 'owner' && row.field === field).at(-1);
   }
   private policy(courseId: string) {
-    const row = this.ownerField('course', courseId, 'aiPolicy');
+    // Policy prose is evidence, not an authority setting. Only owner enum records set the cap.
+    const row = this.store.readAnnotations('course', courseId).filter(row => row.origin === 'owner' && row.field === 'aiPolicy'
+      && (row.value === null || PolicySchema.safeParse(row.value).success)).at(-1);
     return { value: row && row.value !== null ? PolicySchema.parse(row.value) : undefined, ref: row ? hash(row) : undefined };
   }
   private kind(assessmentId: string, fallback: unknown) {
