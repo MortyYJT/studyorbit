@@ -51,6 +51,8 @@ async function systemBrowser(url: string): Promise<void> {
 export async function startOwnerUI(host: Pick<ReturnType<typeof createProductionProtocol>, 'registry' | 'context'> & Partial<Pick<ReturnType<typeof createProductionProtocol>, 'chat'>>, options: OwnerUIOptions = {}) {
   const staticDirectory = options.staticDirectory ?? fileURLToPath(new URL('../../dist/ui', import.meta.url));
   if (!await readStaticUI(staticDirectory, '/')) throw new CourseworkError('SOURCE_UNAVAILABLE', 'Frontend build unavailable. Build dist/ui before running coursework ui.');
+  // The owner UI host alone runs chat replies, so it alone recovers replies interrupted by its previous process.
+  host.chat?.recoverInterrupted();
   const ownerSession = createOwnerSession();
   const transport = await startHttpTransport({ registry: host.registry, context: host.context, chat: host.chat, ownerSession, staticDirectory,
     capabilityDirectory: options.capabilityDirectory ?? dataDir() });

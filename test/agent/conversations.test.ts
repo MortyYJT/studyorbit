@@ -149,11 +149,28 @@ it('recovers a partial reply after process restart and ignores late events after
   const adapter = new SyntheticAdapter([{ type: 'text', text: 'Partial' }], gate);
   const { service, store } = setup(adapter);
   const c = await service.create({ title: 'Crash' }, owner);
-  const { messageId } = await service.send(c.id, 'Hello', owner); await new Promise(resolve => setTimeout(resolve, 0));
+  const { messageId } = await service.send(c.id, 'Hello', owner);
+  await vi.waitFor(() => expect(service.events(c.id).some(row => row.event.type === 'text')).toBe(true));
+  // Every CLI/MCP process builds a service; only the owner UI host may recover, and only explicitly.
   const restarted = new ConversationService(store, new SyntheticAdapter());
+  expect(restarted.open(c.id).messages[1].stopped).toBe(false);
+  expect(restarted.events(c.id).map(e => e.event.type)).toEqual(['text']);
+  restarted.recoverInterrupted();
   expect(restarted.open(c.id).messages[1].stopped).toBe(true);
   expect(store.loadRun(messageId)).toMatchObject({ errorCode: 'STOPPED' });
   await service.stop(c.id, owner); release();
   await new Promise(resolve => setTimeout(resolve, 0));
   expect(service.events(c.id).map(e => e.event.type)).toEqual(['text', 'stopped']);
+});
+it('delete excludes a racing send so a deleted conversation never reappears', async () => {
+  const { service } = setup(new SyntheticAdapter([{ type: 'text', text: 'Late' }]));
+  for (let offset = 0; offset < 12; offset++) {
+    const c = await service.create({ title: `Race ${offset}` }, owner);
+    const deleted = service.delete(c.id, owner);
+    for (let i = 0; i < offset; i++) await Promise.resolve();
+    const sent = service.send(c.id, 'Hello', owner).catch(error => error);
+    await deleted; await sent; await service.waitForIdle(c.id);
+    await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve));
+    expect(service.list().some(row => row.id === c.id)).toBe(false);
+  }
 });

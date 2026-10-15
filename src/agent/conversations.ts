@@ -14,11 +14,14 @@ const terminal = (event: StreamEvent) => ['result', 'error', 'stopped'].includes
 export class ConversationService {
   private readonly active = new Map<string, ActiveReply>();
   private readonly listeners = new Map<string, Set<(event: StoredEvent) => void>>();
-  constructor(private readonly store: ChatStore, private readonly adapter: AgentAdapter, private readonly tools: readonly AgentTool[] = []) {
-    // Interrupted processes leave partial replies; recover them before allowing a new send.
-    for (const conversation of store.readConversations()) {
-      for (const message of store.readMessages(conversation.id).filter(m => m.role === 'agent')) {
-        const events = store.readChatEvents(conversation.id).filter(e => e.messageId === message.id);
+  private readonly deleting = new Set<string>();
+  constructor(private readonly store: ChatStore, private readonly adapter: AgentAdapter, private readonly tools: readonly AgentTool[] = []) {}
+  /** Mark partial replies of a previous host process stopped. Only the owner UI host, which alone runs replies, calls this at startup. */
+  recoverInterrupted(): void {
+    for (const conversation of this.store.readConversations()) {
+      for (const message of this.store.readMessages(conversation.id).filter(m => m.role === 'agent')) {
+        if (this.active.get(conversation.id)?.message.id === message.id) continue;
+        const events = this.store.readChatEvents(conversation.id).filter(e => e.messageId === message.id);
         if (events.some(e => terminal(e.event))) continue;
         const reply: ActiveReply = { conversation, message, events, done: Promise.resolve(), finish() {}, terminal: false };
         this.commit(reply, { type: 'stopped' });
@@ -56,14 +59,19 @@ export class ConversationService {
   }
   async delete(id: string, owner?: OwnerInteraction): Promise<void> {
     await this.owner(owner); this.open(id);
-    await this.stop(id, owner);
-    this.store.deleteConversation(id);
-    this.listeners.delete(id);
+    // Exclude sends for the whole delete, so no reply can be created after the stop check and rebuild the conversation.
+    if (this.deleting.has(id)) throw new CourseworkError('LOCKED', 'Conversation is being deleted.');
+    this.deleting.add(id);
+    try {
+      await this.stop(id, owner);
+      this.store.deleteConversation(id);
+      this.listeners.delete(id);
+    } finally { this.deleting.delete(id); }
   }
   async send(id: string, prompt: string, owner?: OwnerInteraction): Promise<{ messageId: string }> {
     await this.owner(owner);
     if (!prompt.trim() || prompt.length > 65536) throw new CourseworkError('INVALID_INPUT', 'A bounded nonempty prompt is required.');
-    if (this.active.has(id)) throw new CourseworkError('LOCKED', 'A reply is already running.');
+    if (this.active.has(id) || this.deleting.has(id)) throw new CourseworkError('LOCKED', 'A reply is already running.');
     const { conversation, messages } = this.open(id);
     if (conversation.adapter !== this.adapter.id) throw new CourseworkError('CONFLICT', 'Conversation adapter unavailable.');
     const at = now(); const seq = (messages.at(-1)?.seq ?? -1) + 1;
