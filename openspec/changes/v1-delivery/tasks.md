@@ -87,9 +87,9 @@ Covers: US-5 items 1–2 (backend). Spec: `agent-chat`. Depends on A, B.
 
 Covers: US-5 items 3 and 6. Spec: `agent-chat`. Depends on H. New dependency approved by the owner (#147).
 
-- [ ] 10.1 Install `@anthropic-ai/claude-agent-sdk` at an exact version; keep SDK types inside `src/agent/claude.ts`
-- [ ] 10.2 Failing tests with a stubbed SDK `query`: message mapping to `AgentEvent`s, session resume, in-process MCP tool set wired, `cwd` is the agent workspace, skills injected per preset, cost and turns read from the result, not-signed-in → `AGENT_UNAVAILABLE`
-- [ ] 10.3 Failing tests for the policy hook: data-directory access outside the workspace, `browser.json`, debugging port, local UI port, `coursework` owner commands, pseudo-terminal wrappers, `ps`, frontend origin are denied and stored as denied steps; ordinary workspace file writes are allowed
+- [x] 10.1 Install `@anthropic-ai/claude-agent-sdk` at an exact version; keep SDK types inside `src/agent/claude.ts`
+- [x] 10.2 Failing tests with a stubbed SDK `query`: message mapping to `AgentEvent`s, session resume, in-process MCP tool set wired, `cwd` is the agent workspace, skills injected per preset, cost and turns read from the result, not-signed-in → `AGENT_UNAVAILABLE`
+- [x] 10.3 Failing tests for the policy hook: data-directory access outside the workspace, `browser.json`, debugging port, local UI port, `coursework` owner commands, pseudo-terminal wrappers, `ps`, frontend origin are denied and stored as denied steps; ordinary workspace file writes are allowed
 - [ ] 10.4 Owner live check: one real conversation through the frontend backend with the signed-in agent; record steps and cost in the PR
 
 ## 11. Issue J — Agent browser tools
