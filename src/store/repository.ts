@@ -15,6 +15,8 @@ export interface SaveBatch {
   tasks?: readonly Task[];
   runs?: readonly Run[];
   assessmentLinks?: readonly AssessmentLink[];
+  annotations?: readonly Annotation[];
+  annotationVerdicts?: readonly AnnotationVerdict[];
 }
 
 /** Saves upsert by id; absent loads return undefined. */

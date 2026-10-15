@@ -49,10 +49,10 @@ Covers: US-1 items 1–5, item 6 manual part (email trigger deferred, #129). Spe
 
 Covers: US-2 items 1–4. Spec: `agent-annotations`, `validated-agent-writes`. Depends on A; owner-only tests use an injected owner context until B merges.
 
-- [ ] 6.1 Failing tests: valid cited agent annotation applies; invented or stale quote rejected with nothing changed and a ledger entry
-- [ ] 6.2 Failing tests: syllabus-only assessment creation, one-to-many links, moving a link keeps history, cross-course links rejected
-- [ ] 6.3 Failing tests: precedence owner > agent > sync; append-only history; reads return effective value, origin, citations and verdicts; unknown kind stays unknown
-- [ ] 6.4 Failing tests: owner "confirm" records verdict `correct`; owner "use my value" records an owner annotation and verdict `incorrect`; both owner-only
+- [x] 6.1 Failing tests: valid cited agent annotation applies; invented or stale quote rejected with nothing changed and a ledger entry
+- [x] 6.2 Failing tests: syllabus-only assessment creation, one-to-many links, moving a link keeps history, cross-course links rejected
+- [x] 6.3 Failing tests: precedence owner > agent > sync; append-only history; reads return effective value, origin, citations and verdicts; unknown kind stays unknown
+- [x] 6.4 Failing tests: owner "confirm" records verdict `correct`; owner "use my value" records an owner annotation and verdict `incorrect`; both owner-only
 
 ## 7. Issue F — Planning
 

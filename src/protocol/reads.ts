@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { AcceptedRecordReader } from '../store/accepted-records.js';
 import type { Repository } from '../store/repository.js';
 import type { CurrentStateReader, Collection, QueryInput } from '../store/queries.js';
-import { contracts, SourceEvidenceSchema, IdSchema, HashSchema, type CommandOutput, type ParsedCommandInput } from './contracts.js';
+import { contracts, CoverageSchema, AnnotationFieldsSchema, SourceEvidenceSchema, IdSchema, HashSchema, type CommandOutput, type ParsedCommandInput } from './contracts.js';
 import type { ProtocolRepository, ReadCommand } from './context.js';
 import { CourseworkError, retryable } from './errors.js';
 import { ok } from './envelope.js';
@@ -66,6 +66,8 @@ export class TrustedStoreEvidence implements SourceEvidenceReader {
   }
 }
 export interface AuxiliaryReadPorts {
+  assessments?: { query(input: QueryInput<'assessments'>): ReturnType<CurrentStateReader['query']> };
+  project?: (entity: 'course' | 'assessment', value: { id: string }) => unknown;
   accepted?: AcceptedRecordReader;
   revision?: { read<N extends 'revision.read' | 'practice.stats'>(name: N, input: ParsedCommandInput<N>): Promise<CommandOutput<N>> };
   /** Future D audit adapter and existing Q1 managed-profile read, explicitly mounted by a host. */
@@ -141,11 +143,20 @@ export class StoreProtocolReads implements ProtocolRepository {
     const items: unknown[] = []; const evidence: Evidence[] = []; const gaps: Gap[] = [];
     let cursor = initial;
     for (let count = 0; count < limit; count++) {
-      const current = this.store.query(collection, { ...filters, limit: 1, cursor } as QueryInput<Collection>);
+      const current = collection === 'assessments' && this.ports.assessments
+        ? this.ports.assessments.query({ ...filters, limit: 1, cursor })
+        : this.store.query(collection, { ...filters, limit: 1, cursor } as QueryInput<Collection>);
       const item = current.items[0];
       if (!item) { cursor = undefined; break; }
       const itemEvidence: Evidence[] = []; const itemGaps: Gap[] = [];
-      let included: unknown = this.evidence.protect(item);
+      let included: unknown = this.evidence.protect(
+        (collection === 'courses' || collection === 'assessments') && this.ports.project
+          ? this.ports.project(collection === 'courses' ? 'course' : 'assessment', item) : item);
+      if ((collection === 'courses' || collection === 'assessments') && included && typeof included === 'object' && 'coverage' in included) {
+        itemGaps.push(...CoverageSchema.parse(included.coverage).gaps);
+        const { coverage: _coverage, ...projected } = included;
+        included = projected;
+      }
       if (collection === 'sourceItems') {
         try {
           const resolved = await this.evidence.get(item.id);
@@ -156,8 +167,10 @@ export class StoreProtocolReads implements ProtocolRepository {
           included = undefined; itemGaps.push({ code: 'UNSUPPORTED', reference: item.id });
         }
       } else if (collection !== 'runs') {
-        const refs = collection === 'tasks' ? [...new Set(('steps' in item && Array.isArray(item.steps) ? item.steps : []).flatMap(s => s.citations.map(c => c.sourceItemId)))]
-          : this.ports.entitySources?.(collection as 'courses' | 'assessments', item.id) ?? [];
+        const fieldRefs = included && typeof included === 'object' && 'fields' in included
+          ? Object.values(AnnotationFieldsSchema.parse(included.fields)).flatMap(field => field.citations.map(ref => ref.sourceItemId)) : [];
+        const refs = [...new Set([...fieldRefs, ...(collection === 'tasks' ? [...new Set(('steps' in item && Array.isArray(item.steps) ? item.steps : []).flatMap(s => s.citations.map(c => c.sourceItemId)))]
+          : this.ports.entitySources?.(collection as 'courses' | 'assessments', item.id) ?? [])])];
         if (!refs.length && (collection !== 'tasks' || 'source' in item && item.source === 'coursework')) itemGaps.push({ code: 'MISSING_EVIDENCE', reference: item.id });
         for (const ref of refs) {
           try {
@@ -170,7 +183,7 @@ export class StoreProtocolReads implements ProtocolRepository {
             itemGaps.push({ code: 'MISSING_EVIDENCE', reference: ref });
           }
         }
-        if ('assessmentsComplete' in item && !item.assessmentsComplete) itemGaps.push({ code: 'INCOMPLETE', reference: item.id });
+        if (included && typeof included === 'object' && 'assessmentsComplete' in included && !included.assessmentsComplete) itemGaps.push({ code: 'INCOMPLETE', reference: item.id });
       }
       const nextItems = [...items, ...(included === undefined ? [] : [included])];
       const nextEvidence = [...new Map([...evidence, ...itemEvidence].map(e => [e.sourceItemId, e])).values()];
