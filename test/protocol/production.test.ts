@@ -129,3 +129,21 @@ it('gives production chat the agent tool set and the live UI and debugging ports
   await host.chat.waitForIdle(conversation.id);
   expect(host.store.loadRun(messageId)).toMatchObject({ outcome: 'ok', steps: 2 });
 });
+
+it('keeps the UI origin denial when the resident browser state is unreadable', async () => {
+  const { writeFile } = await import('node:fs/promises');
+  query.mockImplementation(({ options }) => Object.assign((async function* () {
+    const hook = options.hooks.PreToolUse[0].hooks[0];
+    const command = 'curl http://127.0.0.1:4569/api/status';
+    expect((await hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, tool_use_id: 'ui', cwd: options.cwd }, 'ui', {}))
+      .hookSpecificOutput.permissionDecision).toBe('deny');
+    yield { type: 'result', subtype: 'success', is_error: false, num_turns: 1, session_id: 'synthetic-session' };
+  })(), { interrupt: vi.fn() }));
+  const host = await setup(); const owner = { assertOwner: async () => {} };
+  await writeFile(join(process.env.COURSEWORK_HOME!, 'browser.json'), '{ corrupted');
+  host.agentRuntime.frontendOrigin = 'http://127.0.0.1:4569';
+  const conversation = await host.chat.create({}, owner);
+  const { messageId } = await host.chat.send(conversation.id, 'Synthetic prompt', owner);
+  await host.chat.waitForIdle(conversation.id);
+  expect(host.store.loadRun(messageId)).toMatchObject({ outcome: 'ok', steps: 1 });
+});

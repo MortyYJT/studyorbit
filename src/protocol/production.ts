@@ -101,8 +101,10 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const agentRuntime: Pick<ProtectedPorts, 'frontendOrigin'> = {};
   const resident = new ResidentBrowser();
   const adapter = options.agentAdapter ?? new ClaudeAdapter({ dataDirectory: resolveDataDir(), runtime: () => {
-    const endpoint = resident.current()?.endpoint;
-    return { ...agentRuntime, ...(endpoint ? { debuggingPort: Number(new URL(endpoint).port) } : {}) };
+    // An unreadable browser state must not drop the already known UI origin.
+    let debuggingPort: number | undefined;
+    try { const endpoint = resident.current()?.endpoint; if (endpoint) debuggingPort = Number(new URL(endpoint).port); } catch { /* Port unknown. */ }
+    return { ...agentRuntime, ...(debuggingPort ? { debuggingPort } : {}) };
   } });
   const chat = new ConversationService(store, adapter, agentTools);
   return { chat, agentRuntime, registry, context, audit, store, close: () => { if (!options.store) store.close(); } };
