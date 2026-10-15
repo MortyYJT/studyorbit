@@ -3,26 +3,28 @@
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#159）。
 
-- **最后更新：** 2026-10-15 12:45，无人值守调度员（#155），分支 `claude/handoff-f-h`。
+- **最后更新：** 2026-10-15 13:35，无人值守调度员（#155），分支 `claude/handoff-e`。
 - **模式：** 开发中。定时调度员每小时一次，按 `v1-delivery` 推进；调度细节在本机 `.local/dispatcher/HANDOFF.md`。
-- **已合并：** A（PR #115）、B（PR #116）、C（PR #118）、G（PR #119）、D（PR #121）、F（PR #126：按天 EDF 排期、估时要理由、开始时间和实际用时、只能 owner 改的校外任务、`plan.read` 分页；两轮审查后调度员自修 1 处隐私问题）、H（PR #127：适配器接口、对话存储、可续传 SSE、停止、预设只发一次、每次回复记录轮数和费用；两轮审查后调度员自修 2 处）。tasks 4.x、5.1–5.5、7.x、8.x、9.x 已勾。
-- **注意：** F 的 `plan.read` 现在是游标分页，日程行只带 `workId` 引用、完整字段在 `work` 里，K2 周视图要按 `nextCursor` 读完再拼。对话恢复（把上一进程没写完的回复标成已停止）只在 `coursework ui` 启动时做。
+- **已合并：** A（PR #115）、B（PR #116）、C（PR #118）、G（PR #119）、D（PR #121）、F（PR #126：按天 EDF 排期、估时要理由、开始时间和实际用时、只能 owner 改的校外任务、`plan.read` 分页；两轮审查后调度员自修 1 处隐私问题）、H（PR #127：适配器接口、对话存储、可续传 SSE、停止、预设只发一次、每次回复记录轮数和费用；两轮审查后调度员自修 2 处）、E（PR #129：带引用的 agent 批注、owner 确认/改值、有效值 owner > 有证据的 agent > 同步；第 2 轮审查 3 处已修，排期也改用同一个有效值解析）。tasks 4.x、5.1–5.5、6.x、7.x、8.x、9.x 已勾。
+- **注意：** F 的 `plan.read` 现在是游标分页，日程行只带 `workId` 引用、完整字段在 `work` 里，K2 周视图要按 `nextCursor` 读完再拼。对话恢复（把上一进程没写完的回复标成已停止）只在 `coursework ui` 启动时做。E 之后，同步不再把 agent 批注写进平台值；排期和列表都通过 `AnnotationService` 取有效值；MCP agent 工具数是 26。
 
 ## 没合并的工作
 
 | 分支 / clone | 内容 | 下一步 |
 | --- | --- | --- |
-| `codex/v1-annotations`（`../unimelb-coursework-agent-annotations`，未推送） | E（#103）：实现 + 第 1 轮返工已提交 | 并入最新 main（预计 4 处冲突：production、registry、sqlite、cli 工具数）→ 第 2 轮审查 → PR |
-| `codex/v1-ui-shell`（`../unimelb-coursework-agent-ui`，未推送） | K1（#109）：12.1–12.2 已提交，第 1 轮审查在跑 | 看审查 → 返工 → 本机真浏览器检查 12.3（390/1440 px、明暗）→ PR。「把登录页带到前台」后端没有命令，按钮暂时禁用 |
+| `codex/v1-ui-shell`（`../unimelb-coursework-agent-ui`，未推送） | K1（#109）：12.1–12.2 已提交；第 1 轮审查唯一问题：「把登录页带到前台」按钮没接后端 | 等你决定这个后端命令放哪（见「等你决定」）→ 返工 → 并 main → 本机真浏览器检查 12.3 → PR |
+| `codex/v1-agent-sdk`（`../unimelb-coursework-agent-agent-sdk`，未提交） | I（#107）：SDK 0.3.300 已精确钉死安装；Codex 写了一半（`src/agent/claude.ts`、`policy.ts`、测试）撞额度 | Codex 额度恢复（17:20）后在原工作区继续 |
+| `codex/v1-browser-tools`（`../unimelb-coursework-agent-browser-tools`，未提交） | J（#108）：Codex 写了一半（`src/browser/tools/`、确认、测试）撞额度 | 同上 |
 
 ## 下一步（按顺序）
 
-1. 收尾 E、K1。
-2. I（#107）、J（#108）可以派了（H 已合并）；I 要装 `@anthropic-ai/claude-agent-sdk`（已预批，钉死版本）。
-3. K2（#110）等 K1。
+1. 17:20 后续派 I、J（在原 clone 里接着做）→ 审查 → PR。
+2. K1 等你决定登录页按钮的后端命令。
+3. K2（#110）等 K1；K3（#111）等 K1（E、F 已完成）；L（#113）等 I。
 
 ## 等你决定
 
+- K1「把登录页带到前台」需要一个新的后端 owner 命令（规格 web-ui 要求有按钮）：放进 J（#108）还是 K1 自己做？调度员推荐放进 J（它管常驻浏览器的标签页）。
 - 补理由：#127、#158、#159，以及旧的 #6、#9、#15–18、#23、#27、#29、#53、#67、#70。
 
 ## 等你动手
