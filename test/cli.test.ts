@@ -72,6 +72,7 @@ it('coursework mcp over real stdio pipes writes only MCP frames to stdout and ex
     'browser.open', 'browser.read', 'browser.screenshot', 'browser.click', 'browser.fill', 'browser.select', 'browser.submit',
   ]));
   expect(frames[1]!.result.tools.map((tool: { name: string }) => tool.name)).toContain('metrics.read');
+  expect(frames[1]!.result.tools.map((tool: { name: string }) => tool.name)).not.toContain('browser.signin');
   expect(JSON.parse(frames[2]!.result.content[0].text)).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
   expect(JSON.parse(frames[3]!.result.content[0].text)).toMatchObject({ ok: true, data: { items: [] } });
   expect(stderr).toContain('coursework mcp');

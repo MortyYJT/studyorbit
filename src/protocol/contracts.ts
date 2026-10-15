@@ -114,6 +114,7 @@ const siteStatus = z.strictObject({ state: z.enum(['signedIn', 'signedOut', 'unk
     'Sign in to Ed by hand in the resident browser.',
   ]) }).optional() });
 export const browserContracts = {
+  'browser.signin': { input: z.strictObject({ site: z.enum(['canvas', 'ed']) }), output: z.strictObject({ site: z.enum(['canvas', 'ed']), status: siteStatus }), level: 0 },
   'browser.status': { input: z.strictObject({}), output: z.strictObject({ canvas: siteStatus, ed: siteStatus }), level: 0 },
   'browser.start': { input: z.strictObject({}), output: z.strictObject({ running: z.literal(true), browser: z.enum(['msedge', 'chrome', 'chromium']), startedAt: z.iso.datetime() }), level: 0 },
   'browser.stop': { input: z.strictObject({}), output: z.strictObject({ running: z.literal(false) }), level: 0 },
@@ -122,7 +123,7 @@ export type CommandName = keyof typeof contracts;
 export type CommandInput<N extends CommandName> = z.input<(typeof contracts)[N]['input']>;
 export type ParsedCommandInput<N extends CommandName> = z.output<(typeof contracts)[N]['input']>;
 export type CommandOutput<N extends CommandName> = z.output<(typeof contracts)[N]['output']>;
-export const ownerCommands: ReadonlySet<string> = new Set(['sync.run', 'policy.record', 'grant.record', 'browser.start', 'browser.stop', 'annotation.owner.record', 'annotation.confirm', 'annotation.replace', 'planning.settings.record']);
+export const ownerCommands: ReadonlySet<string> = new Set(['sync.run', 'policy.record', 'grant.record', 'browser.start', 'browser.stop', 'browser.signin', 'annotation.owner.record', 'annotation.confirm', 'annotation.replace', 'planning.settings.record']);
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });
 export const FailureEnvelopeSchema = z.strictObject({ protocol: z.literal('coursework.agent/v1'), command: z.string(), meta,
   ok: z.literal(false), error: z.strictObject({ code: z.enum(Object.keys(retryable) as (keyof typeof retryable)[]), message: z.string(), retryable: z.boolean(), next: z.string().optional() }) }).refine(e => e.error.retryable === retryable[e.error.code]);

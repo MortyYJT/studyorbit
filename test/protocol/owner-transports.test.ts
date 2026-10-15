@@ -7,7 +7,7 @@ import { Registry, dispatch } from '../../src/protocol/registry.js';
 import { createFakeContext } from '../../src/protocol/fakes.js';
 import { httpCommandContext } from '../../src/protocol/http.js';
 import { parseProtocolCLI } from '../../src/protocol/cli.js';
-const names = ['policy.record', 'grant.record', 'annotation.owner.record', 'planning.settings.record', 'browser.start', 'browser.stop'];
+const names = ['policy.record', 'grant.record', 'annotation.owner.record', 'planning.settings.record', 'browser.start', 'browser.stop', 'browser.signin'];
 function setup() {
   const registry = new Registry(); const handler = vi.fn(async () => ({}));
   for (const name of names) registry.register({ name, input: z.strictObject({}), output: z.strictObject({}), level: 0, handler });
