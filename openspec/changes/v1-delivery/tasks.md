@@ -107,9 +107,9 @@ Covers: US-5 item 4; US-7 items 3–4. Spec: `agent-browser-tools`. Depends on C
 
 Covers: US-1 items 5–6 (status, manual sync button; email trigger deferred, #129); US-7 item 5 (audit). Spec: `web-ui`. Depends on B; owner approval of `@types/react` and `@types/react-dom`.
 
-- [ ] 12.1 Scaffold `web/` with pre-approved Vite, React, react-dom and `@vitejs/plugin-react`; build into `dist/ui`; typed envelope client with zod; owner-session handling with unit tests
-- [ ] 12.2 Top bar (This week, Agent, sync button with running state), avatar menu panels: sync and sign-in status with "bring sign-in page to front", audit records, settings (weekday hours, time zone, theme, language); empty-store message
-- [ ] 12.3 Real-browser check at 390 px and 1440 px, light and dark, screenshots in the PR
+- [x] 12.1 Scaffold `web/` with pre-approved Vite, React, react-dom and `@vitejs/plugin-react`; build into `dist/ui`; typed envelope client with zod; owner-session handling with unit tests
+- [x] 12.2 Top bar (This week, Agent, sync button with running state), avatar menu panels: sync and sign-in status with "bring sign-in page to front", audit records, settings (weekday hours, time zone, theme, language); empty-store message
+- [x] 12.3 Real-browser check at 390 px and 1440 px, light and dark, screenshots in the PR
 
 ## 13. Issue K2 — Week view
 
