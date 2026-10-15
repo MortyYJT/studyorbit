@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ConversationService } from '../agent/conversations.js';
+import type { StoredEvent } from '../agent/adapter.js';
 import type { OwnerInteraction } from './context.js';
 import { CourseworkError } from './errors.js';
 import { run } from './envelope.js';
@@ -57,14 +58,33 @@ export function streamAgent(chat: ConversationService, req: IncomingMessage, res
   res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff', Connection: 'close', 'X-Accel-Buffering': 'no' });
   res.flushHeaders?.();
-  const write = (text: string) => {
-    if (res.destroyed || res.writableEnded) return;
-    // A slow listener reconnects from its cursor instead of buffering an unbounded reply.
-    if (containsSecret(text) || !res.write(text)) res.destroy();
+  let blocked = false;
+  let cursor = after;
+  const write = (text: string): boolean => {
+    if (blocked || res.destroyed || res.writableEnded) return false;
+    if (containsSecret(text)) { res.destroy(); return false; }
+    // A false return still accepts this frame; wait for drain before writing more.
+    blocked = !res.write(text);
+    return true;
   };
-  const unsubscribe = chat.subscribe(conversation, after, stored => write(`id: ${stored.id}\nevent: ${stored.event.type}\ndata: ${JSON.stringify(stored)}\n\n`));
+  const deliver = (stored: StoredEvent) => {
+    if (write(`id: ${stored.id}\nevent: ${stored.event.type}\ndata: ${JSON.stringify(stored)}\n\n`)) cursor = stored.id;
+  };
+  const drain = () => {
+    blocked = false;
+    // The journal holds replay and live events while blocked, without a per-client queue.
+    let pending: StoredEvent[];
+    try { pending = chat.events(conversation, cursor); }
+    catch { res.destroy(); return; } // The conversation may have been deleted while blocked.
+    for (const stored of pending) {
+      deliver(stored);
+      if (blocked || res.destroyed || res.writableEnded) break;
+    }
+  };
+  res.on('drain', drain);
+  const unsubscribe = chat.subscribe(conversation, after, deliver);
   const heartbeat = setInterval(() => write(': keepalive\n\n'), 15000); heartbeat.unref();
-  const cleanup = () => { clearInterval(heartbeat); unsubscribe(); };
+  const cleanup = () => { clearInterval(heartbeat); unsubscribe(); res.off('drain', drain); };
   res.once('close', cleanup); res.once('finish', cleanup);
   if (res.destroyed || res.writableEnded) cleanup();
 }

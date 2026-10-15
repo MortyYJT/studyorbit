@@ -120,12 +120,27 @@ it('forwards tool sets and transcript when no resumable session was reported; sa
   const sent = await service.send(c.id, 'Hello', owner); await service.waitForIdle(c.id);
   expect(service.events(c.id).at(-1)!.event).toEqual({ type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Sign in to the installed agent and retry.' });
   expect(store.loadRun(sent.messageId)).toMatchObject({ outcome: 'error', errorCode: 'AGENT_UNAVAILABLE' });
-  expect(service.open(c.id).messages[1].parts).toEqual([{ type: 'confirmation', confirmationId: 'pending-1' }]);
+  expect(service.open(c.id).messages[1].parts).toEqual([{ type: 'confirmation', confirmationId: 'pending-1', decision: 'pending' }]);
   const reopened = new ConversationService(store, adapter);
   expect(reopened.open(c.id).events[0].event).toEqual({ type: 'confirmation', confirmationId: 'pending-1', decision: 'pending' });
   await service.send(c.id, 'Retry', owner); await service.waitForIdle(c.id);
   expect(adapter.inputs[1]).toMatchObject({ tools, transcript: expect.arrayContaining([expect.objectContaining({ role: 'owner' }), expect.objectContaining({ role: 'agent' })]) });
   expect(adapter.inputs[1].sessionRef).toBeUndefined();
+});
+it('persists confirmation decisions and restores them in the transcript without a resumable session', async () => {
+  const decisions = [undefined, 'pending', 'confirmed', 'cancelled', 'expired'] as const;
+  const parts = decisions.map((decision, index) => ({ type: 'confirmation' as const, confirmationId: `p${index}`,
+    ...(decision === undefined ? {} : { decision }) }));
+  const { service, store } = setup(new SyntheticAdapter([...parts, { type: 'result', turns: 1 }]));
+  const c = await service.create({ title: 'Confirmations' }, owner);
+  await service.send(c.id, 'Decide', owner); await service.waitForIdle(c.id);
+  expect(service.open(c.id).messages[1].parts).toEqual(parts);
+  const adapter = new SyntheticAdapter();
+  const restarted = new ConversationService(store, adapter);
+  expect(restarted.open(c.id).messages[1].parts).toEqual(parts);
+  await restarted.send(c.id, 'Continue', owner); await restarted.waitForIdle(c.id);
+  expect(adapter.inputs[0].sessionRef).toBeUndefined();
+  expect(adapter.inputs[0].transcript[1].parts).toEqual(parts);
 });
 it('recovers a partial reply after process restart and ignores late events after stop', async () => {
   let release!: () => void;

@@ -104,7 +104,7 @@ export class ConversationService {
     if (event.type === 'text') message.parts.push({ type: 'text', text: event.text });
     if (event.type === 'tool_step') message.parts.push({ type: 'tool_step', tool: event.tool, ...(event.input === undefined ? {} : { input: event.input }),
       output: { outcome: event.outcome, ...(event.output === undefined ? {} : { value: event.output }), ...(event.screenshotRef ? { screenshotRef: event.screenshotRef } : {}), ...(event.viewUrl ? { viewUrl: event.viewUrl } : {}) } });
-    if (event.type === 'confirmation') message.parts.push({ type: 'confirmation', confirmationId: event.confirmationId });
+    if (event.type === 'confirmation') message.parts.push({ ...event });
     if (event.type === 'stopped') message.stopped = true;
     if (event.type === 'result' && event.sessionRef) conversation.sessionRef = event.sessionRef;
     conversation.updatedAt = now();
