@@ -164,13 +164,14 @@ export class SqliteRepository implements Repository, CurrentStateReader {
   }
 
   /** Filter by the same append-order precedence used by annotation reads, before pagination. */
-  queryEffectiveAssessments(input: QueryInput<'assessments'>): QueryPage<QueryItem<'assessments'>> {
+  queryEffectiveAssessments(input: QueryInput<'assessments'>, resolveKind?: (id: string) => string | null): QueryPage<QueryItem<'assessments'>> {
     const plan = queryPlan('assessments', input);
     const latest = `(SELECT a.json FROM annotations a WHERE a.entity = 'assessment' AND a.entityId = assessments.id
       AND json_extract(a.json, '$.field') = 'kind'
       ORDER BY CASE json_extract(a.json, '$.origin') WHEN 'owner' THEN 0 ELSE 1 END, a.seq DESC LIMIT 1)`;
     // A recorded null explicitly clears classification instead of falling through to the platform kind.
-    const kind = `(CASE WHEN ${latest} IS NOT NULL THEN json_extract(${latest}, '$.value') ELSE json_extract(assessments.json, '$.kind') END)`;
+    if (resolveKind) this.db.function('effective_assessment_kind', id => resolveKind(String(id)));
+    const kind = resolveKind ? 'effective_assessment_kind(assessments.id)' : `(CASE WHEN ${latest} IS NOT NULL THEN json_extract(${latest}, '$.value') ELSE json_extract(assessments.json, '$.kind') END)`;
     const rows = this.db.prepare(plan.sql.replace("json_extract(json, '$.kind')", kind)).all(...plan.params);
     const values = rows.map(row => AssessmentSchema.parse(JSON.parse(row.json as string)));
     const items = values.slice(0, plan.limit);

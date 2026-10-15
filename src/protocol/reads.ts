@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { AcceptedRecordReader } from '../store/accepted-records.js';
 import type { Repository } from '../store/repository.js';
 import type { CurrentStateReader, Collection, QueryInput } from '../store/queries.js';
-import { contracts, SourceEvidenceSchema, IdSchema, HashSchema, type CommandOutput, type ParsedCommandInput } from './contracts.js';
+import { contracts, AnnotationFieldsSchema, SourceEvidenceSchema, IdSchema, HashSchema, type CommandOutput, type ParsedCommandInput } from './contracts.js';
 import type { ProtocolRepository, ReadCommand } from './context.js';
 import { CourseworkError, retryable } from './errors.js';
 import { ok } from './envelope.js';
@@ -162,8 +162,10 @@ export class StoreProtocolReads implements ProtocolRepository {
           included = undefined; itemGaps.push({ code: 'UNSUPPORTED', reference: item.id });
         }
       } else if (collection !== 'runs') {
-        const refs = collection === 'tasks' ? [...new Set(('steps' in item && Array.isArray(item.steps) ? item.steps : []).flatMap(s => s.citations.map(c => c.sourceItemId)))]
-          : this.ports.entitySources?.(collection as 'courses' | 'assessments', item.id) ?? [];
+        const fieldRefs = included && typeof included === 'object' && 'fields' in included
+          ? Object.values(AnnotationFieldsSchema.parse(included.fields)).flatMap(field => field.citations.map(ref => ref.sourceItemId)) : [];
+        const refs = [...new Set([...fieldRefs, ...(collection === 'tasks' ? [...new Set(('steps' in item && Array.isArray(item.steps) ? item.steps : []).flatMap(s => s.citations.map(c => c.sourceItemId)))]
+          : this.ports.entitySources?.(collection as 'courses' | 'assessments', item.id) ?? [])])];
         if (!refs.length && (collection !== 'tasks' || 'source' in item && item.source === 'coursework')) itemGaps.push({ code: 'MISSING_EVIDENCE', reference: item.id });
         for (const ref of refs) {
           try {

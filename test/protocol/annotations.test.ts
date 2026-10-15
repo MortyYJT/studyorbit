@@ -137,3 +137,64 @@ it('course completeness coverage follows the effective annotated value', async (
     expect(page.coverage.gaps).not.toContainEqual({ code: 'INCOMPLETE', reference: 'c' });
   }
 });
+it('review 1: lists field provenance, citations, verdicts and resolvable evidence', async () => {
+  const f = await fixture();
+  await f.annotate();
+  const id = f.store.readAnnotations('assessment', 'a')[0]!.id;
+  await f.call('annotation.confirm', { entity: 'assessment', entityId: 'a', field: 'weight', annotationId: id }, true);
+  expect(await f.call('assessments.list', { courseId: 'c' })).toMatchObject({ ok: true, data: {
+    items: [{ id: 'a', weight: 40, fields: { weight: {
+      value: 40, origin: 'agent', annotationId: id, citations: f.cite(), verdicts: [{ verdict: 'correct' }],
+    } } }, expect.anything()],
+    evidence: [expect.objectContaining({ sourceItemId: 'syllabus', text: expect.stringContaining('Final exam (40%)') })],
+  } });
+});
+it('review 2: invalidates stale evidence on read while retaining marked history', async () => {
+  const f = await fixture();
+  await f.annotate();
+  const row = f.store.readAnnotations('assessment', 'a')[0]!;
+  const created = await f.call('assessment.create', { courseId: 'c', sourceRevision: f.revision(),
+    name: { value: 'Final exam', citations: f.cite() }, weight: { value: 40, citations: f.cite() } });
+  expect(created.ok).toBe(true);
+  if (!created.ok) return;
+  const createdId = (created.data as { id: string }).id;
+  await f.annotate('kind', 'quiz');
+  await f.call('autonomy.default.set', { courseId: 'c', level: 1 }, true);
+  expect(await f.call('autonomy.check', { assessmentId: 'a', action: 'fill' })).toMatchObject({ data: { decision: 'allowed' } });
+  const text = 'Final exam (50%). Workshops 10%. quiz';
+  f.store.saveSourceItem({ ...f.store.loadSourceItem('syllabus')!, text, contentHash: hash(text) });
+  expect(await f.read()).toMatchObject({ ok: true, data: {
+    fields: { weight: { value: 20, origin: 'sync', citations: [] } },
+    history: [expect.objectContaining({ id: row.id, citations: [], coverage: { complete: false, gaps: [{ code: 'MISSING_EVIDENCE', reference: 'syllabus' }] } }), expect.anything()],
+    coverage: { complete: false, gaps: [{ code: 'MISSING_EVIDENCE', reference: 'syllabus' }] },
+  } });
+  expect(f.store.readAnnotations('assessment', 'a')[0]).toEqual(row);
+  expect(await f.call('assessments.list', { courseId: 'c', kind: 'quiz' })).toMatchObject({ ok: true, data: { items: [] } });
+  expect(await f.call('autonomy.check', { assessmentId: 'a', action: 'fill' })).toMatchObject({ data: { decision: 'denied', reason: 'grant-level' } });
+  expect(await f.read(createdId)).toMatchObject({ ok: true, data: { fields: {
+    name: { value: null, origin: null, citations: [] }, weight: { value: null, origin: null, citations: [] },
+  } } });
+  expect(await f.call('sources.get', { sourceItemId: 'syllabus' })).toMatchObject({ ok: true, data: { text } });
+  expect(await f.call('annotation.confirm', { entity: 'assessment', entityId: 'a', field: 'weight', annotationId: row.id }, true))
+    .toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+});
+it('review 3: pages growing history within the byte bound without losing effective values', async () => {
+  const f = await fixture();
+  await f.annotate();
+  const template = f.store.readAnnotations('assessment', 'a')[0]!;
+  f.store.saveBatch({ annotations: Array.from({ length: 200 }, (_, index) => ({ ...template, id: `history-${index}`, value: index % 100 })) });
+  expect(await f.read()).toMatchObject({ ok: true, data: { fields: { weight: { annotationId: 'history-199' } }, nextCursor: expect.any(String) } });
+  const ids: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const result = await f.call('annotation.read', { entity: 'assessment', entityId: 'a', limit: 500, ...(cursor ? { cursor } : {}) });
+    expect(result).toMatchObject({ ok: true, data: { fields: { weight: { value: 99, annotationId: 'history-199' } } } });
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(64 * 1024);
+    if (!result.ok) return;
+    const data = result.data as { history: { id: string }[]; nextCursor?: string };
+    expect(data.history.length).toBeGreaterThan(0);
+    ids.push(...data.history.map(row => row.id)); cursor = data.nextCursor;
+  } while (cursor);
+  expect(ids).toEqual([template.id, ...Array.from({ length: 200 }, (_, index) => `history-${index}`)]);
+  expect(await f.call('annotation.confirm', { entity: 'assessment', entityId: 'a', field: 'weight', annotationId: 'history-199' }, true)).toMatchObject({ ok: true });
+});

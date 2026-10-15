@@ -37,7 +37,8 @@ export function effective(defaultLevel: WorkLevel, override?: WorkLevel, policy?
 }
 /** New authority lives in delivery entities; old policy files and L0–L4 grants are never read. */
 export class AssessmentAutonomy {
-  constructor(private readonly store: AutonomyRepository, private readonly audit: { record(event: AuditEvent): Promise<void> }) {}
+  constructor(private readonly store: AutonomyRepository, private readonly audit: { record(event: AuditEvent): Promise<void> },
+    private readonly resolveKind?: (id: string) => unknown) {}
   private course(courseId: string): void {
     if (!this.store.loadCourse(courseId)) throw new CourseworkError('NOT_FOUND', 'Course not found.');
   }
@@ -61,6 +62,7 @@ export class AssessmentAutonomy {
     return { value: row && row.value !== null ? PolicySchema.parse(row.value) : undefined, ref: row ? hash(row) : undefined };
   }
   private kind(assessmentId: string, fallback: unknown) {
+    if (this.resolveKind) return this.resolveKind(assessmentId) ?? undefined;
     const rows = this.store.readAnnotations('assessment', assessmentId).filter(row => row.field === 'kind');
     const row = rows.filter(row => row.origin === 'owner').at(-1) ?? rows.filter(row => row.origin === 'agent').at(-1);
     return row ? AssessmentSchema.shape.kind.parse(row.value ?? undefined) : fallback;

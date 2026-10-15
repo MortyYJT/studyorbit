@@ -4,9 +4,10 @@ import { AssessmentSchema, AnnotationSchema, AnnotationVerdictSchema, Assessment
 import { hash, citationMismatch, validateCitation } from '../citations/exact.js';
 import type { SqliteRepository } from '../store/sqlite.js';
 import { courseEvidenceSnapshot } from '../revision/source-fetch.js';
-import { IdSchema, HashSchema, CitationInputSchema, VerifiedCitationSchema } from './contracts.js';
+import { IdSchema, HashSchema, CitationInputSchema, VerifiedCitationSchema, AnnotationFieldsSchema, CoverageSchema, CursorSchema } from './contracts.js';
 import { TrustedStoreEvidence } from './reads.js';
 import type { TrustedContext } from './context.js';
+import { ok } from './envelope.js';
 import { CourseworkError } from './errors.js';
 
 const target = { entity: z.enum(['assessment', 'course']), entityId: IdSchema };
@@ -17,16 +18,17 @@ const citedValue = <S extends z.ZodType>(value: S) => z.strictObject({ value, ci
 const receipt = z.strictObject({ id: IdSchema, citations: z.array(VerifiedCitationSchema).max(200) });
 const verdicts = z.array(AnnotationVerdictSchema.strict());
 const storedCitations = z.array(z.union([VerifiedCitationSchema, CitationInputSchema]));
-const history = AnnotationSchema.safeExtend({ citations: storedCitations }).safeExtend({ verdicts });
+// Read history can contain unavailable evidence; persisted agent rows still require citations.
+const history = z.strictObject({ ...AnnotationSchema.shape, citations: storedCitations, verdicts, coverage: CoverageSchema });
 export const annotationContracts = {
   'annotation.record': { input: z.strictObject({ ...annotation, citations, sourceRevision: HashSchema }), output: receipt, level: 0 },
   'annotation.owner.record': { input: z.strictObject({ ...annotation, citations: citations.optional(), sourceRevision: HashSchema.optional() }), output: receipt, level: 0 },
   'assessment.create': { input: z.strictObject({ courseId: IdSchema, sourceRevision: HashSchema,
     name: citedValue(z.string().trim().min(1).max(100000)), weight: citedValue(AssessmentSchema.shape.weight.unwrap()) }), output: receipt, level: 0 },
   'assessment.link': { input: z.strictObject({ assessmentId: IdSchema, sourceItemId: IdSchema, sourceRevision: HashSchema }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
-  'annotation.read': { input: z.strictObject(target), output: z.strictObject({ ...target,
-    fields: z.record(z.string(), z.strictObject({ value: z.json(), origin: z.enum(['owner', 'agent', 'sync']).nullable(),
-      annotationId: IdSchema.optional(), citations: storedCitations, verdicts })), history: z.array(history), links: z.array(AssessmentLinkSchema.strict()) }), level: 0 },
+  'annotation.read': { input: z.strictObject({ ...target, limit: z.number().int().min(0).max(500).default(100), cursor: CursorSchema.optional() }),
+    output: z.strictObject({ ...target, fields: AnnotationFieldsSchema, history: z.array(history).max(500),
+      nextCursor: CursorSchema.optional(), coverage: CoverageSchema, links: z.array(AssessmentLinkSchema.strict()) }), level: 0 },
   'annotation.confirm': { input: z.strictObject({ ...target, field, annotationId: IdSchema }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
   'annotation.replace': { input: z.strictObject({ ...annotation, annotationId: IdSchema }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
 } as const;
@@ -70,28 +72,81 @@ export class AnnotationService {
   }
   read(input: unknown) {
     const data = annotationContracts['annotation.read'].input.parse(input);
-    const { value } = this.target(data.entity, data.entityId);
+    const { value, courseId } = this.target(data.entity, data.entityId);
     const rows = this.store.readAnnotations(data.entity, data.entityId);
-    const history = rows.map(row => ({ ...row, verdicts: this.store.readAnnotationVerdicts(row.id) }));
+    const sources = new Map<string, ReturnType<TrustedStoreEvidence['getSync']> | null>();
+    const history = rows.map(row => {
+      const gaps: { code: 'MISSING_EVIDENCE'; reference: string }[] = [];
+      const citations = row.citations.flatMap(ref => {
+        try {
+          if (!sources.has(ref.sourceItemId)) {
+            const item = this.store.loadSourceItem(ref.sourceItemId);
+            sources.set(ref.sourceItemId, item && !item.removed && item.kind !== 'post' ? this.evidence.getSync(ref.sourceItemId) : null);
+          }
+          const source = sources.get(ref.sourceItemId);
+          if (!source || source.courseId !== courseId) return citationMismatch();
+          const verified = validateCitation({ sourceItemId: ref.sourceItemId, quote: ref.quote, locator: ref.locator },
+            { sourceItemId: source.sourceItemId, text: source.text, sourceHash: source.sourceHash,
+              locator: source.locator, ...(source.page !== undefined ? { page: source.page } : {}) });
+          // A verified receipt must still resolve to the same text and offsets.
+          if ('sourceHash' in ref && hash(ref) !== hash(verified)) return citationMismatch();
+          return [verified];
+        } catch (error) {
+          if (!(error instanceof CourseworkError) || !['SOURCE_UNAVAILABLE', 'CITATION_MISMATCH'].includes(error.code)) throw error;
+          gaps.push({ code: 'MISSING_EVIDENCE', reference: ref.sourceItemId });
+          return [];
+        }
+      });
+      return { ...row, citations, coverage: { complete: gaps.length === 0, gaps }, verdicts: this.store.readAnnotationVerdicts(row.id) };
+    });
     const fields = Object.fromEntries((data.entity === 'assessment' ? assessmentFields : courseFields).map(field => {
       const candidates = history.filter(row => row.field === field);
-      const effective = candidates.filter(row => row.origin === 'owner').at(-1) ?? candidates.filter(row => row.origin === 'agent').at(-1);
-      const fallback = (value as unknown as Record<string, unknown>)[field];
+      const effective = candidates.filter(row => row.origin === 'owner').at(-1) ?? candidates.filter(row => row.origin === 'agent' && row.coverage.complete).at(-1);
+      // Agent-created facts are materialized for identity, not an independent sync fallback.
+      const materializedAgentFact = 'origin' in value && value.origin === 'agent' && candidates.some(row => row.origin === 'agent');
+      const fallback = materializedAgentFact ? undefined : (value as unknown as Record<string, unknown>)[field];
       return [field, effective ? { value: effective.value, origin: effective.origin, annotationId: effective.id,
         citations: effective.citations, verdicts: effective.verdicts } : { value: fallback ?? null,
         origin: fallback === undefined ? null : 'sync', citations: [], verdicts: [] }];
     }));
-    const result = { ...data, fields, history, links: data.entity === 'assessment' ? this.store.currentAssessmentLinks(data.entityId) : [] };
-    this.safe(result);
-    return annotationContracts['annotation.read'].output.parse(result);
+    const gaps = [...new Map(history.flatMap(row => row.coverage.gaps).map(gap => [gap.reference, gap])).values()];
+    const base = { entity: data.entity, entityId: data.entityId, fields, coverage: { complete: gaps.length === 0, gaps },
+      links: data.entity === 'assessment' ? this.store.currentAssessmentLinks(data.entityId) : [] };
+    const digest = hash([data.entity, data.entityId, rows]);
+    let offset = 0;
+    if (data.cursor) {
+      const decoded = Buffer.from(data.cursor, 'base64url').toString('utf8');
+      const match = /^(\d+):([a-f0-9]{64})$/.exec(decoded);
+      if (!match || Buffer.from(decoded).toString('base64url') !== data.cursor || match[2] !== digest
+        || !Number.isSafeInteger(Number(match[1])) || Number(match[1]) >= history.length) throw invalid();
+      offset = Number(match[1]);
+    }
+    const page: typeof history = [];
+    const result = () => ({ ...base, history: page, ...(data.limit > 0 && offset + page.length < history.length
+      ? { nextCursor: Buffer.from(`${offset + page.length}:${digest}`).toString('base64url') } : {}) });
+    for (const row of history.slice(offset, offset + data.limit)) {
+      page.push(row);
+      // Leave room for the dispatcher's measured envelope metadata.
+      if (Buffer.byteLength(JSON.stringify(result())) > 60 * 1024 || !ok('annotation.read', result()).ok) {
+        page.pop();
+        if (!page.length) throw new CourseworkError('LIMIT_EXCEEDED', 'Read effective fields with limit 0.');
+        break;
+      }
+    }
+    const output = result();
+    this.safe(output);
+    return annotationContracts['annotation.read'].output.parse(output);
   }
-  /** List consumers receive effective facts; sync storage remains untouched. Detail reads carry history/evidence. */
+  /** List consumers receive effective facts and field provenance; sync storage remains untouched. */
   project(entity: 'assessment' | 'course', value: { id: string }) {
-    const detail = this.read({ entity, entityId: value.id });
-    const result: Record<string, unknown> = { ...value };
+    const detail = this.read({ entity, entityId: value.id, limit: 0 });
+    const result: Record<string, unknown> = { ...value, fields: detail.fields };
     for (const [field, effective] of Object.entries(detail.fields)) {
       if (field === 'aiPolicy') continue; // Policy text is an annotation, not an autonomy grant or Course field.
-      if (effective.value === null) delete result[field]; else result[field] = effective.value;
+      if (effective.value === null) {
+        if (field === 'name') throw new CourseworkError('SOURCE_UNAVAILABLE', 'Assessment name evidence is unavailable.');
+        delete result[field];
+      } else result[field] = effective.value;
     }
     return result;
   }
@@ -141,7 +196,7 @@ export class AnnotationService {
       }
     }
     const refs = 'citations' in write && write.citations ? this.verify(target.courseId, write.sourceRevision, write.citations) : [];
-    const judged = 'annotationId' in write ? this.read({ entity: write.entity, entityId: write.entityId }).fields[write.field] : undefined;
+    const judged = 'annotationId' in write ? this.read({ entity: write.entity, entityId: write.entityId, limit: 0 }).fields[write.field] : undefined;
     if ('annotationId' in write && (judged?.origin !== 'agent' || judged.annotationId !== write.annotationId)) throw conflict();
     const row: Annotation | undefined = 'value' in write ? { id: randomUUID(), entity: write.entity, entityId: write.entityId,
       field: write.field, value: write.value, origin: owner ? 'owner' : 'agent', citations: refs, at } : undefined;
