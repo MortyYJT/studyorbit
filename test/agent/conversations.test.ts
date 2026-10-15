@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -68,7 +68,8 @@ it('stop interrupts a blocked adapter and commits partial text and one stopped r
   const { service, store } = setup(adapter);
   const c = await service.create({ title: 'Stop' }, owner);
   const sent = await service.send(c.id, 'Hello', owner);
-  await new Promise(resolve => setTimeout(resolve, 0));
+  // Stop only after the partial text is journaled; a fixed tick races the adapter.
+  await vi.waitFor(() => expect(service.events(c.id).some(row => row.event.type === 'text')).toBe(true));
   await expect(service.send(c.id, 'Concurrent', owner)).rejects.toMatchObject({ code: 'LOCKED' });
   await service.stop(c.id, owner); await service.waitForIdle(c.id);
   expect(adapter.interrupted).toBe(1);
