@@ -1,5 +1,6 @@
 import { ConversationService } from '../agent/conversations.js';
 import { unavailableAdapter, type AgentAdapter, type AgentTool } from '../agent/adapter.js';
+import { PlanningService } from '../planning/service.js';
 import { productionSync } from '../sync/runtime.js';
 import type { SyncCommands } from './sync.js';
 import { SqliteStudyRecordStore } from '../store/study-records.js';
@@ -84,5 +85,5 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
-  return { chat, registry: createRegistry({ autonomy, sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
+  return { chat, registry: createRegistry({ autonomy, planning: new PlanningService(store), sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
 }

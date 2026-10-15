@@ -58,11 +58,11 @@ Covers: US-2 items 1–4. Spec: `agent-annotations`, `validated-agent-writes`. D
 
 Covers: US-3 items 1–7. Spec: `study-planning`. Depends on A; owner-only tests use an injected owner context until B merges.
 
-- [ ] 7.1 Failing tests for planning settings save/validation and agent refusal
-- [ ] 7.2 Failing tests for plannable work: submitted and removed items drop out; exams are deadlines only; manual tasks included
-- [ ] 7.3 Failing tests for the pure day-granular EDF planner: overdue first, undated last, splitting, stable ties, 180/120/60 overflow, unestimated, identical outputs, Melbourne day boundary
-- [ ] 7.4 Failing tests: agent estimate needs a reason; owner estimate wins; start times order a day (timed then untimed) and are dropped when the item leaves that day; time logs sum; manual task create/edit/complete/delete owner-only; all-day manual tasks take no minutes and sit on their date
-- [ ] 7.5 Expose `plan.read` (with estimates, start times, actual totals, overflow, unestimated) and the owner commands through the registry
+- [x] 7.1 Failing tests for planning settings save/validation and agent refusal
+- [x] 7.2 Failing tests for plannable work: submitted and removed items drop out; exams are deadlines only; manual tasks included
+- [x] 7.3 Failing tests for the pure day-granular EDF planner: overdue first, undated last, splitting, stable ties, 180/120/60 overflow, unestimated, identical outputs, Melbourne day boundary
+- [x] 7.4 Failing tests: agent estimate needs a reason; owner estimate wins; start times order a day (timed then untimed) and are dropped when the item leaves that day; time logs sum; manual task create/edit/complete/delete owner-only; all-day manual tasks take no minutes and sit on their date
+- [x] 7.5 Expose `plan.read` (with estimates, start times, actual totals, overflow, unestimated) and the owner commands through the registry
 
 ## 8. Issue G — Revision
 
