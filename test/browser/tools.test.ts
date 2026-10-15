@@ -206,3 +206,10 @@ it('11.2 quiz privacy removes contact details and rejects credential syntax with
     await expect(s.read(tab)).rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' });
   }
 });
+
+it('11.2 returns ordinary quiz prose that mentions students, passwords or zero-width characters', async () => {
+  const s = setup(); const tab = await s.open();
+  s.page.snapshot.text = 'A student measures the length of a rod.​ Explain why password hashing uses salts.';
+  const result = await s.read(tab);
+  expect(result.text).toBe('A student measures the length of a rod. Explain why password hashing uses salts.');
+});

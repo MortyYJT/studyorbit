@@ -96,7 +96,7 @@ export class BrowserTools {
             const redactor = createRedactor({ people: snapshot.people.map(name => ({ name })) });
             const protect = (value: string): string => {
               for (const peer of snapshot.peers) if (peer) value = value.split(peer).join('[redacted]');
-              return redactor.readText(value, { preserveMathematics: quizPage(url) });
+              return redactor.readText(value, { assessmentPage: quizPage(url) });
             };
             const targets: PageTarget[] = snapshot.targets.slice(0, 50).map(t => ({ ref: t.ref, kind: t.kind, description: protect(t.description).slice(0, 200) }));
             tab.refs = new Map(targets.map(t => [t.ref, t]));
