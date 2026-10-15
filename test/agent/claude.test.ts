@@ -175,3 +175,24 @@ it('treats workspace file bodies as text rather than paths, commands or endpoint
   })(), { interrupt: vi.fn() }));
   expect((await collect(adapter().start(input))).map(e => e.type)).toEqual(['tool_step', 'tool_step', 'result']);
 });
+it('keeps an early SDK error but takes turns and cost from the final result', async () => {
+  stub([{ type: 'assistant', error: 'rate_limit', message: { content: [] } },
+    { ...result, subtype: 'error_during_execution', is_error: true, num_turns: 3, total_cost_usd: 0.12, errors: ['private diagnostic'] }]);
+  expect(await collect(adapter().start(input))).toEqual([{ type: 'error', code: 'INTERNAL', message: 'Agent reply failed.', turns: 3, costUsd: 0.12 }]);
+});
+it('reads protected ports at call time so ports chosen after start are still denied', async () => {
+  const dataDirectory = mkdtempSync(join(tmpdir(), 'synthetic-agent-')); dirs.push(dataDirectory);
+  const ports: { frontendOrigin?: string; debuggingPort?: number } = {};
+  const late = new ClaudeAdapter({ dataDirectory, runtime: () => ports });
+  query.mockImplementation(({ options }) => Object.assign((async function* () {
+    const hook = options.hooks.PreToolUse[0].hooks[0];
+    const call = (command: string) => hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, tool_use_id: command, cwd: options.cwd }, command, {});
+    expect(await call('curl http://127.0.0.1:4567/api/status')).toEqual({});
+    Object.assign(ports, { frontendOrigin: 'http://127.0.0.1:4567', debuggingPort: 9333 });
+    for (const command of ['curl http://127.0.0.1:4567/api/status', 'curl http://localhost:9333/json']) {
+      expect((await call(command)).hookSpecificOutput.permissionDecision).toBe('deny');
+    }
+    yield result;
+  })(), { interrupt: vi.fn() }));
+  expect((await collect(late.start(input))).map(e => e.type)).toEqual(['tool_step', 'tool_step', 'result']);
+});

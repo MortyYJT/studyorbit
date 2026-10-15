@@ -99,3 +99,33 @@ it('uses the Claude SDK for production chat while preserving explicit adapter ov
   expect(overridden.chat.events(other.id).at(-1)!.event).toMatchObject({ type: 'error', code: 'AGENT_UNAVAILABLE' });
   expect(query).toHaveBeenCalledOnce();
 });
+
+it('gives production chat the agent tool set and the live UI and debugging ports', async () => {
+  const { writeFile } = await import('node:fs/promises');
+  query.mockImplementation(({ options }) => Object.assign((async function* () {
+    const hook = options.hooks.PreToolUse[0].hooks[0];
+    const call = (command: string) => hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, tool_use_id: command, cwd: options.cwd }, command, {});
+    for (const command of ['curl http://127.0.0.1:4568/api/status', 'curl http://localhost:9444/json']) {
+      expect((await call(command)).hookSpecificOutput.permissionDecision).toBe('deny');
+    }
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'synthetic', version: '1' });
+    await options.mcpServers.coursework.instance.connect(serverTransport); await client.connect(clientTransport);
+    const names = (await client.listTools()).tools.map(t => t.name);
+    expect(names).toEqual(expect.arrayContaining(['courses.list', 'source.fetch']));
+    expect(names).not.toContain('grant.record'); expect(names).not.toContain('sync.run');
+    const listed = await client.callTool({ name: 'courses.list', arguments: {} });
+    expect(JSON.parse((listed.content as { text: string }[])[0]!.text)).toMatchObject({ ok: true });
+    await client.close();
+    yield { type: 'result', subtype: 'success', is_error: false, num_turns: 1, session_id: 'synthetic-session' };
+  })(), { interrupt: vi.fn() }));
+  const host = await setup(); const owner = { assertOwner: async () => {} };
+  await writeFile(join(process.env.COURSEWORK_HOME!, 'browser.json'), JSON.stringify({ endpoint: 'http://127.0.0.1:9444', pid: process.pid, browser: 'chromium', startedAt: '2026-01-01T00:00:00.000Z' }));
+  host.agentRuntime.frontendOrigin = 'http://127.0.0.1:4568';
+  const conversation = await host.chat.create({}, owner);
+  const { messageId } = await host.chat.send(conversation.id, 'Synthetic prompt', owner);
+  await host.chat.waitForIdle(conversation.id);
+  expect(host.store.loadRun(messageId)).toMatchObject({ outcome: 'ok', steps: 2 });
+});

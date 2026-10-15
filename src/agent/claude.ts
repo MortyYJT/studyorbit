@@ -7,7 +7,9 @@ import { isOwnerCommand } from '../protocol/registry.js';
 import type { AgentAdapter, AgentEvent, AgentInput, AgentRun } from './adapter.js';
 import { deniedToolReason } from './policy.js';
 
-export interface ClaudeOptions { dataDirectory: string; frontendOrigin?: string; debuggingPort?: number }
+export interface ProtectedPorts { frontendOrigin?: string; debuggingPort?: number }
+/** `runtime` is read on every tool call: the UI and debugging ports are chosen after the adapter is built. */
+export interface ClaudeOptions extends ProtectedPorts { dataDirectory: string; runtime?: () => ProtectedPorts }
 const unavailable = (): Extract<AgentEvent, { type: 'error' }> => ({ type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Sign in to the installed agent and retry.' });
 const authFailure = (message: string): boolean => /not signed in|not logged in|authentication|login required|please (?:run )?\/login/i.test(message);
 const failed = (): Extract<AgentEvent, { type: 'error' }> => ({ type: 'error', code: 'INTERNAL', message: 'Agent reply failed.' });
@@ -57,17 +59,25 @@ export class ClaudeAdapter implements AgentAdapter {
             canUseTool: async () => ({ behavior: 'allow' }),
             hooks: { PreToolUse: [{ hooks: [async hook => {
               if (hook.hook_event_name !== 'PreToolUse') return {};
-              const reason = deniedToolReason(hook.tool_input, hook.cwd, { ...config, workspace });
+              let ports: ProtectedPorts = {};
+              try { ports = config.runtime?.() ?? {}; } catch { /* Unknown ports leave the static checks in force. */ }
+              const reason = deniedToolReason(hook.tool_input, hook.cwd, { ...config, ...ports, workspace });
               if (!reason) return {};
               denied.add(hook.tool_use_id);
               emit({ type: 'tool_step', tool: hook.tool_name, outcome: 'denied', output: reason });
               return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } };
             }] }] },
           } });
+        // An early SDK error still waits for the final result, which carries the reported turns and cost.
+        let failure: Extract<AgentEvent, { type: 'error' }> | undefined;
         for await (const message of session) {
-          const event = map(message); if (event) { emit(event); if (event.type === 'result' || event.type === 'error') return; }
+          const event = map(message); if (!event) continue;
+          if (event.type === 'error' && message.type !== 'result') { failure ??= event; continue; }
+          if (event.type !== 'result' && event.type !== 'error') { emit(event); continue; }
+          emit(failure ? { ...failure, turns: event.turns, ...(event.costUsd === undefined ? {} : { costUsd: event.costUsd }) } : event);
+          return;
         }
-        emit(failed());
+        emit(failure ?? failed());
       } catch (error) {
         emit(error instanceof Error && ('code' in error && error.code === 'ENOENT' || authFailure(error.message)) ? unavailable() : failed());
       } finally { finished = true; wake(); await server.instance.close().catch(() => {}); }
