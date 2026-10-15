@@ -19,7 +19,7 @@ Every view SHALL load data only through the registry's commands over HTTP and SH
 - **THEN** the week view says no data has been synced yet and offers the sync button, with no sample courses
 
 ### Requirement: Top bar and avatar menu
-The top bar SHALL have two entries, "This week" and "Agent", the sync button with its running state, and an avatar menu with: sync and sign-in status (per-site sign-in state, last sync per provider, a button that brings the resident browser's sign-in page to the front), metrics, audit records, and settings (available hours per weekday, time zone, theme, language) (#142). The interface SHALL support Chinese and English and light, dark and system themes; only "needs you" items use the alert colour (#140).
+The top bar SHALL have two entries, "This week" and "Agent", the sync button with its running state, and an avatar menu with: sync and sign-in status (per-site sign-in state, last sync per provider, a button that brings the resident browser's sign-in page to the front by calling `POST /api/browser.signin` with `{ site: canvas | ed }` and the frontend's owner session in `X-Coursework-Session`), metrics, audit records, and settings (available hours per weekday, time zone, theme, language) (#142, #160). The button SHALL use the owner command defined in `command-registry`; K1 owns the frontend wiring. The interface SHALL support Chinese and English and light, dark and system themes; only "needs you" items use the alert colour (#140).
 
 #### Scenario: Sign-in expired
 - **WHEN** `browser.status` reports Ed signed out

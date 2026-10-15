@@ -10,6 +10,7 @@ import { syncContracts, type SyncCommands } from './sync.js';
 import { autonomyContracts, type AssessmentAutonomy } from './autonomy.js';
 import { safeBrowserChoiceMessage } from '../capture/browser.js';
 import { browserStatus, type BrowserStatus } from '../browser/status.js';
+import { bringSignInToFront, type SignInSite, type SignInResult } from '../browser/signin.js';
 import { ownerResidentBrowser } from '../browser/runtime.js';
 import type { BrowserState } from '../browser/resident.js';
 import { randomUUID } from 'node:crypto';
@@ -154,6 +155,7 @@ const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN)
 /** Bind the settled contract surface to injected ports; no production service is selected here. */
 export interface BrowserServices {
   status(): Promise<BrowserStatus>; start(): Promise<BrowserState>; stop(): Promise<void>;
+  signin(site: SignInSite): Promise<SignInResult>;
 }
 export function createRegistry(options: { browser?: Partial<BrowserServices>; autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; annotations?: AnnotationService; browserTools?: BrowserTools; browserScope?: () => ToolScope; metrics?: MetricsService } = {}): Registry {
   const registry = new Registry();
@@ -193,6 +195,8 @@ export function createRegistry(options: { browser?: Partial<BrowserServices>; au
   }
   registry.register({ name: 'browser.status', ...browserContracts['browser.status'], handler: async () =>
     options.browser?.status ? options.browser.status() : browserStatus() });
+  registry.register({ name: 'browser.signin', ...browserContracts['browser.signin'], handler: async ({ site }) =>
+    options.browser?.signin ? options.browser.signin(site) : bringSignInToFront(site) });
   registry.register({ name: 'browser.start', ...browserContracts['browser.start'], handler: async () => {
     const state = await (options.browser?.start ? options.browser.start() : ownerResidentBrowser().start());
     return { running: true as const, browser: state.browser, startedAt: state.startedAt };
