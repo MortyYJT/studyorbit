@@ -3,6 +3,7 @@ import { ResidentToolBrowser } from '../browser/tools/playwright.js';
 import type { BrowserToolOptions } from '../browser/tools/ports.js';
 import { BrowserConfirmationStore } from './browser-confirmations.js';
 import { browserAgentTools } from './browser-tools.js';
+import { MetricsService } from '../metrics/service.js';
 import { AnnotationService } from './annotations.js';
 import { ConversationService } from '../agent/conversations.js';
 import { type AgentAdapter, type AgentTool } from '../agent/adapter.js';
@@ -101,7 +102,7 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const confirmations = options.browserTools?.confirmations ?? new BrowserConfirmationStore(store);
   const browserTools = new BrowserTools({ store, audit, autonomy, browser: options.browserTools?.browser ?? new ResidentToolBrowser(), confirmations, clock: options.browserTools?.clock, recoverOnStart: false });
   let externalScope: ReturnType<ConversationService['toolScope']> | undefined;
-  const registry = createRegistry({ autonomy, annotations, planning: new PlanningService(store, annotations), sync: options.sync ?? productionSync(store), browserTools, browserScope: () => {
+  const registry = createRegistry({ autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync: options.sync ?? productionSync(store), browserTools, browserScope: () => {
     if (!externalScope?.isActive()) externalScope = chat.toolScope();
     return externalScope;
   } });
