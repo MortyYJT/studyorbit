@@ -148,6 +148,45 @@ export class SqliteRepository implements Repository, CurrentStateReader {
   readConversations(): Conversation[] { return this.history('conversations', ConversationSchema, {  }); }
   appendMessage(value: Message): void { this.append('messages', MessageSchema, value, ['id', 'conversationId', 'seq']); }
   readMessages(conversationId: string): Message[] { return this.history('messages', MessageSchema, { conversationId }); }
+  /** Chat journals live with their message JSON; no schema or historical rows are changed. */
+  saveChat(conversation: Conversation, message?: Message, events?: readonly import('../agent/adapter.js').StoredEvent[], run?: Run): void {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.write('conversations', ConversationSchema, conversation, ['courseId', 'updatedAt']);
+      if (message) {
+        const value = MessageSchema.parse(message);
+        this.db.prepare(`INSERT INTO messages (id, conversationId, messageSeq, json) VALUES (?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET json = excluded.json`)
+          .run(value.id, value.conversationId, value.seq, JSON.stringify({ ...value, events: events ?? [] }));
+      }
+      if (run) this.write('runs', { parse: value => ({ ...RunSchema.parse(value),
+        courseId: conversation.courseId, assessmentId: conversation.assessmentId }) }, run,
+        ['command', 'startedAt', 'conversationId', 'turns']);
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  readChatEvents(conversationId: string): import('../agent/adapter.js').StoredEvent[] {
+    return this.db.prepare('SELECT json FROM messages WHERE conversationId = ? ORDER BY messageSeq').all(conversationId)
+      .flatMap(row => (JSON.parse(row.json as string) as { events?: import('../agent/adapter.js').StoredEvent[] }).events ?? []);
+  }
+  /** Context is retained even after the owner deletes the conversation's prose. */
+  readAgentRuns(): (Run & Pick<Conversation, 'courseId' | 'assessmentId'>)[] {
+    return this.db.prepare("SELECT json FROM runs WHERE command = 'agent.reply' ORDER BY startedAt, id").all().map(row => {
+      const raw = JSON.parse(row.json as string) as Record<string, unknown>;
+      return { ...RunSchema.parse(raw),
+        ...(typeof raw.courseId === 'string' ? { courseId: raw.courseId } : {}),
+        ...(typeof raw.assessmentId === 'string' ? { assessmentId: raw.assessmentId } : {}) };
+    });
+  }
+  deleteConversation(id: string): void {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const table of ['messages', 'pending_confirmations']) this.db.prepare(`DELETE FROM ${table} WHERE conversationId = ?`).run(id);
+      this.db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
+      // Operational runs are retained for metrics; they never contain prompt or response prose.
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
   appendPendingConfirmation(value: PendingConfirmation): void { this.append('pending_confirmations', PendingConfirmationSchema, value, ['id', 'conversationId', 'assessmentId']); }
   readPendingConfirmations(conversationId: string): PendingConfirmation[] { return this.history('pending_confirmations', PendingConfirmationSchema, { conversationId }); }
   appendPracticeAttempt(value: PracticeAttempt): void { this.append('practice_attempts', PracticeAttemptSchema, value, ['questionId', 'revision']); }

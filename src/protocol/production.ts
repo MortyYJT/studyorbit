@@ -1,3 +1,5 @@
+import { ConversationService } from '../agent/conversations.js';
+import { unavailableAdapter, type AgentAdapter, type AgentTool } from '../agent/adapter.js';
 import { PlanningService } from '../planning/service.js';
 import { productionSync } from '../sync/runtime.js';
 import type { SyncCommands } from './sync.js';
@@ -22,11 +24,13 @@ export interface ProductionOptions {
   store?: SqliteRepository; files?: ProtocolFiles; metadata?: readonly EvidenceMetadata[]; privacyScope?: unknown;
   reads?: AuxiliaryReadPorts; study?: { provider: StudyEvidenceProvider; store: StudyRecordStore };
   sync?: SyncCommands;
+  agentAdapter?: AgentAdapter; agentTools?: readonly AgentTool[];
   owner?: TrustedContext['owner']; sourceTransport?: SourceTransport;
 }
 /** Compose durable storage and validated revision services once for all transports. */
 export function createProductionProtocol(options: ProductionOptions = {}) {
   const store = options.store ?? new SqliteRepository(databasePath());
+  const chat = new ConversationService(store, options.agentAdapter ?? unavailableAdapter, options.agentTools);
   const files = options.files ?? new ProtocolFiles();
   const audit = new DurableAudit(files); const runs = new DurableRuns(files);
   const authorizationStore = new CanonicalAuthorizationStore(files, store);
@@ -81,5 +85,5 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
-  return { registry: createRegistry({ autonomy, planning: new PlanningService(store), sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
+  return { chat, registry: createRegistry({ autonomy, planning: new PlanningService(store), sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
 }
