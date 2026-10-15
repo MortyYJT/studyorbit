@@ -1,3 +1,8 @@
+import { BrowserTools } from '../browser/tools/service.js';
+import { ResidentToolBrowser } from '../browser/tools/playwright.js';
+import type { BrowserToolOptions } from '../browser/tools/ports.js';
+import { BrowserConfirmationStore } from './browser-confirmations.js';
+import { browserAgentTools } from './browser-tools.js';
 import { MetricsService } from '../metrics/service.js';
 import { AnnotationService } from './annotations.js';
 import { ConversationService } from '../agent/conversations.js';
@@ -29,6 +34,7 @@ export interface ProductionOptions {
   store?: SqliteRepository; files?: ProtocolFiles; metadata?: readonly EvidenceMetadata[]; privacyScope?: unknown;
   reads?: AuxiliaryReadPorts; study?: { provider: StudyEvidenceProvider; store: StudyRecordStore };
   sync?: SyncCommands;
+  browserTools?: Partial<Pick<BrowserToolOptions, 'browser' | 'confirmations' | 'clock'>>;
   agentAdapter?: AgentAdapter; agentTools?: readonly AgentTool[];
   owner?: TrustedContext['owner']; sourceTransport?: SourceTransport;
 }
@@ -87,16 +93,23 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       'breakdown.write': study, 'revision.write': study, 'practice.write': study, 'source.fetch': revision, 'practice.attempt.record': revision }),
     evidence: new ComposedEvidence({ 'breakdown.write': studyEvidence, 'revision.write': studyEvidence, 'practice.write': studyEvidence }),
     // Autonomy outputs are closed enums validated by their schemas; free-text filtering would only corrupt reason codes.
-    privacy: { protect: async (command, value) => command.startsWith('autonomy.') ? value : evidence.protect(value) },
+    privacy: { protect: async (command, value) => command.startsWith('autonomy.') || command.startsWith('browser.') || command.startsWith('confirmation.') ? value : evidence.protect(value) },
     owner: options.owner ?? { assertOwner: async name => {
       if (sessionOnlyCommand(name)) throw new CourseworkError('INVALID_INPUT', 'Open coursework ui to perform this owner action.');
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
-  const registry = createRegistry({ autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync: options.sync ?? productionSync(store) });
+  const confirmations = options.browserTools?.confirmations ?? new BrowserConfirmationStore(store);
+  const browserTools = new BrowserTools({ store, audit, autonomy, browser: options.browserTools?.browser ?? new ResidentToolBrowser(), confirmations, clock: options.browserTools?.clock, recoverOnStart: false });
+  let externalScope: ReturnType<ConversationService['toolScope']> | undefined;
+  const registry = createRegistry({ autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync: options.sync ?? productionSync(store), browserTools, browserScope: () => {
+    if (!externalScope?.isActive()) externalScope = chat.toolScope();
+    return externalScope;
+  } });
   // The chat agent gets the same owner-free tool set as MCP; every call still goes through dispatch().
+  // Browser tools are swapped for their conversation-scoped form so steps and confirmations land in the chat.
   const agent = registry.agentTools(context);
-  const agentTools = options.agentTools ?? agent.registry.list().map(entry => ({ name: entry.name, description: describe(entry),
+  const agentTools = options.agentTools ?? agent.registry.list().filter(entry => !entry.name.startsWith('browser.')).map(entry => ({ name: entry.name, description: describe(entry),
     inputSchema: inputSchema(entry), execute: (input: unknown) => dispatch(agent.registry, entry.name, input, agent.context) }));
   // The UI host records its origin here once it listens; the debugging port is read from the resident browser per call.
   const agentRuntime: Pick<ProtectedPorts, 'frontendOrigin'> = {};
@@ -107,6 +120,11 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
     try { const endpoint = resident.current()?.endpoint; if (endpoint) debuggingPort = Number(new URL(endpoint).port); } catch { /* Port unknown. */ }
     return { ...agentRuntime, ...(debuggingPort ? { debuggingPort } : {}) };
   } });
-  const chat = new ConversationService(store, adapter, agentTools);
-  return { chat, agentRuntime, registry, context, audit, store, close: () => { if (!options.store) store.close(); } };
+  const chat = new ConversationService(store, adapter, [...agentTools, ...browserAgentTools(browserTools)]);
+  let closing: Promise<void> | undefined;
+  return { chat, agentRuntime, browserTools, registry, context, audit, store, close: () => closing ??= (async () => {
+    await browserTools.close();
+    await Promise.all(chat.list().map(c => chat.waitForIdle(c.id)));
+    if (!options.store) store.close();
+  })() };
 }

@@ -7,7 +7,7 @@ import { dataDir } from '../config/data-dir.js';
 import { startHttpTransport } from './http.js';
 import type { createProductionProtocol } from './production.js';
 /** Host bootstrap details are stderr-only; the secret itself is never printed. */
-export async function serveProductionHttp(host: Pick<ReturnType<typeof createProductionProtocol>, 'registry' | 'context'> & Partial<Pick<ReturnType<typeof createProductionProtocol>, 'chat' | 'agentRuntime'>>): Promise<void> {
+export async function serveProductionHttp(host: Pick<ReturnType<typeof createProductionProtocol>, 'registry' | 'context'> & Partial<Pick<ReturnType<typeof createProductionProtocol>, 'chat' | 'browserTools' | 'agentRuntime'>>): Promise<void> {
   const transport = await startHttpTransport({ registry: host.registry, context: host.context, chat: host.chat, capabilityDirectory: dataDir() });
   if (host.agentRuntime) host.agentRuntime.frontendOrigin = transport.origin;
   process.stderr.write(`coursework http: ${transport.origin}\nCapability file: ${transport.capabilityFile}\n`);
@@ -49,11 +49,12 @@ async function systemBrowser(url: string): Promise<void> {
     execFile(command, [...args, url], { windowsHide: true, env }, error => error ? reject(new Error('Browser opener failed.')) : resolve());
   });
 }
-export async function startOwnerUI(host: Pick<ReturnType<typeof createProductionProtocol>, 'registry' | 'context'> & Partial<Pick<ReturnType<typeof createProductionProtocol>, 'chat' | 'agentRuntime'>>, options: OwnerUIOptions = {}) {
+export async function startOwnerUI(host: Pick<ReturnType<typeof createProductionProtocol>, 'registry' | 'context'> & Partial<Pick<ReturnType<typeof createProductionProtocol>, 'chat' | 'browserTools' | 'agentRuntime'>>, options: OwnerUIOptions = {}) {
   const staticDirectory = options.staticDirectory ?? fileURLToPath(new URL('../../dist/ui', import.meta.url));
   if (!await readStaticUI(staticDirectory, '/')) throw new CourseworkError('SOURCE_UNAVAILABLE', 'Frontend build unavailable. Build dist/ui before running coursework ui.');
   // The owner UI host alone runs chat replies, so it alone recovers replies interrupted by its previous process.
   host.chat?.recoverInterrupted();
+  host.browserTools?.recoverInterrupted();
   const ownerSession = createOwnerSession();
   const transport = await startHttpTransport({ registry: host.registry, context: host.context, chat: host.chat, ownerSession, staticDirectory,
     capabilityDirectory: options.capabilityDirectory ?? dataDir() });
@@ -69,7 +70,7 @@ export async function startOwnerUI(host: Pick<ReturnType<typeof createProduction
   catch { await transport.close(); throw new CourseworkError('INTERNAL', 'UI bootstrap failed. Run coursework ui from a terminal.'); }
   return transport;
 }
-export async function serveProductionUI(host: Pick<ReturnType<typeof createProductionProtocol>, 'registry' | 'context'> & Partial<Pick<ReturnType<typeof createProductionProtocol>, 'chat' | 'agentRuntime'>>): Promise<void> {
+export async function serveProductionUI(host: Pick<ReturnType<typeof createProductionProtocol>, 'registry' | 'context'> & Partial<Pick<ReturnType<typeof createProductionProtocol>, 'chat' | 'browserTools' | 'agentRuntime'>>): Promise<void> {
   const transport = await startOwnerUI(host);
   try {
     await new Promise<void>(resolve => {

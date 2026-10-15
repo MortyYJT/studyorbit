@@ -96,11 +96,11 @@ Covers: US-5 items 3 and 6. Spec: `agent-chat`. Depends on H. New dependency app
 
 Covers: US-5 item 4; US-7 items 3–4. Spec: `agent-browser-tools`. Depends on C, H.
 
-- [ ] 11.1 Failing tests on synthetic pages with a fake resident browser: `browser.open` origin allow-list (frontend, localhost, login and off-origin refused), tool-owned tabs only, sign-in page → `AUTH_EXPIRED`
-- [ ] 11.2 Failing tests for `browser.read`: quiz and workshop pages (Ed attempt lessons) unredacted except peer answers, discussion refused, other pages redacted, bounded, no hidden values
-- [ ] 11.3 Failing tests for writes: course/platform mismatch refused before highlight; denied check types nothing and audits a denial; allowed write highlights ≥1 s, acts once, screenshots, audits; audit failure after action reports uncertain state without repeating
-- [ ] 11.4 Failing tests for `browser.submit`: pending confirmation created with summary and screenshot; owner confirm releases one click (`owner-ui`); cancel, timeout and restart leave it unsubmitted; confirmation via MCP or without session refused; single use; confirmation off → `not-required`
-- [ ] 11.5 Every tool call emits a conversation step with outcome, screenshot reference and "view in Edge"
+- [x] 11.1 Failing tests on synthetic pages with a fake resident browser: `browser.open` origin allow-list (frontend, localhost, login and off-origin refused), tool-owned tabs only, sign-in page → `AUTH_EXPIRED`
+- [x] 11.2 Failing tests for `browser.read`: quiz and workshop pages (Ed attempt lessons) unredacted except peer answers, discussion refused, other pages redacted, bounded, no hidden values
+- [x] 11.3 Failing tests for writes: course/platform mismatch refused before highlight; denied check types nothing and audits a denial; allowed write highlights ≥1 s, acts once, screenshots, audits; audit failure after action reports uncertain state without repeating
+- [x] 11.4 Failing tests for `browser.submit`: pending confirmation created with summary and screenshot; owner confirm releases one click (`owner-ui`); cancel, timeout and restart leave it unsubmitted; confirmation via MCP or without session refused; single use; confirmation off → `not-required`
+- [x] 11.5 Every tool call emits a conversation step with outcome, screenshot reference and "view in Edge"
 
 ## 12. Issue K1 — Frontend shell, status and settings
 

@@ -4,7 +4,7 @@ import type { Message } from '../domain/schemas.js';
 /** SDK-independent events. Tool metadata stays inside the existing message output part. */
 export const AgentEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),
-  z.object({ type: z.literal('tool_step'), tool: z.string().min(1), outcome: z.enum(['ok', 'error', 'denied']),
+  z.object({ type: z.literal('tool_step'), tool: z.string().min(1), outcome: z.enum(['ok', 'error', 'denied', 'waiting']),
     input: z.json().optional(), output: z.json().optional(), screenshotRef: z.string().optional(), viewUrl: z.string().optional() }),
   z.object({ type: z.literal('confirmation'), confirmationId: z.string().min(1), decision: z.enum(['pending', 'confirmed', 'cancelled', 'expired']).optional() }),
   z.object({ type: z.literal('result'), turns: z.number().int().nonnegative(), costUsd: z.number().nonnegative().optional(), sessionRef: z.string().min(1).optional() }),
@@ -14,7 +14,8 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
 export type AgentEvent = z.infer<typeof AgentEventSchema>;
 export type StreamEvent = AgentEvent | { type: 'stopped' };
 export interface StoredEvent { id: string; messageId: string; event: StreamEvent }
-export interface AgentTool { name: string; description: string; inputSchema: unknown; execute(input: unknown): Promise<unknown> }
+/** recordsSteps delegates journaling to the tool service, including waiting and safe error steps. */
+export interface AgentTool { recordsSteps?: boolean; name: string; description: string; inputSchema: unknown; execute(input: unknown, scope?: { conversationId: string; emit(event: AgentEvent): void; isActive(): boolean }): Promise<unknown> }
 export interface AgentInput {
   prompt: string; sessionRef?: string; transcript: readonly Message[]; tools: readonly AgentTool[];
   courseId?: string; assessmentId?: string; preset?: string;

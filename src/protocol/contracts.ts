@@ -71,8 +71,9 @@ export const AuditRecordSchema = z.strictObject({ id: z.uuid(), runId: z.uuid(),
   level: LevelSchema.optional(), decision: z.enum(['allowed', 'denied']).optional(),
   reason: z.enum(['allowed', 'assessment-unavailable', 'policy-missing', 'course-prohibited', 'exam', 'kind-unknown',
     'grant-missing', 'grant-mismatch', 'grant-revoked', 'grant-level', 'course-cap', 'authorization-unavailable', 'audit-unavailable']).optional(),
-  action: z.enum(['fill', 'submit', 'other']).optional(), outcome: z.enum(['success', 'failure', 'uncertain', 'violation']).optional(),
-  confirmation: z.enum(['owner-chat', 'owner-ui', 'owner-terminal']).optional() });
+  conversationId: IdSchema.optional(), submissionState: z.enum(['cancelled', 'expired']).optional(),
+  action: z.enum(['click', 'fill', 'select', 'submit', 'other']).optional(), outcome: z.enum(['success', 'failure', 'uncertain', 'violation']).optional(),
+  confirmation: z.enum(['owner-chat', 'owner-ui', 'owner-terminal', 'not-required']).optional() });
 export type AuditRecord = z.infer<typeof AuditRecordSchema>;
 export const PolicyReceiptSchema = z.discriminatedUnion('status', [
   z.strictObject({ recorded: z.literal('policy'), policyRef: HashSchema, courseId: IdSchema,
