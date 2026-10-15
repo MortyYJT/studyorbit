@@ -77,11 +77,11 @@ Covers: US-6 items 1–3 (backend). Spec: `revision`. Depends on A.
 
 Covers: US-5 items 1–2 (backend). Spec: `agent-chat`. Depends on A, B.
 
-- [ ] 9.1 Define `AgentAdapter` and `AgentEvent`; a synthetic adapter for tests
-- [ ] 9.2 Failing tests: conversation service stores owner and agent messages with ordered parts, survives restart, lists newest first, owner-only delete
-- [ ] 9.3 Failing tests: SSE stream through the owner session; resume from `Last-Event-ID` without duplicates; events stored with no listener; stop interrupts and marks the message stopped
-- [ ] 9.4 Failing tests: preset registry renders each preset with stored ids and titles only; creating from a preset sends once (reload does not resend); no exam presets
-- [ ] 9.5 Failing tests: each reply records turns, tool steps and reported cost; unreported cost stored as unknown
+- [x] 9.1 Define `AgentAdapter` and `AgentEvent`; a synthetic adapter for tests
+- [x] 9.2 Failing tests: conversation service stores owner and agent messages with ordered parts, survives restart, lists newest first, owner-only delete
+- [x] 9.3 Failing tests: SSE stream through the owner session; resume from `Last-Event-ID` without duplicates; events stored with no listener; stop interrupts and marks the message stopped
+- [x] 9.4 Failing tests: preset registry renders each preset with stored ids and titles only; creating from a preset sends once (reload does not resend); no exam presets
+- [x] 9.5 Failing tests: each reply records turns, tool steps and reported cost; unreported cost stored as unknown
 
 ## 10. Issue I — Claude Agent SDK adapter and tool policy
 
