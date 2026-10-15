@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AssessmentSchema } from '../domain/schemas.js';
+import { AssessmentSchema, type Task } from '../domain/schemas.js';
 import type { SqliteRepository } from '../store/sqlite.js';
 import type { Collection, QueryInput, QueryItem } from '../store/queries.js';
 export interface WorkItem {
@@ -16,6 +16,14 @@ function all<K extends Collection>(store: SqliteRepository, collection: K): Quer
   const items: QueryItem<K>[] = []; let cursor: string | undefined;
   do { const page = store.query(collection, { limit: 500, cursor } as QueryInput<K>); items.push(...page.items); cursor = page.nextCursor; } while (cursor);
   return items;
+}
+/** Accepted breakdowns supersede legacy task copies with the same identity. */
+export function planningTasks(store: SqliteRepository): Map<string, Task> {
+  const tasks = new Map(all(store, 'tasks').map(task => [task.id, task]));
+  for (const record of store.listStudyRecords('breakdown.write')) {
+    if ('task' in record) tasks.set(record.task.id, record.task);
+  }
+  return tasks;
 }
 export function effectiveWork(store: SqliteRepository, item: WorkItem): WorkItem {
   const estimates = store.readEstimates(item.workId);
@@ -45,7 +53,7 @@ export function collectWork(store: SqliteRepository, term: string, timeZone: str
     if (kind === 'exam') { deadlines.push({ workId: base.workId, title, courseId: base.courseId, due, kind: 'exam', ...(due ? { date: localDate(due, timeZone) } : {}) }); continue; }
     active.set(assessment.id, base); items.push(base);
   }
-  for (const task of all(store, 'tasks')) {
+  for (const task of planningTasks(store).values()) {
     if (task.done || task.courseId && !courses.has(task.courseId) || task.assessmentId && !active.has(task.assessmentId)) continue;
     const due = task.due ?? (task.assessmentId ? active.get(task.assessmentId)?.due : undefined);
     const base = { workId: task.id, title: task.title, courseId: task.courseId, due, actualMinutes: 0 };
@@ -57,8 +65,7 @@ export function collectWork(store: SqliteRepository, term: string, timeZone: str
         items.push({ ...base, ...(minutes > 0 ? { estimateMinutes: minutes, estimateOrigin: 'owner' as const } : {}) });
       }
     } else task.steps.forEach((step, index) => {
-      if (!step.done) items.push({ ...base, workId: `${task.id}:step:${index}`, title: step.title,
-        ...(step.estimateMinutes > 0 ? { estimateMinutes: step.estimateMinutes, estimateOrigin: 'agent' as const } : {}) });
+      if (!step.done) items.push({ ...base, workId: `${task.id}:step:${index}`, title: step.title });
     });
   }
   return { items: items.map(item => effectiveWork(store, item)).sort((a, b) => a.workId < b.workId ? -1 : a.workId > b.workId ? 1 : 0), deadlines };

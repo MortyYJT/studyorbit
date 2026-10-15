@@ -6,6 +6,10 @@ import { parseProtocolCLI } from '../../src/protocol/cli.js';
 import { PlanningService } from '../../src/planning/service.js';
 import { SqliteRepository } from '../../src/store/sqlite.js';
 import { synthetic } from '../fixtures/synthetic.js';
+import { TrustedStoreEvidence } from '../../src/protocol/reads.js';
+import { StoreStudyEvidence } from '../../src/revision/service.js';
+import { SqliteStudyRecordStore } from '../../src/store/study-records.js';
+import { StudyWriteService } from '../../src/protocol/study-writes.js';
 const stores: SqliteRepository[] = []; afterEach(() => stores.splice(0).forEach(store => store.close()));
 const scope = { term: '2026-S1', startDate: '2026-10-19', horizonDays: 2 };
 const settings = { weekdayMinutes: [60, 60, 60, 60, 60, 0, 0], teachingWeekAnchor: scope.startDate, breakWeeks: [] };
@@ -24,8 +28,9 @@ it('plan.read exposes effective estimates, agent reasons, starts, actuals, overf
   expect(await call('plan.start.set', { ...scope, workId: 'd', date: scope.startDate, time: '09:00' })).toMatchObject({ ok: true });
   expect(await call('manual.create', { moduleId: synthetic.module.id, title: 'Unestimated' })).toMatchObject({ ok: true });
   expect(await call('plan.read', scope)).toMatchObject({ ok: true, data: {
-    days: [{ items: [{ workId: 'd', minutes: 60, estimateMinutes: 180, estimateOrigin: 'owner', actualMinutes: 50, startTime: '09:00', agentEstimate: { minutes: 240, reason: 'Read and draft' } }] }, { items: [{ workId: 'd', minutes: 60 }] }],
-    overflow: [{ workId: 'd', minutes: 60 }], unestimated: [{ title: 'Unestimated' }],
+    days: [{ items: [{ workId: 'd', minutes: 60, startTime: '09:00' }] }, { items: [{ workId: 'd', minutes: 60 }] }],
+    work: expect.arrayContaining([expect.objectContaining({ workId: 'd', estimateMinutes: 180, estimateOrigin: 'owner', actualMinutes: 50, agentEstimate: { minutes: 240, reason: 'Read and draft' } }), expect.objectContaining({ title: 'Unestimated' })]),
+    overflow: [{ workId: 'd', minutes: 60 }], unestimated: [{ workId: expect.any(String) }],
   } });
 });
 it('agent discovery includes only plan reads and agent estimates; settings refuse agents without mutation', async () => {
@@ -64,4 +69,54 @@ it('manual tasks are frontend owner actions and refuse TTY creation', async () =
   await parseProtocolCLI(['manual', 'create', '--module-id', synthetic.module.id, '--title', 'Career fair'], { registry, context, isTTY: true, stdout: s => responses.push(s), stderr: () => {} });
   expect(JSON.parse(responses[0]!)).toMatchObject({ ok: false });
   expect(store.query('tasks', { limit: 10 }).items).toEqual([]);
+});
+it('pages all legal long-title work within the envelope bound without changing global allocations', async () => {
+  const { call, service, store, context } = setup();
+  await call('planning.settings.set', settings);
+  store.saveSourceItem({ ...synthetic.sourceItem, url: undefined });
+  const evidence = new TrustedStoreEvidence(store);
+  const provider = new StoreStudyEvidence(store, evidence);
+  const writer = new StudyWriteService({ provider, store: new SqliteStudyRecordStore(store, evidence) });
+  const sourceRevision = (await provider.resolve({ courseId: synthetic.course.id, assessmentId: 'd' })).sourceRevision;
+  await writer.write('breakdown.write', { assessmentId: 'd', sourceRevision, task: { ...synthetic.task, steps: [{
+    ...synthetic.task.steps[0]!, title: '大'.repeat(20000), citations: [{ ...synthetic.task.steps[0]!.citations[0]!, locator: synthetic.sourceItem.id }],
+  }] } }, context);
+  expect(await call('estimate.agent.set', { workId: 'task-1:step:0', minutes: 120, reason: '理'.repeat(2048) })).toMatchObject({ ok: true });
+  const ids: string[] = [];
+  for (let i = 0; i < 80; i++) {
+    const result = await call('manual.create', { moduleId: synthetic.module.id, title: '任'.repeat(1024), ...(i < 40 ? {} : { estimateMinutes: 120 }) });
+    expect(result.ok).toBe(true);
+    ids.push((result as { data: { id: string } }).data.id);
+  }
+  const input = { ...scope, horizonDays: 1 };
+  const expected = service.plan(input);
+  const works: unknown[] = [], unestimated: unknown[] = [], overflow: unknown[] = [], days: unknown[] = [];
+  const continuations: { workId: string; field: 'title' | 'agentEstimate.reason'; offset: number; text: string }[] = [];
+  let cursor: string | undefined;
+  const seen = new Set<string>();
+  do {
+    const response = await call('plan.read', { ...input, ...(cursor ? { cursor } : {}) });
+    expect(response.ok).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThanOrEqual(64 * 1024);
+    const data = (response as { data: { work: unknown[]; unestimated: unknown[]; overflow: unknown[]; days: unknown[]; nextCursor?: string; textContinuations?: typeof continuations } }).data;
+    works.push(...data.work); unestimated.push(...data.unestimated); overflow.push(...data.overflow); days.push(...data.days);
+    continuations.push(...data.textContinuations ?? []);
+    cursor = data.nextCursor;
+    if (cursor) { expect(seen.has(cursor)).toBe(false); seen.add(cursor); }
+  } while (cursor);
+  for (const part of continuations) {
+    const work = (works as { workId: string; title: string; agentEstimate?: { reason: string } }[]).find(item => item.workId === part.workId)!;
+    const prefix = part.field === 'title' ? work.title : work.agentEstimate!.reason;
+    expect(prefix.length).toBe(part.offset);
+    if (part.field === 'title') work.title += part.text;
+    else work.agentEstimate!.reason += part.text;
+  }
+  expect(continuations.length).toBeGreaterThan(0);
+  expect(seen.size).toBeGreaterThan(0);
+  expect(works).toEqual(expected.work);
+  expect(new Set((works as { workId: string }[]).map(item => item.workId))).toEqual(new Set(['d', 'task-1:step:0', ...ids]));
+  expect(unestimated).toEqual(expected.unestimated.map(({ workId }) => ({ workId })));
+  expect(overflow).toEqual(expected.overflow.map(({ workId, minutes }) => ({ workId, minutes })));
+  expect(days).toEqual(expected.days.map(day => ({ ...day, items: day.items.map(({ workId, minutes, startTime }) => ({ workId, minutes, ...(startTime ? { startTime } : {}) })) })));
+  expect(await call('plan.read', { ...input, startDate: '2026-10-20', cursor: [...seen][0] })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
 });

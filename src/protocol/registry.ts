@@ -206,7 +206,7 @@ export function createRegistry(options: { browser?: Partial<BrowserServices>; au
       ...(planningOwnerCommands.has(name) ? { authority: planningSessionCommands.has(name) ? 'owner-session' as const : 'owner' as const } : {}),
       handler: async (input, context) => {
         if (!options.planning) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
-        if (name === 'plan.read') return options.planning.plan(input as never);
+        if (name === 'plan.read') return options.planning.read(input);
         if (name === 'planning.settings.read') return { settings: options.planning.settings() };
         return options.planning.execute(name, input, context.owner);
       },

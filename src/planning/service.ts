@@ -3,14 +3,20 @@ import { TaskSchema, type PlanningSettings } from '../domain/schemas.js';
 import type { SqliteRepository } from '../store/sqlite.js';
 import type { OwnerInteraction } from '../protocol/context.js';
 import { CourseworkError } from '../protocol/errors.js';
-import { collectWork } from './work.js';
+import { collectWork, planningTasks } from './work.js';
 import { planDays } from './planner.js';
-import { settingsInput, planningInputs, planScope, type PlanScope, type PlanningWrite } from './contracts.js';
+import { settingsInput, planningInputs, planScope, planReadInput, type PlanScope, type PlanningWrite } from './contracts.js';
+import { pagePlan } from './page.js';
 const invalid = () => new CourseworkError('INVALID_INPUT', 'Invalid planning input.');
 export class PlanningService {
   constructor(readonly store: SqliteRepository) {}
   work(term: string) { return collectWork(this.store, term, this.settings()?.timeZone ?? 'Australia/Melbourne'); }
   settings(): PlanningSettings | undefined { return this.store.readPlanningSettings().at(-1); }
+  read(input: unknown) {
+    const parsed = planReadInput.parse(input);
+    const { cursor: _cursor, limit: _limit, ...scope } = parsed;
+    return pagePlan(this.plan(scope), parsed);
+  }
   async saveSettings(input: unknown, owner?: OwnerInteraction): Promise<void> {
     await this.requireOwner('planning.settings.set', owner);
     const parsed = settingsInput.safeParse(input); if (!parsed.success) throw invalid();
@@ -22,7 +28,7 @@ export class PlanningService {
   private target(workId: string) {
     if (this.store.loadAssessment(workId) || this.store.loadTask(workId)?.source === 'manual') return;
     const match = /^(.*):step:(\d+)$/.exec(workId);
-    const task = match && this.store.loadTask(match[1]!);
+    const task = match && planningTasks(this.store).get(match[1]!);
     if (!task || task.source !== 'coursework' || !task.steps[Number(match![2])]) throw new CourseworkError('NOT_FOUND', 'Work not found.');
   }
   plan(input: PlanScope) {
@@ -30,6 +36,7 @@ export class PlanningService {
     if (!settings) throw new CourseworkError('SOURCE_UNAVAILABLE', 'Planning settings required.');
     const work = this.work(scope.term); const plan = planDays({ ...scope, settings, items: work.items });
     const byId = new Map(work.items.map(item => [item.workId, item]));
+    const tasks = planningTasks(this.store);
     const startTimes = this.store.listStartTimes();
     const days = plan.days.map(day => {
       const assigned = new Set(day.items.map(item => item.workId));
@@ -37,7 +44,7 @@ export class PlanningService {
       for (const row of startTimes) {
         if (row.date !== day.date || assigned.has(row.workId)) continue;
         const assessment = this.store.loadAssessment(row.workId);
-        const task = this.store.loadTask(row.workId) ?? this.store.loadTask(row.workId.replace(/:step:\d+$/, ''));
+        const task = tasks.get(row.workId) ?? tasks.get(row.workId.replace(/:step:\d+$/, ''));
         const courseId = assessment?.courseId ?? task?.courseId;
         if (!courseId || this.store.loadCourse(courseId)?.term === scope.term) this.store.clearStartTime(row.workId, day.date);
       }
