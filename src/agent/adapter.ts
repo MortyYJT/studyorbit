@@ -8,7 +8,8 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     input: z.json().optional(), output: z.json().optional(), screenshotRef: z.string().optional(), viewUrl: z.string().optional() }),
   z.object({ type: z.literal('confirmation'), confirmationId: z.string().min(1), decision: z.enum(['pending', 'confirmed', 'cancelled', 'expired']).optional() }),
   z.object({ type: z.literal('result'), turns: z.number().int().nonnegative(), costUsd: z.number().nonnegative().optional(), sessionRef: z.string().min(1).optional() }),
-  z.object({ type: z.literal('error'), code: z.enum(['AGENT_UNAVAILABLE', 'INTERNAL']), message: z.string() }),
+  z.object({ type: z.literal('error'), code: z.enum(['AGENT_UNAVAILABLE', 'INTERNAL']), message: z.string(),
+    turns: z.number().int().nonnegative().optional(), costUsd: z.number().nonnegative().optional() }),
 ]);
 export type AgentEvent = z.infer<typeof AgentEventSchema>;
 export type StreamEvent = AgentEvent | { type: 'stopped' };
@@ -21,7 +22,7 @@ export interface AgentInput {
 export interface AgentRun extends AsyncIterable<AgentEvent> { interrupt(): void | Promise<void> }
 export interface AgentAdapter { readonly id: string; start(input: AgentInput): AgentRun }
 
-/** Until the signed-in SDK adapter is wired, fail safely without a model/key fallback. */
+/** Explicit fallback for hosts without an available agent, including tests. */
 export const unavailableAdapter: AgentAdapter = {
   id: 'claude',
   start: () => ({

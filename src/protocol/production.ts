@@ -1,16 +1,19 @@
 import { AnnotationService } from './annotations.js';
 import { ConversationService } from '../agent/conversations.js';
-import { unavailableAdapter, type AgentAdapter, type AgentTool } from '../agent/adapter.js';
+import { type AgentAdapter, type AgentTool } from '../agent/adapter.js';
+import { ClaudeAdapter, type ProtectedPorts } from '../agent/claude.js';
+import { ResidentBrowser } from '../browser/resident.js';
+import { describe, inputSchema } from './mcp.js';
 import { PlanningService } from '../planning/service.js';
 import { productionSync } from '../sync/runtime.js';
 import type { SyncCommands } from './sync.js';
 import { SqliteStudyRecordStore } from '../store/study-records.js';
 import { RevisionService, StoreStudyEvidence } from '../revision/service.js';
 import type { SourceTransport } from '../revision/source-fetch.js';
-import { databasePath } from '../config/data-dir.js';
+import { databasePath, resolveDataDir } from '../config/data-dir.js';
 import { SqliteRepository } from '../store/sqlite.js';
 import { ProtocolFiles } from './files.js';
-import { createRegistry, sessionOnlyCommand } from './registry.js';
+import { createRegistry, dispatch, sessionOnlyCommand } from './registry.js';
 import { StoreProtocolReads, TrustedStoreEvidence, type AuxiliaryReadPorts, type EvidenceMetadata } from './reads.js';
 import { SharedAuthorization } from './authorization.js';
 import { CanonicalAuthorizationStore } from './canonical-authorization.js';
@@ -31,7 +34,6 @@ export interface ProductionOptions {
 /** Compose durable storage and validated revision services once for all transports. */
 export function createProductionProtocol(options: ProductionOptions = {}) {
   const store = options.store ?? new SqliteRepository(databasePath());
-  const chat = new ConversationService(store, options.agentAdapter ?? unavailableAdapter, options.agentTools);
   const files = options.files ?? new ProtocolFiles();
   const audit = new DurableAudit(files); const runs = new DurableRuns(files);
   const authorizationStore = new CanonicalAuthorizationStore(files, store);
@@ -90,5 +92,20 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
-  return { chat, registry: createRegistry({ autonomy, annotations, planning: new PlanningService(store, annotations), sync: options.sync ?? productionSync(store) }), context, audit, store, close: () => { if (!options.store) store.close(); } };
+  const registry = createRegistry({ autonomy, annotations, planning: new PlanningService(store, annotations), sync: options.sync ?? productionSync(store) });
+  // The chat agent gets the same owner-free tool set as MCP; every call still goes through dispatch().
+  const agent = registry.agentTools(context);
+  const agentTools = options.agentTools ?? agent.registry.list().map(entry => ({ name: entry.name, description: describe(entry),
+    inputSchema: inputSchema(entry), execute: (input: unknown) => dispatch(agent.registry, entry.name, input, agent.context) }));
+  // The UI host records its origin here once it listens; the debugging port is read from the resident browser per call.
+  const agentRuntime: Pick<ProtectedPorts, 'frontendOrigin'> = {};
+  const resident = new ResidentBrowser();
+  const adapter = options.agentAdapter ?? new ClaudeAdapter({ dataDirectory: resolveDataDir(), runtime: () => {
+    // An unreadable browser state must not drop the already known UI origin.
+    let debuggingPort: number | undefined;
+    try { const endpoint = resident.current()?.endpoint; if (endpoint) debuggingPort = Number(new URL(endpoint).port); } catch { /* Port unknown. */ }
+    return { ...agentRuntime, ...(debuggingPort ? { debuggingPort } : {}) };
+  } });
+  const chat = new ConversationService(store, adapter, agentTools);
+  return { chat, agentRuntime, registry, context, audit, store, close: () => { if (!options.store) store.close(); } };
 }
