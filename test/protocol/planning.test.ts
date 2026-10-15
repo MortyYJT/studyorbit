@@ -120,3 +120,20 @@ it('pages all legal long-title work within the envelope bound without changing g
   expect(days).toEqual(expected.days.map(day => ({ ...day, items: day.items.map(({ workId, minutes, startTime }) => ({ workId, minutes, ...(startTime ? { startTime } : {}) })) })));
   expect(await call('plan.read', { ...input, startDate: '2026-10-20', cursor: [...seen][0] })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
 });
+it('redacts long text before splitting it into continuations', async () => {
+  const { call, store } = setup();
+  await call('planning.settings.set', settings);
+  // A stored legacy task copy bypasses write-time privacy checks; the read must still redact whole strings.
+  store.saveBatch({ tasks: [{ ...synthetic.task, assessmentId: 'd', steps: [{ ...synthetic.task.steps[0]!, done: false, title: `${'x'.repeat(16377)} alice@example.invalid` }] }] });
+  let text = ''; let cursor: string | undefined;
+  do {
+    const response = await call('plan.read', { ...scope, ...(cursor ? { cursor } : {}) });
+    expect(response.ok).toBe(true);
+    const data = (response as { data: { work: { workId: string; title: string }[]; nextCursor?: string; textContinuations?: { workId: string; text: string }[] } }).data;
+    text += data.work.filter(item => item.workId === `${synthetic.task.id}:step:0`).map(item => item.title).join('');
+    text += (data.textContinuations ?? []).filter(part => part.workId === `${synthetic.task.id}:step:0`).map(part => part.text).join('');
+    cursor = data.nextCursor;
+  } while (cursor);
+  expect(text.length).toBeGreaterThan(16000);
+  expect(text).not.toContain('example.invalid');
+});

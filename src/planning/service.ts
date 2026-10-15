@@ -12,10 +12,15 @@ export class PlanningService {
   constructor(readonly store: SqliteRepository) {}
   work(term: string) { return collectWork(this.store, term, this.settings()?.timeZone ?? 'Australia/Melbourne'); }
   settings(): PlanningSettings | undefined { return this.store.readPlanningSettings().at(-1); }
-  read(input: unknown) {
+  /** Free text is redacted whole before paging can split it; the dispatcher still protects each page. */
+  async read(input: unknown, protect: (text: string) => Promise<string> = async text => text) {
     const parsed = planReadInput.parse(input);
     const { cursor: _cursor, limit: _limit, ...scope } = parsed;
-    return pagePlan(this.plan(scope), parsed);
+    const plan = this.plan(scope);
+    const work = await Promise.all(plan.work.map(async item => ({ ...item, title: await protect(item.title),
+      ...(item.agentEstimate?.reason !== undefined ? { agentEstimate: { ...item.agentEstimate, reason: await protect(item.agentEstimate.reason) } } : {}) })));
+    const deadlines = await Promise.all(plan.deadlines.map(async item => ({ ...item, title: await protect(item.title) })));
+    return pagePlan({ ...plan, work, deadlines }, parsed);
   }
   async saveSettings(input: unknown, owner?: OwnerInteraction): Promise<void> {
     await this.requireOwner('planning.settings.set', owner);
