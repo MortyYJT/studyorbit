@@ -58,11 +58,11 @@ Covers: US-2 items 1–4. Spec: `agent-annotations`, `validated-agent-writes`. D
 
 Covers: US-3 items 1–7. Spec: `study-planning`. Depends on A; owner-only tests use an injected owner context until B merges.
 
-- [ ] 7.1 Failing tests for planning settings save/validation and agent refusal
-- [ ] 7.2 Failing tests for plannable work: submitted and removed items drop out; exams are deadlines only; manual tasks included
-- [ ] 7.3 Failing tests for the pure day-granular EDF planner: overdue first, undated last, splitting, stable ties, 180/120/60 overflow, unestimated, identical outputs, Melbourne day boundary
-- [ ] 7.4 Failing tests: agent estimate needs a reason; owner estimate wins; start times order a day (timed then untimed) and are dropped when the item leaves that day; time logs sum; manual task create/edit/complete/delete owner-only; all-day manual tasks take no minutes and sit on their date
-- [ ] 7.5 Expose `plan.read` (with estimates, start times, actual totals, overflow, unestimated) and the owner commands through the registry
+- [x] 7.1 Failing tests for planning settings save/validation and agent refusal
+- [x] 7.2 Failing tests for plannable work: submitted and removed items drop out; exams are deadlines only; manual tasks included
+- [x] 7.3 Failing tests for the pure day-granular EDF planner: overdue first, undated last, splitting, stable ties, 180/120/60 overflow, unestimated, identical outputs, Melbourne day boundary
+- [x] 7.4 Failing tests: agent estimate needs a reason; owner estimate wins; start times order a day (timed then untimed) and are dropped when the item leaves that day; time logs sum; manual task create/edit/complete/delete owner-only; all-day manual tasks take no minutes and sit on their date
+- [x] 7.5 Expose `plan.read` (with estimates, start times, actual totals, overflow, unestimated) and the owner commands through the registry
 
 ## 8. Issue G — Revision
 
@@ -77,11 +77,11 @@ Covers: US-6 items 1–3 (backend). Spec: `revision`. Depends on A.
 
 Covers: US-5 items 1–2 (backend). Spec: `agent-chat`. Depends on A, B.
 
-- [ ] 9.1 Define `AgentAdapter` and `AgentEvent`; a synthetic adapter for tests
-- [ ] 9.2 Failing tests: conversation service stores owner and agent messages with ordered parts, survives restart, lists newest first, owner-only delete
-- [ ] 9.3 Failing tests: SSE stream through the owner session; resume from `Last-Event-ID` without duplicates; events stored with no listener; stop interrupts and marks the message stopped
-- [ ] 9.4 Failing tests: preset registry renders each preset with stored ids and titles only; creating from a preset sends once (reload does not resend); no exam presets
-- [ ] 9.5 Failing tests: each reply records turns, tool steps and reported cost; unreported cost stored as unknown
+- [x] 9.1 Define `AgentAdapter` and `AgentEvent`; a synthetic adapter for tests
+- [x] 9.2 Failing tests: conversation service stores owner and agent messages with ordered parts, survives restart, lists newest first, owner-only delete
+- [x] 9.3 Failing tests: SSE stream through the owner session; resume from `Last-Event-ID` without duplicates; events stored with no listener; stop interrupts and marks the message stopped
+- [x] 9.4 Failing tests: preset registry renders each preset with stored ids and titles only; creating from a preset sends once (reload does not resend); no exam presets
+- [x] 9.5 Failing tests: each reply records turns, tool steps and reported cost; unreported cost stored as unknown
 
 ## 10. Issue I — Claude Agent SDK adapter and tool policy
 

@@ -31,11 +31,13 @@ export interface Repository {
   loadSourceItem(id: string): SourceItem | undefined;
   saveTask(value: Task): void;
   loadTask(id: string): Task | undefined;
+  deleteManualTask(id: string): void;
   recordRun(value: Run): void;
   loadRun(id: string): Run | undefined;
   saveBatch(batch: SaveBatch): void;
   appendAssessmentLink(value: AssessmentLink): void;
   readAssessmentLinks(assessmentId: string): AssessmentLink[];
+  listAssessmentLinks(): AssessmentLink[];
   appendAnnotation(value: Annotation): void;
   readAnnotations(entity: string, entityId: string): Annotation[];
   appendAnnotationVerdict(value: AnnotationVerdict): void;
@@ -46,6 +48,8 @@ export interface Repository {
   readEstimates(workId: string): Estimate[];
   appendStartTime(value: StartTime): void;
   readStartTimes(workId: string): StartTime[];
+  listStartTimes(): StartTime[];
+  clearStartTime(workId: string, date: string): void;
   appendTimeLog(value: TimeLog): void;
   readTimeLogs(workId: string): TimeLog[];
   appendCourseAutonomy(value: CourseAutonomy): void;

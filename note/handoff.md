@@ -3,32 +3,32 @@
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#159）。
 
-- **最后更新：** 2026-10-15 07:40，无人值守调度员（#155），分支 `claude/dispatch-handoff-2026-10-15-b`。
+- **最后更新：** 2026-10-15 09:20，无人值守调度员（#155），分支 `claude/dispatch-handoff-2026-10-15-c`。
 - **模式：** 开发中。定时调度员每小时一次，按 `v1-delivery` 推进；调度细节在本机 `.local/dispatcher/HANDOFF.md`。
-- **已合并：** A（PR #115）、B（PR #116）、C（PR #118：按作业类型分 L0–L2、课程默认等级和单项覆盖、只能从前端会话改的 owner 设置、去掉 `audit.record`）、G（PR #119：SQLite 学习记录、`source.fetch`、考试范围、练习统计、复习技能；两轮审查共修 6 处）。tasks 4.1–4.4、8.1–8.4 已勾。
+- **已合并：** A（PR #115）、B（PR #116）、C（PR #118：按作业类型分 L0–L2、课程默认等级和单项覆盖、只能从前端会话改的 owner 设置、去掉 `audit.record`）、G（PR #119：SQLite 学习记录、`source.fetch`、考试范围、练习统计、复习技能；两轮审查共修 6 处）、D（PR #121：Canvas/Ed 同步、`sync.run`/`sync.status`；两轮审查共修 4 处）。tasks 4.1–4.4、5.1–5.5、8.1–8.4 已勾。
 - **注意：** Codex 两次越界改了 `note/handoff.md`（一次还写了一条用户没做过的「用户选择」）和 OpenSpec 规格，调度员都已还原；PR #119 里提到的两个规格场景留给 issue M 决定是否补进规格。
 
 ## 没合并的工作
 
 | 分支 / clone | 内容 | 下一步 |
 | --- | --- | --- |
-| PR #121 `codex/v1-sync` | D：tasks 5.1–5.5；两轮审查共修 4 处，已并入最新 main（MCP 工具数 19） | CI 通过后合并；5.6 等你真机 |
-| `codex/v1-planning`（`../unimelb-coursework-agent-planning`，未推送） | F：tasks 7.1–7.5，Codex 实现中 | 本机 check → 提交 → 审查 → PR |
+| `codex/v1-planning`（`../unimelb-coursework-agent-planning`，未推送） | F：tasks 7.1–7.5；已并入最新 main（MCP 工具数 22）；第 1 轮审查需改 3 处 | Codex 额度 12:18 恢复后派返工 → 第 2 轮审查 → PR |
+| `codex/v1-chat`、`codex/v1-annotations`（`../unimelb-coursework-agent-chat`、`-annotations`，已 npm ci） | H（#106）、E（#103）：未开始 | Codex 额度恢复后派实现 |
 
 ## 下一步（按顺序）
 
-1. 合并 PR #121（D）；收尾 F。
-2. 派 H（#106，G 已合并）、E（#103）。
+1. 收尾 F（返工 → 审查 → PR）。
+2. 派 H（#106）、E（#103）。
 3. K1（#109）可以派了（`@types/react`、`@types/react-dom` 已批，#158）。
 
 ## 等你决定
 
-- 补理由：#127、#158，以及旧的 #6、#9、#15–18、#23、#27、#29、#53、#67、#70。
+- 补理由：#127、#158、#159，以及旧的 #6、#9、#15–18、#23、#27、#29、#53、#67、#70。
 
 ## 等你动手
 
 - R-B 3.5（任务 17.2）：终端里跑 `node dist/cli.js browser start`，登录 Canvas 和 Ed，跑 `browser status`，放一夜看登录能保持多久。
-- D 合并后，任务 5.6：在真实 profile 上跑一次 `coursework sync`，把实际数量和问题记进 PR。
+- 任务 5.6（D 已合并）：在真实 profile 上跑一次 `coursework sync`，把实际数量和问题记进 PR。
 
 ## 运行与验证
 
