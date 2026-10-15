@@ -141,7 +141,7 @@ Covers: US-5 items 1–2, 4; US-6 item 5; US-7 item 3. Spec: `web-ui`, `agent-ch
 
 Covers: PRD §1 auxiliary metrics (#133). Spec: `metrics`. Depends on D, E, F, I; frontend panel after K1.
 
-- [ ] 16.1 Failing tests for `metrics.read`: sync duration and success per provider, accuracy with `no_labels`, estimate ratios (60/90, 120/120 → mean 1.25), agent steps/turns/cost with unknown costs excluded and counted
+- [x] 16.1 Failing tests for `metrics.read`: sync duration and success per provider, accuracy with `no_labels`, estimate ratios (60/90, 120/120 → mean 1.25), agent steps/turns/cost with unknown costs excluded and counted
 - [ ] 16.2 Metrics panel in the avatar menu showing values, counts and "unavailable" reasons
 
 ## 17. Issue M — Acceptance and archive
