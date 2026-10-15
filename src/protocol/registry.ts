@@ -1,3 +1,5 @@
+import { metricsContracts } from '../metrics/contracts.js';
+import type { MetricsService } from '../metrics/service.js';
 import { annotationContracts, type AnnotationService } from './annotations.js';
 import { planningContracts, planningOwnerCommands, planningSessionCommands } from '../planning/contracts.js';
 import type { PlanningService } from '../planning/service.js';
@@ -140,7 +142,7 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   }
   return result;
 }
-const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'browser.status', 'sync.status', 'plan.read', 'planning.settings.read', 'annotation.read']));
+const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'browser.status', 'sync.status', 'plan.read', 'planning.settings.read', 'annotation.read', 'metrics.read']));
 /** Contract commands that change state; transports require credentials for these whatever their autonomy level. */
 export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationContracts)].filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
@@ -148,7 +150,7 @@ const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN)
 export interface BrowserServices {
   status(): Promise<BrowserStatus>; start(): Promise<BrowserState>; stop(): Promise<void>;
 }
-export function createRegistry(options: { browser?: Partial<BrowserServices>; autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; annotations?: AnnotationService } = {}): Registry {
+export function createRegistry(options: { browser?: Partial<BrowserServices>; autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; annotations?: AnnotationService; metrics?: MetricsService } = {}): Registry {
   const registry = new Registry();
   const handlers = new Map<string, Handler>();
   for (const name of Object.keys(contracts) as CommandName[]) {
@@ -228,5 +230,9 @@ export function createRegistry(options: { browser?: Partial<BrowserServices>; au
       return options.annotations.execute(name, input, context);
     } });
   }
+  registry.register({ name: 'metrics.read', ...metricsContracts['metrics.read'], handler: input => {
+    if (!options.metrics) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
+    return options.metrics.read(input);
+  } });
   return registry;
 }
