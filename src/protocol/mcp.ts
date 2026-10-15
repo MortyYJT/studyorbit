@@ -19,11 +19,11 @@ export interface McpOptions {
 export interface McpStdioOptions extends McpOptions { stdin?: Readable; stdout?: Writable }
 
 /** Advertise the zod contract as JSON Schema; MCP requires an object root, so unions are wrapped. */
-function inputSchema(entry: RegistryEntry): Tool['inputSchema'] {
+export function inputSchema(entry: RegistryEntry): Tool['inputSchema'] {
   const { $schema: _schema, ...schema } = z.toJSONSchema(entry.input, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>;
   return { ...schema, type: 'object' } as Tool['inputSchema'];
 }
-function describe(entry: RegistryEntry): string {
+export function describe(entry: RegistryEntry): string {
   return ownerCommands.has(entry.name)
     ? `${entry.name} (L${entry.level}; owner terminal only, always refused over MCP)`
     : `${entry.name} (L${entry.level}); returns one coursework.agent/v1 envelope`;

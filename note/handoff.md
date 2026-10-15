@@ -3,32 +3,38 @@
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#159）。
 
-- **最后更新：** 2026-10-15 09:20，无人值守调度员（#155），分支 `claude/dispatch-handoff-2026-10-15-c`。
+- **最后更新：** 2026-10-15 18:25，无人值守调度员（#155），分支 `claude/handoff-j`。
 - **模式：** 开发中。定时调度员每小时一次，按 `v1-delivery` 推进；调度细节在本机 `.local/dispatcher/HANDOFF.md`。
-- **已合并：** A（PR #115）、B（PR #116）、C（PR #118：按作业类型分 L0–L2、课程默认等级和单项覆盖、只能从前端会话改的 owner 设置、去掉 `audit.record`）、G（PR #119：SQLite 学习记录、`source.fetch`、考试范围、练习统计、复习技能；两轮审查共修 6 处）、D（PR #121：Canvas/Ed 同步、`sync.run`/`sync.status`；两轮审查共修 4 处）。tasks 4.1–4.4、5.1–5.5、8.1–8.4 已勾。
-- **注意：** Codex 两次越界改了 `note/handoff.md`（一次还写了一条用户没做过的「用户选择」）和 OpenSpec 规格，调度员都已还原；PR #119 里提到的两个规格场景留给 issue M 决定是否补进规格。
+- **已合并：** A（PR #115）、B（PR #116）、C（PR #118）、G（PR #119）、D（PR #121）、F（PR #126）、H（PR #127）、E（PR #129）、I（PR #131：Claude Agent SDK 0.3.300 适配器、PreToolUse 策略、生产接线；两轮审查后调度员自修 3 处 + 子代理复核 1 处）、L 后端（PR #132：`metrics.read`，对话明细分页）、J（PR #134：7 个浏览器工具、红框 + 1 秒、审计、提交前 owner 确认；第 2 轮审查 4 处中 1 处由调度员自修，3 处需你决定）。tasks 4.x、5.1–5.5、6.x、7.x、8.x、9.x、10.1–10.3、11.x、16.1 已勾。
+- **注意：** 生产对话现在默认启动已登录的 Claude（`ClaudeAdapter`），工具集取自 `registry.agentTools()`（与 MCP 同一条无 owner 权限的 dispatch 路径）；策略钩子每次调用时读 UI 端口（UI/HTTP 宿主监听后写入 `agentRuntime`）和常驻浏览器调试端口。`metrics.read` 的对话明细是偏移游标分页（每页最多 25），但这个分页参数还没写进 metrics 规格。F 的 `plan.read` 是游标分页，K2 要读完再拼。MCP agent 工具数：main 上 34（27 + 7 个浏览器工具）。测验 / workshop 页的 `browser.read` 只遮同学身份和联系方式，不再因为普通题干（如 password、student）整页拒绝。
 
 ## 没合并的工作
 
 | 分支 / clone | 内容 | 下一步 |
 | --- | --- | --- |
-| `codex/v1-planning`（`../unimelb-coursework-agent-planning`，未推送） | F：tasks 7.1–7.5；已并入最新 main（MCP 工具数 22）；第 1 轮审查需改 3 处 | Codex 额度 12:18 恢复后派返工 → 第 2 轮审查 → PR |
-| `codex/v1-chat`、`codex/v1-annotations`（`../unimelb-coursework-agent-chat`、`-annotations`，已 npm ci） | H（#106）、E（#103）：未开始 | Codex 额度恢复后派实现 |
+| `codex/v1-ui-shell`（`../unimelb-coursework-agent-ui`，未推送） | K1（#109）：12.1–12.2 已提交；第 1 轮审查唯一问题：「把登录页带到前台」按钮没接后端 | 等 J2（#136）合并 → 返工接按钮 → 并 main → 本机真浏览器检查 12.3 → PR |
 
 ## 下一步（按顺序）
 
-1. 收尾 F（返工 → 审查 → PR）。
-2. 派 H（#106）、E（#103）。
-3. K1（#109）可以派了（`@types/react`、`@types/react-dom` 已批，#158）。
+1. J2（#136）：常驻浏览器层的「登录页带到前台」owner 命令（决定 #160）；合并后 K1 返工接按钮。
+2. K2（#110）、K3（#111）、K4（#112）、L 面板 16.2 等 K1；M（#114）最后。
+3. J 的 3 处遗留问题等你决定后再开 issue（见下）。
 
 ## 等你决定
 
+- `metrics.read` 的分页参数（`cursor`、`limit`，每页最多 25）要不要写进 metrics 规格（调度员撤回了 Codex 擅自加的规格场景）。
+- J 第 2 轮审查遗留（PR #134「Out-of-scope findings」）：
+  - 页面正文里点名的同学（没有作者元素）认不出：生产环境没有同学名单来源。选项：从 Canvas People 页同步名单作脱敏范围 / 接受「尽力而为」。
+  - 写操作只核对「同一门课」（规格原文如此）：L1 授权的测验可被用来在同课 L2 作业页上填写。推荐改规格为「页面 URL 必须对应所点名的作业」，无法对应的页面拒绝。
+  - 打开 `coursework ui` 会把另一个 `coursework mcp` 进程还在等的确认标成过期（安全但会丢请求）。修法要给确认行加持有进程 id（改表结构）。
+  - （低风险，不需决定）没有 `<form>`、靠脚本驱动的提交控件只靠按钮文字正则识别。
 - 补理由：#127、#158、#159，以及旧的 #6、#9、#15–18、#23、#27、#29、#53、#67、#70。
 
 ## 等你动手
 
 - R-B 3.5（任务 17.2）：终端里跑 `node dist/cli.js browser start`，登录 Canvas 和 Ed，跑 `browser status`，放一夜看登录能保持多久。
 - 任务 5.6（D 已合并）：在真实 profile 上跑一次 `coursework sync`，把实际数量和问题记进 PR。
+- 任务 10.4（I 已合并）：先 `claude` 登录，再 `coursework ui` 发一条真实对话，记下步骤数和费用。
 
 ## 运行与验证
 

@@ -15,10 +15,10 @@ export function ownerResidentBrowser(): ResidentBrowser {
 /** Mount only this issue's browser commands; all other production ports remain fail-closed. */
 export function browserCLIContext(base: TrustedContext): TrustedContext {
   return { ...base, authorization: { ...base.authorization, check: async (name, level, input) => {
-    if (['browser.start', 'browser.status', 'browser.stop'].includes(name)) return;
+    if (['browser.start', 'browser.status', 'browser.stop', 'browser.signin'].includes(name)) return;
     await base.authorization.check(name, level, input);
   } }, owner: { assertOwner: async name => {
-    if (['browser.start', 'browser.stop'].includes(name) && process.stdin.isTTY === true && process.stderr.isTTY === true) return;
+    if (['browser.start', 'browser.stop', 'browser.signin'].includes(name) && process.stdin.isTTY === true && process.stderr.isTTY === true) return;
     throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
   } } };
 }

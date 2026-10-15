@@ -15,6 +15,8 @@ export interface SaveBatch {
   tasks?: readonly Task[];
   runs?: readonly Run[];
   assessmentLinks?: readonly AssessmentLink[];
+  annotations?: readonly Annotation[];
+  annotationVerdicts?: readonly AnnotationVerdict[];
 }
 
 /** Saves upsert by id; absent loads return undefined. */
@@ -50,6 +52,7 @@ export interface Repository {
   clearStartTime(workId: string, date: string): void;
   appendTimeLog(value: TimeLog): void;
   readTimeLogs(workId: string): TimeLog[];
+  listTimeLogs(): TimeLog[];
   appendCourseAutonomy(value: CourseAutonomy): void;
   readCourseAutonomy(courseId: string): CourseAutonomy[];
   appendConversation(value: Conversation): void;

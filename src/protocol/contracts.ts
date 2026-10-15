@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CourseSchema, AssessmentSchema, TaskSchema, StepSchema, CitationSchema, RunSchema } from '../domain/schemas.js';
+import { CourseSchema, AssessmentSchema, TaskSchema, StepSchema, CitationSchema, RunSchema, AnnotationVerdictSchema } from '../domain/schemas.js';
 import { retryable } from './errors.js';
 
 export const IdSchema = z.string().trim().min(1).max(256);
@@ -23,6 +23,11 @@ export const SourceEvidenceSchema = z.strictObject({ sourceItemId: IdSchema, cou
 export const CoverageSchema = z.strictObject({ complete: z.boolean(), gaps: z.array(z.strictObject({
   code: z.enum(['MISSING_EVIDENCE', 'UNSUPPORTED', 'INCOMPLETE']), reference: IdSchema.optional(),
 })).max(500) });
+/** Field provenance is separate from the entity's creation origin. */
+export const AnnotationFieldsSchema = z.record(z.string(), z.strictObject({ value: z.json(),
+  origin: z.enum(['owner', 'agent', 'sync']).nullable(), annotationId: IdSchema.optional(),
+  citations: z.array(z.union([VerifiedCitationSchema, CitationInputSchema])),
+  verdicts: z.array(AnnotationVerdictSchema.strict()) }));
 function page<S extends z.ZodType>(item: S) {
   return z.strictObject({ items: z.array(item).max(500), nextCursor: CursorSchema.optional(),
     evidence: z.array(SourceEvidenceSchema).max(500), coverage: CoverageSchema });
@@ -66,8 +71,9 @@ export const AuditRecordSchema = z.strictObject({ id: z.uuid(), runId: z.uuid(),
   level: LevelSchema.optional(), decision: z.enum(['allowed', 'denied']).optional(),
   reason: z.enum(['allowed', 'assessment-unavailable', 'policy-missing', 'course-prohibited', 'exam', 'kind-unknown',
     'grant-missing', 'grant-mismatch', 'grant-revoked', 'grant-level', 'course-cap', 'authorization-unavailable', 'audit-unavailable']).optional(),
-  action: z.enum(['fill', 'submit', 'other']).optional(), outcome: z.enum(['success', 'failure', 'uncertain', 'violation']).optional(),
-  confirmation: z.enum(['owner-chat', 'owner-ui', 'owner-terminal']).optional() });
+  conversationId: IdSchema.optional(), submissionState: z.enum(['cancelled', 'expired']).optional(),
+  action: z.enum(['click', 'fill', 'select', 'submit', 'other']).optional(), outcome: z.enum(['success', 'failure', 'uncertain', 'violation']).optional(),
+  confirmation: z.enum(['owner-chat', 'owner-ui', 'owner-terminal', 'not-required']).optional() });
 export type AuditRecord = z.infer<typeof AuditRecordSchema>;
 export const PolicyReceiptSchema = z.discriminatedUnion('status', [
   z.strictObject({ recorded: z.literal('policy'), policyRef: HashSchema, courseId: IdSchema,
@@ -78,7 +84,7 @@ export const PolicyReceiptSchema = z.discriminatedUnion('status', [
 export const GrantReceiptSchema = z.strictObject({ recorded: z.literal('grant'), grantRef: HashSchema,
   courseId: IdSchema, assessmentId: IdSchema, category: GrantRecordSchema.shape.category,
   level: LevelSchema, recordedAt: z.iso.datetime() });
-const courses = { input: z.strictObject({ ...paging, term: text.optional() }), output: page(CourseSchema.strict()), level: 0 } as const;
+const courses = { input: z.strictObject({ ...paging, term: text.optional() }), output: page(CourseSchema.strict().extend({ fields: AnnotationFieldsSchema.optional() })), level: 0 } as const;
 const policy = { input: PolicyRecordSchema, output: PolicyReceiptSchema, level: 0 } as const;
 const grant = { input: GrantRecordSchema, output: GrantReceiptSchema, level: 0 } as const;
 export const contracts = {
@@ -87,7 +93,7 @@ export const contracts = {
   'practice.attempt.record': { input: z.strictObject({ questionId: IdSchema, revision: z.uuid(), outcome: z.enum(['correct', 'incorrect', 'skipped']), at: z.iso.datetime({ offset: true }) }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
   'source.fetch': { input: z.strictObject({ courseId: IdSchema, url: z.url().max(2048) }), output: z.strictObject({ items: z.array(SourceEvidenceSchema).max(500), emptyPages: z.array(z.number().int().positive()).max(500), sourceRevision: HashSchema }), level: 0 },
   'courses.list': courses,
-  'assessments.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }), output: page(AssessmentSchema.strict()), level: 0 },
+  'assessments.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }), output: page(AssessmentSchema.strict().extend({ fields: AnnotationFieldsSchema.optional() })), level: 0 },
   'tasks.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), assessmentId: IdSchema.optional(), moduleId: IdSchema.optional() }), output: page(task), level: 0 },
   'sources.get': { input: z.strictObject({ sourceItemId: IdSchema }), output: SourceEvidenceSchema, level: 0 },
   'materials.list': { input: z.strictObject({ ...paging, courseId: IdSchema, sourceItemId: IdSchema.optional(), page: z.number().int().positive().safe().optional() }), output: page(SourceEvidenceSchema), level: 0 },
@@ -108,6 +114,7 @@ const siteStatus = z.strictObject({ state: z.enum(['signedIn', 'signedOut', 'unk
     'Sign in to Ed by hand in the resident browser.',
   ]) }).optional() });
 export const browserContracts = {
+  'browser.signin': { input: z.strictObject({ site: z.enum(['canvas', 'ed']) }), output: z.strictObject({ site: z.enum(['canvas', 'ed']), status: siteStatus }), level: 0 },
   'browser.status': { input: z.strictObject({}), output: z.strictObject({ canvas: siteStatus, ed: siteStatus }), level: 0 },
   'browser.start': { input: z.strictObject({}), output: z.strictObject({ running: z.literal(true), browser: z.enum(['msedge', 'chrome', 'chromium']), startedAt: z.iso.datetime() }), level: 0 },
   'browser.stop': { input: z.strictObject({}), output: z.strictObject({ running: z.literal(false) }), level: 0 },
@@ -116,7 +123,7 @@ export type CommandName = keyof typeof contracts;
 export type CommandInput<N extends CommandName> = z.input<(typeof contracts)[N]['input']>;
 export type ParsedCommandInput<N extends CommandName> = z.output<(typeof contracts)[N]['input']>;
 export type CommandOutput<N extends CommandName> = z.output<(typeof contracts)[N]['output']>;
-export const ownerCommands: ReadonlySet<string> = new Set(['sync.run', 'policy.record', 'grant.record', 'browser.start', 'browser.stop', 'annotation.owner.record', 'planning.settings.record']);
+export const ownerCommands: ReadonlySet<string> = new Set(['sync.run', 'policy.record', 'grant.record', 'browser.start', 'browser.stop', 'browser.signin', 'annotation.owner.record', 'annotation.confirm', 'annotation.replace', 'planning.settings.record']);
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });
 export const FailureEnvelopeSchema = z.strictObject({ protocol: z.literal('coursework.agent/v1'), command: z.string(), meta,
   ok: z.literal(false), error: z.strictObject({ code: z.enum(Object.keys(retryable) as (keyof typeof retryable)[]), message: z.string(), retryable: z.boolean(), next: z.string().optional() }) }).refine(e => e.error.retryable === retryable[e.error.code]);

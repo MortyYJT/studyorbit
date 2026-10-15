@@ -232,7 +232,6 @@ export class SyncService {
             if (old && old.origin !== 'sync') continue;
             for (const a of annotations) {
               if ((Object.hasOwn(fresh, a.field) || a.field === 'weight') && JSON.stringify(effective[a.field]) !== JSON.stringify(a.value)) differences.push({ entityId: fresh.id, field: a.field });
-              effective[a.field] = a.value;
             }
             assessments.push(AssessmentSchema.parse(effective));
           }

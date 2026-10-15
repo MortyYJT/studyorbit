@@ -205,7 +205,7 @@ export const ConversationSchema = z.object({ id: IdSchema, title: z.string(), ad
 export const MessagePartSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({ type: z.literal('tool_step'), tool: IdSchema, input: z.json().optional(), output: z.json().optional() }),
-  z.object({ type: z.literal('confirmation'), confirmationId: IdSchema }),
+  z.object({ type: z.literal('confirmation'), confirmationId: IdSchema, decision: z.enum(['pending', 'confirmed', 'cancelled', 'expired']).optional() }),
 ]);
 export const MessageSchema = z.object({ id: IdSchema, conversationId: IdSchema, seq: CountSchema,
   role: z.enum(['owner', 'agent']), parts: z.array(MessagePartSchema), stopped: z.boolean(), at: TimeSchema });

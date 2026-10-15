@@ -49,10 +49,10 @@ Covers: US-1 items 1–5, item 6 manual part (email trigger deferred, #129). Spe
 
 Covers: US-2 items 1–4. Spec: `agent-annotations`, `validated-agent-writes`. Depends on A; owner-only tests use an injected owner context until B merges.
 
-- [ ] 6.1 Failing tests: valid cited agent annotation applies; invented or stale quote rejected with nothing changed and a ledger entry
-- [ ] 6.2 Failing tests: syllabus-only assessment creation, one-to-many links, moving a link keeps history, cross-course links rejected
-- [ ] 6.3 Failing tests: precedence owner > agent > sync; append-only history; reads return effective value, origin, citations and verdicts; unknown kind stays unknown
-- [ ] 6.4 Failing tests: owner "confirm" records verdict `correct`; owner "use my value" records an owner annotation and verdict `incorrect`; both owner-only
+- [x] 6.1 Failing tests: valid cited agent annotation applies; invented or stale quote rejected with nothing changed and a ledger entry
+- [x] 6.2 Failing tests: syllabus-only assessment creation, one-to-many links, moving a link keeps history, cross-course links rejected
+- [x] 6.3 Failing tests: precedence owner > agent > sync; append-only history; reads return effective value, origin, citations and verdicts; unknown kind stays unknown
+- [x] 6.4 Failing tests: owner "confirm" records verdict `correct`; owner "use my value" records an owner annotation and verdict `incorrect`; both owner-only
 
 ## 7. Issue F — Planning
 
@@ -77,30 +77,31 @@ Covers: US-6 items 1–3 (backend). Spec: `revision`. Depends on A.
 
 Covers: US-5 items 1–2 (backend). Spec: `agent-chat`. Depends on A, B.
 
-- [ ] 9.1 Define `AgentAdapter` and `AgentEvent`; a synthetic adapter for tests
-- [ ] 9.2 Failing tests: conversation service stores owner and agent messages with ordered parts, survives restart, lists newest first, owner-only delete
-- [ ] 9.3 Failing tests: SSE stream through the owner session; resume from `Last-Event-ID` without duplicates; events stored with no listener; stop interrupts and marks the message stopped
-- [ ] 9.4 Failing tests: preset registry renders each preset with stored ids and titles only; creating from a preset sends once (reload does not resend); no exam presets
-- [ ] 9.5 Failing tests: each reply records turns, tool steps and reported cost; unreported cost stored as unknown
+- [x] 9.1 Define `AgentAdapter` and `AgentEvent`; a synthetic adapter for tests
+- [x] 9.2 Failing tests: conversation service stores owner and agent messages with ordered parts, survives restart, lists newest first, owner-only delete
+- [x] 9.3 Failing tests: SSE stream through the owner session; resume from `Last-Event-ID` without duplicates; events stored with no listener; stop interrupts and marks the message stopped
+- [x] 9.4 Failing tests: preset registry renders each preset with stored ids and titles only; creating from a preset sends once (reload does not resend); no exam presets
+- [x] 9.5 Failing tests: each reply records turns, tool steps and reported cost; unreported cost stored as unknown
 
 ## 10. Issue I — Claude Agent SDK adapter and tool policy
 
 Covers: US-5 items 3 and 6. Spec: `agent-chat`. Depends on H. New dependency approved by the owner (#147).
 
-- [ ] 10.1 Install `@anthropic-ai/claude-agent-sdk` at an exact version; keep SDK types inside `src/agent/claude.ts`
-- [ ] 10.2 Failing tests with a stubbed SDK `query`: message mapping to `AgentEvent`s, session resume, in-process MCP tool set wired, `cwd` is the agent workspace, skills injected per preset, cost and turns read from the result, not-signed-in → `AGENT_UNAVAILABLE`
-- [ ] 10.3 Failing tests for the policy hook: data-directory access outside the workspace, `browser.json`, debugging port, local UI port, `coursework` owner commands, pseudo-terminal wrappers, `ps`, frontend origin are denied and stored as denied steps; ordinary workspace file writes are allowed
+- [x] 10.1 Install `@anthropic-ai/claude-agent-sdk` at an exact version; keep SDK types inside `src/agent/claude.ts`
+- [x] 10.2 Failing tests with a stubbed SDK `query`: message mapping to `AgentEvent`s, session resume, in-process MCP tool set wired, `cwd` is the agent workspace, skills injected per preset, cost and turns read from the result, not-signed-in → `AGENT_UNAVAILABLE`
+- [x] 10.3 Failing tests for the policy hook: data-directory access outside the workspace, `browser.json`, debugging port, local UI port, `coursework` owner commands, pseudo-terminal wrappers, `ps`, frontend origin are denied and stored as denied steps; ordinary workspace file writes are allowed
 - [ ] 10.4 Owner live check: one real conversation through the frontend backend with the signed-in agent; record steps and cost in the PR
 
 ## 11. Issue J — Agent browser tools
 
 Covers: US-5 item 4; US-7 items 3–4. Spec: `agent-browser-tools`. Depends on C, H.
 
-- [ ] 11.1 Failing tests on synthetic pages with a fake resident browser: `browser.open` origin allow-list (frontend, localhost, login and off-origin refused), tool-owned tabs only, sign-in page → `AUTH_EXPIRED`
-- [ ] 11.2 Failing tests for `browser.read`: quiz and workshop pages (Ed attempt lessons) unredacted except peer answers, discussion refused, other pages redacted, bounded, no hidden values
-- [ ] 11.3 Failing tests for writes: course/platform mismatch refused before highlight; denied check types nothing and audits a denial; allowed write highlights ≥1 s, acts once, screenshots, audits; audit failure after action reports uncertain state without repeating
-- [ ] 11.4 Failing tests for `browser.submit`: pending confirmation created with summary and screenshot; owner confirm releases one click (`owner-ui`); cancel, timeout and restart leave it unsubmitted; confirmation via MCP or without session refused; single use; confirmation off → `not-required`
-- [ ] 11.5 Every tool call emits a conversation step with outcome, screenshot reference and "view in Edge"
+- [x] 11.1 Failing tests on synthetic pages with a fake resident browser: `browser.open` origin allow-list (frontend, localhost, login and off-origin refused), tool-owned tabs only, sign-in page → `AUTH_EXPIRED`
+- [x] 11.2 Failing tests for `browser.read`: quiz and workshop pages (Ed attempt lessons) unredacted except peer answers, discussion refused, other pages redacted, bounded, no hidden values
+- [x] 11.3 Failing tests for writes: course/platform mismatch refused before highlight; denied check types nothing and audits a denial; allowed write highlights ≥1 s, acts once, screenshots, audits; audit failure after action reports uncertain state without repeating
+- [x] 11.4 Failing tests for `browser.submit`: pending confirmation created with summary and screenshot; owner confirm releases one click (`owner-ui`); cancel, timeout and restart leave it unsubmitted; confirmation via MCP or without session refused; single use; confirmation off → `not-required`
+- [x] 11.5 Every tool call emits a conversation step with outcome, screenshot reference and "view in Edge"
+- [x] 11.6 Owner command that brings the resident browser's sign-in page to the front, for K1's sign-in status button (issue J2, #136; decision #160)
 
 ## 12. Issue K1 — Frontend shell, status and settings
 
@@ -141,7 +142,7 @@ Covers: US-5 items 1–2, 4; US-6 item 5; US-7 item 3. Spec: `web-ui`, `agent-ch
 
 Covers: PRD §1 auxiliary metrics (#133). Spec: `metrics`. Depends on D, E, F, I; frontend panel after K1.
 
-- [ ] 16.1 Failing tests for `metrics.read`: sync duration and success per provider, accuracy with `no_labels`, estimate ratios (60/90, 120/120 → mean 1.25), agent steps/turns/cost with unknown costs excluded and counted
+- [x] 16.1 Failing tests for `metrics.read`: sync duration and success per provider, accuracy with `no_labels`, estimate ratios (60/90, 120/120 → mean 1.25), agent steps/turns/cost with unknown costs excluded and counted
 - [ ] 16.2 Metrics panel in the avatar menu showing values, counts and "unavailable" reasons
 
 ## 17. Issue M — Acceptance and archive

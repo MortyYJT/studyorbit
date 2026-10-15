@@ -6,6 +6,8 @@ import { createProductionProtocol } from '../../src/protocol/production.js';
 import { dispatch } from '../../src/protocol/registry.js';
 import { parseProtocolCLI } from '../../src/protocol/cli.js';
 import { synthetic } from '../fixtures/synthetic.js';
+const { query } = vi.hoisted(() => ({ query: vi.fn() }));
+vi.mock('@anthropic-ai/claude-agent-sdk', async importOriginal => ({ ...await importOriginal<object>(), query }));
 const roots: string[] = []; const closes: (() => void)[] = [];
 afterEach(async () => { closes.splice(0).forEach(close => close()); vi.unstubAllEnvs(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 async function setup() {
@@ -75,4 +77,73 @@ it('shared production file writer failure yields denied audit-unavailable', asyn
   const broken = createProductionProtocol({ store: host.store, files: new BrokenFiles(process.env.COURSEWORK_HOME) }); closes.push(broken.close);
   expect(await dispatch(broken.registry, 'autonomy.check', { assessmentId: 'd', action: 'fill' }, broken.context))
     .toMatchObject({ ok: true, data: { decision: 'denied', reason: 'audit-unavailable' } });
+});
+
+it('uses the Claude SDK for production chat while preserving explicit adapter overrides', async () => {
+  query.mockImplementation(() => Object.assign((async function* () {
+    yield { type: 'assistant', message: { content: [{ type: 'text', text: 'Synthetic reply' }] } };
+    yield { type: 'result', subtype: 'success', is_error: false, num_turns: 1, total_cost_usd: 0.01, session_id: 'synthetic-session' };
+  })(), { interrupt: vi.fn() }));
+  const host = await setup(); const owner = { assertOwner: async () => {} };
+  const conversation = await host.chat.create({}, owner);
+  const { messageId } = await host.chat.send(conversation.id, 'Synthetic prompt', owner);
+  await host.chat.waitForIdle(conversation.id);
+  expect(query).toHaveBeenCalledOnce();
+  expect(query.mock.calls[0]![0]).toMatchObject({ prompt: 'Synthetic prompt', options: { cwd: join(process.env.COURSEWORK_HOME!, 'agent-workspace') } });
+  expect(host.chat.open(conversation.id).messages[1]!.parts).toEqual([{ type: 'text', text: 'Synthetic reply' }]);
+  expect(host.store.loadRun(messageId)).toMatchObject({ turns: 1, costUsd: 0.01, outcome: 'ok' });
+  const { unavailableAdapter } = await import('../../src/agent/adapter.js');
+  const overridden = createProductionProtocol({ store: host.store, agentAdapter: unavailableAdapter });
+  const other = await overridden.chat.create({}, owner);
+  await overridden.chat.send(other.id, 'No SDK call', owner); await overridden.chat.waitForIdle(other.id);
+  expect(overridden.chat.events(other.id).at(-1)!.event).toMatchObject({ type: 'error', code: 'AGENT_UNAVAILABLE' });
+  expect(query).toHaveBeenCalledOnce();
+});
+
+it('gives production chat the agent tool set and the live UI and debugging ports', async () => {
+  const { writeFile } = await import('node:fs/promises');
+  query.mockImplementation(({ options }) => Object.assign((async function* () {
+    const hook = options.hooks.PreToolUse[0].hooks[0];
+    const call = (command: string) => hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, tool_use_id: command, cwd: options.cwd }, command, {});
+    for (const command of ['curl http://127.0.0.1:4568/api/status', 'curl http://localhost:9444/json']) {
+      expect((await call(command)).hookSpecificOutput.permissionDecision).toBe('deny');
+    }
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'synthetic', version: '1' });
+    await options.mcpServers.coursework.instance.connect(serverTransport); await client.connect(clientTransport);
+    const names = (await client.listTools()).tools.map(t => t.name);
+    expect(names).toEqual(expect.arrayContaining(['courses.list', 'source.fetch']));
+    expect(names).not.toContain('grant.record'); expect(names).not.toContain('sync.run');
+    const listed = await client.callTool({ name: 'courses.list', arguments: {} });
+    expect(JSON.parse((listed.content as { text: string }[])[0]!.text)).toMatchObject({ ok: true });
+    await client.close();
+    yield { type: 'result', subtype: 'success', is_error: false, num_turns: 1, session_id: 'synthetic-session' };
+  })(), { interrupt: vi.fn() }));
+  const host = await setup(); const owner = { assertOwner: async () => {} };
+  await writeFile(join(process.env.COURSEWORK_HOME!, 'browser.json'), JSON.stringify({ endpoint: 'http://127.0.0.1:9444', pid: process.pid, browser: 'chromium', startedAt: '2026-01-01T00:00:00.000Z' }));
+  host.agentRuntime.frontendOrigin = 'http://127.0.0.1:4568';
+  const conversation = await host.chat.create({}, owner);
+  const { messageId } = await host.chat.send(conversation.id, 'Synthetic prompt', owner);
+  await host.chat.waitForIdle(conversation.id);
+  expect(host.store.loadRun(messageId)).toMatchObject({ outcome: 'ok', steps: 2 });
+});
+
+it('keeps the UI origin denial when the resident browser state is unreadable', async () => {
+  const { writeFile } = await import('node:fs/promises');
+  query.mockImplementation(({ options }) => Object.assign((async function* () {
+    const hook = options.hooks.PreToolUse[0].hooks[0];
+    const command = 'curl http://127.0.0.1:4569/api/status';
+    expect((await hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, tool_use_id: 'ui', cwd: options.cwd }, 'ui', {}))
+      .hookSpecificOutput.permissionDecision).toBe('deny');
+    yield { type: 'result', subtype: 'success', is_error: false, num_turns: 1, session_id: 'synthetic-session' };
+  })(), { interrupt: vi.fn() }));
+  const host = await setup(); const owner = { assertOwner: async () => {} };
+  await writeFile(join(process.env.COURSEWORK_HOME!, 'browser.json'), '{ corrupted');
+  host.agentRuntime.frontendOrigin = 'http://127.0.0.1:4569';
+  const conversation = await host.chat.create({}, owner);
+  const { messageId } = await host.chat.send(conversation.id, 'Synthetic prompt', owner);
+  await host.chat.waitForIdle(conversation.id);
+  expect(host.store.loadRun(messageId)).toMatchObject({ outcome: 'ok', steps: 1 });
 });

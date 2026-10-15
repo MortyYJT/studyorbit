@@ -1,3 +1,6 @@
+import { z } from 'zod';
+import { VerifiedCitationSchema } from '../protocol/contracts.js';
+import { CitationSchema } from '../domain/schemas.js';
 import { assertStudyRecordReadable, recordSchemas, type StudyRecord } from '../protocol/study-writes.js';
 import type { StudyCommand } from '../protocol/citations.js';
 import { CourseworkError } from '../protocol/errors.js';
@@ -21,6 +24,9 @@ import {
 } from '../domain/schemas.js';
 import { migrate } from './migrations/index.js';
 import type { Repository, SaveBatch } from './repository.js';
+
+// Retain verified offsets and source hashes without changing the domain schema or migration.
+const storedAnnotationSchema = AnnotationSchema.safeExtend({ citations: z.array(z.union([VerifiedCitationSchema, CitationSchema])) });
 
 interface EntitySchema<T> { parse(value: unknown): T }
 
@@ -128,8 +134,8 @@ export class SqliteRepository implements Repository, CurrentStateReader {
   appendAssessmentLink(value: AssessmentLink): void { this.append('assessment_links', AssessmentLinkSchema, value, ['assessmentId', 'sourceItemId']); }
   readAssessmentLinks(assessmentId: string): AssessmentLink[] { return this.history('assessment_links', AssessmentLinkSchema, { assessmentId }); }
   listAssessmentLinks(): AssessmentLink[] { return this.history('assessment_links', AssessmentLinkSchema, {}); }
-  appendAnnotation(value: Annotation): void { this.append('annotations', AnnotationSchema, value, ['id', 'entity', 'entityId']); }
-  readAnnotations(entity: string, entityId: string): Annotation[] { return this.history('annotations', AnnotationSchema, { entity, entityId }); }
+  appendAnnotation(value: Annotation): void { this.append('annotations', storedAnnotationSchema, value, ['id', 'entity', 'entityId']); }
+  readAnnotations(entity: string, entityId: string): Annotation[] { return this.history('annotations', storedAnnotationSchema, { entity, entityId }); }
   appendAnnotationVerdict(value: AnnotationVerdict): void { this.append('annotation_verdicts', AnnotationVerdictSchema, value, ['annotationId']); }
   readAnnotationVerdicts(annotationId: string): AnnotationVerdict[] { return this.history('annotation_verdicts', AnnotationVerdictSchema, { annotationId }); }
   appendPlanningSettings(value: PlanningSettings): void { this.append('planning_settings', PlanningSettingsSchema, value, []); }
@@ -142,14 +148,70 @@ export class SqliteRepository implements Repository, CurrentStateReader {
   clearStartTime(workId: string, date: string): void { this.db.prepare('DELETE FROM start_times WHERE workId = ? AND date = ?').run(workId, date); }
   appendTimeLog(value: TimeLog): void { this.append('time_logs', TimeLogSchema, value, ['workId']); }
   readTimeLogs(workId: string): TimeLog[] { return this.history('time_logs', TimeLogSchema, { workId }); }
+  listTimeLogs(): TimeLog[] { return this.history('time_logs', TimeLogSchema, {}); }
   appendCourseAutonomy(value: CourseAutonomy): void { this.append('course_autonomy', CourseAutonomySchema, value, ['courseId']); }
   readCourseAutonomy(courseId: string): CourseAutonomy[] { return this.history('course_autonomy', CourseAutonomySchema, { courseId }); }
   appendConversation(value: Conversation): void { this.append('conversations', ConversationSchema, value, ['id', 'courseId', 'updatedAt']); }
   readConversations(): Conversation[] { return this.history('conversations', ConversationSchema, {  }); }
   appendMessage(value: Message): void { this.append('messages', MessageSchema, value, ['id', 'conversationId', 'seq']); }
   readMessages(conversationId: string): Message[] { return this.history('messages', MessageSchema, { conversationId }); }
+  /** Chat journals live with their message JSON; no schema or historical rows are changed. */
+  saveChat(conversation: Conversation, message?: Message, events?: readonly import('../agent/adapter.js').StoredEvent[], run?: Run): void {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.write('conversations', ConversationSchema, conversation, ['courseId', 'updatedAt']);
+      if (message) {
+        const value = MessageSchema.parse(message);
+        this.db.prepare(`INSERT INTO messages (id, conversationId, messageSeq, json) VALUES (?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET json = excluded.json`)
+          .run(value.id, value.conversationId, value.seq, JSON.stringify({ ...value, events: events ?? [] }));
+      }
+      if (run) this.write('runs', { parse: value => ({ ...RunSchema.parse(value),
+        courseId: conversation.courseId, assessmentId: conversation.assessmentId }) }, run,
+        ['command', 'startedAt', 'conversationId', 'turns']);
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  readChatEvents(conversationId: string): import('../agent/adapter.js').StoredEvent[] {
+    return this.db.prepare('SELECT json FROM messages WHERE conversationId = ? ORDER BY messageSeq').all(conversationId)
+      .flatMap(row => (JSON.parse(row.json as string) as { events?: import('../agent/adapter.js').StoredEvent[] }).events ?? []);
+  }
+  /** Context is retained even after the owner deletes the conversation's prose. */
+  readAgentRuns(): (Run & Pick<Conversation, 'courseId' | 'assessmentId'>)[] {
+    return this.db.prepare("SELECT json FROM runs WHERE command = 'agent.reply' ORDER BY startedAt, id").all().map(row => {
+      const raw = JSON.parse(row.json as string) as Record<string, unknown>;
+      return { ...RunSchema.parse(raw),
+        ...(typeof raw.courseId === 'string' ? { courseId: raw.courseId } : {}),
+        ...(typeof raw.assessmentId === 'string' ? { assessmentId: raw.assessmentId } : {}) };
+    });
+  }
+  deleteConversation(id: string): void {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const table of ['messages', 'pending_confirmations']) this.db.prepare(`DELETE FROM ${table} WHERE conversationId = ?`).run(id);
+      this.db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
+      // Operational runs are retained for metrics; they never contain prompt or response prose.
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
   appendPendingConfirmation(value: PendingConfirmation): void { this.append('pending_confirmations', PendingConfirmationSchema, value, ['id', 'conversationId', 'assessmentId']); }
   readPendingConfirmations(conversationId: string): PendingConfirmation[] { return this.history('pending_confirmations', PendingConfirmationSchema, { conversationId }); }
+  /** Durable browser confirmations share Issue A's table and never reconstruct actions. */
+  listPendingConfirmations(): PendingConfirmation[] {
+    return this.history('pending_confirmations', PendingConfirmationSchema, {});
+  }
+  savePendingConfirmation(input: PendingConfirmation): void {
+    const row = PendingConfirmationSchema.parse(input);
+    this.db.prepare(`INSERT INTO pending_confirmations (id, conversationId, assessmentId, json) VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET json = excluded.json`).run(row.id, row.conversationId, row.assessmentId, JSON.stringify(row));
+  }
+  transitionPendingConfirmation(id: string, state: 'confirmed' | 'cancelled' | 'expired'): PendingConfirmation | undefined {
+    const row = this.db.prepare(`UPDATE pending_confirmations
+      SET json = json_set(json, '$.state', ?, '$.decidedAt', ?)
+      WHERE id = ? AND json_extract(json, '$.state') = 'pending' RETURNING json`)
+      .get(state, new Date().toISOString(), id);
+    return row ? PendingConfirmationSchema.parse(JSON.parse(row.json as string)) : undefined;
+  }
   appendPracticeAttempt(value: PracticeAttempt): void { this.append('practice_attempts', PracticeAttemptSchema, value, ['questionId', 'revision']); }
   readPracticeAttempts(questionId: string): PracticeAttempt[] { return this.history('practice_attempts', PracticeAttemptSchema, { questionId }); }
 
@@ -161,9 +223,31 @@ export class SqliteRepository implements Repository, CurrentStateReader {
     return { items, ...(values.length > plan.limit ? { nextCursor: plan.cursorFor(items.at(-1)!.id) } : {}) };
   }
 
-  saveBatch(batch: SaveBatch): void {
+  /** Filter by the same append-order precedence used by annotation reads, before pagination. */
+  queryEffectiveAssessments(input: QueryInput<'assessments'>, resolveKind?: (id: string) => string | null): QueryPage<QueryItem<'assessments'>> {
+    const plan = queryPlan('assessments', input);
+    const latest = `(SELECT a.json FROM annotations a WHERE a.entity = 'assessment' AND a.entityId = assessments.id
+      AND json_extract(a.json, '$.field') = 'kind'
+      ORDER BY CASE json_extract(a.json, '$.origin') WHEN 'owner' THEN 0 ELSE 1 END, a.seq DESC LIMIT 1)`;
+    // A recorded null explicitly clears classification instead of falling through to the platform kind.
+    if (resolveKind) this.db.function('effective_assessment_kind', id => resolveKind(String(id)));
+    const kind = resolveKind ? 'effective_assessment_kind(assessments.id)' : `(CASE WHEN ${latest} IS NOT NULL THEN json_extract(${latest}, '$.value') ELSE json_extract(assessments.json, '$.kind') END)`;
+    const rows = this.db.prepare(plan.sql.replace("json_extract(json, '$.kind')", kind)).all(...plan.params);
+    const values = rows.map(row => AssessmentSchema.parse(JSON.parse(row.json as string)));
+    const items = values.slice(0, plan.limit);
+    return { items, ...(values.length > plan.limit ? { nextCursor: plan.cursorFor(items.at(-1)!.id) } : {}) };
+  }
+
+  /** Newest append wins globally per platform item; prior assignments remain in history. */
+  currentAssessmentLinks(assessmentId: string): AssessmentLink[] {
+    const rows = this.db.prepare('SELECT json FROM assessment_links WHERE seq IN (SELECT MAX(seq) FROM assessment_links GROUP BY sourceItemId) AND assessmentId = ? ORDER BY seq').all(assessmentId);
+    return rows.map(row => AssessmentLinkSchema.parse(JSON.parse(row.json as string)));
+  }
+
+  saveBatch(batch: SaveBatch, validate?: () => void): void {
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      validate?.();
       for (const value of batch.modules ?? []) this.write('modules', ModuleSchema, value);
       for (const value of batch.courses ?? []) this.write('courses', CourseSchema, value, ['moduleId', 'sources']);
       for (const value of batch.assessments ?? []) this.write('assessments', AssessmentSchema, value, ['courseId', 'origin', 'kind', 'weight']);
@@ -171,6 +255,8 @@ export class SqliteRepository implements Repository, CurrentStateReader {
       for (const value of batch.tasks ?? []) this.write('tasks', TaskSchema, value, ['moduleId', 'courseId', 'assessmentId', 'done', 'allDay']);
       for (const value of batch.runs ?? []) this.write('runs', RunSchema, value, ['command', 'startedAt', 'conversationId', 'turns']);
       for (const value of batch.assessmentLinks ?? []) this.appendAssessmentLink(value);
+      for (const value of batch.annotations ?? []) this.appendAnnotation(value);
+      for (const value of batch.annotationVerdicts ?? []) this.appendAnnotationVerdict(value);
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');

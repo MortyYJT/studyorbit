@@ -23,7 +23,7 @@ it('autonomy and confirmation commands refuse a TTY; other owner commands accept
 });
 it('agent tools omit owner, sync and audit commands and cannot regain owner authority', async () => {
   const registry = new Registry(); let ownerWrites = 0;
-  for (const name of ['autonomy.check', 'browser.submit', 'sync.run', 'audit.record', 'planning.settings.record', 'confirmation.resolve']) registry.register({ name, level: 0, input: z.strictObject({}), output: z.strictObject({}), handler: (_input, context) => { if (context.owner) ownerWrites++; return {}; } });
+  for (const name of ['autonomy.check', 'browser.submit', 'sync.run', 'audit.record', 'planning.settings.record', 'confirmation.resolve', 'browser.signin']) registry.register({ name, level: 0, input: z.strictObject({}), output: z.strictObject({}), handler: (_input, context) => { if (context.owner) ownerWrites++; return {}; } });
   const agent = registry.agentTools(createFakeContext({ owner: true }));
   expect(agent.registry.list().map(entry => entry.name)).toEqual(['autonomy.check', 'browser.submit']);
   expect(agent.context.owner).toBeUndefined();

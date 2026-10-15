@@ -1,3 +1,6 @@
+import { browserOwnerRoute, browserQuery, browserImage } from './browser-http.js';
+import type { ConversationService } from '../agent/conversations.js';
+import { agentRoute, agentMethod, agentCommand, streamAgent } from './agent-http.js';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
 import type { Socket } from 'node:net';
@@ -28,6 +31,7 @@ export interface HttpOptions {
   context: TrustedContext;
   port?: number;
   ownerSession?: OwnerSession;
+  chat?: ConversationService;
   staticDirectory?: string;
   /** Trusted host storage, default .local; tests use private temporary directories. */
   capabilityDirectory?: string;
@@ -142,18 +146,51 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
       }).catch(() => reject(404, 'NOT_FOUND'));
       return;
     }
+    const chatRoute = options.chat ? agentRoute(req.url ?? '') : undefined;
+    const sessionAuthorized = headerCount(req, 'x-coursework-session') === 1
+      && options.ownerSession?.accepts(header(req, 'x-coursework-session')) === true;
+    const chatOwner = { assertOwner: async () => { if (closing || !sessionAuthorized) throw unavailable(); } };
+    const browserRoute = browserOwnerRoute(req.url ?? '');
+    if (browserRoute) {
+      if (!sessionAuthorized) { reject(403); return; }
+      if (req.method !== 'GET') { reject(405); return; }
+      if (headerCount(req, 'content-encoding') || headerCount(req, 'transfer-encoding') || Number(header(req, 'content-length') ?? 0) !== 0) { reject(400); return; }
+      void (async () => {
+        if (browserRoute === 'view') {
+          const tabId = browserQuery(req.url!, 'tabId');
+          const envelope = await dispatch(options.registry, 'browser.view', { tabId }, httpCommandContext(options.context, 'browser.view', true, () => closing));
+          reply(httpStatus(envelope), envelope);
+        } else {
+          const bytes = await browserImage(browserQuery(req.url!, 'screenshotRef'));
+          if (res.destroyed || res.writableEnded || closing) return;
+          res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': bytes.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', Connection: 'close' });
+          res.end(bytes);
+        }
+      })().catch(error => { const code = error instanceof CourseworkError ? error.code : 'INTERNAL'; reject(statuses[code], code); });
+      return;
+    }
+    if (chatRoute) {
+      if (!sessionAuthorized) { reject(403); return; }
+      if (req.method !== agentMethod(chatRoute)) { reject(405); return; }
+      if (req.method === 'GET') {
+        if (headerCount(req, 'content-encoding') || headerCount(req, 'transfer-encoding') || Number(header(req, 'content-length') ?? 0) !== 0) { reject(400); return; }
+        if (chatRoute === 'stream') {
+          try { streamAgent(options.chat!, req, res, text => text.includes(token) || options.ownerSession?.containsSecret(text) === true); }
+          catch (error) { const code = error instanceof CourseworkError ? error.code : 'INTERNAL'; reject(statuses[code], code); }
+        } else void agentCommand(options.chat!, chatRoute, req.url!, undefined, chatOwner).then(envelope => reply(httpStatus(envelope), envelope));
+        return;
+      }
+    }
     const name = req.url?.startsWith('/api/') ? req.url.slice(5) : '';
     const entry = options.registry.get(name);
-    if (!entry) { reject(404, 'NOT_FOUND'); return; }
+    if (!entry && !chatRoute) { reject(404, 'NOT_FOUND'); return; }
     if (req.method !== 'POST') { reject(405); return; }
     if (headerCount(req, 'content-type') !== 1 || !/^application\/json(?:;\s*charset=utf-8)?$/i.test(header(req, 'content-type') ?? '')
       || headerCount(req, 'content-encoding') > 0) { reject(415); return; }
     const supplied = header(req, 'x-coursework-capability');
     const authorized = headerCount(req, 'x-coursework-capability') === 1 && supplied !== undefined
       && Buffer.byteLength(supplied) === 64 && timingSafeEqual(Buffer.from(supplied), Buffer.from(token));
-    const sessionAuthorized = headerCount(req, 'x-coursework-session') === 1
-      && options.ownerSession?.accepts(header(req, 'x-coursework-session')) === true;
-    if (isOwnerCommand(entry) ? !sessionAuthorized : (entry.level > 0 || writeNames.has(name)) && !authorized && !sessionAuthorized) { reject(403); return; }
+    if (entry && (isOwnerCommand(entry) ? !sessionAuthorized : (entry.level > 0 || writeNames.has(name)) && !authorized && !sessionAuthorized)) { reject(403); return; }
     const length = header(req, 'content-length');
     if (length !== undefined && Number(length) > 65536) { reject(413, 'LIMIT_EXCEEDED'); return; }
     const chunks: Buffer[] = []; let size = 0; let rejected = false;
@@ -179,7 +216,8 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
       dispatching = true;
       // Receive-phase timeouts end here; the socket stays open until the dispatcher's real outcome is written.
       req.socket?.setTimeout(0);
-      void dispatch(options.registry, name, input, context).then(envelope => reply(httpStatus(envelope), envelope))
+      const command = chatRoute ? agentCommand(options.chat!, chatRoute, req.url!, input, chatOwner) : dispatch(options.registry, name, input, context);
+      void command.then(envelope => reply(httpStatus(envelope), envelope))
         .catch(() => reply(500, fail('unknown', 'INTERNAL', 'The command could not complete safely.')))
         .finally(() => { dispatching = false; if (counted) { active--; counted = false; } });
     });

@@ -27,7 +27,7 @@ export interface OwnerInteraction {
   /** Host-established capability. Implementations must verify their actual owner interaction. */
   assertOwner(command: string): Promise<void>;
 }
-export interface AuditEvent extends Pick<AuditRecord, 'courseId' | 'assessmentId' | 'revision' | 'policyRef' | 'grantRef' | 'level' | 'decision' | 'reason' | 'action' | 'outcome' | 'confirmation'> {
+export interface AuditEvent extends Pick<AuditRecord, 'conversationId' | 'courseId' | 'assessmentId' | 'revision' | 'policyRef' | 'grantRef' | 'level' | 'decision' | 'reason' | 'action' | 'outcome' | 'confirmation' | 'submissionState'> {
   command: string; runId: string; phase: 'intent' | 'outcome' | 'denial'; code: 'OK' | ErrorCode;
 }
 export interface TrustedContext {
