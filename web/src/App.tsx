@@ -72,11 +72,12 @@ export function App({ store }: { store: ShellStore }) {
       <div className="dialog-heading"><h2 id="panel-title">{panel ? t[panel] : ''}</h2><button onClick={close}>{t.close}</button></div>
       {panel === 'status' && <><button onClick={() => void store.refresh()}>{t.refresh}</button>
         {(['canvas', 'ed'] as const).map(site => <section className="provider" key={site}><h3>{site === 'ed' ? 'Ed' : 'Canvas'}</h3>
-          <dl><dt>{t.status}</dt><dd>{state.errors.browser ? t.unavailable : state.browser ? t[state.browser[site].state] : t.loading}</dd>
-            <dt>{t.checked}</dt><dd>{date(state.browser?.[site].checkedAt)}</dd>
+          <dl><dt>{t.status}</dt><dd>{state.errors.browser ? t.unavailable : state.browser?.[site] ? t[state.browser[site].state] : t.loading}</dd>
+            <dt>{t.checked}</dt><dd>{date(state.browser?.[site]?.checkedAt)}</dd>
             <dt>{t.lastSync}</dt><dd>{state.errors.sync ? t.unavailable : date(state.sync?.[site].lastRun?.at)} {state.sync?.[site].lastRun?.status}</dd>
             <dt>{t.lastSuccess}</dt><dd>{state.errors.sync ? t.unavailable : date(state.sync?.[site].lastSuccess?.at)}</dd></dl>
-          <button disabled aria-describedby={`focus-${site}`}>{t.focus}</button><p id={`focus-${site}`} className="muted">{t.focusHelp}</p>
+          <button disabled={state.signingIn[site] || !store.client.hasSession()} aria-busy={state.signingIn[site]} aria-describedby={`focus-${site}`} onClick={() => void store.signIn(site)}>{state.signingIn[site] ? t.focusing : t.focus}</button><p id={`focus-${site}`} className="muted">{t.focusHelp}</p>
+          {state.errors[`${site}SignIn`] && <p role="status">{errorText(state.errors[`${site}SignIn`]!, t)}</p>}
         </section>)}
         {(state.errors.browser || state.errors.sync) && <p role="status">{t.error}</p>}
       </>}

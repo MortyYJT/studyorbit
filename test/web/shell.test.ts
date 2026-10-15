@@ -59,3 +59,57 @@ it('loads successive audit pages through the registry without losing earlier rec
   expect(store.getSnapshot().audit?.items).toHaveLength(2);
   expect(JSON.parse(String(fetcher.mock.calls[1]![1]?.body))).toMatchObject({ cursor: 'next' });
 });
+it('wires per-site sign-in through the owner client with pending, returned status and safe failures', async () => {
+  let finish!: (value: Response) => void;
+  let statusUnavailable = false;
+  const normal = fixture();
+  const fetcher = vi.fn((url: string | URL | Request, _init?: RequestInit) => {
+    if (statusUnavailable && String(url) === '/api/browser.status') return Promise.reject(new Error('Unavailable'));
+    return String(url) === '/api/browser.signin'
+      ? new Promise<Response>(resolve => { finish = resolve; }) : normal(url);
+  });
+  const secret = 'a'.repeat(64);
+  const store = new ShellStore(createClient(secret, fetcher));
+  await store.refresh();
+  statusUnavailable = true;
+  await store.refresh();
+  expect(store.getSnapshot().errors.browser).toBe('SOURCE_UNAVAILABLE');
+  for (const site of ['ed', 'canvas'] as const) {
+    const other = site === 'ed' ? 'canvas' : 'ed';
+    const previous = store.getSnapshot().browser![other];
+    const run = store.signIn(site);
+    expect(store.getSnapshot().signingIn[site]).toBe(true);
+    expect(store.getSnapshot().signingIn[other]).toBe(false);
+    await store.signIn(site);
+    const calls = fetcher.mock.calls.filter(([url]) => url === '/api/browser.signin');
+    expect(calls).toHaveLength(site === 'ed' ? 1 : 2);
+    const init = calls.at(-1)![1]!;
+    expect(init.method).toBe('POST');
+    expect(init.headers).toMatchObject({ 'X-Coursework-Session': secret });
+    expect(JSON.parse(String(init.body))).toEqual({ site });
+    finish(new Response(JSON.stringify({ protocol: 'coursework.agent/v1', command: 'browser.signin', ok: true,
+      data: { site, status: signedIn }, meta })));
+    await run;
+    expect(store.getSnapshot().signingIn[site]).toBe(false);
+    expect(store.getSnapshot().browser![site]).toEqual(signedIn);
+    expect(store.getSnapshot().browser![other]).toEqual(previous);
+    expect(store.getSnapshot().errors.browser).toBeUndefined();
+  }
+  const failed = store.signIn('ed');
+  finish(new Response(JSON.stringify({ protocol: 'coursework.agent/v1', command: 'browser.signin', ok: false,
+    error: { code: 'SOURCE_UNAVAILABLE', message: 'Private transport details', retryable: true }, meta }), { status: 503 }));
+  await failed;
+  expect(store.getSnapshot().signingIn.ed).toBe(false);
+  expect(store.getSnapshot().errors.edSignIn).toBe('SOURCE_UNAVAILABLE');
+  expect(store.getSnapshot().browser!.ed).toEqual(signedIn);
+  const retry = store.signIn('ed');
+  expect(store.getSnapshot().errors.edSignIn).toBeUndefined();
+  finish(new Response(JSON.stringify({ protocol: 'coursework.agent/v1', command: 'browser.signin', ok: true,
+    data: { site: 'ed', status: signedIn }, meta })));
+  await retry;
+  const anonymousFetch = vi.fn();
+  const anonymous = new ShellStore(createClient(undefined, anonymousFetch));
+  await anonymous.signIn('canvas');
+  expect(anonymousFetch).not.toHaveBeenCalled();
+  expect(anonymous.getSnapshot().errors.canvasSignIn).toBe('OWNER_SESSION_EXPIRED');
+});

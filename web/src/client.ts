@@ -25,7 +25,7 @@ export function takeOwnerSession(location: Pick<Location, 'hash' | 'pathname' | 
   return value && /^[a-f0-9]{64}$/.test(value) ? value : undefined;
 }
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });
-const writes = new Set<Command>(['sync.run', 'browser.start', 'browser.stop', 'planning.settings.set']);
+const writes = new Set<Command>(['sync.run', 'browser.start', 'browser.stop', 'browser.signin', 'planning.settings.set']);
 export function createClient(initialSecret?: string, fetcher: typeof fetch = fetch) {
   let secret = initialSecret;
   return {

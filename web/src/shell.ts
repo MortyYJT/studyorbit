@@ -5,14 +5,15 @@ export type Site = 'canvas' | 'ed';
 export interface ShellState {
   courses?: Output<'courses.list'>;
   tasks?: Output<'tasks.list'>;
-  browser?: Output<'browser.status'>;
+  browser?: Partial<Output<'browser.status'>>;
   sync?: Output<'sync.status'>;
   planning?: Output<'planning.settings.read'>;
   audit?: Output<'audit.list'>;
   syncing: boolean;
   saving: boolean;
   auditLoading: boolean;
-  errors: Partial<Record<'courses' | 'tasks' | 'browser' | 'sync' | 'planning' | 'audit' | 'action', string>>;
+  signingIn: Record<Site, boolean>;
+  errors: Partial<Record<'courses' | 'tasks' | 'browser' | 'sync' | 'planning' | 'audit' | 'action' | 'canvasSignIn' | 'edSignIn', string>>;
 }
 const code = (error: unknown) => error instanceof ClientError ? error.code : 'SOURCE_UNAVAILABLE';
 export function emptyStore(state: ShellState): boolean {
@@ -22,7 +23,7 @@ export function emptyStore(state: ShellState): boolean {
 export function attention(state: ShellState): { site: Site; kind: 'signin' | 'sync' }[] {
   return (['canvas', 'ed'] as const).flatMap(site => {
     const items: { site: Site; kind: 'signin' | 'sync' }[] = [];
-    if (state.browser?.[site].state === 'signedOut' || state.sync?.[site].lastRun?.status === 'AUTH_EXPIRED') items.push({ site, kind: 'signin' });
+    if (state.browser?.[site]?.state === 'signedOut' || state.sync?.[site].lastRun?.status === 'AUTH_EXPIRED') items.push({ site, kind: 'signin' });
     const status = state.sync?.[site].lastRun?.status;
     if (status && status !== 'OK' && status !== 'AUTH_EXPIRED') items.push({ site, kind: 'sync' });
     return items;
@@ -42,7 +43,7 @@ export function settingsFromForm(previous: Settings | undefined, hours: string[]
   });
 }
 export class ShellStore {
-  private state: ShellState = { syncing: false, saving: false, auditLoading: false, errors: {} };
+  private state: ShellState = { syncing: false, saving: false, auditLoading: false, signingIn: { canvas: false, ed: false }, errors: {} };
   private listeners = new Set<() => void>();
   private refreshing?: Promise<void>;
   constructor(readonly client: Client) {}
@@ -70,6 +71,17 @@ export class ShellStore {
     try { await this.client.call('sync.run', {}); }
     catch (error) { this.error('action', code(error)); }
     finally { await this.refresh(); this.update({ syncing: false }); }
+  }
+  async signIn(site: Site) {
+    if (this.state.signingIn[site]) return;
+    this.update({ signingIn: { ...this.state.signingIn, [site]: true } });
+    this.error(`${site}SignIn`);
+    try {
+      const result = await this.client.call('browser.signin', { site });
+      this.update({ browser: { ...this.state.browser, [site]: result.status } });
+      this.error('browser');
+    } catch (error) { this.error(`${site}SignIn`, code(error)); }
+    finally { this.update({ signingIn: { ...this.state.signingIn, [site]: false } }); }
   }
   async saveSettings(settings: Settings) {
     if (this.state.saving) return false;
