@@ -3,22 +3,19 @@
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#159）。
 
-- **最后更新：** 2026-10-15 18:25，无人值守调度员（#155），分支 `claude/handoff-j`。
+- **最后更新：** 2026-10-15 22:45，无人值守调度员（#155），分支 `claude/handoff-j2-k1`。
 - **模式：** 开发中。定时调度员每小时一次，按 `v1-delivery` 推进；调度细节在本机 `.local/dispatcher/HANDOFF.md`。
-- **已合并：** A（PR #115）、B（PR #116）、C（PR #118）、G（PR #119）、D（PR #121）、F（PR #126）、H（PR #127）、E（PR #129）、I（PR #131：Claude Agent SDK 0.3.300 适配器、PreToolUse 策略、生产接线；两轮审查后调度员自修 3 处 + 子代理复核 1 处）、L 后端（PR #132：`metrics.read`，对话明细分页）、J（PR #134：7 个浏览器工具、红框 + 1 秒、审计、提交前 owner 确认；第 2 轮审查 4 处中 1 处由调度员自修，3 处需你决定）。tasks 4.x、5.1–5.5、6.x、7.x、8.x、9.x、10.1–10.3、11.x、16.1 已勾。
+- **已合并：** A（PR #115）、B（PR #116）、C（PR #118）、G（PR #119）、D（PR #121）、F（PR #126）、H（PR #127）、E（PR #129）、I（PR #131：Claude Agent SDK 0.3.300 适配器、PreToolUse 策略、生产接线；两轮审查后调度员自修 3 处 + 子代理复核 1 处）、L 后端（PR #132：`metrics.read`，对话明细分页）、J（PR #134：7 个浏览器工具、红框 + 1 秒、审计、提交前 owner 确认；第 2 轮审查 4 处中 1 处由调度员自修，3 处需你决定）、J2（PR #138：owner 命令 `browser.signin`，把常驻浏览器的登录页带到前台，决定 #160）、K1（PR #139：`web/` 前端外壳、顶栏、头像菜单各面板、登录页按钮；本机空数据目录真浏览器检查 390/1440、明暗）。tasks 4.x、5.1–5.5、6.x、7.x、8.x、9.x、10.1–10.3、11.x、12.x、16.1 已勾。
 - **注意：** 生产对话现在默认启动已登录的 Claude（`ClaudeAdapter`），工具集取自 `registry.agentTools()`（与 MCP 同一条无 owner 权限的 dispatch 路径）；策略钩子每次调用时读 UI 端口（UI/HTTP 宿主监听后写入 `agentRuntime`）和常驻浏览器调试端口。`metrics.read` 的对话明细是偏移游标分页（每页最多 25），但这个分页参数还没写进 metrics 规格。F 的 `plan.read` 是游标分页，K2 要读完再拼。MCP agent 工具数：main 上 34（27 + 7 个浏览器工具）。测验 / workshop 页的 `browser.read` 只遮同学身份和联系方式，不再因为普通题干（如 password、student）整页拒绝。
 
 ## 没合并的工作
 
-| 分支 / clone | 内容 | 下一步 |
-| --- | --- | --- |
-| `codex/v1-ui-shell`（`../unimelb-coursework-agent-ui`，未推送） | K1（#109）：12.1–12.2 已提交；第 1 轮审查唯一问题：「把登录页带到前台」按钮没接后端 | 等 J2（#136）合并 → 返工接按钮 → 并 main → 本机真浏览器检查 12.3 → PR |
+无。
 
 ## 下一步（按顺序）
 
-1. J2（#136）：常驻浏览器层的「登录页带到前台」owner 命令（决定 #160）；合并后 K1 返工接按钮。
-2. K2（#110）、K3（#111）、K4（#112）、L 面板 16.2 等 K1；M（#114）最后。
-3. J 的 3 处遗留问题等你决定后再开 issue（见下）。
+1. K2（#110）、K3（#111）、K4（#112）、L 面板 16.2（#113）都已不受阻（K1 已合并），最多 3 条 Codex 线并行；M（#114）最后。
+2. J 的 3 处遗留问题等你决定后再开 issue（见下）。
 
 ## 等你决定
 

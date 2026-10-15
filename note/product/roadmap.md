@@ -25,8 +25,8 @@
 | V-D/E | 同步 + 批注 | `coursework sync`（按钮触发）；agent 批注和你的判定 | D 已完成（PR #121）；E 已完成（PR #129） | D 5.6 你在真机上跑一次同步 | `v1-delivery` |
 | V-F/G | 排期 + 复习 | 按天排期、预计 / 实际用时、校外任务；学习记录、`source.fetch`、考试范围、练习统计 | 已完成：G（PR #119）、F（PR #126） | — | `v1-delivery` |
 | V-H/I/J | agent 对话 | 适配器接口和对话存储；Claude Agent SDK 适配器和策略钩子；我们自己的浏览器工具和提交确认 | H 已完成（PR #127）；I 已完成（PR #131）；J 已完成（PR #134，3 处遗留等你决定） | I 10.4 你在真机上跑一次真实对话 | `v1-delivery` |
-| V-K1–K4 | 前端 | 外壳和菜单、七列周视图、课程页和抽屉、Agent 对话页 | K1 进行中（第 1 轮审查完；登录页按钮的后端命令另开 J2 #136，决定 #160） | V-B 及各自的数据 | `v1-delivery` |
-| V-L/M | 指标 + 验收 | 四项指标；你按 PRD 逐条验收后归档 | L 后端 16.1 已完成（PR #132），面板 16.2 等 K1；M 未开始 | 以上全部；R-B 3.5 | `v1-delivery` |
+| V-K1–K4 | 前端 | 外壳和菜单、七列周视图、课程页和抽屉、Agent 对话页 | K1 已完成（PR #139，登录页按钮接 J2 PR #138 的 `browser.signin`，决定 #160）；K2–K4 可开始 | V-B 及各自的数据 | `v1-delivery` |
+| V-L/M | 指标 + 验收 | 四项指标；你按 PRD 逐条验收后归档 | L 后端 16.1 已完成（PR #132），面板 16.2 可开始；M 未开始 | 以上全部；R-B 3.5 | `v1-delivery` |
 | 以后 | 邮件入口 | 邮件作为新的信息来源（#99） | 未开始 | — | 未写 |
 
 实现说明：M2 已实现的接口见 `docs/engineering/protocol.md`；Canvas 探针见 `docs/engineering/canvas-student-session-spike.md`。
