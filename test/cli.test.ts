@@ -67,7 +67,7 @@ it('coursework mcp over real stdio pipes writes only MCP frames to stdout and ex
   const frames = stdout.split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, any>);
   expect(frames.map(frame => frame.id)).toEqual([1, 2, 3, 4]);
   for (const frame of frames) expect(frame.jsonrpc).toBe('2.0');
-  expect(frames[1]!.result.tools.length).toBe(29); // Existing 22 agent commands plus seven browser tools; owner commands remain excluded.
+  expect(frames[1]!.result.tools.length).toBe(33); // 26 agent commands plus seven browser tools; owner commands remain excluded.
   expect(frames[1]!.result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining([
     'browser.open', 'browser.read', 'browser.screenshot', 'browser.click', 'browser.fill', 'browser.select', 'browser.submit',
   ]));

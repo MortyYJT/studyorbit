@@ -49,10 +49,10 @@ Covers: US-1 items 1–5, item 6 manual part (email trigger deferred, #129). Spe
 
 Covers: US-2 items 1–4. Spec: `agent-annotations`, `validated-agent-writes`. Depends on A; owner-only tests use an injected owner context until B merges.
 
-- [ ] 6.1 Failing tests: valid cited agent annotation applies; invented or stale quote rejected with nothing changed and a ledger entry
-- [ ] 6.2 Failing tests: syllabus-only assessment creation, one-to-many links, moving a link keeps history, cross-course links rejected
-- [ ] 6.3 Failing tests: precedence owner > agent > sync; append-only history; reads return effective value, origin, citations and verdicts; unknown kind stays unknown
-- [ ] 6.4 Failing tests: owner "confirm" records verdict `correct`; owner "use my value" records an owner annotation and verdict `incorrect`; both owner-only
+- [x] 6.1 Failing tests: valid cited agent annotation applies; invented or stale quote rejected with nothing changed and a ledger entry
+- [x] 6.2 Failing tests: syllabus-only assessment creation, one-to-many links, moving a link keeps history, cross-course links rejected
+- [x] 6.3 Failing tests: precedence owner > agent > sync; append-only history; reads return effective value, origin, citations and verdicts; unknown kind stays unknown
+- [x] 6.4 Failing tests: owner "confirm" records verdict `correct`; owner "use my value" records an owner annotation and verdict `incorrect`; both owner-only
 
 ## 7. Issue F — Planning
 
@@ -87,9 +87,9 @@ Covers: US-5 items 1–2 (backend). Spec: `agent-chat`. Depends on A, B.
 
 Covers: US-5 items 3 and 6. Spec: `agent-chat`. Depends on H. New dependency approved by the owner (#147).
 
-- [ ] 10.1 Install `@anthropic-ai/claude-agent-sdk` at an exact version; keep SDK types inside `src/agent/claude.ts`
-- [ ] 10.2 Failing tests with a stubbed SDK `query`: message mapping to `AgentEvent`s, session resume, in-process MCP tool set wired, `cwd` is the agent workspace, skills injected per preset, cost and turns read from the result, not-signed-in → `AGENT_UNAVAILABLE`
-- [ ] 10.3 Failing tests for the policy hook: data-directory access outside the workspace, `browser.json`, debugging port, local UI port, `coursework` owner commands, pseudo-terminal wrappers, `ps`, frontend origin are denied and stored as denied steps; ordinary workspace file writes are allowed
+- [x] 10.1 Install `@anthropic-ai/claude-agent-sdk` at an exact version; keep SDK types inside `src/agent/claude.ts`
+- [x] 10.2 Failing tests with a stubbed SDK `query`: message mapping to `AgentEvent`s, session resume, in-process MCP tool set wired, `cwd` is the agent workspace, skills injected per preset, cost and turns read from the result, not-signed-in → `AGENT_UNAVAILABLE`
+- [x] 10.3 Failing tests for the policy hook: data-directory access outside the workspace, `browser.json`, debugging port, local UI port, `coursework` owner commands, pseudo-terminal wrappers, `ps`, frontend origin are denied and stored as denied steps; ordinary workspace file writes are allowed
 - [ ] 10.4 Owner live check: one real conversation through the frontend backend with the signed-in agent; record steps and cost in the PR
 
 ## 11. Issue J — Agent browser tools

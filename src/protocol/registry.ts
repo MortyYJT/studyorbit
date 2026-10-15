@@ -1,6 +1,7 @@
 import { registerBrowserTools } from './browser-tools.js';
 import type { BrowserTools } from '../browser/tools/service.js';
 import type { ToolScope } from '../browser/tools/ports.js';
+import { annotationContracts, type AnnotationService } from './annotations.js';
 import { planningContracts, planningOwnerCommands, planningSessionCommands } from '../planning/contracts.js';
 import type { PlanningService } from '../planning/service.js';
 import { syncContracts, type SyncCommands } from './sync.js';
@@ -47,7 +48,7 @@ export type AgentContext = Omit<TrustedContext, 'owner'> & { readonly owner?: ne
 export function sessionOnlyCommand(entry: RegistryEntry | string): boolean {
   const name = typeof entry === 'string' ? entry : entry.name;
   return typeof entry !== 'string' && entry.authority === 'owner-session'
-    || planningSessionCommands.has(name) || ['policy.record', 'grant.record'].includes(name)
+    || planningSessionCommands.has(name) || ['policy.record', 'grant.record', 'annotation.confirm', 'annotation.replace'].includes(name)
     || ['browser.view', 'browser.image'].includes(name) || name.startsWith('confirmation.') || name.startsWith('autonomy.') && name !== 'autonomy.check';
 }
 export function isOwnerCommand(entry: RegistryEntry | string): boolean {
@@ -144,15 +145,15 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   }
   return result;
 }
-const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'browser.status', 'browser.open', 'browser.read', 'browser.screenshot', 'browser.view', 'confirmation.list', 'sync.status', 'plan.read', 'planning.settings.read']));
+const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'browser.status', 'browser.open', 'browser.read', 'browser.screenshot', 'browser.view', 'confirmation.list', 'sync.status', 'plan.read', 'planning.settings.read', 'annotation.read']));
 /** Contract commands that change state; transports require credentials for these whatever their autonomy level. */
-export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), 'browser.open', 'browser.click', 'browser.fill', 'browser.select', 'browser.submit'].filter(n => !readNames.has(n)));
+export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationContracts), 'browser.open', 'browser.click', 'browser.fill', 'browser.select', 'browser.submit'].filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
 /** Bind the settled contract surface to injected ports; no production service is selected here. */
 export interface BrowserServices {
   status(): Promise<BrowserStatus>; start(): Promise<BrowserState>; stop(): Promise<void>;
 }
-export function createRegistry(options: { browser?: Partial<BrowserServices>; autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; browserTools?: BrowserTools; browserScope?: () => ToolScope } = {}): Registry {
+export function createRegistry(options: { browser?: Partial<BrowserServices>; autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; annotations?: AnnotationService; browserTools?: BrowserTools; browserScope?: () => ToolScope } = {}): Registry {
   const registry = new Registry();
   const handlers = new Map<string, Handler>();
   for (const name of Object.keys(contracts) as CommandName[]) {
@@ -226,5 +227,12 @@ export function createRegistry(options: { browser?: Partial<BrowserServices>; au
     return name === 'sync.run' ? options.sync.run(input as { course?: string }) : options.sync.status();
   } });
   registerBrowserTools(registry, options.browserTools, options.browserScope);
+  for (const name of Object.keys(annotationContracts) as (keyof typeof annotationContracts)[]) {
+    const owner = ['annotation.owner.record', 'annotation.confirm', 'annotation.replace'].includes(name);
+    registry.register<z.ZodType, z.ZodType>({ name, ...annotationContracts[name], ...(owner ? { authority: name === 'annotation.owner.record' ? 'owner' as const : 'owner-session' as const } : {}), handler: async (input, context) => {
+      if (!options.annotations) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
+      return options.annotations.execute(name, input, context);
+    } });
+  }
   return registry;
 }

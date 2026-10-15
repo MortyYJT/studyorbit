@@ -1,3 +1,5 @@
+import { AnnotationService } from '../../src/protocol/annotations.js';
+import { TrustedStoreEvidence } from '../../src/protocol/reads.js';
 import { afterEach, expect, it, vi } from 'vitest';
 import { SqliteRepository } from '../../src/store/sqlite.js';
 import { SyncService } from '../../src/sync/service.js';
@@ -155,7 +157,8 @@ it('5.3 annotation and agent/owner links survive resync and weight differences a
   assignments.forEach((s, i) => store.appendAssessmentLink({ assessmentId: other.id, sourceItemId: s.id, origin: i ? 'owner' : 'agent', at: '2026-10-16T00:00:00Z' }));
   const count = store.readAssessmentLinks(assessment.id).length;
   const result = await service.run({});
-  expect(store.loadAssessment(assessment.id)?.weight).toBe(10);
+  expect(store.loadAssessment(assessment.id)?.weight).toBe(30);
+  expect(new AnnotationService(store, new TrustedStoreEvidence(store)).read({ entity: 'assessment', entityId: assessment.id }).fields.weight).toMatchObject({ value: 10, origin: 'owner' });
   expect(result.differences).toEqual([{ entityId: assessment.id, field: 'weight' }]);
   expect(store.readAssessmentLinks(assessment.id)).toHaveLength(count);
   expect(store.readAssessmentLinks(other.id)).toHaveLength(2);

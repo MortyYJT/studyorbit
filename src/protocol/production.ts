@@ -3,18 +3,22 @@ import { ResidentToolBrowser } from '../browser/tools/playwright.js';
 import type { BrowserToolOptions } from '../browser/tools/ports.js';
 import { BrowserConfirmationStore } from './browser-confirmations.js';
 import { browserAgentTools } from './browser-tools.js';
+import { AnnotationService } from './annotations.js';
 import { ConversationService } from '../agent/conversations.js';
-import { unavailableAdapter, type AgentAdapter, type AgentTool } from '../agent/adapter.js';
+import { type AgentAdapter, type AgentTool } from '../agent/adapter.js';
+import { ClaudeAdapter, type ProtectedPorts } from '../agent/claude.js';
+import { ResidentBrowser } from '../browser/resident.js';
+import { describe, inputSchema } from './mcp.js';
 import { PlanningService } from '../planning/service.js';
 import { productionSync } from '../sync/runtime.js';
 import type { SyncCommands } from './sync.js';
 import { SqliteStudyRecordStore } from '../store/study-records.js';
 import { RevisionService, StoreStudyEvidence } from '../revision/service.js';
 import type { SourceTransport } from '../revision/source-fetch.js';
-import { databasePath } from '../config/data-dir.js';
+import { databasePath, resolveDataDir } from '../config/data-dir.js';
 import { SqliteRepository } from '../store/sqlite.js';
 import { ProtocolFiles } from './files.js';
-import { createRegistry, sessionOnlyCommand } from './registry.js';
+import { createRegistry, dispatch, sessionOnlyCommand } from './registry.js';
 import { StoreProtocolReads, TrustedStoreEvidence, type AuxiliaryReadPorts, type EvidenceMetadata } from './reads.js';
 import { SharedAuthorization } from './authorization.js';
 import { CanonicalAuthorizationStore } from './canonical-authorization.js';
@@ -40,18 +44,19 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const audit = new DurableAudit(files); const runs = new DurableRuns(files);
   const authorizationStore = new CanonicalAuthorizationStore(files, store);
   const authorization = new SharedAuthorization(authorizationStore, audit);
-  const autonomy = new AssessmentAutonomy(store, audit);
-  const confirmations = options.browserTools?.confirmations ?? new BrowserConfirmationStore(store);
-  const browserTools = new BrowserTools({ store, audit, autonomy, browser: options.browserTools?.browser ?? new ResidentToolBrowser(), confirmations, clock: options.browserTools?.clock, recoverOnStart: false });
-  const chat = new ConversationService(store, options.agentAdapter ?? unavailableAdapter, [...(options.agentTools ?? []), ...browserAgentTools(browserTools)]);
   const evidence = new TrustedStoreEvidence(store, { metadata: options.metadata, privacyScope: options.privacyScope });
   const accepted = new SqliteStudyRecordStore(store, evidence);
   const provider = options.study?.provider ?? new StoreStudyEvidence(store, evidence);
   const study = new StudyWriteService({ provider, store: options.study?.store ?? accepted });
   const studyEvidence = new StudyCitationService(provider);
   const revision = new RevisionService(store, evidence, { transport: options.sourceTransport });
+  const annotations = new AnnotationService(store, evidence);
+  const effectiveKind = (id: string) => annotations.read({ entity: 'assessment', entityId: id, limit: 0 }).fields.kind!.value as string | null;
+  const autonomy = new AssessmentAutonomy(store, audit, effectiveKind);
   const repository = new StoreProtocolReads(store, evidence, {
     ...options.reads,
+    assessments: { query: input => store.queryEffectiveAssessments(input, effectiveKind) },
+    project: (entity, value) => annotations.project(entity, value),
     accepted: options.reads?.accepted ?? accepted,
     revision: { read: (name, input) => revision.read(name, input) },
     audit: options.reads?.audit ?? { read: async input => {
@@ -93,13 +98,30 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
+  const confirmations = options.browserTools?.confirmations ?? new BrowserConfirmationStore(store);
+  const browserTools = new BrowserTools({ store, audit, autonomy, browser: options.browserTools?.browser ?? new ResidentToolBrowser(), confirmations, clock: options.browserTools?.clock, recoverOnStart: false });
   let externalScope: ReturnType<ConversationService['toolScope']> | undefined;
-  const registry = createRegistry({ autonomy, planning: new PlanningService(store), sync: options.sync ?? productionSync(store), browserTools, browserScope: () => {
+  const registry = createRegistry({ autonomy, annotations, planning: new PlanningService(store, annotations), sync: options.sync ?? productionSync(store), browserTools, browserScope: () => {
     if (!externalScope?.isActive()) externalScope = chat.toolScope();
     return externalScope;
   } });
+  // The chat agent gets the same owner-free tool set as MCP; every call still goes through dispatch().
+  // Browser tools are swapped for their conversation-scoped form so steps and confirmations land in the chat.
+  const agent = registry.agentTools(context);
+  const agentTools = options.agentTools ?? agent.registry.list().filter(entry => !entry.name.startsWith('browser.')).map(entry => ({ name: entry.name, description: describe(entry),
+    inputSchema: inputSchema(entry), execute: (input: unknown) => dispatch(agent.registry, entry.name, input, agent.context) }));
+  // The UI host records its origin here once it listens; the debugging port is read from the resident browser per call.
+  const agentRuntime: Pick<ProtectedPorts, 'frontendOrigin'> = {};
+  const resident = new ResidentBrowser();
+  const adapter = options.agentAdapter ?? new ClaudeAdapter({ dataDirectory: resolveDataDir(), runtime: () => {
+    // An unreadable browser state must not drop the already known UI origin.
+    let debuggingPort: number | undefined;
+    try { const endpoint = resident.current()?.endpoint; if (endpoint) debuggingPort = Number(new URL(endpoint).port); } catch { /* Port unknown. */ }
+    return { ...agentRuntime, ...(debuggingPort ? { debuggingPort } : {}) };
+  } });
+  const chat = new ConversationService(store, adapter, [...agentTools, ...browserAgentTools(browserTools)]);
   let closing: Promise<void> | undefined;
-  return { chat, browserTools, registry, context, audit, store, close: () => closing ??= (async () => {
+  return { chat, agentRuntime, browserTools, registry, context, audit, store, close: () => closing ??= (async () => {
     await browserTools.close();
     await Promise.all(chat.list().map(c => chat.waitForIdle(c.id)));
     if (!options.store) store.close();

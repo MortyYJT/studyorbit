@@ -134,8 +134,8 @@ export class ConversationService {
     if (terminal(event)) {
       run = { id: message.id, command: 'agent.reply', conversationId: conversation.id, startedAt: message.at, endedAt: conversation.updatedAt,
         steps: reply.events.filter(e => e.event.type === 'tool_step').length,
-        turns: event.type === 'result' ? event.turns : 0, outcome: event.type === 'result' ? 'ok' : 'error',
-        ...(event.type === 'result' && event.costUsd !== undefined ? { costUsd: event.costUsd } : {}),
+        turns: event.type === 'result' || event.type === 'error' ? event.turns ?? 0 : 0, outcome: event.type === 'result' ? 'ok' : 'error',
+        ...((event.type === 'result' || event.type === 'error') && event.costUsd !== undefined ? { costUsd: event.costUsd } : {}),
         ...(event.type === 'error' ? { errorCode: event.code } : event.type === 'stopped' ? { errorCode: 'STOPPED' } : {}) };
     }
     this.store.saveChat(conversation, message, reply.events, run);
