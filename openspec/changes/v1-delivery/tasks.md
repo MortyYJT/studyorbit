@@ -101,7 +101,7 @@ Covers: US-5 item 4; US-7 items 3–4. Spec: `agent-browser-tools`. Depends on C
 - [x] 11.3 Failing tests for writes: course/platform mismatch refused before highlight; denied check types nothing and audits a denial; allowed write highlights ≥1 s, acts once, screenshots, audits; audit failure after action reports uncertain state without repeating
 - [x] 11.4 Failing tests for `browser.submit`: pending confirmation created with summary and screenshot; owner confirm releases one click (`owner-ui`); cancel, timeout and restart leave it unsubmitted; confirmation via MCP or without session refused; single use; confirmation off → `not-required`
 - [x] 11.5 Every tool call emits a conversation step with outcome, screenshot reference and "view in Edge"
-- [ ] 11.6 Owner command that brings the resident browser's sign-in page to the front, for K1's sign-in status button (issue J2, #136; decision #160)
+- [x] 11.6 Owner command that brings the resident browser's sign-in page to the front, for K1's sign-in status button (issue J2, #136; decision #160)
 
 ## 12. Issue K1 — Frontend shell, status and settings
 
