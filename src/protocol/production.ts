@@ -1,13 +1,14 @@
 import { AnnotationService } from './annotations.js';
 import { ConversationService } from '../agent/conversations.js';
-import { unavailableAdapter, type AgentAdapter, type AgentTool } from '../agent/adapter.js';
+import { type AgentAdapter, type AgentTool } from '../agent/adapter.js';
+import { ClaudeAdapter } from '../agent/claude.js';
 import { PlanningService } from '../planning/service.js';
 import { productionSync } from '../sync/runtime.js';
 import type { SyncCommands } from './sync.js';
 import { SqliteStudyRecordStore } from '../store/study-records.js';
 import { RevisionService, StoreStudyEvidence } from '../revision/service.js';
 import type { SourceTransport } from '../revision/source-fetch.js';
-import { databasePath } from '../config/data-dir.js';
+import { databasePath, resolveDataDir } from '../config/data-dir.js';
 import { SqliteRepository } from '../store/sqlite.js';
 import { ProtocolFiles } from './files.js';
 import { createRegistry, sessionOnlyCommand } from './registry.js';
@@ -31,7 +32,7 @@ export interface ProductionOptions {
 /** Compose durable storage and validated revision services once for all transports. */
 export function createProductionProtocol(options: ProductionOptions = {}) {
   const store = options.store ?? new SqliteRepository(databasePath());
-  const chat = new ConversationService(store, options.agentAdapter ?? unavailableAdapter, options.agentTools);
+  const chat = new ConversationService(store, options.agentAdapter ?? new ClaudeAdapter({ dataDirectory: resolveDataDir() }), options.agentTools);
   const files = options.files ?? new ProtocolFiles();
   const audit = new DurableAudit(files); const runs = new DurableRuns(files);
   const authorizationStore = new CanonicalAuthorizationStore(files, store);

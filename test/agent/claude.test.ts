@@ -75,7 +75,8 @@ it.each(['auth', 'missing', 'throw', 'result'])('returns safe AGENT_UNAVAILABLE 
   if (kind === 'throw') query.mockImplementation(() => { throw Object.assign(new Error('private diagnostic'), { code: 'ENOENT' }); });
   else if (kind === 'result') stub([{ ...result, subtype: 'error_during_execution', is_error: true, errors: ['Not logged in. Please run /login.'] }]);
   else stub(kind === 'auth' ? [{ type: 'assistant', error: 'authentication_failed', message: { content: [] } }] : [{ type: 'auth_status', error: 'private diagnostic' }]);
-  expect(await collect(adapter().start(input))).toEqual([{ type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Sign in to the installed agent and retry.' }]);
+  expect(await collect(adapter().start(input))).toEqual([{ type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Sign in to the installed agent and retry.',
+    ...(kind === 'result' ? { turns: 14, costUsd: 0.42 } : {}) }]);
 });
 
 it.each([
@@ -130,4 +131,47 @@ it('allows an ordinary workspace write without recording a denial', async () => 
     yield result;
   })(), { interrupt: vi.fn() }));
   expect((await collect(adapter().start(input))).map(e => e.type)).toEqual(['result']);
+});
+
+it('persists reported failure turns and cost with counted steps and safe diagnostics', async () => {
+  const { ConversationService } = await import('../../src/agent/conversations.js');
+  const { SqliteRepository } = await import('../../src/store/sqlite.js');
+  const store = new SqliteRepository(':memory:'); const owner = { assertOwner: async () => {} };
+  try {
+    for (const diagnostic of ['private execution diagnostic', 'Not logged in. Please run /login.']) {
+      for (const costUsd of [0.12, undefined]) {
+        stub([
+          { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'draft.md' } }] } },
+          { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'read', content: 'Synthetic' }] } },
+          { ...result, subtype: 'error_during_execution', is_error: true, num_turns: 3, total_cost_usd: costUsd, errors: [diagnostic] },
+        ]);
+        const service = new ConversationService(store, adapter());
+        const c = await service.create({}, owner);
+        const { messageId } = await service.send(c.id, 'Synthetic failure', owner); await service.waitForIdle(c.id);
+        expect(store.loadRun(messageId)).toMatchObject({ outcome: 'error', steps: 1, turns: 3 });
+        expect(store.loadRun(messageId)!.costUsd).toBe(costUsd);
+        const event = service.events(c.id).at(-1)!.event;
+        expect(event).toMatchObject({ type: 'error', turns: 3, code: diagnostic.startsWith('Not') ? 'AGENT_UNAVAILABLE' : 'INTERNAL' });
+        expect(JSON.stringify(event)).not.toContain(diagnostic);
+      }
+    }
+  } finally { store.close(); }
+});
+it('treats workspace file bodies as text rather than paths, commands or endpoints', async () => {
+  const content = 'See browser.json for details; ../coursework.db; http://127.0.0.1:4567; coursework grant record';
+  query.mockImplementation(({ options }) => Object.assign((async function* () {
+    const hook = options.hooks.PreToolUse[0].hooks[0];
+    for (const [tool_name, tool_input] of [
+      ['Write', { file_path: 'draft.md', content }],
+      ['Edit', { file_path: 'draft.md', old_string: content, new_string: content }],
+    ]) {
+      expect(await hook({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: options.cwd }, 'body', {})).toEqual({});
+    }
+    for (const pattern of ['../coursework.db', '../browser.json']) {
+      const decision = await hook({ hook_event_name: 'PreToolUse', tool_name: 'Glob', tool_input: { pattern }, cwd: options.cwd }, 'glob', {});
+      expect(decision.hookSpecificOutput.permissionDecision).toBe('deny');
+    }
+    yield result;
+  })(), { interrupt: vi.fn() }));
+  expect((await collect(adapter().start(input))).map(e => e.type)).toEqual(['tool_step', 'tool_step', 'result']);
 });

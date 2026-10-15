@@ -29,6 +29,8 @@ export function deniedToolReason(input: unknown, cwd: string, options: ToolPolic
     if (Array.isArray(value)) return value.some(item => walk(item, key));
     if (value && typeof value === 'object') return Object.entries(value).some(([k, v]) => walk(v, k));
     if (typeof value !== 'string') return false;
+    // File bodies and replacement text are inert; retain checks on paths, patterns and commands.
+    if (['content', 'old_string', 'new_string'].includes(key)) return false;
     if (/path|file|directory|cwd/i.test(key) && deniedPath(value)) return true;
     const tokens = value.match(/"[^"]*"|'[^']*'|[^\s;|&<>]+/g) ?? [];
     for (const raw of tokens) {

@@ -8,9 +8,9 @@ import type { AgentAdapter, AgentEvent, AgentInput, AgentRun } from './adapter.j
 import { deniedToolReason } from './policy.js';
 
 export interface ClaudeOptions { dataDirectory: string; frontendOrigin?: string; debuggingPort?: number }
-const unavailable = (): AgentEvent => ({ type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Sign in to the installed agent and retry.' });
+const unavailable = (): Extract<AgentEvent, { type: 'error' }> => ({ type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Sign in to the installed agent and retry.' });
 const authFailure = (message: string): boolean => /not signed in|not logged in|authentication|login required|please (?:run )?\/login/i.test(message);
-const failed = (): AgentEvent => ({ type: 'error', code: 'INTERNAL', message: 'Agent reply failed.' });
+const failed = (): Extract<AgentEvent, { type: 'error' }> => ({ type: 'error', code: 'INTERNAL', message: 'Agent reply failed.' });
 function skills(preset?: string): string {
   const name = ['prepare-revision', 'tutor-revision', 'wrong-answers-only'].includes(preset ?? '') ? 'revision'
     : ['complete-assessment', 'explain-assessment', 'estimate-work'].includes(preset ?? '') ? 'assessment' : undefined;
@@ -100,7 +100,8 @@ export class ClaudeAdapter implements AgentAdapter {
       if (message.type === 'result') {
         if (message.is_error) {
           const diagnostic = message.subtype === 'success' ? message.result : message.errors.join(' ');
-          return authFailure(diagnostic) ? unavailable() : failed();
+          return { ...(authFailure(diagnostic) ? unavailable() : failed()), turns: message.num_turns,
+            ...(message.total_cost_usd === undefined ? {} : { costUsd: message.total_cost_usd }) };
         }
         return { type: 'result', turns: message.num_turns, sessionRef: message.session_id,
           ...(message.total_cost_usd === undefined ? {} : { costUsd: message.total_cost_usd }) };
