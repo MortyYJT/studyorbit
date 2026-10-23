@@ -246,3 +246,19 @@ it('review 6: planner shares effective kind, name and due resolution after evide
   expect(plan).toMatchObject({ ok: true, data: { deadlines: [], work: expect.arrayContaining([expect.objectContaining({ workId: 'a', title: 'Synthetic assessment' })]) } });
   if (plan.ok) expect((plan.data as { work: { workId: string; due?: string }[] }).work.find(item => item.workId === 'a')?.due).toBeUndefined();
 });
+it('assessments.list derives platform submitted and removed flags from currently linked items only', async () => {
+  const f = await fixture();
+  const platform = async () => Object.fromEntries(((await f.call('assessments.list', { courseId: 'c' })) as { data: { items: { id: string; platform?: unknown }[] } })
+    .data.items.map(item => [item.id, item.platform]));
+  expect(await platform()).toEqual({ a: { linked: false, submitted: false, removed: false }, b: { linked: false, submitted: false, removed: false } });
+  const link = (assessmentId: string, sourceItemId: string) => f.store.appendAssessmentLink({ assessmentId, sourceItemId, origin: 'sync', at: '2026-01-01T00:00:00Z' });
+  link('a', 'item-0'); link('a', 'item-1'); link('b', 'item-2');
+  const item = (id: string, extra: object) => ({ id, platform: 'ed' as const, externalId: id.slice(5), courseId: 'c', kind: 'assignment' as const,
+    title: 'Synthetic workshop', text: 'Workshop', contentHash: hash('Workshop'), fetchedAt: '2026-01-01T00:00:00Z', ...extra });
+  f.store.saveSourceItem(item('item-1', { facts: { submitted: true } }));
+  f.store.saveSourceItem(item('item-2', { removed: true }));
+  expect(await platform()).toEqual({ a: { linked: true, submitted: true, removed: false }, b: { linked: true, submitted: false, removed: true } });
+  // A moved link no longer counts for its old assessment, matching the planner.
+  link('b', 'item-1');
+  expect(await platform()).toEqual({ a: { linked: true, submitted: false, removed: false }, b: { linked: true, submitted: true, removed: true } });
+});

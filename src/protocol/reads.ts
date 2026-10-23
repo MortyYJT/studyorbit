@@ -74,6 +74,8 @@ export interface AuxiliaryReadPorts {
   audit?: { read(input: ParsedCommandInput<'audit.list'>): Promise<CommandOutput<'audit.list'>> };
   /** M1 entities do not store source links except Task citations; never infer them by name. */
   entitySources?: (collection: 'courses' | 'assessments', id: string) => readonly string[];
+  /** Submitted/removed booleans from linked platform items; no item text or facts beyond these leave the store. */
+  platform?: (assessmentId: string) => { linked: boolean; submitted: boolean; removed: boolean };
 }
 type Gap = { code: 'MISSING_EVIDENCE' | 'UNSUPPORTED' | 'INCOMPLETE'; reference?: string };
 const unsupported = () => ({ items: [], evidence: [], coverage: { complete: false, gaps: [{ code: 'UNSUPPORTED' }] } });
@@ -152,6 +154,9 @@ export class StoreProtocolReads implements ProtocolRepository {
       let included: unknown = this.evidence.protect(
         (collection === 'courses' || collection === 'assessments') && this.ports.project
           ? this.ports.project(collection === 'courses' ? 'course' : 'assessment', item) : item);
+      if (collection === 'assessments' && this.ports.platform && included && typeof included === 'object') {
+        included = { ...included, platform: this.ports.platform(item.id) };
+      }
       if ((collection === 'courses' || collection === 'assessments') && included && typeof included === 'object' && 'coverage' in included) {
         itemGaps.push(...CoverageSchema.parse(included.coverage).gaps);
         const { coverage: _coverage, ...projected } = included;

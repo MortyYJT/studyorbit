@@ -1,3 +1,4 @@
+import { currentLinks, linkedSources, platformState } from '../store/platform-state.js';
 import { AnnotationService } from '../protocol/annotations.js';
 import { TrustedStoreEvidence } from '../protocol/reads.js';
 import type { Task } from '../domain/schemas.js';
@@ -37,11 +38,11 @@ export function effectiveWork(store: SqliteRepository, item: WorkItem): WorkItem
 export function collectWork(store: SqliteRepository, term: string, timeZone: string, annotations = new AnnotationService(store, new TrustedStoreEvidence(store))) {
   const courses = new Set(all(store, 'courses').filter(course => course.term === term).map(course => course.id));
   const items: WorkItem[] = []; const deadlines: Deadline[] = []; const active = new Map<string, WorkItem>();
-  const links = new Map(store.listAssessmentLinks().map(link => [link.sourceItemId, link]));
+  const links = currentLinks(store.listAssessmentLinks());
   for (const assessment of all(store, 'assessments')) {
     if (!courses.has(assessment.courseId)) continue;
-    const sources = [...links.values()].filter(link => link.assessmentId === assessment.id).map(link => store.loadSourceItem(link.sourceItemId));
-    if (['submitted', 'graded'].includes(assessment.status) || sources.some(source => source?.facts?.submitted || source?.removed)) continue;
+    const platform = platformState(linkedSources(store, links, assessment.id));
+    if (['submitted', 'graded'].includes(assessment.status) || platform.submitted || platform.removed) continue;
     const fields = annotations.read({ entity: 'assessment', entityId: assessment.id, limit: 0 }).fields;
     const due = fields.due!.value as string | undefined | null;
     const title = fields.name!.value as string | null;
