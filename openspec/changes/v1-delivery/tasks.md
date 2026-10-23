@@ -115,39 +115,39 @@ Covers: US-1 items 5–6 (status, manual sync button; email trigger deferred, #1
 
 Covers: US-1 item 3 (listing); US-3 items 1, 5–8 (including all-day tasks in the top row). Spec: `web-ui`. Depends on F, K1.
 
-- [ ] 13.1 View-model tests: seven columns Monday–Sunday, deadline row, timed-then-untimed order, used/available hours, overflow and unestimated lists, "needs you" items
-- [ ] 13.2 Build the week view, week navigation, month calendar toggle, course side list with rings and next deadline, manual-task dialog, start-time and actual-time editing through the owner session
-- [ ] 13.3 Real-browser check and screenshots as in 12.3
+- [x] 13.1 View-model tests: seven columns Monday–Sunday, deadline row, timed-then-untimed order, used/available hours, overflow and unestimated lists, "needs you" items
+- [x] 13.2 Build the week view, week navigation, month calendar toggle, course side list with rings and next deadline, manual-task dialog, start-time and actual-time editing through the owner session
+- [x] 13.3 Real-browser check and screenshots as in 12.3
 
 ## 14. Issue K3 — Course page and assessment drawer
 
 Covers: US-1 items 3–4; US-2 item 1 (display); US-3 item 4; US-6 item 4; US-7 items 1, 5–6. Spec: `web-ui`. Depends on C, E, F, G, K1.
 
-- [ ] 14.1 Ring geometry tests (segments by weight, earned/lost/ungraded/unknown styles, centre total) and grade figures including `weights_unknown`
-- [ ] 14.2 Course header (policy, default level, confirm switch, L0 lock for prohibited), Assessments tab (exams show "—", no agent entry), overrides through the owner session
-- [ ] 14.3 Drawer with origin markers, citation popover with source link, "confirm" and "use my value", estimate with reason and owner override, actual time, linked items, preset buttons
-- [ ] 14.4 Revision tab: exam time, cited scope, notes, practice stats, "tutor me" and "wrong answers only" buttons
-- [ ] 14.5 Real-browser check and screenshots as in 12.3
+- [x] 14.1 Ring geometry tests (segments by weight, earned/lost/ungraded/unknown styles, centre total) and grade figures including `weights_unknown`
+- [x] 14.2 Course header (policy, default level, confirm switch, L0 lock for prohibited), Assessments tab (exams show "—", no agent entry), overrides through the owner session
+- [x] 14.3 Drawer with origin markers, citation popover with source link, "confirm" and "use my value", estimate with reason and owner override, actual time, linked items, preset buttons
+- [x] 14.4 Revision tab: exam time, cited scope, notes, practice stats, "tutor me" and "wrong answers only" buttons
+- [x] 14.5 Real-browser check and screenshots as in 12.3
 
 ## 15. Issue K4 — Agent page
 
 Covers: US-5 items 1–2, 4; US-6 item 5; US-7 item 3. Spec: `web-ui`, `agent-chat`. Depends on I, J, K1.
 
-- [ ] 15.1 Conversation list and view with streamed text, tool steps (expandable screenshots, "view in Edge"), denied steps, stop, send, reconnect
-- [ ] 15.2 Preset arrival from the drawer, the revision tab and "needs you" sends once
-- [ ] 15.3 Confirmation card (summary, screenshot, confirm and cancel) in the conversation and in "needs you"
-- [ ] 15.4 Real-browser check with the synthetic adapter and screenshots as in 12.3
+- [x] 15.1 Conversation list and view with streamed text, tool steps (expandable screenshots, "view in Edge"), denied steps, stop, send, reconnect
+- [x] 15.2 Preset arrival from the drawer, the revision tab and "needs you" sends once
+- [x] 15.3 Confirmation card (summary, screenshot, confirm and cancel) in the conversation and in "needs you"
+- [x] 15.4 Real-browser check with the synthetic adapter and screenshots as in 12.3
 
 ## 16. Issue L — Metrics
 
 Covers: PRD §1 auxiliary metrics (#133). Spec: `metrics`. Depends on D, E, F, I; frontend panel after K1.
 
 - [x] 16.1 Failing tests for `metrics.read`: sync duration and success per provider, accuracy with `no_labels`, estimate ratios (60/90, 120/120 → mean 1.25), agent steps/turns/cost with unknown costs excluded and counted
-- [ ] 16.2 Metrics panel in the avatar menu showing values, counts and "unavailable" reasons
+- [x] 16.2 Metrics panel in the avatar menu showing values, counts and "unavailable" reasons
 
 ## 17. Issue M — Acceptance and archive
 
-- [ ] 17.1 Synthetic end-to-end test: status → sync → annotations → plan → UI reads → preset conversation with the synthetic adapter → browser tool submit with confirmation → audit and metrics
+- [x] 17.1 Synthetic end-to-end test: status → sync → annotations → plan → UI reads → preset conversation with the synthetic adapter → browser tool submit with confirmation → audit and metrics
 - [ ] 17.2 Owner task R-B 3.5 (carried): start Edge on the managed profile, sign in by hand, run `browser status`, leave it overnight, record the sign-in lifetime and whether remote debugging or the fallback is used
 - [ ] 17.3 Owner acceptance on real data against every PRD acceptance item of US-1, US-2, US-3, US-5, US-6 and US-7; failures become new issues linked to their story
 - [ ] 17.4 `openspec validate v1-delivery --strict`, `bash .claude/check.sh`, `npm run build`; archive `v1-delivery` with specs; update the roadmap and handoff
