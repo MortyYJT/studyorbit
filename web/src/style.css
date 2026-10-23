@@ -117,9 +117,9 @@ button.small { padding:4px 10px; font-size:12px; }
 .score { display:grid; grid-template-columns:170px minmax(0,1fr); gap:24px; align-items:center; }
 .donut { width:170px; height:170px; }
 .donut path,.donut circle { fill:none; stroke-width:16; }
-.donut .track { stroke:var(--hover); }
-.donut .earned { stroke:var(--ink); } .donut .lost { stroke:var(--lost); } .donut .ungraded { stroke:var(--line); }
-.donut .unknown { stroke:var(--faint); stroke-width:3; stroke-dasharray:3 4; }
+.donut .track { stroke:var(--line); stroke-width:1; }
+.donut .earned { stroke:var(--ink); } .donut .lost { stroke:var(--lost); } .donut .ungraded { stroke:color-mix(in srgb, var(--ink) 14%, var(--panel)); }
+.donut .unknown { stroke:var(--faint); stroke-width:4; stroke-dasharray:3 3; }
 .donut text { fill:var(--text); text-anchor:middle; } .donut .total { font-size:28px; font-weight:700; } .donut .caption { font-size:11px; fill:var(--muted); }
 .facts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
 .facts .v { font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; } .facts .v.small { font-size:14px; }
@@ -127,7 +127,7 @@ label.inline { display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px;
 label.inline select { width:auto; padding:4px 6px; }
 .key { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:14px; font-size:12px; color:var(--muted); }
 .key i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
-.key .earned { background:var(--ink); } .key .lost { background:var(--lost); } .key .ungraded { background:var(--line); } .key .unknown { border:1.5px dashed var(--faint); }
+.key .earned { background:var(--ink); } .key .lost { background:var(--lost); } .key .ungraded { background:color-mix(in srgb, var(--ink) 14%, var(--panel)); } .key .unknown { border:1.5px dashed var(--faint); }
 .policy { display:flex; flex-wrap:wrap; align-items:center; gap:10px 20px; margin:16px 0 0; font-size:13px; }
 .policy .help { flex-basis:100%; margin:0; font-size:12px; }
 .suggestion { color:var(--muted); }
@@ -156,6 +156,7 @@ dialog.drawer h2 { margin:0; }
 dialog.drawer h3 { font-size:14px; margin:22px 0 6px; }
 .field { display:grid; grid-template-columns:96px minmax(0,1fr) auto; gap:6px 10px; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); }
 .field .k { color:var(--muted); font-size:13px; }
+.field > .pill { justify-self:start; }
 .field select { grid-column:2 / -1; }
 .inline-form { display:flex; align-items:end; gap:8px; margin:8px 0; }
 .inline-form label { flex:1; margin:0; font-size:12px; }
