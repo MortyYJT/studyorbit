@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Repository } from '../store/repository.js';
+import type { CurrentStateReader } from '../store/queries.js';
 import { AssessmentSchema } from '../domain/schemas.js';
 import { hash } from '../citations/exact.js';
 import type { AuditEvent, TrustedContext } from './context.js';
@@ -13,9 +14,16 @@ const PolicySchema = z.enum(['allowed', 'prohibited', 'owner-attested']);
 export const ReasonSchema = z.enum(['allowed', 'assessment-unavailable', 'course-prohibited', 'grant-level',
   'authorization-unavailable', 'audit-unavailable']);
 const receipt = z.strictObject({ recorded: z.literal(true) });
+const KindSchema = AssessmentSchema.shape.kind.unwrap();
+/** One assessment's authority as the owner UI shows it; exams carry no level (#126, #146). */
+export const AutonomyAssessmentSchema = z.strictObject({ assessmentId: AuditIdSchema, kind: KindSchema.nullable(), applicable: z.boolean(),
+  requiredLevel: z.union([z.literal(1), z.literal(2)]).nullable(), override: WorkLevelSchema.nullable(), effectiveLevel: WorkLevelSchema.nullable() });
+export const AutonomyReadSchema = z.strictObject({ courseId: AuditIdSchema, policy: PolicySchema.nullable(), cap: z.union([z.literal(0), z.literal(2)]),
+  defaultLevel: WorkLevelSchema, confirmBeforeSubmit: z.boolean(), assessments: z.array(AutonomyAssessmentSchema).max(500) });
 export const autonomyContracts = {
   'autonomy.check': { input: z.strictObject({ assessmentId: AuditIdSchema, action: z.enum(['read', 'click', 'fill', 'select', 'submit', 'other']) }),
     output: z.strictObject({ decision: z.enum(['allowed', 'denied']), reason: ReasonSchema }), level: 0 },
+  'autonomy.read': { input: z.strictObject({ courseId: AuditIdSchema }), output: AutonomyReadSchema, level: 0 },
   'autonomy.policy.set': { input: z.strictObject({ courseId: AuditIdSchema, status: PolicySchema.nullable() }), output: receipt, level: 0 },
   'autonomy.default.set': { input: z.strictObject({ courseId: AuditIdSchema, level: WorkLevelSchema }), output: receipt, level: 0 },
   'autonomy.override.set': { input: z.strictObject({ assessmentId: AuditIdSchema, level: WorkLevelSchema }), output: receipt, level: 0 },
@@ -28,7 +36,9 @@ type Decision = z.infer<typeof autonomyContracts['autonomy.check']['output']>;
 type WorkLevel = z.infer<typeof WorkLevelSchema>;
 type Policy = z.infer<typeof PolicySchema>;
 type AuthorityReferences = Pick<AuditEvent, 'courseId' | 'assessmentId' | 'level' | 'policyRef' | 'grantRef'>;
-type AutonomyRepository = Pick<Repository, 'loadCourse' | 'loadAssessment' | 'readAnnotations' | 'appendAnnotation' | 'readCourseAutonomy' | 'appendCourseAutonomy'>;
+type AutonomyRepository = Pick<Repository, 'loadCourse' | 'loadAssessment' | 'readAnnotations' | 'appendAnnotation' | 'readCourseAutonomy' | 'appendCourseAutonomy'>
+  & Partial<Pick<CurrentStateReader, 'query'>>;
+type OwnerCommand = Exclude<AutonomyCommand, 'autonomy.check' | 'autonomy.read'>;
 
 export function required(kind: unknown): 1 | 2 { return kind === 'quiz' || kind === 'ongoing' ? 1 : 2; }
 export function cap(policy?: Policy): 0 | 2 { return policy === 'prohibited' ? 0 : 2; }
@@ -87,7 +97,7 @@ export class AssessmentAutonomy {
     return this.authority(parsed.courseId).refs;
   }
   /** Only the dispatcher supplies owner authority, after the transport's session gate. */
-  async set(name: Exclude<AutonomyCommand, 'autonomy.check'>, input: unknown, context: TrustedContext) {
+  async set(name: OwnerCommand, input: unknown, context: TrustedContext) {
     if (!context.owner) throw new CourseworkError('INVALID_INPUT', 'Open coursework ui to perform this owner action.');
     await context.owner.assertOwner(name);
     const parsed = autonomyContracts[name].input.parse(input);
@@ -106,6 +116,32 @@ export class AssessmentAutonomy {
     // Capture this mutation's version synchronously, before another owner call can write.
     context.setAuditReferences?.(this.references(name, parsed));
     return { recorded: true as const };
+  }
+  /** L0 read over the same authority path as check(); it records nothing. */
+  read(input: unknown): z.infer<typeof AutonomyReadSchema> {
+    const { courseId } = autonomyContracts['autonomy.read'].input.parse(input);
+    if (!this.store.query) throw new CourseworkError('SOURCE_UNAVAILABLE', 'Assessment listing is unavailable.');
+    const course = this.authority(courseId);
+    const settings = this.settings(courseId);
+    const assessments: z.infer<typeof AutonomyAssessmentSchema>[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = this.store.query('assessments', { courseId, limit: 500, cursor });
+      for (const assessment of page.items) {
+        if (assessments.length === 500) throw new CourseworkError('LIMIT_EXCEEDED', 'The course has too many assessments to read at once.');
+        const parsedKind = KindSchema.safeParse(this.kind(assessment.id, assessment.kind));
+        const kind = parsedKind.success ? parsedKind.data : null;
+        const override = this.ownerField('assessment', assessment.id, 'autonomyLevel');
+        const applicable = kind !== 'exam';
+        assessments.push({ assessmentId: assessment.id, kind, applicable, requiredLevel: applicable ? required(kind ?? undefined) : null,
+          override: override && override.value !== null ? WorkLevelSchema.parse(override.value) : null,
+          effectiveLevel: applicable ? this.authority(courseId, assessment.id).level : null });
+      }
+      cursor = page.nextCursor;
+    } while (cursor);
+    return { courseId, policy: course.policy ?? null, cap: cap(course.policy), defaultLevel: WorkLevelSchema.parse(settings.defaultLevel),
+      // Same truthiness the browser submit path applies to this setting.
+      confirmBeforeSubmit: Boolean(settings.confirmBeforeSubmit), assessments };
   }
   async check(input: CheckInput, runId: string = randomUUID()): Promise<Decision> {
     const { assessmentId, action } = autonomyContracts['autonomy.check'].input.parse(input);
