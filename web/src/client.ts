@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { contracts, browserContracts, FailureEnvelopeSchema } from '../../src/protocol/contracts.js';
 import { syncContracts } from '../../src/protocol/sync.js';
 import { planningContracts, planningInputs, settingsInput } from '../../src/planning/contracts.js';
+import { annotationCommands, autonomyCommands, autonomyReads, workCommands } from './course-contracts.js';
 import { PendingConfirmationSchema } from '../../src/domain/schemas.js';
 import { confirmationInput } from '../../src/browser/tools/contracts.js';
 import { metricsContracts } from '../../src/metrics/contracts.js';
@@ -23,6 +24,10 @@ const commands = {
   ...recorded('manual.create'), ...recorded('manual.edit'), ...recorded('manual.complete'), ...recorded('manual.delete'),
   'confirmation.decide': { input: confirmationInput, output: z.strictObject({ recorded: z.literal(true) }) },
   ...metricsContracts,
+  // K3 course page
+  'sources.get': contracts['sources.get'], 'revision.read': contracts['revision.read'],
+  'revision.list': contracts['revision.list'], 'practice.stats': contracts['practice.stats'],
+  ...annotationCommands, ...autonomyCommands, ...autonomyReads, ...workCommands,
 } as const;
 function recorded<N extends 'plan.start.set' | 'plan.start.clear' | 'time.record' | 'manual.create' | 'manual.edit' | 'manual.complete' | 'manual.delete'>(name: N) {
   return { [name]: { input: planningInputs[name], output: z.strictObject({ recorded: z.literal(true), id: z.string().optional() }) } } as
@@ -43,7 +48,8 @@ export function takeOwnerSession(location: Pick<Location, 'hash' | 'pathname' | 
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });
 // Commands that need the owner session; confirmation.list is a session-only read.
 const writes = new Set<Command>(['sync.run', 'browser.start', 'browser.stop', 'browser.signin', 'planning.settings.set',
-  'confirmation.list', 'plan.start.set', 'plan.start.clear', 'time.record', 'manual.create', 'manual.edit', 'manual.complete', 'manual.delete', 'confirmation.decide']);
+  'confirmation.list', 'plan.start.set', 'plan.start.clear', 'time.record', 'manual.create', 'manual.edit', 'manual.complete', 'manual.delete', 'confirmation.decide',
+  'annotation.confirm', 'annotation.replace', ...Object.keys(autonomyCommands) as Command[], ...Object.keys(workCommands) as Command[]]);
 export function createClient(initialSecret?: string, fetcher: typeof fetch = fetch) {
   let secret = initialSecret;
   return {

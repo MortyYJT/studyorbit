@@ -7,6 +7,7 @@ import { NeedsYou, WeekView } from './WeekView.js';
 import { AgentPage } from './Agent.js';
 import type { AgentPreset } from './chat.js';
 import { MetricsPanel } from './MetricsPanel.js';
+import { CoursePage } from './CoursePage.js';
 
 type Panel = 'status' | 'audit' | 'settings' | 'metrics';
 /** Navigation state; a preset is cleared once its conversation exists, so it is never sent twice. */
@@ -70,9 +71,10 @@ export function App({ store }: { store: ShellStore }) {
       {!store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
       {state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
       <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onAgent={openAgent} client={store.client} confirmations={weekState.confirmations ?? []} onDecided={() => void week.refresh()} />
-      <div className="page-heading"><h1>{view.page === 'course' ? t.course : t[view.page]}</h1><button onClick={() => void refreshAll()}>{t.refresh}</button></div>
+      {view.page !== 'course' && <div className="page-heading"><h1>{t[view.page]}</h1><button onClick={() => void refreshAll()}>{t.refresh}</button></div>}
       {view.page === 'agent' ? <AgentPage client={store.client} t={t} language={language} preset={view.preset} onPresetDone={() => setView({ page: 'agent' })} />
-        : view.page === 'course' ? <section className="card empty"><p>{t.courseHelp}</p><button onClick={() => setView({ page: 'week' })}>{t.back}</button></section> : <>
+        : view.page === 'course' ? <CoursePage key={view.courseId} courseId={view.courseId} client={store.client} t={t} language={language}
+          timeZone={state.planning?.settings?.timeZone} openAgent={openAgent} onBack={() => setView({ page: 'week' })} /> : <>
         {state.errors.courses || state.errors.tasks ? <section className="card"><p>{t.error}</p></section>
           : !state.courses || !state.tasks ? <p role="status">{t.loading}</p>
           : emptyStore(state) ? <section className="card empty"><span className="empty-symbol" aria-hidden="true">◇</span><h2>{t.empty}</h2><p>{t.emptyHelp}</p>{syncButton}</section>

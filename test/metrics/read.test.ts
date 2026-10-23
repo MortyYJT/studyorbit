@@ -59,6 +59,15 @@ it('computes accuracy only from in-range owner verdicts on agent annotations, in
   store.appendAnnotationVerdict({ annotationId: 'agent-one', verdict: 'correct', at: to });
   expect(await read()).toMatchObject({ ok: true, data: { accuracy: { available: true, count: 2, correct: 1, incorrect: 1, value: 0.5 } } });
 });
+it('counts one label per agent annotation, its latest in-range verdict', async () => {
+  const { store, read } = await setup();
+  store.appendAnnotation({ id: 'agent-one', entity: 'assessment', entityId: 'a', field: 'name', value: 'Synthetic value', origin: 'agent', at: from,
+    citations: [{ sourceItemId: 'synthetic-source', quote: 'Synthetic', locator: 'page:1' }] });
+  store.appendAnnotationVerdict({ annotationId: 'agent-one', verdict: 'correct', at: from });
+  store.appendAnnotationVerdict({ annotationId: 'agent-one', verdict: 'correct', at });
+  store.appendAnnotationVerdict({ annotationId: 'agent-one', verdict: 'incorrect', at });
+  expect(await read()).toMatchObject({ ok: true, data: { accuracy: { available: true, count: 1, correct: 0, incorrect: 1, value: 0 } } });
+});
 it('uses effective owner estimates and sums in-range logs for completed work and task steps, without including future estimates', async () => {
   const { store, read } = await setup();
   store.appendEstimate({ workId: 'a', minutes: 60, origin: 'owner', at: '2025-12-31T00:00:00Z' });
