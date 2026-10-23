@@ -8,14 +8,14 @@ export const DEFAULT_TIME_ZONE = 'Australia/Melbourne'; // documented settings d
 type ErrorKey = 'courses' | 'assessments' | 'tasks' | 'plan' | 'confirmations' | 'action';
 export interface WeekState {
   courses?: Course[]; assessments?: Assessment[]; tasks?: Task[]; confirmations?: Confirmation[];
-  plan?: Plan; scope?: PlanScope; term?: string; terms: string[]; timeZone: string; today?: string;
+  plan?: Plan; scope?: PlanScope; term?: string; timeZone: string; today?: string;
   busy: boolean; errors: Partial<Record<ErrorKey, string>>;
 }
 const code = (error: unknown) => error instanceof ClientError ? error.code : 'SOURCE_UNAVAILABLE';
 const MAX_PAGES = 1000;
 export type ManualFields = { title: string; due?: string; estimateMinutes?: number; allDay?: boolean };
 export class WeekStore {
-  private state: WeekState = { terms: [], timeZone: DEFAULT_TIME_ZONE, busy: false, errors: {} };
+  private state: WeekState = { timeZone: DEFAULT_TIME_ZONE, busy: false, errors: {} };
   private listeners = new Set<() => void>();
   private refreshing?: Promise<void>;
   constructor(readonly client: Client, private readonly now: () => Date = () => new Date()) {}
@@ -32,7 +32,6 @@ export class WeekStore {
     try { const value = await read(); this.update({ [key]: value } as Partial<WeekState>); this.setErrors({ [key]: undefined }); return value; }
     catch (error) { this.setErrors({ [key]: code(error) }); return undefined; }
   }
-  setTerm(term: string) { this.update({ term }); return this.refresh(); }
   refresh(): Promise<void> {
     if (this.refreshing) return this.refreshing;
     this.refreshing = this.read().finally(() => { this.refreshing = undefined; });
@@ -48,12 +47,13 @@ export class WeekStore {
     await this.readPlan(courses ?? this.state.courses ?? []);
   }
   private async readPlan(courses: Course[]) {
-    const terms = [...new Set(courses.map(course => course.term))].sort();
-    const term = this.state.term && terms.includes(this.state.term) ? this.state.term : pickTerm(courses);
+    // Always the single current term: planning another term's scope would re-plan manual tasks
+    // (which have no course) and drop their start times.
+    const term = pickTerm(courses);
     let timeZone = this.state.plan?.settings?.timeZone ?? this.state.timeZone;
     try { timeZone = (await this.client.call('planning.settings.read', {})).settings?.timeZone ?? DEFAULT_TIME_ZONE; } catch { /* Keep the last known zone. */ }
     const today = localDate(this.now(), timeZone);
-    this.update({ terms, term, timeZone, today });
+    this.update({ term, timeZone, today });
     if (!term) { this.update({ plan: undefined, scope: undefined }); this.setErrors({ plan: undefined }); return; }
     const scope: PlanScope = { term, startDate: today, horizonDays: HORIZON_DAYS };
     try {

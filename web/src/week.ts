@@ -14,7 +14,7 @@ export interface DayColumn { date: string; availableMinutes?: number; usedMinute
 export type Need = { kind: 'confirm'; id: string; assessmentId: string; summary: string }
   | { kind: 'signin'; site: Site } | { kind: 'sync'; site: Site } | { kind: 'overflow'; workId: string; title: string; courseCode?: string; minutes: number }
   | { kind: 'unestimated'; count: number };
-export interface CourseSummary { id: string; code: string; name: string; gradedWeight: number; unknownWeight: boolean; next?: { title: string; due: string } }
+export interface CourseSummary { id: string; code: string; name: string; gradedWeight: number; unknownWeight: boolean; next?: { title: string; due: string }; undatedExams: string[] }
 export interface MonthCell { date: string; inMonth: boolean; deadlines: DeadlineEntry[] }
 
 /** Calendar arithmetic uses UTC noon only as a representation of local dates. */
@@ -78,11 +78,23 @@ export function orderDayItems<T extends { startTime?: string }>(items: readonly 
     ? a.item.startTime.localeCompare(b.item.startTime) || a.index - b.index : a.item.startTime ? -1 : b.item.startTime ? 1 : a.index - b.index).map(({ item }) => item);
 }
 /** Effective annotated value when the read carries one; `null` means the value is unknown. */
-export function field<K extends 'name' | 'due' | 'weight' | 'kind'>(assessment: Assessment, key: K): Assessment[K] | undefined {
+export function field<K extends 'name' | 'due' | 'weight' | 'kind' | 'score'>(assessment: Assessment, key: K): Assessment[K] | undefined {
   const value = assessment.fields && key in assessment.fields ? assessment.fields[key]!.value : assessment[key];
   return value === null ? undefined : value as Assessment[K];
 }
-export function deadlinesByDate(input: { courses: readonly Course[]; assessments: readonly Assessment[]; tasks: readonly Task[]; timeZone: string }): Map<string, DeadlineEntry[]> {
+/** No read exposes linked platform facts, but the plan drops assessments whose platform items are submitted
+ * or removed (`src/planning/work.ts`): a term assessment missing from plan work (or, for exams, from plan
+ * deadlines within the plan's dates) is closed. Without a plan only the stored status counts. */
+export function isClosed(assessment: Assessment, plan: Plan | undefined, timeZone: string): boolean {
+  if (assessment.status === 'submitted' || assessment.status === 'graded') return true;
+  if (!plan) return false;
+  if (field(assessment, 'kind') !== 'exam') return !plan.work.some(item => item.workId === assessment.id);
+  if (plan.deadlines.some(item => item.workId === assessment.id)) return false;
+  const due = field(assessment, 'due'); const first = plan.days[0]?.date;
+  // Plan deadlines omit exams dated before the plan starts; those stay open unless their status says otherwise.
+  return !(due && first && localDate(due, timeZone) < first);
+}
+export function deadlinesByDate(input: { plan?: Plan; courses: readonly Course[]; assessments: readonly Assessment[]; tasks: readonly Task[]; timeZone: string }): Map<string, DeadlineEntry[]> {
   const codes = new Map(input.courses.map(course => [course.id, course.code]));
   const result = new Map<string, DeadlineEntry[]>();
   const add = (due: string, entry: DeadlineEntry) => {
@@ -93,7 +105,7 @@ export function deadlinesByDate(input: { courses: readonly Course[]; assessments
     const due = field(assessment, 'due'); const title = field(assessment, 'name');
     if (!due || title === undefined || !codes.has(assessment.courseId)) continue;
     add(due, { id: assessment.id, title, courseCode: codes.get(assessment.courseId), kind: field(assessment, 'kind') === 'exam' ? 'exam' : 'due',
-      time: localTime(due, input.timeZone), done: assessment.status === 'submitted' || assessment.status === 'graded', manual: false });
+      time: localTime(due, input.timeZone), done: isClosed(assessment, input.plan, input.timeZone), manual: false });
   }
   for (const task of input.tasks) {
     if (task.source !== 'manual' || !task.due || task.done) continue;
@@ -116,7 +128,8 @@ export function weekModel(input: { plan?: Plan; courses: readonly Course[]; asse
   const days: DayColumn[] = Array.from({ length: 7 }, (_, index) => {
     const date = addDays(input.monday, index); const day = plannedDays.get(date);
     const items = orderDayItems((day?.items ?? []).map(item => { const { due: _due, ...rest } = describe(item.workId); return { ...rest, minutes: item.minutes, ...(item.startTime ? { startTime: item.startTime } : {}) }; }));
-    return { date, availableMinutes: day?.availableMinutes, usedMinutes: items.reduce((sum, item) => sum + item.minutes, 0), deadlines: deadlines.get(date) ?? [], items };
+    const configured = input.plan?.settings?.weekdayMinutes[index];
+    return { date, availableMinutes: day?.availableMinutes ?? configured, usedMinutes: items.reduce((sum, item) => sum + item.minutes, 0), deadlines: deadlines.get(date) ?? [], items };
   });
   const row = (workId: string, minutes?: number): WorkRow => { const { actualMinutes: _actual, ...rest } = describe(workId); return { ...rest, ...(minutes !== undefined ? { minutes } : {}) }; };
   return { days, overflow: (input.plan?.overflow ?? []).map(item => row(item.workId, item.minutes)), unestimated: (input.plan?.unestimated ?? []).map(item => row(item.workId)) };
@@ -129,14 +142,18 @@ export function needsYou(input: { attention: readonly { site: Site; kind: 'signi
     ...input.unestimated.length ? [{ kind: 'unestimated' as const, count: input.unestimated.length }] : [],
   ];
 }
-export function courseSummaries(courses: readonly Course[], assessments: readonly Assessment[], now: Date): CourseSummary[] {
+export function courseSummaries(courses: readonly Course[], assessments: readonly Assessment[], now: Date, plan?: Plan): CourseSummary[] {
+  const timeZone = plan?.settings?.timeZone ?? 'UTC';
   return courses.map(course => {
     const own = assessments.filter(item => item.courseId === course.id && field(item, 'name') !== undefined);
-    const gradedWeight = own.filter(item => item.status === 'graded').reduce((sum, item) => sum + (field(item, 'weight') ?? 0), 0);
-    const next = own.filter(item => item.status !== 'submitted' && item.status !== 'graded')
+    // Same rule as the domain grade projection: graded means an effective score and weight are both known.
+    const gradedWeight = own.filter(item => field(item, 'score') !== undefined).reduce((sum, item) => sum + (field(item, 'weight') ?? 0), 0);
+    const open = own.filter(item => !isClosed(item, plan, timeZone));
+    const undatedExams = open.filter(item => field(item, 'kind') === 'exam' && !field(item, 'due')).map(item => field(item, 'name')!);
+    const next = open
       .flatMap(item => { const due = field(item, 'due'); return due && Date.parse(due) >= now.getTime() ? [{ title: field(item, 'name')!, due }] : []; })
       .sort((a, b) => Date.parse(a.due) - Date.parse(b.due))[0];
-    return { id: course.id, code: course.code, name: course.name, gradedWeight, unknownWeight: !own.length || own.some(item => field(item, 'weight') === undefined), ...(next ? { next } : {}) };
+    return { id: course.id, code: course.code, name: course.name, gradedWeight, unknownWeight: !own.length || own.some(item => field(item, 'weight') === undefined), ...(next ? { next } : {}), undatedExams };
   });
 }
 export function monthGrid(date: string, deadlines: ReadonlyMap<string, DeadlineEntry[]>): MonthCell[][] {

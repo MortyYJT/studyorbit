@@ -44,8 +44,8 @@ export function WeekView({ store, t, language, canWrite, settingsMissing, onOpen
   const courses = useMemo(() => (state.courses ?? []).filter(course => course.term === state.term), [state.courses, state.term]);
   const tasks = useMemo(() => state.tasks ?? [], [state.tasks]); const assessments = useMemo(() => state.assessments ?? [], [state.assessments]);
   const model = useMemo(() => weekModel({ plan: state.plan, courses, assessments, tasks, monday: current, timeZone: zone }), [state.plan, courses, assessments, tasks, current, zone]);
-  const deadlines = useMemo(() => deadlinesByDate({ courses, assessments, tasks, timeZone: zone }), [courses, assessments, tasks, zone]);
-  const summaries = useMemo(() => courseSummaries(courses, assessments, new Date()), [courses, assessments]);
+  const deadlines = useMemo(() => deadlinesByDate({ plan: state.plan, courses, assessments, tasks, timeZone: zone }), [state.plan, courses, assessments, tasks, zone]);
+  const summaries = useMemo(() => courseSummaries(courses, assessments, new Date(), state.plan), [courses, assessments, state.plan]);
   const dayName = (date: string, style: 'short' | 'long' = 'short') => new Intl.DateTimeFormat(language, { weekday: style, day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
   const shortDate = (date: string) => new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
   const dueText = (due?: string) => due ? new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: zone }).format(new Date(due)) : t.unknown;
@@ -53,9 +53,10 @@ export function WeekView({ store, t, language, canWrite, settingsMissing, onOpen
     : new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7) - 1 + direction, 1, 12)).toISOString().slice(0, 10));
   const range = mode === 'plan' ? `${shortDate(current)} – ${shortDate(addDays(current, 6))}`
     : new Intl.DateTimeFormat(language, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${month.slice(0, 7)}-15T12:00:00Z`));
-  const modules = [...new Map(courses.map(course => [course.moduleId, course.code])).entries()];
+  const modules = [...courses.reduce((map, course) => map.set(course.moduleId, [...map.get(course.moduleId) ?? [], course.code]), new Map<string, string[]>())]
+    .map(([id, codes]): [string, string] => [id, codes.join(' / ')]);
   const deadline = (entry: DeadlineEntry) => {
-    const label = `${entry.kind === 'exam' ? t.exam : entry.kind === 'all-day' ? t.allDay : `${t.due} ${entry.time}`} · ${entry.courseCode ? `${entry.courseCode} · ` : ''}${entry.title}`;
+    const label = `${entry.kind === 'exam' ? `${t.exam} ${entry.time}` : entry.kind === 'all-day' ? t.allDay : `${t.due} ${entry.time}`} · ${entry.courseCode ? `${entry.courseCode} · ` : ''}${entry.title}`;
     const task = entry.manual ? tasks.find(item => item.id === entry.id) : undefined;
     return task ? <button key={entry.id} className={`due${entry.kind === 'all-day' ? ' all-day' : ''}`} onClick={() => setDialog({ kind: 'manual', task })}>{label}</button>
       : <span key={entry.id} className={`due${entry.done ? ' done' : ''}`} title={label}>{label}</span>;
@@ -74,7 +75,7 @@ export function WeekView({ store, t, language, canWrite, settingsMissing, onOpen
           <span className="range" aria-live="polite">{range}</span>
         </div>
         <div className="week-actions">
-          {state.terms.length > 1 && <label className="inline">{t.term}<select value={state.term} onChange={event => void store.setTerm(event.target.value)}>{state.terms.map(term => <option key={term}>{term}</option>)}</select></label>}
+          {state.term && <span className="muted">{t.term}: {state.term}</span>}
           <div className="seg" role="group" aria-label={t.viewMode}>{(['plan', 'month'] as const).map(value => <button key={value} aria-pressed={mode === value} onClick={() => setMode(value)}>{t[value === 'plan' ? 'planView' : 'monthView']}</button>)}</div>
           <button disabled={!canWrite || !modules.length} title={!modules.length ? t.noModule : undefined} onClick={() => setDialog({ kind: 'manual' })}>{t.addTask}</button>
         </div>
@@ -107,6 +108,7 @@ export function WeekView({ store, t, language, canWrite, settingsMissing, onOpen
       {summaries.length ? summaries.map(course => <button key={course.id} className="crs" onClick={() => onOpenCourse(course.id)}>
         <Ring fraction={course.gradedWeight / 100} unknown={course.unknownWeight} label={`${course.gradedWeight}% ${t.graded}${course.unknownWeight ? ` · ${t.weightUnknown}` : ''}`} />
         <span><b>{course.code}</b><small className="crs-name">{course.name}</small>
+          {course.undatedExams.map(title => <small key={title} className="exam-unknown">{t.exam}: {title} · {t.examTimeUnknown}</small>)}
           <small>{t.next}: {course.next ? `${dueText(course.next.due)} · ${course.next.title}` : t.none}</small></span>
       </button>) : <p className="muted">{t.noCourses}</p>}
     </aside>
@@ -169,7 +171,8 @@ function ManualDialog({ store, t, task, modules, timeZone, estimate, canWrite, o
   return <Modal title={task ? t.editTask : t.addTask} close={t.close} onClose={onClose}>
     <form onSubmit={event => void submit(event)}>
       <label>{t.taskTitle}<input name="title" required maxLength={1024} defaultValue={task?.title ?? ''} /></label>
-      {!task && <label>{t.module}<select name="module" required>{modules.map(([id, code]) => <option key={id} value={id}>{code}</option>)}</select></label>}
+      {!task && <label>{t.module}<select name="module" required aria-describedby="module-help">{modules.map(([id, codes]) => <option key={id} value={id}>{codes}</option>)}</select>
+        <small id="module-help">{t.moduleHelp}</small></label>}
       <label className="check"><input type="checkbox" checked={allDay} onChange={event => setAllDay(event.target.checked)} />{t.allDay}</label>
       <div className="field-pair"><label>{t.dueDate}<input name="date" type="date" required={allDay} defaultValue={task?.due ? localDate(task.due, timeZone) : ''} /></label>
         {!allDay && <label>{t.dueTime}<input name="time" type="time" defaultValue={task?.due && !task.allDay ? localTime(task.due, timeZone) : ''} /></label>}</div>

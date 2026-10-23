@@ -50,9 +50,32 @@ it('shows overflow with its missing minutes and unestimated work without guessin
 });
 
 it('summarises courses with graded weight, unknown weights and the next deadline', () => {
-  const [summary] = courseSummaries([course], [assessment('a1', { weight: 30, status: 'graded', due: '2026-09-01T00:00:00Z' }), assessment('a2', { due: '2026-10-30T00:00:00Z' }),
+  const [summary] = courseSummaries([course], [assessment('a1', { weight: 30, score: 85, due: '2026-09-01T00:00:00Z' }), assessment('a2', { due: '2026-10-30T00:00:00Z' }),
     assessment('a3', { weight: 40, due: '2026-10-25T00:00:00Z' }), assessment('a4', { weight: 30, status: 'submitted', due: '2026-10-24T00:00:00Z' })], new Date('2026-10-23T00:00:00Z'));
   expect(summary).toMatchObject({ id: 'c1', gradedWeight: 30, unknownWeight: true, next: { title: 'Assessment a3', due: '2026-10-25T00:00:00Z' } });
+});
+
+it('treats assessments the plan no longer lists as closed in the deadline row and next deadline', () => {
+  // The planner drops assessments whose linked platform items are submitted or removed.
+  const plan: Plan = { ...emptyPlan, work: [{ workId: 'a2', title: 'Assessment a2', courseId: 'c1', due: '2026-10-26T12:59:00Z', actualMinutes: 0 }] };
+  const items = [assessment('a1', { due: '2026-10-21T12:59:00Z' }), assessment('a2', { due: '2026-10-26T12:59:00Z' })];
+  const model = weekModel({ plan, courses: [course], assessments: items, tasks: [], monday: '2026-10-19', timeZone: settings.timeZone });
+  expect(model.days[2]!.deadlines).toEqual([expect.objectContaining({ id: 'a1', done: true })]);
+  expect(courseSummaries([course], items, new Date('2026-10-20T00:00:00Z'), plan)[0]!.next?.title).toBe('Assessment a2');
+});
+
+it('shows exam times in the deadline row and keeps undated exams as unknown', () => {
+  const plan: Plan = { ...emptyPlan, deadlines: [{ workId: 'e1', title: 'Final exam', courseId: 'c1', due: '2026-10-22T23:00:00Z', date: '2026-10-23', kind: 'exam' },
+    { workId: 'e2', title: 'Mid exam', courseId: 'c1', kind: 'exam' }] };
+  const items = [assessment('e1', { name: 'Final exam', kind: 'exam', due: '2026-10-22T23:00:00Z' }), assessment('e2', { name: 'Mid exam', kind: 'exam' })];
+  const model = weekModel({ plan, courses: [course], assessments: items, tasks: [], monday: '2026-10-19', timeZone: settings.timeZone });
+  expect(model.days[4]!.deadlines).toEqual([expect.objectContaining({ id: 'e1', kind: 'exam', time: '10:00', done: false })]);
+  expect(courseSummaries([course], items, new Date('2026-10-20T00:00:00Z'), plan)[0]!.undatedExams).toEqual(['Mid exam']);
+});
+
+it('shows configured hours on days outside the plan', () => {
+  const model = weekModel({ plan: { ...emptyPlan, days: [{ date: '2026-10-23', availableMinutes: 60, items: [] }] }, courses: [course], assessments: [], tasks: [], monday: '2026-10-19', timeZone: settings.timeZone });
+  expect(model.days.map(day => day.availableMinutes)).toEqual([120, 60, 60, 60, 60, 0, 0]);
 });
 
 it('builds a Monday-first month calendar of deadlines', () => {
