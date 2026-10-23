@@ -138,7 +138,9 @@ const assessments: Assessment[] = [
 const fetchedAt = new Date(Date.now() - 3600_000).toISOString();
 const source = (id: string, courseId: string, platform: SourceItem['platform'], kind: SourceItem['kind'], title: string, text: string,
   extra: Partial<Pick<SourceItem, 'facts' | 'externalId'>> = {}): SourceItem => ({
-  id, platform, externalId: `${id}-external`, courseId, kind, title, text, contentHash: hash(text), fetchedAt, removed: false, ...extra,
+  id, platform, externalId: `${id}-external`, courseId, kind, title, text, contentHash: hash(text), fetchedAt, removed: false,
+  // Evidence only accepts provider origins; the path is invented, so the UI link is exercised without naming real content.
+  url: `https://canvas.lms.unimelb.edu.au/courses/900000/pages/${id}`, ...extra,
 });
 // Materials only count as evidence with fetched page metadata, carried in the external id as source.fetch stores it.
 const materialPage = (name: string, page: number) => JSON.stringify({ version: 1, kind: 'fetched-material', urlHash: hash(name), page, locator: `page:${page}` });
