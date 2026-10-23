@@ -3,6 +3,7 @@ import { contracts, browserContracts, FailureEnvelopeSchema } from '../../src/pr
 import { syncContracts } from '../../src/protocol/sync.js';
 import { planningContracts, planningInputs, settingsInput } from '../../src/planning/contracts.js';
 import { PendingConfirmationSchema } from '../../src/domain/schemas.js';
+import { metricsContracts } from '../../src/metrics/contracts.js';
 
 const commands = {
   'courses.list': contracts['courses.list'],
@@ -19,6 +20,7 @@ const commands = {
     output: z.object({ items: z.array(PendingConfirmationSchema), nextCursor: z.string().optional() }) },
   ...recorded('plan.start.set'), ...recorded('plan.start.clear'), ...recorded('time.record'),
   ...recorded('manual.create'), ...recorded('manual.edit'), ...recorded('manual.complete'), ...recorded('manual.delete'),
+  ...metricsContracts,
 } as const;
 function recorded<N extends 'plan.start.set' | 'plan.start.clear' | 'time.record' | 'manual.create' | 'manual.edit' | 'manual.complete' | 'manual.delete'>(name: N) {
   return { [name]: { input: planningInputs[name], output: z.strictObject({ recorded: z.literal(true), id: z.string().optional() }) } } as
