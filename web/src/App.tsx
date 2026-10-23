@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { ShellStore, attention, emptyStore, settingsFromForm, type Settings } from './shell.js';
 import { en, zh, type Copy, type Language, type Theme } from './i18n.js';
+import { WeekStore } from './weekStore.js';
+import { needsYou, weekModel } from './week.js';
+import { NeedsYou, WeekView } from './WeekView.js';
 
 type Panel = 'status' | 'audit' | 'settings' | 'metrics';
+export type View = { page: 'week' } | { page: 'agent' } | { page: 'course'; courseId: string };
 function preference(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
 function remember(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Preferences remain usable in memory. */ } }
 function errorText(code: string, t: Copy): string {
@@ -12,20 +16,24 @@ export function App({ store }: { store: ShellStore }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const [language, setLanguage] = useState<Language>(() => preference('coursework.language') === 'zh' ? 'zh' : 'en');
   const [theme, setTheme] = useState<Theme>(() => { const value = preference('coursework.theme'); return value === 'light' || value === 'dark' ? value : 'system'; });
-  const [view, setView] = useState<'week' | 'agent'>('week');
+  const [view, setView] = useState<View>({ page: 'week' });
+  const [week] = useState(() => new WeekStore(store.client));
+  const weekState = useSyncExternalStore(week.subscribe, week.getSnapshot);
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState<Panel>();
   const dialog = useRef<HTMLDialogElement>(null);
   const avatar = useRef<HTMLButtonElement>(null);
   const menuRoot = useRef<HTMLDivElement>(null);
   const t = language === 'zh' ? zh : en;
-  const needs = attention(state);
+  const rows = useMemo(() => weekModel({ plan: weekState.plan, courses: weekState.courses ?? [], assessments: [], tasks: weekState.tasks ?? [], monday: weekState.today ?? '1970-01-05', timeZone: weekState.timeZone }), [weekState]);
+  const needs = needsYou({ attention: attention(state), confirmations: weekState.confirmations ?? [], overflow: rows.overflow, unestimated: rows.unestimated });
+  const refreshAll = () => Promise.all([store.refresh(), week.refresh()]);
   const running = state.syncing || state.sync?.running;
   useEffect(() => {
-    void store.refresh();
-    const timer = window.setInterval(() => { void store.refresh(); }, 30000);
+    void refreshAll();
+    const timer = window.setInterval(() => { void refreshAll(); }, 30000);
     return () => window.clearInterval(timer);
-  }, [store]);
+  }, [store, week]);
   useEffect(() => { document.documentElement.dataset.theme = theme; remember('coursework.theme', theme); }, [theme]);
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('coursework.language', language); }, [language]);
   useEffect(() => { if (panel) dialog.current?.showModal(); }, [panel]);
@@ -37,13 +45,13 @@ export function App({ store }: { store: ShellStore }) {
   }, [menu]);
   function open(next: Panel) { setMenu(false); setPanel(next); if (next === 'audit') void store.loadAudit(); }
   function close() { dialog.current?.close(); setPanel(undefined); avatar.current?.focus(); }
-  const syncButton = <button disabled={!!running || !store.client.hasSession()} onClick={() => void store.sync()} aria-busy={!!running}>{running ? t.syncing : t.sync}</button>;
+  const syncButton = <button disabled={!!running || !store.client.hasSession()} onClick={() => void store.sync().then(() => week.refresh())} aria-busy={!!running}>{running ? t.syncing : t.sync}</button>;
   function date(value?: string) { return value ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short', timeZone: state.planning?.settings?.timeZone }).format(new Date(value)) : t.never; }
   return <>
     <header>
       <span className="brand"><span className="brand-dot" />coursework</span>
       <nav aria-label="coursework">
-        {(['week', 'agent'] as const).map(item => <button key={item} aria-current={view === item ? 'page' : undefined} onClick={() => setView(item)}>{t[item]}</button>)}
+        {(['week', 'agent'] as const).map(item => <button key={item} aria-current={view.page === item ? 'page' : undefined} onClick={() => setView({ page: item })}>{t[item]}</button>)}
       </nav>
       <div className="header-actions">{syncButton}
         <div className="avatar-wrap" ref={menuRoot} onKeyDown={event => { if (event.key === 'Escape') { setMenu(false); avatar.current?.focus(); } }}>
@@ -56,16 +64,16 @@ export function App({ store }: { store: ShellStore }) {
     <main>
       {!store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
       {state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
-      {!!needs.length && <section className="needs"><h2>{t.needs}</h2>{needs.map(item => <div className="attention-row" key={`${item.site}-${item.kind}`}><span>{item.site === 'ed' ? 'Ed' : 'Canvas'} · {item.kind === 'signin' ? t.signin : t.syncFailed}</span><button onClick={() => open('status')}>{t.status}</button></div>)}</section>}
-      <div className="page-heading"><h1>{t[view]}</h1><button onClick={() => void store.refresh()}>{t.refresh}</button></div>
-      {view === 'agent' ? <section className="card empty"><p>{t.agentHelp}</p></section> : <>
+      <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onAgent={() => setView({ page: 'agent' })} />
+      <div className="page-heading"><h1>{view.page === 'course' ? t.course : t[view.page]}</h1><button onClick={() => void refreshAll()}>{t.refresh}</button></div>
+      {view.page === 'agent' ? <section className="card empty"><p>{t.agentHelp}</p></section>
+        : view.page === 'course' ? <section className="card empty"><p>{t.courseHelp}</p><button onClick={() => setView({ page: 'week' })}>{t.back}</button></section> : <>
         {state.errors.courses || state.errors.tasks ? <section className="card"><p>{t.error}</p></section>
           : !state.courses || !state.tasks ? <p role="status">{t.loading}</p>
           : emptyStore(state) ? <section className="card empty"><span className="empty-symbol" aria-hidden="true">◇</span><h2>{t.empty}</h2><p>{t.emptyHelp}</p>{syncButton}</section>
-          : <section className="card"><h2>{t.courses}</h2>{!state.courses.coverage.complete || !state.tasks.coverage.complete ? <p>{t.incomplete}</p> : null}
-            {state.courses.items.length ? <ul className="course-list">{state.courses.items.map(course => <li key={course.id}><b>{course.code}</b><span>{course.name}</span><small>{course.term}</small></li>)}</ul> : <p>{t.noCourses}</p>}
-            <p>{t.tasks}: {state.tasks.items.length}{state.tasks.nextCursor ? '+' : ''}</p><p className="muted">{t.shell}</p>
-          </section>}
+          : <>{!state.courses.coverage.complete || !state.tasks.coverage.complete ? <p>{t.incomplete}</p> : null}
+            <WeekView store={week} t={t} language={language} canWrite={store.client.hasSession()} settingsMissing={!!state.planning && !state.planning.settings}
+              onOpenCourse={courseId => setView({ page: 'course', courseId })} onOpenSettings={() => open('settings')} /></>}
       </>}
     </main>
     <dialog ref={dialog} onCancel={close} onClose={() => { setPanel(undefined); avatar.current?.focus(); }} aria-labelledby="panel-title">
