@@ -3,7 +3,7 @@ import type { GradeBand, GradeNeed } from '../../src/domain/grade.js';
 import type { Client } from './client.js';
 import type { AgentPreset } from './chat.js';
 import type { Copy, Language } from './i18n.js';
-import { agentEntries, arcPath, courseFigures, levelView, minutesFrom, originOf, ownerValue, presetIds, recordedPolicy, ringSegments,
+import { agentEntries, arcPath, canJudge, courseFigures, displayStatus, levelView, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink,
   type EditableField, type Field, type LevelView, type Policy, type WorkLevel } from './course.js';
 import { CourseStore, type AssessmentItem, type CourseState } from './course-store.js';
 
@@ -21,8 +21,8 @@ export function CoursePage({ courseId, client, t, language, timeZone, openAgent,
   const c = t.coursePage;
   useEffect(() => { void store.load(); }, [store]);
   const date = (value?: string) => value ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(new Date(value)) : undefined;
-  const policy = recordedPolicy(state.course?.fields?.aiPolicy);
-  const failed = (['assessments', 'plan', 'revision', 'notes', 'stats'] as const).filter(key => state.errors[key]);
+  const policy: Policy | undefined = state.autonomy?.policy ?? undefined;
+  const failed = (['autonomy', 'assessments', 'plan', 'revision', 'notes', 'stats'] as const).filter(key => state.errors[key]);
   if (state.errors.course) return <section className="card"><button className="crumb" onClick={onBack}>{c.back}</button><p>{state.errors.course === 'NOT_FOUND' ? c.notFound : errorText(state.errors.course, t)}</p></section>;
   if (!state.course) return <p role="status">{t.loading}</p>;
   const course = state.course;
@@ -46,13 +46,13 @@ export function CoursePage({ courseId, client, t, language, timeZone, openAgent,
             <span className="muted">{date(item.due) ?? c.none}</span>
             <span className="num">{item.weight === undefined ? <span className="unknown">{t.unknown}</span> : `${item.weight}%`}</span>
             <span className="num">{item.score === undefined ? c.none : `${item.score}%`}</span>
-            <span>{c.statuses[item.status]}</span>
-            <span><Level view={levelView(item, policy, state.known)} t={t} /></span>
+            <span>{c.statuses[displayStatus(item)]}</span>
+            <span><Level view={levelView(item, state.autonomy)} t={t} /></span>
           </button>)}
         </div>
         : <Revision store={store} state={state} t={t} date={date} onPreset={id => openAgent({ id, courseId })} />}
     </section>
-    {selected && <Drawer key={selected.id} store={store} state={state} item={selected} policy={policy} t={t} date={date}
+    {selected && <Drawer key={selected.id} store={store} state={state} item={selected} policy={policy} t={t} date={date} timeZone={timeZone}
       onClose={() => setOpen(undefined)} onPreset={id => openAgent({ id, courseId, assessmentId: selected.id })} />}
   </div>;
 }
@@ -115,17 +115,17 @@ function Header({ store, state, policy, t }: { store: CourseStore; state: Course
     {suggestion && <span className="suggestion">{c.suggestion}: “{String(suggestion.value)}” <Citations citations={suggestion.citations} store={store} state={state} t={t} /></span>}
     {policy === 'prohibited' ? <span className="pill lock" title={c.lockedHelp}>{c.locked}</span> : <>
       <label className="inline">{c.defaultLevel}
-        <select value={state.known.defaultLevel ?? ''} disabled={busy} onChange={event => void store.setDefault(Number(event.target.value) as WorkLevel)}>
-          {state.known.defaultLevel === undefined && <option value="" disabled>{c.notReadable}</option>}
+        <select value={state.autonomy?.defaultLevel ?? ''} disabled={busy || !state.autonomy} onChange={event => void store.setDefault(Number(event.target.value) as WorkLevel)}>
+          {!state.autonomy && <option value="" disabled>{c.notReadable}</option>}
           {levels.map(level => <option key={level} value={level}>{c.levelNames[level]}</option>)}
         </select></label>
     </>}
     <label className="inline">{c.confirm}
-      <select value={state.known.confirmBeforeSubmit === undefined ? '' : String(state.known.confirmBeforeSubmit)} disabled={busy} onChange={event => void store.setConfirm(event.target.value === 'true')}>
-        {state.known.confirmBeforeSubmit === undefined && <option value="" disabled>{c.notReadable}</option>}
+      <select value={state.autonomy ? String(state.autonomy.confirmBeforeSubmit) : ''} disabled={busy || !state.autonomy} onChange={event => void store.setConfirm(event.target.value === 'true')}>
+        {!state.autonomy && <option value="" disabled>{c.notReadable}</option>}
         <option value="true">{c.confirmOn}</option><option value="false">{c.confirmOff}</option>
       </select></label>
-    <p className="muted help">{policy === 'prohibited' ? c.lockedHelp : c.levelHelp}</p>
+    {policy === 'prohibited' && <p className="muted help">{c.lockedHelp}</p>}
     {state.errors.write && <p role="status" className="error">{errorText(state.errors.write, t)}</p>}
   </section>;
 }
@@ -141,8 +141,8 @@ function Marker({ field, store, state, t, children }: { field?: Field; store: Co
     <button className="srcm link" aria-expanded={open} title={c.originHelp} onClick={() => setOpen(!open)}>· {c.origins.agent} ⓘ</button>
     {open && <div className="cite-panel">
       <Quotes citations={field!.citations} store={store} state={state} t={t} />
-      {field!.verdicts.some(verdict => verdict.verdict === 'correct') && <p className="muted">{c.confirmed}</p>}
-      {children?.(() => setOpen(false))}
+      {field!.verdicts.length > 0 && <p className="muted">{field!.verdicts.at(-1)!.verdict === 'correct' ? c.confirmed : c.replaced}</p>}
+      {canJudge(field) && children?.(() => setOpen(false))}
     </div>}
   </>;
 }
@@ -154,7 +154,7 @@ function Quotes({ citations, store, state, t }: { citations: Citation[]; store: 
     const source = state.sources[citation.sourceItemId];
     return <blockquote className="cite" key={`${citation.sourceItemId}-${index}`}><span className="visually-hidden">{c.quote}: </span>“{citation.quote}”
       <div className="src">{source ? <>{source.provenance === 'ed' ? 'Ed' : source.provenance === 'canvas' ? 'Canvas' : source.provenance} · {citation.locator}{' · '}
-        {source.url ? <a href={source.url} target="_blank" rel="noreferrer noopener">{c.openSource}</a> : c.noLink}</>
+        {sourceLink(source.url) ? <a href={sourceLink(source.url)} target="_blank" rel="noreferrer noopener">{c.openSource}</a> : c.noLink}</>
         : state.errors.source ? c.sourceMissing : t.loading}</div></blockquote>;
   })}</>;
 }
@@ -164,7 +164,7 @@ function Citations({ citations, store, state, t }: { citations: Citation[]; stor
     {open && <div className="cite-panel"><Quotes citations={citations} store={store} state={state} t={t} /></div>}</>;
 }
 
-function Drawer({ store, state, item, policy, t, date, onClose, onPreset }: { store: CourseStore; state: CourseState; item: AssessmentItem; policy?: Policy; t: Copy;
+function Drawer({ store, state, item, policy, t, date, timeZone, onClose, onPreset }: { store: CourseStore; state: CourseState; item: AssessmentItem; policy?: Policy; t: Copy; timeZone?: string;
   date: (value?: string) => string | undefined; onClose: () => void; onPreset: (id: string) => void }) {
   const c = t.coursePage;
   const dialog = useRef<HTMLDialogElement>(null);
@@ -174,7 +174,9 @@ function Drawer({ store, state, item, policy, t, date, onClose, onPreset }: { st
   const fields = detail?.fields ?? item.fields ?? {};
   const work = state.work?.[item.id];
   const entries = agentEntries(item, policy);
-  const view = levelView(item, policy, state.known);
+  const view = levelView(item, state.autonomy);
+  const entry = state.autonomy?.assessments.find(row => row.assessmentId === item.id);
+  const recorded = state.recorded[item.id];
   const busy = !!state.saving || !store.client.hasSession();
   const display = (name: EditableField, value: unknown) => value === null || value === undefined ? <span className="unknown">{t.unknown}</span>
     : name === 'weight' || name === 'hurdleMin' ? `${String(value)}%` : name === 'kind' ? c.kinds[value as keyof typeof c.kinds] ?? String(value)
@@ -188,9 +190,9 @@ function Drawer({ store, state, item, policy, t, date, onClose, onPreset }: { st
   const row = (name: EditableField) => {
     const field = fields[name];
     return <div className="field" key={name}><span className="k">{c[name]}</span><span>{display(name, field?.value)}</span>
-      <Marker field={field} store={store} state={state} t={t}>{close => field?.annotationId && <div className="verdicts">
-        <button disabled={busy} onClick={() => void store.confirm('assessment', item.id, name, field.annotationId!).then(ok => ok && close())}>{c.confirmValue}</button>
-        <form onSubmit={event => void submit(event, value => store.replace('assessment', item.id, name, ownerValue(name, value), field.annotationId!))}>
+      <Marker field={field} store={store} state={state} t={t}>{close => <div className="verdicts">
+        <button disabled={busy} onClick={() => void store.confirm('assessment', item.id, name, field!.annotationId!).then(ok => ok && close())}>{c.confirmValue}</button>
+        <form onSubmit={event => void submit(event, value => store.replace('assessment', item.id, name, ownerValue(name, value, timeZone), field!.annotationId!))}>
           {name === 'kind' ? <select name="value" aria-label={c.useMine}>{(['quiz', 'ongoing', 'assignment', 'exam'] as const).map(kind => <option key={kind} value={kind}>{c.kinds[kind]}</option>)}</select>
             : name === 'isFinal' ? <select name="value" aria-label={c.useMine}><option value="true">{c.yes}</option><option value="false">{c.no}</option></select>
             : <input name="value" aria-label={c.useMine} required type={name === 'due' ? 'datetime-local' : name === 'name' ? 'text' : 'number'} min="0" max="100" step="any" />}
@@ -201,11 +203,11 @@ function Drawer({ store, state, item, policy, t, date, onClose, onPreset }: { st
     {state.errors.detail && <p role="status">{errorText(state.errors.detail, t)}</p>}
     {(['due', 'weight', 'kind', 'hurdleMin', 'isFinal'] as const).map(row)}
     <div className="field"><span className="k">{c.scoreCol}</span><span>{item.score === undefined ? c.none : `${item.score}%`}</span>{item.score !== undefined && <span className="srcm">· {c.origins.platform}</span>}</div>
-    <div className="field"><span className="k">{c.status}</span><span>{c.statuses[item.status]}</span><span className="srcm">· {c.origins.platform}</span></div>
+    <div className="field"><span className="k">{c.status}</span><span>{c.statuses[displayStatus(item)]}</span><span className="srcm">· {c.origins.platform}</span></div>
     {item.kind !== 'exam' && <div className="field"><span className="k">{c.level}</span><Level view={view} t={t} />
-      {policy !== 'prohibited' && <select aria-label={c.level} disabled={busy} value={state.known.overrides[item.id] === undefined ? '' : String(state.known.overrides[item.id] ?? 'default')}
+      {policy !== 'prohibited' && <select aria-label={c.level} disabled={busy || !entry} value={!entry ? '' : entry.override === null ? 'default' : String(entry.override)}
         onChange={event => void store.setOverride(item.id, event.target.value === 'default' ? null : Number(event.target.value) as WorkLevel)}>
-        {state.known.overrides[item.id] === undefined && <option value="" disabled>{c.notReadable}</option>}
+        {!entry && <option value="" disabled>{c.notReadable}</option>}
         <option value="default">{c.follow}</option>{levels.map(level => <option key={level} value={level}>{c.levelNames[level]}</option>)}</select>}</div>}
     <h3>{c.estimate}</h3>
     {state.errors.plan ? <p className="muted">{errorText(state.errors.plan, t)}</p> : !state.work ? <p role="status">{t.loading}</p> : !work ? <p className="muted">{c.notPlanned}</p> : <>
@@ -214,7 +216,10 @@ function Drawer({ store, state, item, policy, t, date, onClose, onPreset }: { st
       {work.agentEstimate && <p className="muted">{c.origins.agent}: {work.agentEstimate.minutes} {c.minutes}{work.agentEstimate.reason && <> · {c.reason}: {work.agentEstimate.reason}</>}</p>}
       <form className="inline-form" onSubmit={event => void submit(event, value => store.setEstimate(item.id, minutesFrom(value)))}>
         <label>{c.setEstimate}<input name="value" type="number" min="1" step="1" required /></label><button type="submit" disabled={busy}>{c.save}</button></form>
-      <div className="field"><span className="k">{c.actual}</span><span>{work.actualMinutes} {c.minutes}</span><span /></div>
+    </>}
+    {item.kind !== 'exam' && <>
+      <div className="field"><span className="k">{c.actual}</span><span>{work ? `${work.actualMinutes} ${c.minutes}` : <span className="unknown">{c.actualUnreadable}</span>}
+        {!work && recorded !== undefined && <small> · {recorded} {c.minutes} {c.recordedNow}</small>}</span><span /></div>
       <form className="inline-form" onSubmit={event => void submit(event, value => store.recordTime(item.id, minutesFrom(value)))}>
         <label>{c.addTime}<input name="value" type="number" min="1" step="1" required /></label><button type="submit" disabled={busy}>{c.record}</button></form>
     </>}
@@ -234,7 +239,7 @@ function LinkedItem({ id, store, state, t }: { id: string; store: CourseStore; s
   useEffect(() => { void store.source(id); }, [id, store]);
   const source = state.sources[id];
   const platform = source?.provenance === 'ed' ? 'Ed' : source?.provenance === 'canvas' ? 'Canvas' : source?.provenance;
-  return <li>{source ? <>{platform} · {source.locator} {source.url && <a href={source.url} target="_blank" rel="noreferrer noopener">{t.coursePage.openSource}</a>}</> : state.errors.source ? t.coursePage.sourceMissing : t.loading}</li>;
+  return <li>{source ? <>{platform} · {source.locator} {sourceLink(source.url) && <a href={sourceLink(source.url)} target="_blank" rel="noreferrer noopener">{t.coursePage.openSource}</a>}</> : state.errors.source ? t.coursePage.sourceMissing : t.loading}</li>;
 }
 
 function Revision({ store, state, t, date, onPreset }: { store: CourseStore; state: CourseState; t: Copy; date: (value?: string) => string | undefined; onPreset: (id: string) => void }) {

@@ -1,11 +1,11 @@
 import { ClientError, type Client, type Output } from './client.js';
-import { mergePlanWork, type EditableField, type KnownAutonomy, type Policy, type Work, type WorkLevel } from './course.js';
+import { mergePlanWork, type AutonomyRead, type EditableField, type Policy, type Work, type WorkLevel } from './course.js';
 
 export type CourseItem = Output<'courses.list'>['items'][number];
 export type AssessmentItem = Output<'assessments.list'>['items'][number];
 export type AnnotationDetail = Output<'annotation.read'>;
 export type Source = Output<'sources.get'>;
-type Section = 'course' | 'assessments' | 'plan' | 'revision' | 'notes' | 'stats' | 'detail' | 'source' | 'write';
+type Section = 'course' | 'autonomy' | 'assessments' | 'plan' | 'revision' | 'notes' | 'stats' | 'detail' | 'source' | 'write';
 export interface CourseState {
   course?: CourseItem;
   courseDetail?: AnnotationDetail;
@@ -18,7 +18,9 @@ export interface CourseState {
   details: Record<string, AnnotationDetail>;
   tasks: Record<string, Output<'tasks.list'>['items']>;
   sources: Record<string, Source>;
-  known: KnownAutonomy;
+  autonomy?: AutonomyRead;
+  /** Minutes recorded on this page for work outside the plan; no read returns their totals. */
+  recorded: Record<string, number>;
   saving?: string;
   errors: Partial<Record<Section, string>>;
 }
@@ -33,7 +35,7 @@ const today = () => new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '
 
 /** One course page's reads and owner writes; every value comes from registry commands. */
 export class CourseStore {
-  private state: CourseState = { complete: true, details: {}, tasks: {}, sources: {}, known: { overrides: {} }, errors: {} };
+  private state: CourseState = { complete: true, details: {}, tasks: {}, sources: {}, recorded: {}, errors: {} };
   private listeners = new Set<() => void>();
   constructor(readonly client: Client, readonly courseId: string) {}
   getSnapshot = () => this.state;
@@ -45,7 +47,7 @@ export class CourseStore {
   }
   async load() {
     await this.loadCourse();
-    await Promise.all([this.loadAssessments(), this.loadPlan(),
+    await Promise.all([this.loadAssessments(), this.loadPlan(), this.loadAutonomy(),
       this.section('revision', async () => ({ revision: await this.client.call('revision.read', { courseId: this.courseId }) })),
       this.section('notes', async () => ({ notes: (await pages(cursor => this.client.call('revision.list', { courseId: this.courseId, limit: 500, ...(cursor ? { cursor } : {}) })))
         .flatMap(page => page.items).filter(record => record.type !== 'exam-scope') })),
@@ -61,6 +63,9 @@ export class CourseStore {
       const courseDetail = await this.client.call('annotation.read', { entity: 'course', entityId: this.courseId, limit: 100 });
       return { course: found, courseDetail };
     });
+  }
+  private loadAutonomy() {
+    return this.section('autonomy', async () => ({ autonomy: await this.client.call('autonomy.read', { courseId: this.courseId }) }));
   }
   private loadAssessments() {
     return this.section('assessments', async () => {
@@ -97,22 +102,22 @@ export class CourseStore {
     } catch (error) { this.error('write', code(error)); return false; }
     finally { this.update({ saving: undefined }); }
   }
-  private known(value: Partial<KnownAutonomy>) { return { known: { ...this.state.known, ...value } }; }
   setPolicy(status: Policy | null) {
-    return this.write('policy', () => this.client.call('autonomy.policy.set', { courseId: this.courseId, status }), () => this.loadCourse());
+    return this.write('policy', () => this.client.call('autonomy.policy.set', { courseId: this.courseId, status }), () => Promise.all([this.loadCourse(), this.loadAutonomy()]));
   }
   setDefault(level: WorkLevel) {
-    return this.write('default', () => this.client.call('autonomy.default.set', { courseId: this.courseId, level }), () => this.known({ defaultLevel: level }));
+    return this.write('default', () => this.client.call('autonomy.default.set', { courseId: this.courseId, level }), () => this.loadAutonomy());
   }
   setConfirm(confirmBeforeSubmit: boolean) {
-    return this.write('confirm', () => this.client.call('autonomy.confirmation.set', { courseId: this.courseId, confirmBeforeSubmit }), () => this.known({ confirmBeforeSubmit }));
+    return this.write('confirm', () => this.client.call('autonomy.confirmation.set', { courseId: this.courseId, confirmBeforeSubmit }), () => this.loadAutonomy());
   }
   setOverride(assessmentId: string, level: WorkLevel | null) {
     return this.write(`level:${assessmentId}`, () => level === null ? this.client.call('autonomy.override.clear', { assessmentId })
-      : this.client.call('autonomy.override.set', { assessmentId, level }), () => this.known({ overrides: { ...this.state.known.overrides, [assessmentId]: level } }));
+      : this.client.call('autonomy.override.set', { assessmentId, level }), () => this.loadAutonomy());
   }
   private reloadAnnotated(entity: 'assessment' | 'course', entityId: string) {
-    return entity === 'course' ? this.loadCourse() : Promise.all([this.loadAssessments(), this.openAssessment(entityId)]);
+    // A kind change can change the level an assessment needs, so autonomy is read again too.
+    return Promise.all([entity === 'course' ? this.loadCourse() : Promise.all([this.loadAssessments(), this.openAssessment(entityId)]), this.loadAutonomy()]);
   }
   confirm(entity: 'assessment' | 'course', entityId: string, field: EditableField | 'aiPolicy', annotationId: string) {
     return this.write(`field:${field}`, () => this.client.call('annotation.confirm', { entity, entityId, field, annotationId }), () => this.reloadAnnotated(entity, entityId));
@@ -125,6 +130,9 @@ export class CourseStore {
     return this.write('estimate', () => this.client.call('estimate.owner.set', { workId, minutes }), () => this.loadPlan());
   }
   recordTime(workId: string, minutes: number) {
-    return this.write('time', () => this.client.call('time.record', { workId, minutes }), () => this.loadPlan());
+    return this.write('time', () => this.client.call('time.record', { workId, minutes }), async () => {
+      await this.loadPlan();
+      if (!this.state.work?.[workId]) this.update({ recorded: { ...this.state.recorded, [workId]: (this.state.recorded[workId] ?? 0) + minutes } });
+    });
   }
 }

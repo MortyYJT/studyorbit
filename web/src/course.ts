@@ -3,6 +3,8 @@ import { projectGrade, type GradeBand, type GradeProjection } from '../../src/do
 import { AssessmentSchema, type Assessment, type Course } from '../../src/domain/schemas.js';
 import type { AnnotationFieldsSchema } from '../../src/protocol/contracts.js';
 import type { planOutput } from '../../src/planning/contracts.js';
+import type { autonomyReads } from './course-contracts.js';
+import { zonedIso } from './week.js';
 
 type Graded = Pick<Assessment, 'id' | 'weight' | 'score'>;
 export type SegmentStyle = 'earned' | 'lost' | 'ungraded' | 'unknown';
@@ -48,20 +50,30 @@ export function originOf(field?: Field): Origin | undefined {
 }
 export type WorkLevel = 0 | 1 | 2;
 export type Policy = 'allowed' | 'prohibited' | 'owner-attested';
-const policies: readonly unknown[] = ['allowed', 'prohibited', 'owner-attested'];
-/** Only an owner enum value sets the cap; agent policy text is a suggestion (assessment-autonomy). */
-export function recordedPolicy(field?: Field): Policy | undefined {
-  return field?.origin === 'owner' && policies.includes(field.value) ? field.value as Policy : undefined;
-}
-/** Autonomy values the page knows: no read command returns them yet, so only values the owner saved on this page. */
-export interface KnownAutonomy { defaultLevel?: WorkLevel; confirmBeforeSubmit?: boolean; overrides: Record<string, WorkLevel | null> }
+export type AutonomyRead = z.output<typeof autonomyReads['autonomy.read']['output']>;
 export type LevelView = { kind: 'none' } | { kind: 'locked' } | { kind: 'unknown' } | { kind: 'level'; level: WorkLevel; source: 'override' | 'default' };
-export function levelView(assessment: { id: string; kind?: string }, policy: Policy | undefined, known: KnownAutonomy): LevelView {
-  if (assessment.kind === 'exam') return { kind: 'none' };
-  if (policy === 'prohibited') return { kind: 'locked' };
-  const override = known.overrides[assessment.id];
-  if (typeof override === 'number') return { kind: 'level', level: override, source: 'override' };
-  return override === null && known.defaultLevel !== undefined ? { kind: 'level', level: known.defaultLevel, source: 'default' } : { kind: 'unknown' };
+/** Levels come only from `autonomy.read`; anything it does not cover stays unknown. */
+export function levelView(assessment: { id: string; kind?: string }, autonomy: AutonomyRead | undefined): LevelView {
+  const entry = autonomy?.assessments.find(row => row.assessmentId === assessment.id);
+  if (assessment.kind === 'exam' || entry?.kind === 'exam') return { kind: 'none' };
+  if (autonomy?.policy === 'prohibited') return { kind: 'locked' };
+  if (!entry || entry.effectiveLevel === null) return { kind: 'unknown' };
+  return { kind: 'level', level: entry.effectiveLevel, source: entry.override === null ? 'default' : 'override' };
+}
+/** The platform's submission state wins over a stale not-started or in-progress status. */
+export function displayStatus(item: { status: Assessment['status']; platform?: { linked: boolean; submitted: boolean; removed: boolean } }): Assessment['status'] {
+  return item.platform?.submitted && (item.status === 'not_started' || item.status === 'in_progress') ? 'submitted' : item.status;
+}
+/** One owner verdict per agent annotation: repeated verdicts would inflate annotation accuracy. */
+export function canJudge(field?: Field): boolean {
+  return field?.origin === 'agent' && field.annotationId !== undefined && field.verdicts.length === 0;
+}
+const sourceOrigins = ['https://canvas.lms.unimelb.edu.au', 'https://edstem.org'];
+/** Stored source URLs become links only on the provider origins over https. */
+export function sourceLink(url?: string): string | undefined {
+  if (!url) return undefined;
+  try { const parsed = new URL(url); return parsed.protocol === 'https:' && sourceOrigins.includes(parsed.origin) ? parsed.href : undefined; }
+  catch { return undefined; }
 }
 /** Exams get no agent entry (#146); completing work on a prohibited course is never offered. */
 export function agentEntries(assessment: { kind?: string }, policy: Policy | undefined) {
@@ -69,13 +81,18 @@ export function agentEntries(assessment: { kind?: string }, policy: Policy | und
   return { complete: !exam && policy !== 'prohibited', explain: !exam };
 }
 export type EditableField = 'weight' | 'kind' | 'hurdleMin' | 'isFinal' | 'name' | 'due';
-export function ownerValue(field: EditableField, raw: string): unknown {
+/** `due` is a datetime-local wall-clock time in the planning time zone (the zone dates are shown in). */
+export function ownerValue(field: EditableField, raw: string, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone): unknown {
   const value = raw.trim();
   if (!value) throw new Error('Value required');
   if (field === 'weight' || field === 'hurdleMin') return AssessmentSchema.shape.weight.unwrap().parse(Number(value));
   if (field === 'kind') return AssessmentSchema.shape.kind.unwrap().parse(value);
   if (field === 'isFinal') return z.enum(['true', 'false']).parse(value) === 'true';
-  if (field === 'due') { const date = new Date(value); if (Number.isNaN(date.getTime())) throw new Error('Invalid date'); return date.toISOString(); }
+  if (field === 'due') {
+    const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/.exec(value);
+    if (!match) throw new Error('Invalid date');
+    return AssessmentSchema.shape.due.unwrap().parse(zonedIso(match[1]!, match[2]!, timeZone));
+  }
   return value;
 }
 export function minutesFrom(raw: string): number {

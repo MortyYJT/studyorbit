@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { presets } from '../../src/agent/presets.js';
-import { UNKNOWN_SPAN, agentEntries, arcPath, courseFigures, levelView, mergePlanWork, minutesFrom, originOf, ownerValue, presetIds, recordedPolicy, ringSegments } from '../../web/src/course.js';
+import { UNKNOWN_SPAN, agentEntries, arcPath, canJudge, courseFigures, displayStatus, levelView, mergePlanWork, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink } from '../../web/src/course.js';
 
 const course = { id: 'c1', moduleId: 'm1', code: 'SYNA10001', name: 'Synthetic', term: '2026-S2', assessmentsComplete: false };
 const item = (id: string, weight: number | undefined, score?: number, isFinal = false) =>
@@ -32,27 +32,48 @@ it('gives unknown weights a fixed unknown-style segment and marks the final figu
   expect(courseFigures(course, items, 'P').need).toEqual({ status: 'unavailable', reason: 'weights_unknown' });
 });
 
-it('shows exams without a level or agent entry, locks prohibited courses at L0 and caps overrides only by policy', () => {
-  const known = { overrides: { quiz: 1 as const, essay: null } };
-  const quiz = { id: 'quiz', kind: 'quiz' as const };
-  expect(levelView({ id: 'exam', kind: 'exam' }, 'allowed', known)).toEqual({ kind: 'none' });
+it('shows levels from autonomy.read: exams none, prohibited courses locked at L0, overrides and defaults as read', () => {
+  const entry = (assessmentId: string, override: 0 | 1 | 2 | null, effectiveLevel: 0 | 1 | 2 | null, kind: 'quiz' | 'exam' | null = 'quiz') =>
+    ({ assessmentId, kind, applicable: kind !== 'exam', requiredLevel: kind === 'exam' ? null : 1 as const, override, effectiveLevel });
+  const read = (policy: 'allowed' | 'prohibited' | null, assessments: ReturnType<typeof entry>[]) =>
+    ({ courseId: 'c1', policy, cap: policy === 'prohibited' ? 0 as const : 2 as const, defaultLevel: 1 as const, confirmBeforeSubmit: true, assessments });
+  const allowed = read('allowed', [entry('quiz', 2, 2), entry('essay', null, 1), entry('exam', null, null, 'exam')]);
+  expect(levelView({ id: 'exam', kind: 'exam' }, allowed)).toEqual({ kind: 'none' });
   expect(agentEntries({ kind: 'exam' }, 'allowed')).toEqual({ complete: false, explain: false });
-  expect(levelView(quiz, 'prohibited', known)).toEqual({ kind: 'locked' });
+  expect(levelView({ id: 'quiz', kind: 'quiz' }, allowed)).toEqual({ kind: 'level', level: 2, source: 'override' });
+  expect(levelView({ id: 'essay' }, allowed)).toEqual({ kind: 'level', level: 1, source: 'default' });
+  expect(levelView({ id: 'quiz', kind: 'quiz' }, read('prohibited', [entry('quiz', 2, 0)]))).toEqual({ kind: 'locked' });
   expect(agentEntries({ kind: 'quiz' }, 'prohibited')).toEqual({ complete: false, explain: true });
-  expect(levelView(quiz, undefined, known)).toEqual({ kind: 'level', level: 1, source: 'override' });
-  // A cleared override follows the default only when the default is known; nothing is guessed otherwise.
-  expect(levelView({ id: 'essay' }, 'allowed', known)).toEqual({ kind: 'unknown' });
-  expect(levelView({ id: 'essay' }, 'allowed', { ...known, defaultLevel: 2 })).toEqual({ kind: 'level', level: 2, source: 'default' });
-  expect(levelView({ id: 'other' }, 'allowed', { ...known, defaultLevel: 2 })).toEqual({ kind: 'unknown' });
+  // Not yet read or missing from the read: unknown, never a guessed level.
+  expect(levelView({ id: 'quiz', kind: 'quiz' }, undefined)).toEqual({ kind: 'unknown' });
+  expect(levelView({ id: 'other' }, allowed)).toEqual({ kind: 'unknown' });
 });
 
-it('reads the recorded policy only from owner values, keeping agent policy text a suggestion', () => {
+it('maps origins and shows the platform submission when the stored status lags behind', () => {
   const field = (origin: 'owner' | 'agent' | 'sync' | null, value: unknown) => ({ value, origin, citations: [], verdicts: [] }) as never;
-  expect(recordedPolicy(field('owner', 'prohibited'))).toBe('prohibited');
-  expect(recordedPolicy(field('agent', 'prohibited'))).toBeUndefined();
-  expect(recordedPolicy(field('owner', null))).toBeUndefined();
   expect(originOf(field('sync', 5))).toBe('platform');
   expect(originOf(field(null, null))).toBeUndefined();
+  expect(displayStatus({ status: 'in_progress', platform: { linked: true, submitted: true, removed: false } })).toBe('submitted');
+  expect(displayStatus({ status: 'graded', platform: { linked: true, submitted: true, removed: false } })).toBe('graded');
+  expect(displayStatus({ status: 'not_started' })).toBe('not_started');
+});
+
+it('offers confirm and "use my value" only for an agent value that has no owner verdict yet', () => {
+  const agent = { value: 5, origin: 'agent' as const, annotationId: 'ann-1', citations: [], verdicts: [] };
+  expect(canJudge(agent)).toBe(true);
+  expect(canJudge({ ...agent, verdicts: [{ annotationId: 'ann-1', verdict: 'correct' as const, at: '2026-10-01T00:00:00Z' }] })).toBe(false);
+  expect(canJudge({ ...agent, origin: 'owner' as const })).toBe(false);
+  expect(canJudge({ ...agent, annotationId: undefined })).toBe(false);
+});
+
+it('links only to https Canvas and Ed pages', () => {
+  expect(sourceLink('https://canvas.lms.unimelb.edu.au/courses/1/pages/a')).toBe('https://canvas.lms.unimelb.edu.au/courses/1/pages/a');
+  expect(sourceLink('https://edstem.org/au/courses/1/lessons')).toBe('https://edstem.org/au/courses/1/lessons');
+  expect(sourceLink('http://canvas.lms.unimelb.edu.au/courses/1')).toBeUndefined();
+  expect(sourceLink('https://evil.example/canvas.lms.unimelb.edu.au')).toBeUndefined();
+  expect(sourceLink('javascript:alert(1)')).toBeUndefined();
+  expect(sourceLink('not a url')).toBeUndefined();
+  expect(sourceLink(undefined)).toBeUndefined();
 });
 
 it('parses owner values per field and rejects invalid input instead of defaulting', () => {
@@ -62,7 +83,10 @@ it('parses owner values per field and rejects invalid input instead of defaultin
   expect(ownerValue('kind', 'quiz')).toBe('quiz');
   expect(() => ownerValue('kind', 'essay')).toThrow();
   expect(ownerValue('isFinal', 'true')).toBe(true);
-  expect(ownerValue('due', '2026-10-25T23:59')).toBe(new Date('2026-10-25T23:59').toISOString());
+  // The wall-clock time is read in the planning time zone, not the browser's.
+  expect(ownerValue('due', '2026-10-25T23:59', 'Asia/Tokyo')).toBe('2026-10-25T23:59:00+09:00');
+  expect(ownerValue('due', '2026-10-25T23:59', 'Australia/Melbourne')).toBe('2026-10-25T23:59:00+11:00');
+  expect(() => ownerValue('due', '2026-10-25', 'Asia/Tokyo')).toThrow();
   expect(minutesFrom('90')).toBe(90);
   expect(() => minutesFrom('1.5')).toThrow();
 });

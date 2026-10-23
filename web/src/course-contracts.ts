@@ -26,6 +26,15 @@ export const autonomyCommands = {
   'autonomy.override.clear': { input: z.strictObject({ assessmentId: AuditId }), output: recorded },
   'autonomy.confirmation.set': { input: z.strictObject({ courseId: AuditId, confirmBeforeSubmit: z.boolean() }), output: recorded },
 } as const;
+const Kind = z.enum(['quiz', 'ongoing', 'assignment', 'exam']);
+/** Anonymous L0 read; kept apart from the owner writes above so it never needs the session. */
+export const autonomyReads = {
+  'autonomy.read': { input: z.strictObject({ courseId: AuditId }), output: z.strictObject({ courseId: AuditId,
+    policy: z.enum(['allowed', 'prohibited', 'owner-attested']).nullable(), cap: z.union([z.literal(0), z.literal(2)]),
+    defaultLevel: WorkLevel, confirmBeforeSubmit: z.boolean(), assessments: z.array(z.strictObject({ assessmentId: AuditId, kind: Kind.nullable(),
+      applicable: z.boolean(), requiredLevel: z.union([z.literal(1), z.literal(2)]).nullable(), override: WorkLevel.nullable(),
+      effectiveLevel: WorkLevel.nullable() })).max(500) }) },
+} as const;
 const planningRecorded = z.strictObject({ recorded: z.literal(true), id: IdSchema.optional() });
 export const workCommands = {
   'estimate.owner.set': { input: planningInputs['estimate.owner.set'], output: planningRecorded },
