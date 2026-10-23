@@ -4,6 +4,7 @@ import { syncContracts } from '../../src/protocol/sync.js';
 import { planningContracts, settingsInput } from '../../src/planning/contracts.js';
 import { PendingConfirmationSchema } from '../../src/domain/schemas.js';
 import { confirmationInput } from '../../src/browser/tools/contracts.js';
+import { metricsContracts } from '../../src/metrics/contracts.js';
 
 const commands = {
   'courses.list': contracts['courses.list'],
@@ -16,6 +17,7 @@ const commands = {
   'confirmation.list': { input: z.strictObject({ limit: z.number().int().min(1).max(50).optional(), cursor: z.string().max(512).optional() }),
     output: z.object({ items: z.array(PendingConfirmationSchema), nextCursor: z.string().optional() }) },
   'confirmation.decide': { input: confirmationInput, output: z.strictObject({ recorded: z.literal(true) }) },
+  ...metricsContracts,
 } as const;
 export type Command = keyof typeof commands;
 export type Output<N extends Command> = z.output<(typeof commands)[N]['output']>;

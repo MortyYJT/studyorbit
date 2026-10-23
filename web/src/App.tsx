@@ -3,6 +3,7 @@ import { ShellStore, attention, emptyStore, settingsFromForm, type Settings } fr
 import { en, zh, type Copy, type Language, type Theme } from './i18n.js';
 import { AgentPage } from './Agent.js';
 import type { AgentPreset } from './chat.js';
+import { MetricsPanel } from './MetricsPanel.js';
 
 type Panel = 'status' | 'audit' | 'settings' | 'metrics';
 /** Navigation state; a preset is cleared once its conversation exists, so it is never sent twice. */
@@ -86,7 +87,7 @@ export function App({ store }: { store: ShellStore }) {
         </section>)}
         {(state.errors.browser || state.errors.sync) && <p role="status">{t.error}</p>}
       </>}
-      {panel === 'metrics' && <p>{t.metricsHelp}</p>}
+      {panel === 'metrics' && <MetricsPanel client={store.client} t={t} language={language} timeZone={state.planning?.settings?.timeZone} />}
       {panel === 'audit' && <><button disabled={state.auditLoading} onClick={() => void store.loadAudit()}>{t.refresh}</button>
         {state.errors.audit && <p role="status">{errorText(state.errors.audit, t)}</p>}
         {!state.audit && !state.errors.audit && <p>{t.loading}</p>}

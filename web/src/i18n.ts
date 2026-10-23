@@ -28,6 +28,17 @@ export const en = {
   confirmTitle: 'Awaiting you · answers summary', confirmSubmit: 'Confirm submit', cancel: 'Cancel', deciding: 'Recording…',
   confirmedSubmit: 'Submit confirmed.', cancelledSubmit: 'Cancelled, nothing submitted.', expiredSubmit: 'Expired, nothing submitted.',
   screenshotUnavailable: 'Screenshot unavailable.', confirmationUnavailable: 'Confirmation details unavailable. Refresh to retry.',
+  // L
+  mRange: 'Date range', mFrom: 'From', mTo: 'To (inclusive)', mShow: 'Show', mRangeInvalid: 'Choose a start date on or before the end date.',
+  mZone: 'Dates use time zone', mSync: 'Sync', mSyncBasis: 'Durations are whole sync runs.', mMedian: 'Median duration', mMax: 'Longest duration', mSuccess: 'Successful runs',
+  mAccuracy: 'Annotation accuracy', mVerdicts: 'Verdicts', mCorrect: 'Correct', mIncorrect: 'Incorrect',
+  mEstimates: 'Estimate vs actual', mRatioHelp: 'Ratio of actual to estimated time; above 1 means work took longer.', mMedianRatio: 'Median ratio', mMeanRatio: 'Mean ratio', mItems: 'Items',
+  mAgent: 'Agent conversations', mConversations: 'Conversations', mSteps: 'Steps', mTurns: 'Turns', mCost: 'Reported cost (conversations)', mCostUnknown: 'Conversations with unknown cost',
+  mByKind: 'By assessment kind', mKind: 'Kind', mCount: 'Count', mDetail: 'Conversation details', mConversation: 'Conversation',
+  mQuiz: 'Quiz', mOngoing: 'Ongoing', mAssignment: 'Assignment', mExam: 'Exam',
+  mNoRuns: 'Unavailable: no sync runs in this range.', mNoLabels: 'Unavailable: no owner verdicts on agent annotations in this range.',
+  mNoItems: 'Unavailable: no items with both an estimate and recorded time in this range.', mNoConversations: 'Unavailable: no agent conversations in this range.',
+  mNoCosts: 'Unavailable: no conversation reported a cost', mUnitMs: 'ms', mUnitS: 's', mUnitM: 'm', mUnitSep: ' ',
 };
 export const zh: typeof en = {
   week: '本周', agent: 'Agent', sync: '立即同步', syncing: '同步中…', menu: '用户菜单',
@@ -57,6 +68,17 @@ export const zh: typeof en = {
   confirmTitle: '等你确认 · 答案汇总', confirmSubmit: '确认提交', cancel: '取消', deciding: '正在记录…',
   confirmedSubmit: '已确认提交。', cancelledSubmit: '已取消，没有提交。', expiredSubmit: '已过期，没有提交。',
   screenshotUnavailable: '截图暂不可用。', confirmationUnavailable: '无法读取确认详情，请刷新重试。',
+  // L
+  mRange: '日期范围', mFrom: '开始', mTo: '结束（含当天）', mShow: '查看', mRangeInvalid: '开始日期不能晚于结束日期。',
+  mZone: '日期按时区', mSync: '同步', mSyncBasis: '耗时为整次同步运行的时长。', mMedian: '耗时中位数', mMax: '最长耗时', mSuccess: '成功次数',
+  mAccuracy: '标注准确率', mVerdicts: '评判数', mCorrect: '正确', mIncorrect: '错误',
+  mEstimates: '预估与实际', mRatioHelp: '实际用时与预估用时之比；大于 1 表示比预估更久。', mMedianRatio: '比值中位数', mMeanRatio: '比值平均数', mItems: '条目数',
+  mAgent: 'Agent 对话', mConversations: '对话数', mSteps: '步数', mTurns: '轮数', mCost: '已报告费用（对话数）', mCostUnknown: '费用未知的对话',
+  mByKind: '按评估类型', mKind: '类型', mCount: '数量', mDetail: '对话明细', mConversation: '对话',
+  mQuiz: '测验', mOngoing: '持续性任务', mAssignment: '作业', mExam: '考试',
+  mNoRuns: '暂不可用：此范围内没有同步记录。', mNoLabels: '暂不可用：此范围内没有你对 agent 标注的评判。',
+  mNoItems: '暂不可用：此范围内没有同时有预估和实际用时的条目。', mNoConversations: '暂不可用：此范围内没有 agent 对话。',
+  mNoCosts: '暂不可用：没有对话报告费用', mUnitMs: '毫秒', mUnitS: '秒', mUnitM: '分', mUnitSep: '',
 };
 export type Copy = typeof en;
 export type Language = 'en' | 'zh';
