@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyEvents, chatItems, unlinkedConfirmations, fromOpen, launchPresetOnce, pendingConfirmations, runStream, sseParser, type Opened, type StoredEvent } from '../../web/src/chat.js';
+import { applyEvents, chatItems, confirmationStatus, unlinkedConfirmations, fromOpen, launchPresetOnce, pendingConfirmations, runStream, sseParser, type Opened, type StoredEvent } from '../../web/src/chat.js';
 
 const at = '2026-10-20T10:00:00.000Z';
 const conversation = { id: 'c-1', title: 'Quiz 3', adapter: 'synthetic', preset: 'complete-assessment', createdAt: at, updatedAt: at };
@@ -34,10 +34,12 @@ describe('agent chat stream state', () => {
     expect(chatItems(state).filter(i => i.kind === 'text').map(i => i.kind === 'text' && i.text)).toEqual(['t0t1t2t3t4t5t6']);
     expect(state.running).toBe(false);
   });
-  it('stops retrying when the conversation or owner session is gone', async () => {
+  it('stops retrying when the conversation or owner session is gone and reports why', async () => {
     const connect = vi.fn(async function* (): AsyncGenerator<StoredEvent> { throw Object.assign(new Error('gone'), { code: 'NOT_FOUND' }); });
-    await runStream({ connect, cursor: () => undefined, onEvents: () => {}, signal: new AbortController().signal, delay: async () => {} });
+    await expect(runStream({ connect, cursor: () => undefined, onEvents: () => {}, signal: new AbortController().signal, delay: async () => {} })).resolves.toBe('NOT_FOUND');
     expect(connect).toHaveBeenCalledTimes(1);
+    const aborted = new AbortController(); aborted.abort();
+    await expect(runStream({ connect, cursor: () => undefined, onEvents: () => {}, signal: aborted.signal, delay: async () => {} })).resolves.toBeUndefined();
   });
   it('merges a reopened conversation without dropping streamed events', () => {
     const streamed = applyEvents(fromOpen(undefined, opened()), [ev(0, { type: 'text', text: 'a' }), ev(1, { type: 'text', text: 'b' })]);
@@ -84,6 +86,16 @@ describe('agent chat view model', () => {
       { kind: 'confirmation', id: '1:0', confirmationId: 'p-1', decision: 'cancelled' },
       { kind: 'confirmation', id: '1:2', confirmationId: 'p-2', decision: 'pending' },
     ]);
+  });
+});
+describe('confirmation status in a conversation', () => {
+  const row = { id: 'p-1', conversationId: 'c-1', assessmentId: 'a-1', summary: 'Answers', screenshotRef: 's', state: 'pending' as const, createdAt: at };
+  it('shows the card while the record is pending, and a journal-pending confirmation absent from a loaded list as no longer pending', () => {
+    expect(confirmationStatus('p-1', { rows: [row] })).toEqual({ kind: 'card', row });
+    // A reply stopped while waiting leaves the journal at pending; the record has left the pending list.
+    expect(confirmationStatus('p-2', { rows: [row] })).toEqual({ kind: 'gone' });
+    expect(confirmationStatus('p-1', 'loading')).toEqual({ kind: 'loading' });
+    expect(confirmationStatus('p-1', 'failed')).toEqual({ kind: 'unavailable' });
   });
 });
 describe('agent presets', () => {

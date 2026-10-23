@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AgentEventSchema } from '../../src/agent/adapter.js';
-import type { Conversation, Message } from '../../src/domain/schemas.js';
+import type { Conversation, Message, PendingConfirmation } from '../../src/domain/schemas.js';
 
 export const StoredEventSchema = z.object({ id: z.string().min(1), messageId: z.string().min(1),
   event: z.union([AgentEventSchema, z.object({ type: z.literal('stopped') })]) });
@@ -94,10 +94,19 @@ export function unlinkedConfirmations<T extends { id: string; conversationId: st
   const linked = new Set(chatItems(state).flatMap(item => item.kind === 'confirmation' ? [item.confirmationId] : []));
   return records.filter(row => row.conversationId === state.conversation.id && !linked.has(row.id));
 }
+export type ConfirmationList = { rows: readonly PendingConfirmation[] } | 'loading' | 'failed';
+/** A journal-pending confirmation absent from a successfully loaded pending list was settled elsewhere (stop, expiry, restart). */
+export function confirmationStatus(id: string, list: ConfirmationList):
+  { kind: 'card'; row: PendingConfirmation } | { kind: 'gone' } | { kind: 'loading' } | { kind: 'unavailable' } {
+  if (list === 'loading') return { kind: 'loading' };
+  if (list === 'failed') return { kind: 'unavailable' };
+  const row = list.rows.find(r => r.id === id);
+  return row ? { kind: 'card', row } : { kind: 'gone' };
+}
 const fatal = new Set(['NOT_FOUND', 'INVALID_INPUT', 'OWNER_SESSION_EXPIRED']);
-/** Keeps one stream open, reconnecting from the last applied event id until aborted or the conversation is gone. */
+/** Keeps one stream open, reconnecting from the last applied event id; resolves with the fatal code that ended it, or undefined when aborted. */
 export async function runStream(options: { connect(after: string | undefined, signal: AbortSignal): AsyncIterable<StoredEvent>; cursor(): string | undefined;
-  onEvents(events: StoredEvent[]): void; signal: AbortSignal; delay(ms: number): Promise<void> }): Promise<void> {
+  onEvents(events: StoredEvent[]): void; signal: AbortSignal; delay(ms: number): Promise<void> }): Promise<string | undefined> {
   let failures = 0;
   while (!options.signal.aborted) {
     try {
@@ -105,7 +114,10 @@ export async function runStream(options: { connect(after: string | undefined, si
         if (options.signal.aborted) return;
         options.onEvents([event]); failures = 0;
       }
-    } catch (error) { if (fatal.has((error as { code?: string }).code ?? '')) return; }
+    } catch (error) {
+      const code = (error as { code?: string }).code ?? '';
+      if (!options.signal.aborted && fatal.has(code)) return code;
+    }
     if (options.signal.aborted) return;
     await options.delay(Math.min(15000, 500 * 2 ** failures++));
   }

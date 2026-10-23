@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { Conversation, PendingConfirmation } from '../../src/domain/schemas.js';
 import { ClientError, type Client } from './client.js';
 import { createAgentClient, type AgentClient } from './agent-client.js';
-import { applyEvents, chatItems, unlinkedConfirmations, fromOpen, launchPresetOnce, pendingConfirmations, runStream, type AgentPreset, type ChatItem, type ChatState } from './chat.js';
+import { applyEvents, chatItems, confirmationStatus, unlinkedConfirmations, type ConfirmationList, fromOpen, launchPresetOnce, pendingConfirmations, runStream, type AgentPreset, type ChatItem, type ChatState } from './chat.js';
 import type { Copy, Language } from './i18n.js';
 
 const code = (error: unknown) => error instanceof ClientError ? error.code : 'SOURCE_UNAVAILABLE';
@@ -47,7 +47,7 @@ export function ConfirmationCard({ confirmation, client, t, onDecided }: { confi
   </section>;
 }
 function Item({ item, agent, client, t, confirmations, onDecided }: { item: ChatItem; agent: AgentClient; client: Client; t: Copy;
-  confirmations?: Map<string, PendingConfirmation>; onDecided(): void }) {
+  confirmations: ConfirmationList; onDecided(): void }) {
   const [viewError, setViewError] = useState<string>();
   if (item.kind === 'owner') return <><div className="msg me">{item.text}</div>{item.preset && <div className="msg-note">{t.presetSent}</div>}</>;
   if (item.kind === 'text') return <div className="msg ag">{item.text}</div>;
@@ -55,9 +55,9 @@ function Item({ item, agent, client, t, confirmations, onDecided }: { item: Chat
   if (item.kind === 'error') return <div className="msg ag error-text">{item.code === 'AGENT_UNAVAILABLE' ? t.agentUnavailable : t.agentFailed}</div>;
   if (item.kind === 'confirmation') {
     if (item.decision !== 'pending') return <div className="msg-note left">{t[`${item.decision}Submit` as const]}</div>;
-    const record = confirmations?.get(item.confirmationId);
-    return record ? <ConfirmationCard confirmation={record} client={client} t={t} onDecided={onDecided} />
-      : <div className="msg-note left">{confirmations ? t.confirmationUnavailable : t.loading}</div>;
+    const status = confirmationStatus(item.confirmationId, confirmations);
+    return status.kind === 'card' ? <ConfirmationCard confirmation={status.row} client={client} t={t} onDecided={onDecided} />
+      : <div className="msg-note left">{status.kind === 'gone' ? t.confirmationGone : status.kind === 'unavailable' ? t.confirmationUnavailable : t.loading}</div>;
   }
   return <div className={`step ${item.outcome}`}>
     <div className="step-head"><code>{item.tool}</code><small>{t[outcomeText[item.outcome]]}</small></div>
@@ -73,7 +73,8 @@ export function AgentPage({ client, t, language, preset, onPresetDone }: { clien
   const [conversations, setConversations] = useState<Conversation[]>();
   const [selected, setSelected] = useState<string>();
   const [chat, setChat] = useState<ChatState>();
-  const [confirmations, setConfirmations] = useState<Map<string, PendingConfirmation>>();
+  const [confirmations, setConfirmations] = useState<ConfirmationList>('loading');
+  const [streamError, setStreamError] = useState<string>();
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -90,7 +91,7 @@ export function AgentPage({ client, t, language, preset, onPresetDone }: { clien
     }).catch(failure => setError(code(failure)));
   }, [preset, agent]);
   useEffect(() => {
-    live.current = undefined; setChat(undefined); setConfirmations(undefined); setDeleting(false);
+    live.current = undefined; setChat(undefined); setConfirmations('loading'); setStreamError(undefined); setDeleting(false);
     if (!selected) return;
     const controller = new AbortController();
     void agent.open(selected).then(opened => {
@@ -99,16 +100,22 @@ export function AgentPage({ client, t, language, preset, onPresetDone }: { clien
       return runStream({ connect: (after, signal) => agent.stream(selected, after, signal), signal: controller.signal,
         cursor: () => live.current?.conversation.id === selected ? live.current.cursor : undefined,
         onEvents: events => { if (live.current?.conversation.id === selected) commit(applyEvents(live.current, events)); },
-        delay: ms => new Promise(resolve => setTimeout(resolve, ms)) });
+        delay: ms => new Promise(resolve => setTimeout(resolve, ms)) }).then(fatal => { if (fatal && !controller.signal.aborted) setStreamError(fatal); });
     }).catch(failure => { if (!controller.signal.aborted) setError(code(failure)); });
     return () => controller.abort();
   }, [selected, agent]);
   const items = chat ? chatItems(chat) : [];
   const pendingKey = chat ? pendingConfirmations(chat).join(',') : '';
-  const loadConfirmations = () => client.call('confirmation.list', { limit: 50 })
-    .then(result => setConfirmations(new Map(result.items.map(row => [row.id, row])))).catch(() => setConfirmations(new Map()));
+  // Read every page: a missing row means "no longer pending", so a truncated list would mislabel live confirmations.
+  const loadConfirmations = async () => {
+    try {
+      const rows: PendingConfirmation[] = []; let cursor: string | undefined;
+      do { const page = await client.call('confirmation.list', { limit: 50, ...(cursor ? { cursor } : {}) }); rows.push(...page.items); cursor = page.nextCursor; } while (cursor);
+      setConfirmations({ rows });
+    } catch { setConfirmations('failed'); }
+  };
   useEffect(() => { if (chat) void loadConfirmations(); }, [pendingKey, chat?.conversation.id]);
-  const unlinked = chat && confirmations ? unlinkedConfirmations(chat, [...confirmations.values()]) : [];
+  const unlinked = chat && typeof confirmations === 'object' ? unlinkedConfirmations(chat, [...confirmations.rows]) : [];
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight }); }, [items.length, chat?.events.length]);
   async function act(work: () => Promise<unknown>) {
     if (busy) return;
@@ -155,6 +162,7 @@ export function AgentPage({ client, t, language, preset, onPresetDone }: { clien
             : <button type="submit" className="ink-button" disabled={busy || !writable || !chat || !draft.trim()}>{t.send}</button>}
         </form>
       </>}
+      {streamError && <p className="chat-error" role="status">{streamError === 'OWNER_SESSION_EXPIRED' ? t.session : streamError === 'NOT_FOUND' ? t.chatGone : errorText(streamError, t)}</p>}
       {error && <p className="chat-error" role="status">{errorText(error, t)}</p>}
     </section>
   </div>;

@@ -28,6 +28,7 @@ export const en = {
   confirmTitle: 'Awaiting you · answers summary', confirmSubmit: 'Confirm submit', cancel: 'Cancel', deciding: 'Recording…',
   confirmedSubmit: 'Submit confirmed.', cancelledSubmit: 'Cancelled, nothing submitted.', expiredSubmit: 'Expired, nothing submitted.',
   screenshotUnavailable: 'Screenshot unavailable.', confirmationUnavailable: 'Confirmation details unavailable. Refresh to retry.',
+  confirmationGone: 'No longer pending; nothing waits for your decision.', chatGone: 'This conversation no longer exists. Pick another from the list.',
   // L
   mRange: 'Date range', mFrom: 'From', mTo: 'To (inclusive)', mShow: 'Show', mRangeInvalid: 'Choose a start date on or before the end date.',
   mZone: 'Dates use time zone', mSync: 'Sync', mSyncBasis: 'Durations are whole sync runs.', mMedian: 'Median duration', mMax: 'Longest duration', mSuccess: 'Successful runs',
@@ -68,6 +69,7 @@ export const zh: typeof en = {
   confirmTitle: '等你确认 · 答案汇总', confirmSubmit: '确认提交', cancel: '取消', deciding: '正在记录…',
   confirmedSubmit: '已确认提交。', cancelledSubmit: '已取消，没有提交。', expiredSubmit: '已过期，没有提交。',
   screenshotUnavailable: '截图暂不可用。', confirmationUnavailable: '无法读取确认详情，请刷新重试。',
+  confirmationGone: '已不再等待确认，无需你处理。', chatGone: '这个对话已不存在，请从列表中选择其他对话。',
   // L
   mRange: '日期范围', mFrom: '开始', mTo: '结束（含当天）', mShow: '查看', mRangeInvalid: '开始日期不能晚于结束日期。',
   mZone: '日期按时区', mSync: '同步', mSyncBasis: '耗时为整次同步运行的时长。', mMedian: '耗时中位数', mMax: '最长耗时', mSuccess: '成功次数',
