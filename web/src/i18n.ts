@@ -20,6 +20,15 @@ export const en = {
   noAudit: 'No audit records.', more: 'Load more', action: 'Command', phase: 'Phase', outcome: 'Result',
   time: 'Time', context: 'Context', settingsLoad: 'Planning settings could not be read. Refresh before editing.',
   mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
+  // K4
+  chats: 'Chats', newChat: 'New chat', noChats: 'No conversations yet.', pickChat: 'Start a new chat or pick one from the list.',
+  send: 'Send', chatPlaceholder: 'Ask the agent…', stop: 'Stop', replying: 'Replying…', stopped: 'Stopped', presetSent: 'Preset prompt',
+  deleteChat: 'Delete', confirmDelete: 'Confirm delete', stepOk: 'Done', stepError: 'Failed', stepDenied: 'Denied', stepWaiting: 'Waiting for you',
+  screenshot: 'Screenshot', viewEdge: 'View in Edge', agentUnavailable: 'Sign in to the installed agent, then retry.', agentFailed: 'The agent reply failed.',
+  confirmTitle: 'Awaiting you · answers summary', confirmSubmit: 'Confirm submit', cancel: 'Cancel', deciding: 'Recording…',
+  confirmedSubmit: 'Submit confirmed.', cancelledSubmit: 'Cancelled, nothing submitted.', expiredSubmit: 'Expired, nothing submitted.',
+  screenshotUnavailable: 'Screenshot unavailable.', confirmationUnavailable: 'Confirmation details unavailable. Refresh to retry.',
+  confirmationGone: 'No longer pending; nothing waits for your decision.', chatGone: 'This conversation no longer exists. Pick another from the list.',
   // L
   mRange: 'Date range', mFrom: 'From', mTo: 'To (inclusive)', mShow: 'Show', mRangeInvalid: 'Choose a start date on or before the end date.',
   mZone: 'Dates use time zone', mSync: 'Sync', mSyncBasis: 'Durations are whole sync runs.', mMedian: 'Median duration', mMax: 'Longest duration', mSuccess: 'Successful runs',
@@ -52,6 +61,15 @@ export const zh: typeof en = {
   more: '加载更多', action: '命令', phase: '阶段', outcome: '结果', time: '时间', context: '上下文',
   settingsLoad: '无法读取规划设置，请刷新后再编辑。',
   mon: '周一', tue: '周二', wed: '周三', thu: '周四', fri: '周五', sat: '周六', sun: '周日',
+  // K4
+  chats: '对话', newChat: '新对话', noChats: '还没有对话。', pickChat: '新建一个对话，或从列表中选择。',
+  send: '发送', chatPlaceholder: '问 agent…', stop: '停止', replying: '回复中…', stopped: '已停止', presetSent: '预设提示词',
+  deleteChat: '删除', confirmDelete: '确认删除', stepOk: '完成', stepError: '失败', stepDenied: '已拒绝', stepWaiting: '等你确认',
+  screenshot: '截图', viewEdge: '在 Edge 中查看', agentUnavailable: '请先登录已安装的 agent，然后重试。', agentFailed: 'agent 回复失败。',
+  confirmTitle: '等你确认 · 答案汇总', confirmSubmit: '确认提交', cancel: '取消', deciding: '正在记录…',
+  confirmedSubmit: '已确认提交。', cancelledSubmit: '已取消，没有提交。', expiredSubmit: '已过期，没有提交。',
+  screenshotUnavailable: '截图暂不可用。', confirmationUnavailable: '无法读取确认详情，请刷新重试。',
+  confirmationGone: '已不再等待确认，无需你处理。', chatGone: '这个对话已不存在，请从列表中选择其他对话。',
   // L
   mRange: '日期范围', mFrom: '开始', mTo: '结束（含当天）', mShow: '查看', mRangeInvalid: '开始日期不能晚于结束日期。',
   mZone: '日期按时区', mSync: '同步', mSyncBasis: '耗时为整次同步运行的时长。', mMedian: '耗时中位数', mMax: '最长耗时', mSuccess: '成功次数',
