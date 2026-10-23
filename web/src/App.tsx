@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { ShellStore, attention, emptyStore, settingsFromForm, type Settings } from './shell.js';
 import { en, zh, type Copy, type Language, type Theme } from './i18n.js';
+import { AgentPage } from './Agent.js';
+import type { AgentPreset } from './chat.js';
+import { MetricsPanel } from './MetricsPanel.js';
 import { CoursePage } from './CoursePage.js';
-import type { AgentPreset } from './course.js';
 
 type Panel = 'status' | 'audit' | 'settings' | 'metrics';
+/** Navigation state; a preset is cleared once its conversation exists, so it is never sent twice. */
 export type View = { page: 'week' } | { page: 'agent'; preset?: AgentPreset } | { page: 'course'; courseId: string };
 function preference(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
 function remember(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Preferences remain usable in memory. */ } }
@@ -64,7 +67,7 @@ export function App({ store }: { store: ShellStore }) {
       {view.page !== 'course' && <div className="page-heading"><h1>{t[view.page]}</h1><button onClick={() => void store.refresh()}>{t.refresh}</button></div>}
       {view.page === 'course' ? <CoursePage key={view.courseId} courseId={view.courseId} client={store.client} t={t} language={language}
         timeZone={state.planning?.settings?.timeZone} openAgent={openAgent} onBack={() => setView({ page: 'week' })} />
-      : view.page === 'agent' ? <section className="card empty"><p>{t.agentHelp}</p></section> : <>
+      : view.page === 'agent' ? <AgentPage client={store.client} t={t} language={language} preset={view.preset} onPresetDone={() => setView({ page: 'agent' })} /> : <>
         {state.errors.courses || state.errors.tasks ? <section className="card"><p>{t.error}</p></section>
           : !state.courses || !state.tasks ? <p role="status">{t.loading}</p>
           : emptyStore(state) ? <section className="card empty"><span className="empty-symbol" aria-hidden="true">◇</span><h2>{t.empty}</h2><p>{t.emptyHelp}</p>{syncButton}</section>
@@ -87,7 +90,7 @@ export function App({ store }: { store: ShellStore }) {
         </section>)}
         {(state.errors.browser || state.errors.sync) && <p role="status">{t.error}</p>}
       </>}
-      {panel === 'metrics' && <p>{t.metricsHelp}</p>}
+      {panel === 'metrics' && <MetricsPanel client={store.client} t={t} language={language} timeZone={state.planning?.settings?.timeZone} />}
       {panel === 'audit' && <><button disabled={state.auditLoading} onClick={() => void store.loadAudit()}>{t.refresh}</button>
         {state.errors.audit && <p role="status">{errorText(state.errors.audit, t)}</p>}
         {!state.audit && !state.errors.audit && <p>{t.loading}</p>}

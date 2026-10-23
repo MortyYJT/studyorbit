@@ -40,8 +40,6 @@ export function courseFigures(course: Course, items: readonly Assessment[], band
   return projectGrade(course, items, band);
 }
 
-/** Structurally the Agent page's preset; App passes it on unchanged. */
-export interface AgentPreset { id: string; courseId?: string; assessmentId?: string }
 export const presetIds = { complete: 'complete-assessment', explain: 'explain-assessment', tutor: 'tutor-revision', wrong: 'wrong-answers-only' } as const;
 export type Field = z.output<typeof AnnotationFieldsSchema>[string];
 export type Origin = 'platform' | 'agent' | 'owner';

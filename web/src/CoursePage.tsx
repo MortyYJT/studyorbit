@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
 import type { GradeBand, GradeNeed } from '../../src/domain/grade.js';
 import type { Client } from './client.js';
+import type { AgentPreset } from './chat.js';
 import type { Copy, Language } from './i18n.js';
 import { agentEntries, arcPath, courseFigures, levelView, minutesFrom, originOf, ownerValue, presetIds, recordedPolicy, ringSegments,
-  type AgentPreset, type EditableField, type Field, type LevelView, type Policy, type WorkLevel } from './course.js';
+  type EditableField, type Field, type LevelView, type Policy, type WorkLevel } from './course.js';
 import { CourseStore, type AssessmentItem, type CourseState } from './course-store.js';
 
 type Props = { courseId: string; client: Client; t: Copy; language: Language; timeZone?: string; openAgent: (preset: AgentPreset) => void; onBack: () => void };
