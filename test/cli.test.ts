@@ -100,7 +100,7 @@ it('resident browser commands are discoverable; non-TTY start/stop refuse and mi
       expect(result.stderr).not.toMatch(/password|Cookie|token=|127\.0\.0\.1/);
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
-});
+}, 30000); // Six sequential CLI processes exceed the default 5 s budget on a loaded CI runner.
 it('production initialization failures print one safe CLI envelope', () => {
   const blocked = join(home, 'blocked'); writeFileSync(blocked, 'synthetic');
   const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
