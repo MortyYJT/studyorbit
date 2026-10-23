@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyEvents, chatItems, fromOpen, launchPresetOnce, pendingConfirmations, runStream, sseParser, type Opened, type StoredEvent } from '../../web/src/chat.js';
+import { applyEvents, chatItems, unlinkedConfirmations, fromOpen, launchPresetOnce, pendingConfirmations, runStream, sseParser, type Opened, type StoredEvent } from '../../web/src/chat.js';
 
 const at = '2026-10-20T10:00:00.000Z';
 const conversation = { id: 'c-1', title: 'Quiz 3', adapter: 'synthetic', preset: 'complete-assessment', createdAt: at, updatedAt: at };
@@ -77,6 +77,9 @@ describe('agent chat view model', () => {
       ev(2, { type: 'confirmation', confirmationId: 'p-2', decision: 'pending' }),
     ]));
     expect(pendingConfirmations(state)).toEqual(['p-2']);
+    const row = (id: string, conversationId = 'c-1') => ({ id, conversationId, assessmentId: 'a-1', summary: 'Answers', screenshotRef: 's', state: 'pending' as const, createdAt: at });
+    // A pending record of this conversation without a journal event (e.g. recorded by an external tool scope) still shows.
+    expect(unlinkedConfirmations(state, [row('p-2'), row('p-3'), row('p-4', 'c-other')]).map(r => r.id)).toEqual(['p-3']);
     expect(chatItems(state).filter(i => i.kind === 'confirmation')).toEqual([
       { kind: 'confirmation', id: '1:0', confirmationId: 'p-1', decision: 'cancelled' },
       { kind: 'confirmation', id: '1:2', confirmationId: 'p-2', decision: 'pending' },

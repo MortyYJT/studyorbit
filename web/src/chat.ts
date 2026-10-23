@@ -89,6 +89,11 @@ export function chatItems(state: ChatState): ChatItem[] {
 export function pendingConfirmations(state: ChatState): string[] {
   return chatItems(state).flatMap(item => item.kind === 'confirmation' && item.decision === 'pending' ? [item.confirmationId] : []);
 }
+/** Pending records of this conversation that no journal event references, shown after the transcript. */
+export function unlinkedConfirmations<T extends { id: string; conversationId: string }>(state: ChatState, records: T[]): T[] {
+  const linked = new Set(chatItems(state).flatMap(item => item.kind === 'confirmation' ? [item.confirmationId] : []));
+  return records.filter(row => row.conversationId === state.conversation.id && !linked.has(row.id));
+}
 const fatal = new Set(['NOT_FOUND', 'INVALID_INPUT', 'OWNER_SESSION_EXPIRED']);
 /** Keeps one stream open, reconnecting from the last applied event id until aborted or the conversation is gone. */
 export async function runStream(options: { connect(after: string | undefined, signal: AbortSignal): AsyncIterable<StoredEvent>; cursor(): string | undefined;

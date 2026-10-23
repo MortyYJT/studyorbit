@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { Conversation, PendingConfirmation } from '../../src/domain/schemas.js';
 import { ClientError, type Client } from './client.js';
 import { createAgentClient, type AgentClient } from './agent-client.js';
-import { applyEvents, chatItems, fromOpen, launchPresetOnce, pendingConfirmations, runStream, type AgentPreset, type ChatItem, type ChatState } from './chat.js';
+import { applyEvents, chatItems, unlinkedConfirmations, fromOpen, launchPresetOnce, pendingConfirmations, runStream, type AgentPreset, type ChatItem, type ChatState } from './chat.js';
 import type { Copy, Language } from './i18n.js';
 
 const code = (error: unknown) => error instanceof ClientError ? error.code : 'SOURCE_UNAVAILABLE';
@@ -107,7 +107,8 @@ export function AgentPage({ client, t, language, preset, onPresetDone }: { clien
   const pendingKey = chat ? pendingConfirmations(chat).join(',') : '';
   const loadConfirmations = () => client.call('confirmation.list', { limit: 50 })
     .then(result => setConfirmations(new Map(result.items.map(row => [row.id, row])))).catch(() => setConfirmations(new Map()));
-  useEffect(() => { if (pendingKey) void loadConfirmations(); }, [pendingKey]);
+  useEffect(() => { if (chat) void loadConfirmations(); }, [pendingKey, chat?.conversation.id]);
+  const unlinked = chat && confirmations ? unlinkedConfirmations(chat, [...confirmations.values()]) : [];
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight }); }, [items.length, chat?.events.length]);
   async function act(work: () => Promise<unknown>) {
     if (busy) return;
@@ -146,6 +147,7 @@ export function AgentPage({ client, t, language, preset, onPresetDone }: { clien
           </span></div>
         <div className="chat-messages" ref={scroller}>
           {!chat ? <p className="muted">{t.loading}</p> : items.map(item => <Item key={item.id} item={item} agent={agent} client={client} t={t} confirmations={confirmations} onDecided={() => void loadConfirmations()} />)}
+          {unlinked.map(row => <ConfirmationCard key={row.id} confirmation={row} client={client} t={t} onDecided={() => void loadConfirmations()} />)}
         </div>
         <form className="chat-form" onSubmit={send}>
           <input aria-label={t.chatPlaceholder} placeholder={t.chatPlaceholder} value={draft} onChange={event => setDraft(event.target.value)} maxLength={65536} disabled={!writable} />
