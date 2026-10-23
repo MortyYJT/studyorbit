@@ -195,7 +195,7 @@ function Drawer({ store, state, item, policy, t, date, timeZone, onClose, onPres
         <form onSubmit={event => void submit(event, value => store.replace('assessment', item.id, name, ownerValue(name, value, timeZone), field!.annotationId!))}>
           {name === 'kind' ? <select name="value" aria-label={c.useMine}>{(['quiz', 'ongoing', 'assignment', 'exam'] as const).map(kind => <option key={kind} value={kind}>{c.kinds[kind]}</option>)}</select>
             : name === 'isFinal' ? <select name="value" aria-label={c.useMine}><option value="true">{c.yes}</option><option value="false">{c.no}</option></select>
-            : <input name="value" aria-label={c.useMine} required type={name === 'due' ? 'datetime-local' : name === 'name' ? 'text' : 'number'} min="0" max="100" step="any" />}
+            : <input name="value" aria-label={c.useMine} required type={name === 'due' ? 'datetime-local' : name === 'name' ? 'text' : 'number'} min="0" max="100" step={name === 'due' ? 60 : 'any'} />}
           <button type="submit" disabled={busy}>{c.useMine}</button></form></div>}</Marker></div>;
   };
   return <dialog ref={dialog} className="drawer" aria-labelledby="drawer-title" onClose={onClose}>
