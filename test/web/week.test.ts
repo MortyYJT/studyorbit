@@ -49,6 +49,12 @@ it('shows overflow with its missing minutes and unestimated work without guessin
     expect.objectContaining({ kind: 'overflow', workId: 'a1', minutes: 90 }), { kind: 'unestimated', count: 1 }]);
 });
 
+it('gives a pending confirmation the course of its assessment for the review preset', () => {
+  const pending = { id: 'k1', conversationId: 'v1', assessmentId: 'a1', summary: 'Answers filled', screenshotRef: 's1', state: 'pending' as const, createdAt: '2026-10-20T00:00:00Z' };
+  const needs = needsYou({ attention: [], confirmations: [pending, { ...pending, id: 'k2', assessmentId: 'gone' }], overflow: [], unestimated: [], assessments: [assessment('a1')] });
+  expect(needs).toEqual([expect.objectContaining({ kind: 'confirm', id: 'k1', courseId: 'c1' }), expect.objectContaining({ kind: 'confirm', id: 'k2', courseId: undefined })]);
+});
+
 it('summarises courses with graded weight, unknown weights and the next deadline', () => {
   const [summary] = courseSummaries([course], [assessment('a1', { weight: 30, score: 85, due: '2026-09-01T00:00:00Z' }), assessment('a2', { due: '2026-10-30T00:00:00Z' }),
     assessment('a3', { weight: 40, due: '2026-10-25T00:00:00Z' }), assessment('a4', { weight: 30, status: 'submitted', due: '2026-10-24T00:00:00Z' })], new Date('2026-10-23T00:00:00Z'));

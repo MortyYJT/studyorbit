@@ -33,6 +33,7 @@ export const en = {
   delete: 'Delete', confirmDelete: 'Confirm delete', invalidMinutes: 'Enter a whole number of minutes above zero.',
   invalidTask: 'Enter a title, a date for all-day tasks, and an estimate in whole minutes if any.', taskTitle: 'Title', module: 'Module', moduleHelp: 'The task is filed under this module (shown by its courses); it does not belong to a course.', examTimeUnknown: 'time unknown',
   dueDate: 'Due date (optional)', dueTime: 'Due time (optional; end of day if empty)', estimateMinutes: 'Estimate in minutes (optional)', create: 'Add',
+  reviewWithAgent: 'Review with the agent',
   course: 'Course', courseHelp: 'The course page will be available in the course-page delivery.', back: 'Back to this week',
   // K4
   chats: 'Chats', newChat: 'New chat', noChats: 'No conversations yet.', pickChat: 'Start a new chat or pick one from the list.',
@@ -88,6 +89,7 @@ export const zh: typeof en = {
   delete: '删除', confirmDelete: '确认删除', invalidMinutes: '请输入大于零的整数分钟。',
   invalidTask: '请填写标题；全天任务需填日期；预估需为整数分钟。', taskTitle: '标题', module: '模块', moduleHelp: '任务归入此模块（按其课程代码显示），并不属于某门课程。', examTimeUnknown: '时间未知',
   dueDate: '截止日期（可选）', dueTime: '截止时间（可选，留空为当天结束）', estimateMinutes: '预估分钟（可选）', create: '添加',
+  reviewWithAgent: '让 agent 查看',
   course: '课程', courseHelp: '课程页面将在课程页交付时提供。', back: '返回本周',
   // K4
   chats: '对话', newChat: '新对话', noChats: '还没有对话。', pickChat: '新建一个对话，或从列表中选择。',

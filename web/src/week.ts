@@ -11,7 +11,7 @@ export interface DeadlineEntry { id: string; title: string; courseCode?: string;
 export interface PlannedItem { workId: string; title: string; courseCode?: string; minutes: number; startTime?: string; estimateMinutes?: number; actualMinutes: number; manual: boolean }
 export interface WorkRow { workId: string; title: string; courseCode?: string; minutes?: number; due?: string; estimateMinutes?: number; manual: boolean }
 export interface DayColumn { date: string; availableMinutes?: number; usedMinutes: number; deadlines: DeadlineEntry[]; items: PlannedItem[] }
-export type Need = { kind: 'confirm'; id: string; assessmentId: string; summary: string }
+export type Need = { kind: 'confirm'; id: string; assessmentId: string; courseId?: string; summary: string }
   | { kind: 'signin'; site: Site } | { kind: 'sync'; site: Site } | { kind: 'overflow'; workId: string; title: string; courseCode?: string; minutes: number }
   | { kind: 'unestimated'; count: number };
 export interface CourseSummary { id: string; code: string; name: string; gradedWeight: number; unknownWeight: boolean; next?: { title: string; due: string }; undatedExams: string[] }
@@ -134,9 +134,11 @@ export function weekModel(input: { plan?: Plan; courses: readonly Course[]; asse
   const row = (workId: string, minutes?: number): WorkRow => { const { actualMinutes: _actual, ...rest } = describe(workId); return { ...rest, ...(minutes !== undefined ? { minutes } : {}) }; };
   return { days, overflow: (input.plan?.overflow ?? []).map(item => row(item.workId, item.minutes)), unestimated: (input.plan?.unestimated ?? []).map(item => row(item.workId)) };
 }
-export function needsYou(input: { attention: readonly { site: Site; kind: 'signin' | 'sync' }[]; confirmations: readonly Confirmation[]; overflow: readonly WorkRow[]; unestimated: readonly WorkRow[] }): Need[] {
+export function needsYou(input: { attention: readonly { site: Site; kind: 'signin' | 'sync' }[]; confirmations: readonly Confirmation[]; overflow: readonly WorkRow[]; unestimated: readonly WorkRow[];
+  assessments?: readonly { id: string; courseId: string }[] }): Need[] {
+  const courseOf = new Map((input.assessments ?? []).map(item => [item.id, item.courseId]));
   return [
-    ...input.confirmations.filter(row => row.state === 'pending').map(row => ({ kind: 'confirm' as const, id: row.id, assessmentId: row.assessmentId, summary: row.summary })),
+    ...input.confirmations.filter(row => row.state === 'pending').map(row => ({ kind: 'confirm' as const, id: row.id, assessmentId: row.assessmentId, courseId: courseOf.get(row.assessmentId), summary: row.summary })),
     ...input.attention.map(item => item.kind === 'signin' ? { kind: 'signin' as const, site: item.site } : { kind: 'sync' as const, site: item.site }),
     ...input.overflow.map(item => ({ kind: 'overflow' as const, workId: item.workId, title: item.title, courseCode: item.courseCode, minutes: item.minutes ?? 0 })),
     ...input.unestimated.length ? [{ kind: 'unestimated' as const, count: input.unestimated.length }] : [],

@@ -177,3 +177,6 @@ button.small { padding:4px 10px; font-size:12px; }
 .table-wrap th,.table-wrap td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); overflow-wrap:normal; }
 .table-wrap th { color:var(--muted); font-weight:600; }
 @media(max-width:600px) { .metrics-range { grid-template-columns:1fr 1fr; } .metrics-range button { grid-column:1 / -1; } .kpis { grid-template-columns:1fr; } }
+/* K2 + K4: confirmation card inside "needs you" */
+.needs-confirm { flex-direction: column; align-items: stretch; gap: 8px; }
+.needs-actions { display: flex; flex-wrap: wrap; gap: 8px; }

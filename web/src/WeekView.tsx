@@ -1,17 +1,28 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
 import type { Copy, Language } from './i18n.js';
 import type { WeekStore, ManualFields } from './weekStore.js';
+import type { Client } from './client.js';
+import type { AgentPreset } from './chat.js';
+import type { PendingConfirmation } from '../../src/domain/schemas.js';
+import { ConfirmationCard } from './Agent.js';
 import { addDays, courseSummaries, deadlinesByDate, localDate, localTime, mondayOf, monthGrid, weekModel, zonedIso, type DeadlineEntry, type Need, type PlannedItem, type Task, type WorkRow } from './week.js';
 
 const hours = (minutes: number) => `${Math.round(minutes / 6) / 10}`;
 function errorText(code: string, t: Copy) { return code === 'OWNER_SESSION_EXPIRED' ? t.session : `${t.error} (${code})`; }
 function scrollTo(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 
-export function NeedsYou({ needs, t, onStatus, onAgent }: { needs: Need[]; t: Copy; onStatus: () => void; onAgent: () => void }) {
+export function NeedsYou({ needs, t, onStatus, onAgent, client, confirmations, onDecided }: { needs: Need[]; t: Copy; onStatus: () => void;
+  onAgent: (preset?: AgentPreset) => void; client: Client; confirmations: readonly PendingConfirmation[]; onDecided: () => void }) {
   if (!needs.length) return null;
   return <section className="needs" aria-labelledby="needs-title"><h2 id="needs-title">{t.needs}</h2>{needs.map(item => {
+    const pending = item.kind === 'confirm' ? confirmations.find(row => row.id === item.id) : undefined;
+    if (item.kind === 'confirm' && pending) return <div className="attention-row needs-confirm" key={`confirm-${item.id}`}>
+      <ConfirmationCard confirmation={pending} client={client} t={t} onDecided={onDecided} />
+      <div className="needs-actions"><button onClick={() => onAgent()}>{t.openAgent}</button>
+        {item.courseId && <button onClick={() => onAgent({ id: 'review-pending', courseId: item.courseId, assessmentId: item.assessmentId })}>{t.reviewWithAgent}</button>}</div>
+    </div>;
     const site = 'site' in item ? item.site === 'ed' ? 'Ed' : 'Canvas' : '';
-    const [text, action, run] = item.kind === 'confirm' ? [`${t.confirmPending}: ${item.summary}`, t.openAgent, onAgent]
+    const [text, action, run] = item.kind === 'confirm' ? [`${t.confirmPending}: ${item.summary}`, t.openAgent, () => onAgent()]
       : item.kind === 'signin' ? [`${site} · ${t.signin}`, t.status, onStatus]
       : item.kind === 'sync' ? [`${site} · ${t.syncFailed}`, t.status, onStatus]
       : item.kind === 'overflow' ? [`${item.courseCode ? `${item.courseCode} · ` : ''}${item.title} · ${t.overflowMissing} ${hours(item.minutes)} ${t.h}`, t.show, () => scrollTo('overflow')]

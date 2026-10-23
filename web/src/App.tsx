@@ -31,7 +31,7 @@ export function App({ store }: { store: ShellStore }) {
   const menuRoot = useRef<HTMLDivElement>(null);
   const t = language === 'zh' ? zh : en;
   const rows = useMemo(() => weekModel({ plan: weekState.plan, courses: weekState.courses ?? [], assessments: [], tasks: weekState.tasks ?? [], monday: weekState.today ?? '1970-01-05', timeZone: weekState.timeZone }), [weekState]);
-  const needs = needsYou({ attention: attention(state), confirmations: weekState.confirmations ?? [], overflow: rows.overflow, unestimated: rows.unestimated });
+  const needs = needsYou({ attention: attention(state), confirmations: weekState.confirmations ?? [], overflow: rows.overflow, unestimated: rows.unestimated, assessments: weekState.assessments });
   const refreshAll = () => Promise.all([store.refresh(), week.refresh()]);
   const running = state.syncing || state.sync?.running;
   useEffect(() => {
@@ -69,7 +69,7 @@ export function App({ store }: { store: ShellStore }) {
     <main>
       {!store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
       {state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
-      <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onAgent={() => openAgent()} />
+      <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onAgent={openAgent} client={store.client} confirmations={weekState.confirmations ?? []} onDecided={() => void week.refresh()} />
       <div className="page-heading"><h1>{view.page === 'course' ? t.course : t[view.page]}</h1><button onClick={() => void refreshAll()}>{t.refresh}</button></div>
       {view.page === 'agent' ? <AgentPage client={store.client} t={t} language={language} preset={view.preset} onPresetDone={() => setView({ page: 'agent' })} />
         : view.page === 'course' ? <section className="card empty"><p>{t.courseHelp}</p><button onClick={() => setView({ page: 'week' })}>{t.back}</button></section> : <>
