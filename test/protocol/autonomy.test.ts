@@ -174,3 +174,63 @@ it('concurrent owner settings audit each call’s own persisted authorization ve
     expect(event).toMatchObject({ level, grantRef: hash(versions.find(row => row.value === level)!) });
   }
 });
+
+type ReadRow = { assessmentId: string };
+const readData = async (call: ReturnType<typeof setup>['call']) => {
+  const result = await call('autonomy.read', { courseId });
+  expect(result).toMatchObject({ ok: true });
+  return (result as { data: { assessments: ReadRow[] } & Record<string, unknown> }).data;
+};
+const row = (data: { assessments: ReadRow[] }, id: string) => data.assessments.find(item => item.assessmentId === id);
+it('autonomy.read locks a prohibited course at L0 even under an L2 default and override', async () => {
+  const { call } = setup();
+  await call('autonomy.default.set', { courseId, level: 2 });
+  await call('autonomy.override.set', { assessmentId: 'd', level: 2 });
+  await call('autonomy.policy.set', { courseId, status: 'prohibited' });
+  const data = await readData(call);
+  expect(data).toMatchObject({ courseId, policy: 'prohibited', cap: 0, defaultLevel: 2 });
+  expect(row(data, 'd')).toEqual({ assessmentId: 'd', kind: 'assignment', applicable: true, requiredLevel: 2, override: 2, effectiveLevel: 0 });
+});
+it('autonomy.read leaves a course with no recorded policy uncapped', async () => {
+  const { call } = setup();
+  await call('autonomy.default.set', { courseId, level: 2 });
+  const data = await readData(call);
+  expect(data).toMatchObject({ policy: null, cap: 2, defaultLevel: 2 });
+  expect(row(data, 'a')).toMatchObject({ override: null, effectiveLevel: 2 });
+});
+it('autonomy.read caps an override above the course cap, matching autonomy.check', async () => {
+  const { call } = setup();
+  await call('autonomy.policy.set', { courseId, status: 'prohibited' });
+  await call('autonomy.override.set', { assessmentId: 'a', level: 1 });
+  expect(row(await readData(call), 'a')).toMatchObject({ override: 1, effectiveLevel: 0 });
+  await call('autonomy.policy.set', { courseId, status: 'allowed' });
+  expect(row(await readData(call), 'a')).toMatchObject({ override: 1, effectiveLevel: 1 });
+});
+it('autonomy.read gives exams no level and follows the effective kind for the required level', async () => {
+  const { call, store } = setup();
+  await call('autonomy.default.set', { courseId, level: 2 });
+  store.saveAssessment({ ...synthetic.assessments[0]!, kind: 'quiz' });
+  const data = await readData(call);
+  expect(row(data, 'final')).toEqual({ assessmentId: 'final', kind: 'exam', applicable: false, requiredLevel: null, override: null, effectiveLevel: null });
+  expect(row(data, 'a')).toMatchObject({ kind: 'quiz', applicable: true, requiredLevel: 1, effectiveLevel: 2 });
+  expect(data.assessments.map(item => item.assessmentId)).toEqual(['a', 'b', 'c', 'd', 'final']);
+});
+it('autonomy.read reports the confirm-before-submit switch, defaulting to true', async () => {
+  const { call } = setup();
+  expect(await readData(call)).toMatchObject({ defaultLevel: 0, confirmBeforeSubmit: true });
+  await call('autonomy.confirmation.set', { courseId, confirmBeforeSubmit: false });
+  expect(await readData(call)).toMatchObject({ confirmBeforeSubmit: false });
+});
+it('autonomy.read writes no audit rows, is an anonymous agent read and refuses unknown courses', async () => {
+  const { call, context, registry } = setup();
+  await call('autonomy.override.set', { assessmentId: 'd', level: 1 });
+  const before = context.events.length;
+  const agent = registry.agentTools(context);
+  expect(agent.registry.get('autonomy.read')).toBeDefined();
+  expect(await dispatch(agent.registry, 'autonomy.read', { courseId }, agent.context)).toMatchObject({ ok: true });
+  expect(await call('autonomy.read', { courseId }, httpCommandContext(context, 'autonomy.read', false, () => false))).toMatchObject({ ok: true });
+  await readData(call);
+  expect(context.events.length).toBe(before);
+  expect(await call('autonomy.read', { courseId: 'missing' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  expect(context.events.length).toBe(before);
+});

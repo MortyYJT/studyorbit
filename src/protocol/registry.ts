@@ -52,7 +52,7 @@ export function sessionOnlyCommand(entry: RegistryEntry | string): boolean {
   const name = typeof entry === 'string' ? entry : entry.name;
   return typeof entry !== 'string' && entry.authority === 'owner-session'
     || planningSessionCommands.has(name) || ['policy.record', 'grant.record', 'annotation.confirm', 'annotation.replace'].includes(name)
-    || ['browser.view', 'browser.image'].includes(name) || name.startsWith('confirmation.') || name.startsWith('autonomy.') && name !== 'autonomy.check';
+    || ['browser.view', 'browser.image'].includes(name) || name.startsWith('confirmation.') || name.startsWith('autonomy.') && name !== 'autonomy.check' && name !== 'autonomy.read';
 }
 export function isOwnerCommand(entry: RegistryEntry | string): boolean {
   return sessionOnlyCommand(entry) || planningOwnerCommands.has(typeof entry === 'string' ? entry : entry.name) || ownerCommands.has(typeof entry === 'string' ? entry : entry.name)
@@ -148,7 +148,7 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   }
   return result;
 }
-const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'browser.status', 'browser.open', 'browser.read', 'browser.screenshot', 'browser.view', 'confirmation.list', 'sync.status', 'plan.read', 'planning.settings.read', 'annotation.read', 'metrics.read']));
+const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'browser.status', 'browser.open', 'browser.read', 'browser.screenshot', 'browser.view', 'confirmation.list', 'sync.status', 'plan.read', 'planning.settings.read', 'annotation.read', 'metrics.read', 'autonomy.read']));
 /** Contract commands that change state; transports require credentials for these whatever their autonomy level. */
 export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationContracts), 'browser.open', 'browser.click', 'browser.fill', 'browser.select', 'browser.submit'].filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
@@ -205,6 +205,14 @@ export function createRegistry(options: { browser?: Partial<BrowserServices>; au
     await (options.browser?.stop ? options.browser.stop() : ownerResidentBrowser().stop()); return { running: false as const };
   } });
   for (const name of Object.keys(autonomyContracts) as (keyof typeof autonomyContracts)[]) {
+    // autonomy.read is an L0 read with no authority decision: it skips the audit journal (runs still record it).
+    if (name === 'autonomy.read') {
+      registry.register<z.ZodType, z.ZodType>({ name, ...autonomyContracts[name], selfAudited: true, handler: input => {
+        if (!options.autonomy) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
+        return options.autonomy.read(input);
+      } });
+      continue;
+    }
     registry.register<z.ZodType, z.ZodType>({ name, ...autonomyContracts[name], ...(name !== 'autonomy.check' ? { authority: 'owner-session' as const, references: (input: unknown) => {
       if (!options.autonomy) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
       return options.autonomy.references(name, input);
