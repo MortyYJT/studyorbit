@@ -38,8 +38,10 @@ export class MetricsService {
     const assessments = this.all('assessments');
     const targets = [...assessments.map(item => ({ entity: 'assessment', id: item.id })),
       ...this.all('courses').map(item => ({ entity: 'course', id: item.id }))];
+    // Verdicts are append-only, so a re-judged annotation is one label: its latest in-range verdict (append order breaks ties).
     const verdicts = targets.flatMap(target => this.store.readAnnotations(target.entity, target.id)
-      .filter(row => row.origin === 'agent').flatMap(row => this.store.readAnnotationVerdicts(row.id))).filter(row => inRange(row.at));
+      .filter(row => row.origin === 'agent').flatMap(row => this.store.readAnnotationVerdicts(row.id).filter(verdict => inRange(verdict.at))
+        .reduce<{ verdict: string; at: string }[]>((latest, verdict) => !latest[0] || Date.parse(verdict.at) >= Date.parse(latest[0].at) ? [verdict] : latest, [])));
     const correct = verdicts.filter(row => row.verdict === 'correct').length;
     const tasks = planningTasks(this.store);
     const work = new Map<string, number | undefined>(assessments.map(item => [item.id, undefined]));
