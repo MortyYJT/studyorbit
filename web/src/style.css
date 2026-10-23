@@ -52,6 +52,75 @@ legend { padding:0 6px; }
 .hours { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
 .hours label { margin:0; font-size:12px; }
 @media(max-width:600px) { header { flex-wrap:wrap; gap:10px; padding:12px 16px; } .brand { flex-basis:100%; } main { padding:20px 16px; } nav button { padding:7px 10px; } .header-actions { gap:8px; } .header-actions>button { padding:7px 10px; } dialog { padding:18px; } .dialog-heading { top:-18px; } .hours { grid-template-columns:repeat(2,minmax(0,1fr)); } .card { padding:18px; } }
+/* K2 week view */
+main:has(.week-layout) { max-width:1400px; }
+.week-layout { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:20px; align-items:start; }
+.week-main { min-width:0; display:grid; gap:14px; }
+.week-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; }
+.week-nav,.week-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.range { font-weight:600; font-variant-numeric:tabular-nums; }
+.seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.seg button { border:0; border-radius:0; }
+.seg button[aria-pressed="true"] { background:var(--ink); color:var(--on-ink); }
+label.inline { display:flex; align-items:center; gap:6px; margin:0; }
+label.inline select { width:auto; }
+.notice { padding:14px 18px; margin:0; }
+.week-card { padding:0; overflow:hidden; }
+.week-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); grid-template-rows:auto auto 1fr; }
+.day { display:grid; grid-row:span 3; grid-template-rows:subgrid; border-right:1px solid var(--line); min-width:0; }
+.day:last-child { border-right:0; }
+.day.past { opacity:.7; }
+.day-head { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px; padding:8px; border-bottom:1px solid var(--line); font-size:13px; }
+.day.today .day-head b { background:var(--ink); color:var(--on-ink); border-radius:6px; padding:0 6px; }
+.hours-used { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+.day-deadlines { display:grid; gap:4px; align-content:start; min-height:34px; padding:6px; background:var(--hover); border-bottom:1px solid var(--line); }
+.due { display:block; font-size:11px; line-height:1.35; padding:3px 6px; border:1px solid var(--line); border-radius:6px; background:var(--panel); text-align:left; overflow-wrap:anywhere; }
+button.due { width:100%; }
+.due.all-day { border-style:dashed; }
+.due.done { color:var(--muted); text-decoration:line-through; }
+.day-items { display:grid; gap:6px; align-content:start; padding:6px; min-height:200px; }
+.empty-day { font-size:12px; }
+.blk { display:grid; gap:2px; width:100%; padding:6px 7px; text-align:left; font-size:12px; line-height:1.35; overflow-wrap:anywhere; }
+.blk.manual { border-style:dashed; }
+.blk .tm,.blk .cr { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.plan-lists { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:14px 16px; border-top:1px dashed var(--line); }
+.plan-list h3 { font-size:13px; margin:0 0 6px; }
+.plan-list ul { margin:0; padding-left:18px; font-size:13px; }
+.plan-list p { margin:0; font-size:13px; }
+.month { padding:0; overflow:hidden; }
+.month-row { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); }
+.dow { padding:8px; font-size:11px; color:var(--muted); border-bottom:1px solid var(--line); }
+.cell { min-height:84px; min-width:0; padding:4px; display:grid; gap:3px; align-content:start; border-bottom:1px solid var(--line); border-right:1px solid var(--line); }
+.cell:last-child { border-right:0; }
+.cell.out .num { color:var(--muted); opacity:.6; }
+.cell .num { justify-self:start; border:0; padding:1px 6px; font-size:12px; background:transparent; }
+.cell.today .num { background:var(--ink); color:var(--on-ink); font-weight:700; }
+.rail { padding:16px; display:grid; gap:6px; }
+.rail h2 { font-size:14px; margin:0 0 4px; }
+.crs { display:grid; grid-template-columns:44px minmax(0,1fr); gap:12px; align-items:center; border:0; background:none; text-align:left; width:100%; padding:8px; }
+.crs b,.crs small { display:block; overflow-wrap:anywhere; }
+.ring { width:44px; height:44px; }
+.ring circle { fill:none; stroke-width:4; }
+.ring .bg { stroke:var(--line); }
+.ring .fg { stroke:var(--ink); stroke-linecap:round; transform:rotate(-90deg); transform-origin:50% 50%; }
+.ring.unknown .bg { stroke:var(--muted); stroke-dasharray:3 3; }
+.inline-form { display:flex; flex-wrap:wrap; align-items:end; gap:8px; margin-bottom:12px; }
+.inline-form label { flex:1 1 180px; margin:0; }
+.dialog-actions { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
+.field-pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+label.check { display:flex; align-items:center; gap:8px; }
+label.check input { width:auto; }
+@media(max-width:1000px) { .week-layout { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:760px) {
+  .week-grid { display:block; }
+  .day { display:block; border-right:0; border-bottom:1px solid var(--line); }
+  .day-items { min-height:0; }
+  .day-deadlines:empty { display:none; }
+  .plan-lists,.field-pair { grid-template-columns:1fr; }
+  .month-row { grid-template-columns:repeat(7,minmax(0,1fr)); }
+  .cell { min-height:56px; padding:2px; }
+  .cell .due { font-size:10px; padding:1px 3px; }
+}
 /* K4 agent page */
 .agent-page { display:grid; grid-template-columns:240px minmax(0,1fr); height:calc(100dvh - 190px); min-height:480px; padding:0; overflow:hidden; }
 .chat-list { flex-direction:column; border-right:1px solid var(--line); padding:10px; overflow:auto; display:flex; gap:2px; }
@@ -108,6 +177,9 @@ button.small { padding:4px 10px; font-size:12px; }
 .table-wrap th,.table-wrap td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); overflow-wrap:normal; }
 .table-wrap th { color:var(--muted); font-weight:600; }
 @media(max-width:600px) { .metrics-range { grid-template-columns:1fr 1fr; } .metrics-range button { grid-column:1 / -1; } .kpis { grid-template-columns:1fr; } }
+/* K2 + K4: confirmation card inside "needs you" */
+.needs-confirm { flex-direction: column; align-items: stretch; gap: 8px; }
+.needs-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 /* K3 course page */
 .course-list .course-link { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 16px; width:100%; border:0; background:none; padding:0; text-align:left; }
 .course-list .course-link small { margin-left:auto; }
