@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { contracts, browserContracts, FailureEnvelopeSchema } from '../../src/protocol/contracts.js';
 import { syncContracts } from '../../src/protocol/sync.js';
 import { planningContracts, settingsInput } from '../../src/planning/contracts.js';
+import { metricsContracts } from '../../src/metrics/contracts.js';
 
 const commands = {
   'courses.list': contracts['courses.list'],
@@ -11,6 +12,7 @@ const commands = {
   ...syncContracts,
   'planning.settings.read': planningContracts['planning.settings.read'],
   'planning.settings.set': { input: settingsInput, output: z.strictObject({ recorded: z.literal(true), id: z.string().optional() }) },
+  ...metricsContracts,
 } as const;
 export type Command = keyof typeof commands;
 export type Output<N extends Command> = z.output<(typeof commands)[N]['output']>;

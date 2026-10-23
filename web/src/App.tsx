@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { ShellStore, attention, emptyStore, settingsFromForm, type Settings } from './shell.js';
 import { en, zh, type Copy, type Language, type Theme } from './i18n.js';
+import { MetricsPanel } from './MetricsPanel.js';
 
 type Panel = 'status' | 'audit' | 'settings' | 'metrics';
 function preference(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
@@ -81,7 +82,7 @@ export function App({ store }: { store: ShellStore }) {
         </section>)}
         {(state.errors.browser || state.errors.sync) && <p role="status">{t.error}</p>}
       </>}
-      {panel === 'metrics' && <p>{t.metricsHelp}</p>}
+      {panel === 'metrics' && <MetricsPanel client={store.client} t={t} language={language} timeZone={state.planning?.settings?.timeZone} />}
       {panel === 'audit' && <><button disabled={state.auditLoading} onClick={() => void store.loadAudit()}>{t.refresh}</button>
         {state.errors.audit && <p role="status">{errorText(state.errors.audit, t)}</p>}
         {!state.audit && !state.errors.audit && <p>{t.loading}</p>}
