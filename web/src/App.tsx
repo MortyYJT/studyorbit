@@ -4,10 +4,13 @@ import { en, zh, type Copy, type Language, type Theme } from './i18n.js';
 import { WeekStore } from './weekStore.js';
 import { needsYou, weekModel } from './week.js';
 import { NeedsYou, WeekView } from './WeekView.js';
+import { AgentPage } from './Agent.js';
+import type { AgentPreset } from './chat.js';
 import { MetricsPanel } from './MetricsPanel.js';
 
 type Panel = 'status' | 'audit' | 'settings' | 'metrics';
-export type View = { page: 'week' } | { page: 'agent' } | { page: 'course'; courseId: string };
+/** Navigation state; a preset is cleared once its conversation exists, so it is never sent twice. */
+export type View = { page: 'week' } | { page: 'agent'; preset?: AgentPreset } | { page: 'course'; courseId: string };
 function preference(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
 function remember(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Preferences remain usable in memory. */ } }
 function errorText(code: string, t: Copy): string {
@@ -20,6 +23,7 @@ export function App({ store }: { store: ShellStore }) {
   const [view, setView] = useState<View>({ page: 'week' });
   const [week] = useState(() => new WeekStore(store.client));
   const weekState = useSyncExternalStore(week.subscribe, week.getSnapshot);
+  const openAgent = (preset?: AgentPreset) => setView({ page: 'agent', preset });
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState<Panel>();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -52,7 +56,7 @@ export function App({ store }: { store: ShellStore }) {
     <header>
       <span className="brand"><span className="brand-dot" />coursework</span>
       <nav aria-label="coursework">
-        {(['week', 'agent'] as const).map(item => <button key={item} aria-current={view.page === item ? 'page' : undefined} onClick={() => setView({ page: item })}>{t[item]}</button>)}
+        {(['week', 'agent'] as const).map(item => <button key={item} aria-current={view.page === item ? 'page' : undefined} onClick={() => item === 'agent' ? openAgent() : setView({ page: item })}>{t[item]}</button>)}
       </nav>
       <div className="header-actions">{syncButton}
         <div className="avatar-wrap" ref={menuRoot} onKeyDown={event => { if (event.key === 'Escape') { setMenu(false); avatar.current?.focus(); } }}>
@@ -65,9 +69,9 @@ export function App({ store }: { store: ShellStore }) {
     <main>
       {!store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
       {state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
-      <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onAgent={() => setView({ page: 'agent' })} />
+      <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onAgent={() => openAgent()} />
       <div className="page-heading"><h1>{view.page === 'course' ? t.course : t[view.page]}</h1><button onClick={() => void refreshAll()}>{t.refresh}</button></div>
-      {view.page === 'agent' ? <section className="card empty"><p>{t.agentHelp}</p></section>
+      {view.page === 'agent' ? <AgentPage client={store.client} t={t} language={language} preset={view.preset} onPresetDone={() => setView({ page: 'agent' })} />
         : view.page === 'course' ? <section className="card empty"><p>{t.courseHelp}</p><button onClick={() => setView({ page: 'week' })}>{t.back}</button></section> : <>
         {state.errors.courses || state.errors.tasks ? <section className="card"><p>{t.error}</p></section>
           : !state.courses || !state.tasks ? <p role="status">{t.loading}</p>

@@ -34,6 +34,15 @@ export const en = {
   invalidTask: 'Enter a title, a date for all-day tasks, and an estimate in whole minutes if any.', taskTitle: 'Title', module: 'Module', moduleHelp: 'The task is filed under this module (shown by its courses); it does not belong to a course.', examTimeUnknown: 'time unknown',
   dueDate: 'Due date (optional)', dueTime: 'Due time (optional; end of day if empty)', estimateMinutes: 'Estimate in minutes (optional)', create: 'Add',
   course: 'Course', courseHelp: 'The course page will be available in the course-page delivery.', back: 'Back to this week',
+  // K4
+  chats: 'Chats', newChat: 'New chat', noChats: 'No conversations yet.', pickChat: 'Start a new chat or pick one from the list.',
+  send: 'Send', chatPlaceholder: 'Ask the agent…', stop: 'Stop', replying: 'Replying…', stopped: 'Stopped', presetSent: 'Preset prompt',
+  deleteChat: 'Delete', stepOk: 'Done', stepError: 'Failed', stepDenied: 'Denied', stepWaiting: 'Waiting for you',
+  screenshot: 'Screenshot', viewEdge: 'View in Edge', agentUnavailable: 'Sign in to the installed agent, then retry.', agentFailed: 'The agent reply failed.',
+  confirmTitle: 'Awaiting you · answers summary', confirmSubmit: 'Confirm submit', cancel: 'Cancel', deciding: 'Recording…',
+  confirmedSubmit: 'Submit confirmed.', cancelledSubmit: 'Cancelled, nothing submitted.', expiredSubmit: 'Expired, nothing submitted.',
+  screenshotUnavailable: 'Screenshot unavailable.', confirmationUnavailable: 'Confirmation details unavailable. Refresh to retry.',
+  confirmationGone: 'No longer pending; nothing waits for your decision.', chatGone: 'This conversation no longer exists. Pick another from the list.',
   // L
   mRange: 'Date range', mFrom: 'From', mTo: 'To (inclusive)', mShow: 'Show', mRangeInvalid: 'Choose a start date on or before the end date.',
   mZone: 'Dates use time zone', mSync: 'Sync', mSyncBasis: 'Durations are whole sync runs.', mMedian: 'Median duration', mMax: 'Longest duration', mSuccess: 'Successful runs',
@@ -80,6 +89,15 @@ export const zh: typeof en = {
   invalidTask: '请填写标题；全天任务需填日期；预估需为整数分钟。', taskTitle: '标题', module: '模块', moduleHelp: '任务归入此模块（按其课程代码显示），并不属于某门课程。', examTimeUnknown: '时间未知',
   dueDate: '截止日期（可选）', dueTime: '截止时间（可选，留空为当天结束）', estimateMinutes: '预估分钟（可选）', create: '添加',
   course: '课程', courseHelp: '课程页面将在课程页交付时提供。', back: '返回本周',
+  // K4
+  chats: '对话', newChat: '新对话', noChats: '还没有对话。', pickChat: '新建一个对话，或从列表中选择。',
+  send: '发送', chatPlaceholder: '问 agent…', stop: '停止', replying: '回复中…', stopped: '已停止', presetSent: '预设提示词',
+  deleteChat: '删除', stepOk: '完成', stepError: '失败', stepDenied: '已拒绝', stepWaiting: '等你确认',
+  screenshot: '截图', viewEdge: '在 Edge 中查看', agentUnavailable: '请先登录已安装的 agent，然后重试。', agentFailed: 'agent 回复失败。',
+  confirmTitle: '等你确认 · 答案汇总', confirmSubmit: '确认提交', cancel: '取消', deciding: '正在记录…',
+  confirmedSubmit: '已确认提交。', cancelledSubmit: '已取消，没有提交。', expiredSubmit: '已过期，没有提交。',
+  screenshotUnavailable: '截图暂不可用。', confirmationUnavailable: '无法读取确认详情，请刷新重试。',
+  confirmationGone: '已不再等待确认，无需你处理。', chatGone: '这个对话已不存在，请从列表中选择其他对话。',
   // L
   mRange: '日期范围', mFrom: '开始', mTo: '结束（含当天）', mShow: '查看', mRangeInvalid: '开始日期不能晚于结束日期。',
   mZone: '日期按时区', mSync: '同步', mSyncBasis: '耗时为整次同步运行的时长。', mMedian: '耗时中位数', mMax: '最长耗时', mSuccess: '成功次数',

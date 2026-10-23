@@ -3,6 +3,7 @@ import { contracts, browserContracts, FailureEnvelopeSchema } from '../../src/pr
 import { syncContracts } from '../../src/protocol/sync.js';
 import { planningContracts, planningInputs, settingsInput } from '../../src/planning/contracts.js';
 import { PendingConfirmationSchema } from '../../src/domain/schemas.js';
+import { confirmationInput } from '../../src/browser/tools/contracts.js';
 import { metricsContracts } from '../../src/metrics/contracts.js';
 
 const commands = {
@@ -20,6 +21,7 @@ const commands = {
     output: z.object({ items: z.array(PendingConfirmationSchema), nextCursor: z.string().optional() }) },
   ...recorded('plan.start.set'), ...recorded('plan.start.clear'), ...recorded('time.record'),
   ...recorded('manual.create'), ...recorded('manual.edit'), ...recorded('manual.complete'), ...recorded('manual.delete'),
+  'confirmation.decide': { input: confirmationInput, output: z.strictObject({ recorded: z.literal(true) }) },
   ...metricsContracts,
 } as const;
 function recorded<N extends 'plan.start.set' | 'plan.start.clear' | 'time.record' | 'manual.create' | 'manual.edit' | 'manual.complete' | 'manual.delete'>(name: N) {
@@ -41,11 +43,18 @@ export function takeOwnerSession(location: Pick<Location, 'hash' | 'pathname' | 
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });
 // Commands that need the owner session; confirmation.list is a session-only read.
 const writes = new Set<Command>(['sync.run', 'browser.start', 'browser.stop', 'browser.signin', 'planning.settings.set',
-  'confirmation.list', 'plan.start.set', 'plan.start.clear', 'time.record', 'manual.create', 'manual.edit', 'manual.complete', 'manual.delete']);
+  'confirmation.list', 'plan.start.set', 'plan.start.clear', 'time.record', 'manual.create', 'manual.edit', 'manual.complete', 'manual.delete', 'confirmation.decide']);
 export function createClient(initialSecret?: string, fetcher: typeof fetch = fetch) {
   let secret = initialSecret;
   return {
     hasSession: () => secret !== undefined,
+    /** Owner-session request for routes outside the command envelope map (agent chat, screenshots). */
+    async raw(path: string, init: RequestInit = {}): Promise<Response> {
+      if (!secret) throw new ClientError('OWNER_SESSION_EXPIRED', 'Reopen with coursework ui.');
+      const response = await fetcher(path, { ...init, cache: 'no-store', credentials: 'omit', headers: { ...init.headers as Record<string, string>, 'X-Coursework-Session': secret } });
+      if (response.status === 403) { secret = undefined; throw new ClientError('OWNER_SESSION_EXPIRED', 'Reopen with coursework ui.'); }
+      return response;
+    },
     async call<N extends Command>(name: N, input: z.input<(typeof commands)[N]['input']>): Promise<Output<N>> {
       if (writes.has(name) && !secret) throw new ClientError('OWNER_SESSION_EXPIRED', 'Reopen with coursework ui.');
       const parsed = commands[name].input.parse(input);
