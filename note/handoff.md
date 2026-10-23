@@ -1,7 +1,7 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#163）；进度看 `note/product/roadmap.md`。
+> 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#164）；进度看 `note/product/roadmap.md`。
 
 - **最后更新：** 2026-10-23，Claude 会话（#161：本轮不派 Codex，全部由 Claude 子代理在 worktree 里实现），分支 `claude/handoff-v1-ui`。
 - **模式：** v1 代码全部完成，等你真机验收。`v1-delivery` 的 tasks 只剩你本人的 5.6、10.4、17.2、17.3 和最后的 17.4 归档。
@@ -21,7 +21,6 @@
 
 ## 等你决定
 
-- **确认 #163（Claude 未经你选择就做了）：** 课程页读等级用了新增 `autonomy.read`（调度员 10-15 推荐的 A）。你同意就不用动；想改成 B（扩展 `courses.list` / `assessments.list`）或 C（新增 `course.read`）告诉我。
 - **`plan.read` 会清开始时间（K2 审查）：** `plan.read` 是 L0 读命令，但每次重排都会清掉不再排在当天的开始时间（`src/planning/service.ts:47-56`）。前端从今天起排 366 天，没做完的工作每天往后挪，开始时间会被悄悄删掉；agent 或 CLI 用别的范围调 `plan.read` 也会清。planner 也不扣已记录的实际用时（`src/planning/planner.ts:29`）。选项：开始时间只在 owner 写入或显式重排时清 / 计划锚定到周一 / planner 扣减实际用时。
 - **手动任务必须挂模块：** `manual.create` 要 `moduleId`，没有 `modules.list`，个人模块选不到，没课程时不能加任务。选项：加 `modules.list` / 手动任务允许不挂模块。
 - **计划外工作（已提交 / 已出分）的实际用时读不到：** 只有 `plan.read` 的 work 行带 `actualMinutes`，已提交 / 已出分的作业在抽屉里只能记、看不到总数。选项：加一个按考核读实际用时的读命令 / 接受现状。
