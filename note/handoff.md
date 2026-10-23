@@ -5,7 +5,7 @@
 
 - **最后更新：** 2026-10-23，Claude 会话（#161：本轮不派 Codex，全部由 Claude 子代理在 worktree 里实现），分支 `claude/handoff-v1-ui`。
 - **模式：** v1 代码全部完成，等你真机验收。`v1-delivery` 的 tasks 只剩你本人的 5.6、10.4、17.2、17.3 和最后的 17.4 归档。
-- **本轮已合并：** 合成数据 UI harness（PR #141）、L 指标面板（#142）、K4 Agent 页（#143）、K2 周视图（#144，含"需要你"里的确认卡片和 review-pending 预设）、CLI 测试超时（#145）、`autonomy.read` 和 `assessments.list` 的 `platform` 提交 / 删除标记（#146）、准确率每条标注只算最新判定（#148，决定 #162）、K3 课程页和抽屉（#147）、M 17.1 端到端测试和 20 秒默认测试超时（#149）。每个 PR 都有新上下文子代理审查；K2、K3 各两轮。
+- **本轮已合并：** 合成数据 UI harness（PR #141）、L 指标面板（#142）、K4 Agent 页（#143）、K2 周视图（#144，含"需要你"里的确认卡片和 review-pending 预设）、CLI 测试超时（#145）、`autonomy.read` 和 `assessments.list` 的 `platform` 提交 / 删除标记（#146）、准确率每条标注只算最新判定（#148，决定 #162）、K3 课程页和抽屉（#147）、M 17.1 端到端测试和 20 秒默认测试超时（#149）。K2、K3、K4、L 面板、#146 有新上下文子代理审查（K2、K3 各两轮）；#141、#145、#148、#149 由 Claude 读 diff。
 - **注意：** MCP agent 工具数 35（多了 `autonomy.read`）。前端所有读写只走注册表命令；owner 写操作都在 `web/src/client.ts` 的 `writes` 集合里。课程页的等级只来自 `autonomy.read`，每次自治写入后重读。
 
 ## 没合并的工作
@@ -23,7 +23,7 @@
 
 - **`plan.read` 会清开始时间（K2 审查）：** `plan.read` 是 L0 读命令，但每次重排都会清掉不再排在当天的开始时间（`src/planning/service.ts:47-56`）。前端从今天起排 366 天，没做完的工作每天往后挪，开始时间会被悄悄删掉；agent 或 CLI 用别的范围调 `plan.read` 也会清。planner 也不扣已记录的实际用时（`src/planning/planner.ts:29`）。选项：开始时间只在 owner 写入或显式重排时清 / 计划锚定到周一 / planner 扣减实际用时。
 - **手动任务必须挂模块：** `manual.create` 要 `moduleId`，没有 `modules.list`，个人模块选不到，没课程时不能加任务。选项：加 `modules.list` / 手动任务允许不挂模块。
-- **课程外工作的实际用时读不到：** 只有 `plan.read` 的 work 行带 `actualMinutes`，已提交 / 已出分的作业在抽屉里只能记、看不到总数。选项：加一个按考核读实际用时的读命令 / 接受现状。
+- **计划外工作（已提交 / 已出分）的实际用时读不到：** 只有 `plan.read` 的 work 行带 `actualMinutes`，已提交 / 已出分的作业在抽屉里只能记、看不到总数。选项：加一个按考核读实际用时的读命令 / 接受现状。
 - `metrics.read` 的分页参数（`cursor`、`limit`，每页最多 25）要不要写进 metrics 规格。
 - J 第 2 轮审查遗留（PR #134「Out-of-scope findings」）：页面正文点名的同学认不出（同步 Canvas People 名单 / 接受尽力而为）；写操作只核对同一门课（推荐改规格为「页面 URL 必须对应所点名的作业」）；`coursework ui` 会把另一个 `coursework mcp` 进程等待中的确认标成过期（要给确认行加持有进程 id，改表结构）。
 - 补理由：#127、#158、#159、#161，以及旧的 #6、#9、#15–18、#23、#27、#29、#53、#67、#70。
