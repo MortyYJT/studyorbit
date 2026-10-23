@@ -24,6 +24,7 @@ import { StoreProtocolReads, TrustedStoreEvidence, type AuxiliaryReadPorts, type
 import { SharedAuthorization } from './authorization.js';
 import { CanonicalAuthorizationStore } from './canonical-authorization.js';
 import { AssessmentAutonomy } from './autonomy.js';
+import { assessmentPlatformState } from '../store/platform-state.js';
 import { DurableAudit, DurableRuns } from './audit.js';
 import { ComposedServices, ComposedEvidence } from './writes.js';
 import { StudyWriteService, type StudyRecordStore } from './study-writes.js';
@@ -58,6 +59,7 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
     ...options.reads,
     assessments: { query: input => store.queryEffectiveAssessments(input, effectiveKind) },
     project: (entity, value) => annotations.project(entity, value),
+    platform: id => assessmentPlatformState(store, id),
     accepted: options.reads?.accepted ?? accepted,
     revision: { read: (name, input) => revision.read(name, input) },
     audit: options.reads?.audit ?? { read: async input => {

@@ -93,7 +93,9 @@ export const contracts = {
   'practice.attempt.record': { input: z.strictObject({ questionId: IdSchema, revision: z.uuid(), outcome: z.enum(['correct', 'incorrect', 'skipped']), at: z.iso.datetime({ offset: true }) }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
   'source.fetch': { input: z.strictObject({ courseId: IdSchema, url: z.url().max(2048) }), output: z.strictObject({ items: z.array(SourceEvidenceSchema).max(500), emptyPages: z.array(z.number().int().positive()).max(500), sourceRevision: HashSchema }), level: 0 },
   'courses.list': courses,
-  'assessments.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }), output: page(AssessmentSchema.strict().extend({ fields: AnnotationFieldsSchema.optional() })), level: 0 },
+  'assessments.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }), output: page(AssessmentSchema.strict().extend({ fields: AnnotationFieldsSchema.optional(),
+    // Derived from currently linked platform items; `linked: false` means submission state is unknown.
+    platform: z.strictObject({ linked: z.boolean(), submitted: z.boolean(), removed: z.boolean() }).optional() })), level: 0 },
   'tasks.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), assessmentId: IdSchema.optional(), moduleId: IdSchema.optional() }), output: page(task), level: 0 },
   'sources.get': { input: z.strictObject({ sourceItemId: IdSchema }), output: SourceEvidenceSchema, level: 0 },
   'materials.list': { input: z.strictObject({ ...paging, courseId: IdSchema, sourceItemId: IdSchema.optional(), page: z.number().int().positive().safe().optional() }), output: page(SourceEvidenceSchema), level: 0 },
