@@ -90,7 +90,7 @@ export function WeekView({ store, t, language, canWrite, settingsMissing, onOpen
         </div>)}</div>)}
       </div> : <div className="card week-card">
         <div className="week-grid">{model.days.map(day => <section key={day.date} className={`day${day.date === today ? ' today' : ''}${day.date < today ? ' past' : ''}`} aria-label={dayName(day.date, 'long')}>
-          <div className="day-head"><b>{dayName(day.date)}</b><span className="hours-used">{hours(day.usedMinutes)} / {day.availableMinutes === undefined ? t.unknown : hours(day.availableMinutes)} {t.h}</span></div>
+          <div className="day-head"><b>{dayName(day.date)}</b><span className="hours-used">{hours(day.usedMinutes)} / {day.availableMinutes === undefined ? '—' : hours(day.availableMinutes)} {t.h}</span></div>
           <div className="day-deadlines" aria-label={t.deadlines}>{day.deadlines.map(deadline)}</div>
           <div className="day-items">{day.items.length ? day.items.map(item => <button key={item.workId} className={`blk${item.manual ? ' manual' : ''}`} onClick={() => setDialog({ kind: 'item', item, date: day.date })}>
             <span className="tm">{item.startTime ?? t.noTime} · {hours(item.minutes)} {t.h}</span><span className="tt">{item.title}</span>

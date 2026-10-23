@@ -1,8 +1,8 @@
 import { ClientError, type Client } from './client.js';
 import type { PlanScope } from '../../src/planning/contracts.js';
-import { localDate, mergePlanPages, mondayOf, pickTerm, type Assessment, type Confirmation, type Course, type Plan, type PlanPage, type Task } from './week.js';
-// One plan anchored at the current Monday: navigation only shows slices of it, so
-// reading another week never re-evaluates (and drops start times on) other dates.
+import { localDate, mergePlanPages, pickTerm, type Assessment, type Confirmation, type Course, type Plan, type PlanPage, type Task } from './week.js';
+// One plan anchored at today: past days get no new minutes, and navigation only shows
+// slices of it, so reading another week never re-evaluates (and drops start times on) other dates.
 export const HORIZON_DAYS = 366;
 export const DEFAULT_TIME_ZONE = 'Australia/Melbourne'; // documented settings default
 type ErrorKey = 'courses' | 'assessments' | 'tasks' | 'plan' | 'confirmations' | 'action';
@@ -55,7 +55,7 @@ export class WeekStore {
     const today = localDate(this.now(), timeZone);
     this.update({ terms, term, timeZone, today });
     if (!term) { this.update({ plan: undefined, scope: undefined }); this.setErrors({ plan: undefined }); return; }
-    const scope: PlanScope = { term, startDate: mondayOf(today), horizonDays: HORIZON_DAYS };
+    const scope: PlanScope = { term, startDate: today, horizonDays: HORIZON_DAYS };
     try {
       const pages: PlanPage[] = []; let cursor: string | undefined; let count = 0;
       do {

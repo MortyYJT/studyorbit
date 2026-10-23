@@ -66,8 +66,8 @@ label.inline { display:flex; align-items:center; gap:6px; margin:0; }
 label.inline select { width:auto; }
 .notice { padding:14px 18px; margin:0; }
 .week-card { padding:0; overflow:hidden; }
-.week-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); }
-.day { display:grid; grid-template-rows:auto auto 1fr; border-right:1px solid var(--line); min-width:0; }
+.week-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); grid-template-rows:auto auto 1fr; }
+.day { display:grid; grid-row:span 3; grid-template-rows:subgrid; border-right:1px solid var(--line); min-width:0; }
 .day:last-child { border-right:0; }
 .day.past { opacity:.7; }
 .day-head { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px; padding:8px; border-bottom:1px solid var(--line); font-size:13px; }

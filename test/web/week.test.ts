@@ -82,7 +82,7 @@ it('converts a local date and time into an instant with the zone offset', () => 
 
 function envelope(command: string, data: unknown) { return new Response(JSON.stringify({ protocol: 'coursework.agent/v1', command, ok: true, data, meta })); }
 const list = (items: unknown[], nextCursor?: string) => ({ items, evidence: [], coverage: { complete: true, gaps: [] }, ...(nextCursor ? { nextCursor } : {}) });
-it('reads every plan page from the current Monday and sends owner writes with the session and plan scope', async () => {
+it('reads every plan page from today and sends owner writes with the session and plan scope', async () => {
   const secret = 'a'.repeat(64);
   const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const command = String(url).slice(5); const body = JSON.parse(String(init?.body));
@@ -97,7 +97,7 @@ it('reads every plan page from the current Monday and sends owner writes with th
   const state = store.getSnapshot();
   expect(state.plan?.days.map(day => day.date)).toEqual(['2026-10-19', '2026-10-20']);
   expect(state.assessments).toHaveLength(2);
-  expect(state.scope).toMatchObject({ term: '2026 S2', startDate: '2026-10-19' });
+  expect(state.scope).toMatchObject({ term: '2026 S2', startDate: '2026-10-23' });
   expect(await store.setStart('a1', '2026-10-20', '09:30')).toBe(true);
   const write = fetcher.mock.calls.find(([url]) => url === '/api/plan.start.set')!;
   expect(write[1]!.headers).toMatchObject({ 'X-Coursework-Session': secret });
