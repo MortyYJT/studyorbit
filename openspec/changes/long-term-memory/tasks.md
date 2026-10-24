@@ -1,7 +1,7 @@
 ## 1. Store and commands
 
-- [ ] 1.1 Migration `005` (`memories`), domain schema `Memory`, store methods, parse tests
-- [ ] 1.2 Failing tests then `memory.record` (agent; conversation from the tool scope or `COURSEWORK_CONVERSATION_ID`), `memory.list` (L0), `memory.add` / `memory.edit` / `memory.delete` (owner commands, added to the owner-command set; owner text redacted) (scenarios "Weakness noticed while tutoring", "Too long or unknown course", "Owner adds a memory", "Owner edits an observation", "Owner text is redacted", "Owner deletes a wrong observation", "Agent cannot delete"); MCP tool-count assertion updated
+- [x] 1.1 Migration `005` (`memories`), domain schema `Memory`, store methods, parse tests
+- [x] 1.2 Failing tests then `memory.record` (agent; conversation from the tool scope or `COURSEWORK_CONVERSATION_ID`), `memory.list` (L0), `memory.add` / `memory.edit` / `memory.delete` (owner commands, added to the owner-command set; owner text redacted) (scenarios "Weakness noticed while tutoring", "Too long or unknown course", "Owner adds a memory", "Owner edits an observation", "Owner text is redacted", "Owner deletes a wrong observation", "Agent cannot delete"); MCP tool-count assertion updated
 
 ## 2. Facts brief
 

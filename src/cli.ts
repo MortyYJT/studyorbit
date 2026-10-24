@@ -33,8 +33,8 @@ else {
   }
   if (host) try {
     if (isMcp) {
-      const { runMcpStdio } = await import('./protocol/mcp.js');
-      await runMcpStdio({ ...host, version });
+      const { runMcpStdio, sessionContext } = await import('./protocol/mcp.js');
+      await runMcpStdio({ ...host, context: sessionContext(host.context), version });
     } else if (isUi) {
       const { serveProductionUI } = await import('./protocol/http-host.js');
       try { await serveProductionUI(host); }

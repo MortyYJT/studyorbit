@@ -241,6 +241,17 @@ export type Task = z.input<typeof TaskSchema>;
 export type Run = z.infer<typeof RunSchema>;
 export type SyncOutcome = z.infer<typeof SyncOutcomeSchema>;
 export type CourseCoverage = z.infer<typeof CourseCoverageSchema>;
+/**
+ * Long-term memory (C-4): an agent observation or an owner note. Text is redacted before it is stored; `deletedAt` marks a
+ * soft delete, after which the memory is never listed or sent to an agent again.
+ */
+export const MemoryKindSchema = z.enum(['habit', 'weakness', 'preference', 'other']);
+export const MemorySchema = z.object({
+  id: IdSchema, courseId: IdSchema.optional(), kind: MemoryKindSchema, text: z.string().min(1).max(500),
+  origin: z.enum(['agent', 'owner']), conversationId: IdSchema.optional(),
+  createdAt: TimeSchema, editedAt: TimeSchema.optional(), deletedAt: TimeSchema.optional(),
+});
+export type Memory = z.infer<typeof MemorySchema>;
 export type CourseSelection = z.infer<typeof CourseSelectionSchema>;
 export type SyncJob = z.infer<typeof SyncJobSchema>;
 export type SyncJobResult = z.infer<typeof SyncJobResultSchema>;

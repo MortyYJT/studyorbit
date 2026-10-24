@@ -32,7 +32,7 @@ it('adds delivery tables and columns in one migration without rewriting v2 rows 
     const before = inspect('seed');
     new SqliteRepository(file).close();
     const after = inspect('read');
-    expect(after.version).toBe(4);
+    expect(after.version).toBe(5);
     for (const name of ['assessment_links', 'annotations', 'annotation_verdicts', 'planning_settings', 'estimates', 'start_times', 'time_logs', 'course_autonomy', 'study_records', 'practice_attempts', 'conversations', 'messages', 'pending_confirmations']) expect(after.tables).toContain(name);
     for (const [table, columns] of Object.entries({ courses: ['sources'], assessments: ['origin', 'kind', 'weight'], source_items: ['facts', 'removed'], tasks: ['done', 'allDay'], runs: ['conversationId', 'turns'] })) expect(after.columns[table]).toEqual(expect.arrayContaining(columns));
     expect(after.events).toEqual(before.events);

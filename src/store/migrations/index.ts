@@ -4,8 +4,9 @@ import { up as syncEvents } from './002-sync-events.js';
 
 import { up as delivery } from './003-delivery.js';
 import { up as courseReading } from './004-course-reading.js';
+import { up as memories } from './005-memories.js';
 
-const migrations = [initial, syncEvents, delivery, courseReading] as const;
+const migrations = [initial, syncEvents, delivery, courseReading, memories] as const;
 export const latestVersion = migrations.length;
 
 function currentVersion(db: DatabaseSync): number {

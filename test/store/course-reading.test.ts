@@ -16,7 +16,7 @@ it('migration 004 adds course_selection and sync_jobs; rows survive reopening', 
   first.saveSyncJob({ id: 'job', startedAt: at, courses: [], submissions: {} });
   first.close();
   // PRAGMA user_version is a big-endian 32-bit integer at SQLite header offset 60.
-  expect(readFileSync(file).readUInt32BE(60)).toBe(4);
+  expect(readFileSync(file).readUInt32BE(60)).toBe(5);
   const second = new SqliteRepository(file);
   try {
     expect(second.loadModule('m')).toMatchObject({ id: 'm' });
