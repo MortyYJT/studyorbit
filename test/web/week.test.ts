@@ -118,7 +118,7 @@ it('reads every plan page from today and sends owner writes with the session and
       : { ...emptyPlan, days: [{ date: '2026-10-19', availableMinutes: 120, items: [] }], work: [{ workId: 'a1', title: 'Assessment a1', courseId: 'c1', estimateMinutes: 60, estimateOrigin: 'owner', actualMinutes: 0 }], nextCursor: 'p2' });
     if (command === 'assessments.list') return envelope(command, body.cursor ? list([assessment('a2')]) : list([assessment('a1')], 'n'));
     return envelope(command, { 'courses.list': list([course]), 'tasks.list': list([]), 'planning.settings.read': { settings },
-      'confirmation.list': { items: [] }, 'plan.start.set': { recorded: true } }[command]);
+      'plan.start.set': { recorded: true } }[command]);
   });
   const store = new WeekStore(createClient(secret, fetcher), () => new Date('2026-10-23T02:00:00Z'));
   await store.refresh();

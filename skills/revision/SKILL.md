@@ -27,7 +27,8 @@ There is no scheduled revision stage in v1.
    (under this course), its title and the text exactly as shown, one call per PDF page
    with its one-based `page`. Copy text faithfully; never add, summarise or invent text,
    never record discussion threads, and never work around a refusal. Image-only pages
-   are recorded empty and reported. Use `sources.get` to read stored evidence.
+   are recorded empty and reported. A page refused as over 60,000 bytes is recorded in parts, adding
+   `#part-2`, `#part-3` and so on to the URL. Use `sources.get` to read stored evidence.
 4. After recording, call `revision.read` again for the current `sourceRevision`.
    Record scope with `revision.write` using `type: "exam-scope"` and `topics`:
    each topic is `{ text, citations: [{ sourceItemId, quote, locator }] }`.

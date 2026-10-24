@@ -144,11 +144,12 @@ Rejected: computer use (screenshot-driven clicking): slow, costly, non-determini
 - **Canvas**: same-origin GET of `/api/v1/...` (assignments, assignment_groups for weights, submissions for grades,
   modules and files for materials) inside the logged-in page, using the browser session, never a self-issued
   token (#58). First task is a spike that proves these reads work for a student account; if they are blocked, stop
-  and ask before falling back to HTML parsing.
+  and ask before falling back to HTML parsing. (C-2/C-3: replaced by Codex reading the pages in the owner's Edge.)
 - **Ed**: JSON endpoints per #52; quiz and lesson structure from Q1.
 - **iCal**: dropped (#77); Canvas JSON already carries due dates. M1 removes `ical` from `SourceItem.platform`
   (`src/domain/schemas.ts`) and from the domain-model spec.
 - **Materials**: download linked PDFs to `.local/`, extract per-page text with unpdf, keep page numbers for citations.
+  (C-3: unpdf and the download are removed; the agent records each page's text with `source.record`, #187.)
 - **Change detection** (#59): normalize each source into entities, compare field by field with current state,
   append `created` / `updated` / `deleted` events with a monotonically increasing cursor; consumers read
   `changes --since <cursor>`. Current-state tables remain the source of truth.

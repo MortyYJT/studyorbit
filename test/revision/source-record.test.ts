@@ -122,6 +122,9 @@ it('bounds a page by its encoded size so the largest recorded page reads back th
   const over = await call('source.record', { courseId: 'c', url: pdfURL, title: 'Big', text: '课'.repeat(MAX_RECORDED_BYTES / 3 + 1), page: 9 });
   expect(over).toMatchObject({ ok: false, error: { code: 'LIMIT_EXCEEDED', retryable: false, message: expect.stringMatching(/bytes.*parts/) } });
   expect(stored()).toHaveLength(before);
+  // The refusal's advice works: parts with #part-N fragments are separate sources.
+  for (const part of ['', '#part-2']) expect(await call('source.record', { courseId: 'c', url: `${pdfURL}${part}`, title: 'Big', text: '课'.repeat(MAX_RECORDED_BYTES / 6), page: 9 })).toMatchObject({ ok: true });
+  expect(stored()).toHaveLength(before + 2);
   expect(await call('source.record', { courseId: 'missing', url: pdfURL, title: 'Lecture', text: 'Synthetic.' }))
     .toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
 });
