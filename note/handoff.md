@@ -1,40 +1,39 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 产品看 `note/product/prd.md`（唯一的需求来源，带验收清单）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/v1-delivery/`（唯一进行中的 v1 change）；决定看 `note/decisions.md`（#1–#164）；进度看 `note/product/roadmap.md`。
+> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 改法见 #165–#175，PRD 待随子项目更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行，含已归档的 `v1-delivery`）和 `openspec/changes/codex-agent/`（唯一进行中的 change）；决定看 `note/decisions.md`（#1–#175）；进度看 `note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-23，Claude 会话（#161：本轮不派 Codex，全部由 Claude 子代理在 worktree 里实现），分支 `claude/handoff-v1-ui`。
-- **模式：** v1 代码全部完成，等你真机验收。`v1-delivery` 的 tasks 只剩你本人的 5.6、10.4、17.2、17.3 和最后的 17.4 归档。
-- **本轮已合并：** 合成数据 UI harness（PR #141）、L 指标面板（#142）、K4 Agent 页（#143）、K2 周视图（#144，含"需要你"里的确认卡片和 review-pending 预设）、CLI 测试超时（#145）、`autonomy.read` 和 `assessments.list` 的 `platform` 提交 / 删除标记（#146）、准确率每条标注只算最新判定（#148，决定 #162）、K3 课程页和抽屉（#147）、M 17.1 端到端测试和 20 秒默认测试超时（#149）。K2、K3、K4、L 面板、#146 有新上下文子代理审查（K2、K3 各两轮）；#141、#145、#148、#149 由 Claude 读 diff。
-- **注意：** MCP agent 工具数 35（多了 `autonomy.read`）。前端所有读写只走注册表命令；owner 写操作都在 `web/src/client.ts` 的 `writes` 集合里。课程页的等级只来自 `autonomy.read`，每次自治写入后重读。
+- **最后更新：** 2026-10-24，Claude 会话，分支 `claude/codex-agent-proposal`。
+- **模式：** 重定方向后的设计阶段。所有 agent 换成 Codex，在你自己的 Edge 里工作（#167）；分三个子项目 C-1 `codex-agent` → C-2 `agent-course-reading` → C-3 `codex-browser-cleanup`（#174，roadmap C-1～C-3）。C-1 规格已写，等你审；C-2、C-3 开工前再写规格。
+- **已归档：** `v1-delivery`（2026-10-24，#175）。它的代码全部在 main 上；未完成的真机任务已转走：10.4 → `codex-agent` 4.2，17.3 → Codex 子项目之后重做，17.2 取消（常驻 Edge 要删），5.6 停掉（接口同步要删）。
+- **今天的实验（证据只在会话里，结论记在 `codex-agent` 设计）：** 非交互 `codex exec` 能用电脑操作功能读你的 Edge（23–30 秒）；Edge 的元素树漏掉课程全名，截图读全；`codex exec --json` 只报 token、不报费用。
+- **真机同步第一次跑出的 bug：** Ed `/api/user` 的 `year` 是字符串，旧同步因此整个失败。修复在本地分支 `claude/ed-year-string`（d1005fa，未推送）；接口同步会在 C-2 删掉，所以不打算合并，C-2 合并后删这个分支。
 
 ## 没合并的工作
 
-无（本 PR 合并后）。
+- `claude/codex-agent-proposal`：本 PR（归档 `v1-delivery`、决定 #165–#175、`codex-agent` 规格、本文件和 roadmap）。
+- `claude/ed-year-string`：见上，不合并。
 
 ## 下一步（按顺序）
 
-1. 你做真机任务（见「等你动手」），结果写进对应 PR 或新 issue。
-2. 17.3 验收里的失败项开新 issue，挂到对应用户故事。
-3. 全部通过后做 17.4：`openspec validate v1-delivery --strict`、`bash .claude/check.sh`、`npm run build`，归档 `v1-delivery`（带规格），更新 roadmap 和本文件。
-4. 下面「等你决定」的项，你选完后再开 issue。
+1. 你审 `openspec/changes/codex-agent/`（proposal、design、specs、tasks）；同意后按 TDD 实现 C-1，最后你做 4.2 真机对话。
+2. C-1 合并后写 C-2 规格（三层 JSON 见 #169，流程见 #170），你审后实现；同时更新 PRD 里受影响的验收项。
+3. C-2 合并后写 C-3 规格并实现，然后按新流程重做真机验收（原 17.3）。
 
 ## 等你决定
 
-- **`plan.read` 会清开始时间（K2 审查）：** `plan.read` 是 L0 读命令，但每次重排都会清掉不再排在当天的开始时间（`src/planning/service.ts:47-56`）。前端从今天起排 366 天，没做完的工作每天往后挪，开始时间会被悄悄删掉；agent 或 CLI 用别的范围调 `plan.read` 也会清。planner 也不扣已记录的实际用时（`src/planning/planner.ts:29`）。选项：开始时间只在 owner 写入或显式重排时清 / 计划锚定到周一 / planner 扣减实际用时。
+- **`plan.read` 会清开始时间（K2 审查）：** `plan.read` 是 L0 读命令，但每次重排都会清掉不再排在当天的开始时间（`src/planning/service.ts:47-56`）。从今天起排 366 天，没做完的工作每天往后挪，开始时间会被悄悄删掉；agent 或 CLI 用别的范围调 `plan.read` 也会清。planner 也不扣已记录的实际用时（`src/planning/planner.ts:29`）。选项：开始时间只在 owner 写入或显式重排时清 / 计划锚定到周一 / planner 扣减实际用时。
 - **手动任务必须挂模块：** `manual.create` 要 `moduleId`，没有 `modules.list`，个人模块选不到，没课程时不能加任务。选项：加 `modules.list` / 手动任务允许不挂模块。
-- **计划外工作（已提交 / 已出分）的实际用时读不到：** 只有 `plan.read` 的 work 行带 `actualMinutes`，已提交 / 已出分的作业在抽屉里只能记、看不到总数。选项：加一个按考核读实际用时的读命令 / 接受现状。
+- **计划外工作（已提交 / 已出分）的实际用时读不到：** 只有 `plan.read` 的 work 行带 `actualMinutes`。选项：加一个按考核读实际用时的读命令 / 接受现状。
 - `metrics.read` 的分页参数（`cursor`、`limit`，每页最多 25）要不要写进 metrics 规格。
-- J 第 2 轮审查遗留（PR #134「Out-of-scope findings」）：页面正文点名的同学认不出（同步 Canvas People 名单 / 接受尽力而为）；写操作只核对同一门课（推荐改规格为「页面 URL 必须对应所点名的作业」）；`coursework ui` 会把另一个 `coursework mcp` 进程等待中的确认标成过期（要给确认行加持有进程 id，改表结构）。
-- 补理由：#127、#158、#159、#161，以及旧的 #6、#9、#15–18、#23、#27、#29、#53、#67、#70。
+- J 第 2 轮审查遗留（PR #134）中和我们浏览器工具有关的两条，会在 C-3 删掉这些工具后失效；「页面正文点名的同学认不出」被 #168 的不脱敏取代。
+- 补理由：#127、#158、#159、#161、#172，以及旧的 #6、#9、#15–18、#23、#27、#29、#53、#67、#70。
 
 ## 等你动手
 
-- R-B 3.5（任务 17.2）：终端里跑 `node dist/cli.js browser start`，登录 Canvas 和 Ed，跑 `browser status`，放一夜看登录能保持多久。
-- 任务 5.6：在真实 profile 上跑一次 `coursework sync`，把实际数量和问题记进 PR。
-- 任务 10.4：先 `claude` 登录，再 `coursework ui` 发一条真实对话，记下步骤数和费用。
-- 任务 17.3：按 PRD 的 US-1、2、3、5、6、7 验收项逐条在真实数据上验收。
-- GitHub 设置里勾选「Keep my email addresses private」：main 上旧的 squash 提交作者邮箱是私人邮箱（已推送，不能改写历史）；本轮新提交都用 noreply。
+- 审 `codex-agent` 规格（见下一步 1）。
+- GitHub 设置里勾选「Keep my email addresses private」：main 上旧的 squash 提交作者邮箱是私人邮箱（已推送，不能改写历史）；新提交都用 noreply。
+- 常驻 Edge 现在还开着（10-24 12:57 启动，用来测登录时长，已取消）：可以直接关掉那个窗口。
 
 ## 运行与验证
 
