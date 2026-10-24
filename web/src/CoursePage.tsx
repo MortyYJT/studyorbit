@@ -26,6 +26,7 @@ export function CoursePage({ courseId, client, t, language, timeZone, openAgent,
   // Labels (#171): an even split is marked derived; an unknown value shows when it was last checked.
   const value = (item: AssessmentItem, field: 'weight' | 'due') => {
     const label = valueLabel(item, field);
+    if (label.kind === 'none') return c.none;
     if (label.kind === 'unknown') return <span className="unknown">{label.checkedAt ? c.unknownChecked.join(day(label.checkedAt)) : t.unknown}</span>;
     const shown = field === 'due' ? date(item.due) : `${number(item.weight!)}%`;
     return label.kind === 'derived' ? <span title={c.evenSplit}>≈ {shown}<small className="derived">{c.evenSplit}</small></span> : shown;
@@ -53,7 +54,7 @@ export function CoursePage({ courseId, client, t, language, timeZone, openAgent,
           {assessmentGroups(state.assessments).map((group, _, all) => <div className="agroup" role="group" key={group.key ?? ''} aria-label={group.name ?? c.otherGroup}>
             {(group.key !== undefined || all.length > 1) && <div className="ghead"><b>{group.name ?? c.otherGroup}</b>
               {group.key !== undefined && <span className="muted">{group.weight === undefined ? <span className="unknown">{t.unknown}</span> : `${number(group.weight)}%`}
-                {' · '}{number(group.earned)} {c.groupEarned}</span>}</div>}
+                {' · '}{group.earned === undefined ? <span className="unknown">{c.earnedUnknown}</span> : <>{number(group.earned)} {c.groupEarned}</>}</span>}</div>}
             {group.items.map(item => isRemainder(item) ? <div key={item.id} className="arow remainder" title={c.remainderHelp}>
               <span className="aname">{item.name}{item.kind && <span className={`kind ${item.kind}`}>{c.kinds[item.kind]}</span>}</span>
               <span className="muted">{c.notPublished}</span>

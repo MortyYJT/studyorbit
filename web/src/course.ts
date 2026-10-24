@@ -43,16 +43,19 @@ export function courseFigures(course: Course, items: readonly Assessment[], band
 }
 
 type Grouped = Pick<Assessment, 'id' | 'weight' | 'score' | 'group' | 'readState'>;
-export interface AssessmentGroup<T> { key?: string; name?: string; weight?: number; earned: number; items: T[] }
+/** `earned` is undefined when a scored item's weight is unknown, as the ring then cannot size it either. */
+export interface AssessmentGroup<T> { key?: string; name?: string; weight?: number; earned?: number; items: T[] }
 /** Groups by grading component in list order; assessments without a component come last in one unnamed group. */
 export function assessmentGroups<T extends Grouped>(items: readonly T[]): AssessmentGroup<T>[] {
   const groups = new Map<string | undefined, AssessmentGroup<T>>();
   for (const item of items) {
     const key = item.group?.key;
     const group = groups.get(key) ?? { ...(item.group ? { key: item.group.key, name: item.group.name, ...(item.group.weight !== undefined ? { weight: item.group.weight } : {}) } : {}), earned: 0, items: [] };
+    // A final or hurdled component is one row: its effective weight (an owner override included) is the component's weight.
+    if (item.group?.role === 'component') { if (item.weight === undefined) delete group.weight; else group.weight = item.weight; }
     group.items.push(item);
-    // Earned share (#171): graded items of known weight contribute weight × score; the agent never fills this in.
-    if (item.weight !== undefined && item.score !== undefined) group.earned += item.weight * item.score / 100;
+    // Earned share (#171): graded items contribute weight × score; the agent never fills this in.
+    if (item.score !== undefined) group.earned = item.weight === undefined || group.earned === undefined ? undefined : group.earned + item.weight * item.score / 100;
     groups.set(key, group);
   }
   const loose = groups.get(undefined);
@@ -62,10 +65,14 @@ export function assessmentGroups<T extends Grouped>(items: readonly T[]): Assess
 export function isRemainder(item: Pick<Assessment, 'id'> & { group?: Assessment['group'] }): boolean {
   return item.group?.role === 'remainder';
 }
-export type ValueLabel = { kind: 'value' } | { kind: 'derived' } | { kind: 'unknown'; checkedAt?: string };
-/** A shown value, an evenly split weight (only while no owner or agent value replaced it), or unknown with its check time. */
+export type ValueLabel = { kind: 'value' } | { kind: 'derived' } | { kind: 'unknown'; checkedAt?: string } | { kind: 'none' };
+/**
+ * A shown value, an evenly split weight (only while no owner or agent value replaced it), unknown with its check time,
+ * or none ("—") for a not-applicable value and a missing due date nobody read (exams, older rows).
+ */
 export function valueLabel(item: Pick<Assessment, 'weight' | 'due' | 'readState'> & { fields?: Record<string, Field> }, field: 'weight' | 'due'): ValueLabel {
   const read = item.readState?.[field];
+  if (item[field] === undefined && (read?.state === 'not_applicable' || field === 'due' && !read)) return { kind: 'none' };
   if (item[field] === undefined) return read?.state === 'unknown' && read.checkedAt ? { kind: 'unknown', checkedAt: read.checkedAt } : { kind: 'unknown' };
   const origin = item.fields?.[field]?.origin ?? 'sync';
   return field === 'weight' && read?.state === 'derived' && origin === 'sync' ? { kind: 'derived' } : { kind: 'value' };

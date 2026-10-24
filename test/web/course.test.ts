@@ -120,6 +120,22 @@ it('groups assessments by component with weight and the earned share computed by
   expect(isRemainder({ ...remainder, group: { ...written, role: 'item' as const } })).toBe(false);
   expect(valueLabel(graded('a1', 80), 'weight')).toEqual({ kind: 'derived' });
 });
+it('leaves a group\'s earned share unknown when a scored item has no weight, like the ring', () => {
+  const [group] = assessmentGroups([graded('a1', 80), { ...item('a2', undefined, 90), group: written }]);
+  expect(group!.earned).toBeUndefined();
+  // An unscored item of unknown weight does not hide what is already earned.
+  expect(assessmentGroups([graded('a1', 80), { ...item('a3', undefined), group: written }])[0]!.earned).toBeCloseTo(3);
+});
+it('takes a final or hurdled component row\'s header weight from the row\'s effective weight', () => {
+  const component = { ...item('exam', 40, undefined, true), group: { key: 'syna10001-exam', name: 'Final exam', weight: 50, role: 'component' as const } };
+  expect(assessmentGroups([component])[0]!.weight).toBe(40);
+  expect(assessmentGroups([{ ...component, weight: undefined }])[0]!.weight).toBeUndefined();
+});
+it('shows "—" for a not-applicable due date and for rows that carry no read state', () => {
+  expect(valueLabel({ ...item('exam', 50), readState: { due: { state: 'not_applicable' as const } } }, 'due')).toEqual({ kind: 'none' });
+  expect(valueLabel(item('old', 10), 'due')).toEqual({ kind: 'none' });
+  expect(valueLabel({ ...item('old', 10), readState: { weight: { state: 'found' as const } } }, 'due')).toEqual({ kind: 'none' });
+});
 it('labels derived weights as an even split and unknown fields with their check time (scenario "Derived and unknown labels")', () => {
   const unknownDue = { ...item('late', 10), readState: { due: { state: 'unknown' as const, checkedAt: '2026-10-24T03:00:00Z' }, weight: { state: 'found' as const } } };
   expect(valueLabel(unknownDue, 'due')).toEqual({ kind: 'unknown', checkedAt: '2026-10-24T03:00:00Z' });
