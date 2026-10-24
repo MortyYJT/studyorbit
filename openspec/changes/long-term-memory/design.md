@@ -15,7 +15,7 @@ C-1 made Codex the chat agent with our stored transcript as conversation memory 
 3. **Storage.** Migration `005` adds `memories (id TEXT PRIMARY KEY, courseId TEXT, json TEXT NOT NULL)`; JSON holds kind, text, origin, conversationId, createdAt, editedAt, deletedAt. Additive only (#107).
 4. **Source conversation.** In-process tools receive the conversation id through a tool scope that `ConversationService` passes to every tool (not only `browser.*`, which C-3 removes). For Codex, `codex.ts` builds the MCP server entry per `start()` (new, resume and fallback paths share it), so one more `-c mcp_servers.coursework.env.COURSEWORK_CONVERSATION_ID=<id>` gives `coursework mcp` the id. Best effort, because Codex has a shell (#150, #154).
 5. **Owner commands** follow the existing pattern (frontend session or TTY) and join the owner-command set so MCP refuses them. Delete is a soft delete (`deletedAt`). Owner and agent text are both redacted.
-6. **Bound.** Sections in fixed priority (policy/level, due work, unknown fields, scores, practice, revision counts, memories); over 8,000 characters, drop whole sections from the end, then oldest items within the crossing section.
+6. **Bound.** Sections in fixed priority (policy/level, due work, unknown fields, scores, practice, revision counts, memories); over 8,000 characters, drop whole sections from the end, then the least relevant items within the crossing section (latest due date for due work, oldest date elsewhere).
 
 ## Risks / Trade-offs
 
