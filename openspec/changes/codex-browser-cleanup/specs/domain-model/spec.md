@@ -15,7 +15,7 @@ The schemas SHALL contain at least these fields (ids are non-empty strings; time
 - TimeLog: `workId`, `minutes` (positive integer), `at`.
 - CourseAutonomy: `courseId`, `defaultLevel` (0 | 1 | 2), `confirmBeforeSubmit` (historical; no longer read or written after the submit-confirmation flow was removed), `at`.
 - Conversation: `id`, `title`, `adapter`, `sessionRef?`, `courseId?`, `assessmentId?`, `preset?`, `createdAt`, `updatedAt`.
-- Message: `id`, `conversationId`, `seq`, `role` (`owner` | `agent`), `parts` (text, tool step, confirmation), `stopped`, `at`.
+- Message: `id`, `conversationId`, `seq`, `role` (`owner` | `agent`), `parts` (text, tool step; confirmation parts are historical), `stopped`, `at`.
 - PendingConfirmation (historical; no longer written): `id`, `conversationId`, `assessmentId`, `summary`, `screenshotRef`, `state` (`pending` | `confirmed` | `cancelled` | `expired`), `createdAt`, `decidedAt?`.
 - PracticeAttempt: `questionId`, `revision`, `outcome` (`correct` | `incorrect` | `skipped`), `at` (no answer text).
 - Citation: `sourceItemId`, `quote`, `locator`.

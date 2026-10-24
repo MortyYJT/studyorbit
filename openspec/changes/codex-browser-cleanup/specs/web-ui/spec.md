@@ -1,5 +1,20 @@
 ## MODIFIED Requirements
 
+### Requirement: Course page
+A course page SHALL show the course's AI policy and its default level, the score ring (#141: one segment per assessment sized by weight, earned / lost / ungraded / unknown-weight styles, earned total in the centre, with legend, current average, progress and the final score needed), and two tabs. The Assessments tab SHALL group assessments by their grading component, showing each component's name, weight and the earned share computed by code, and SHALL list name, due, weight, score, status and effective level per assessment; retired assessments SHALL NOT be shown; exams SHALL show "—" for level and no agent entry (#146). Prohibited courses SHALL show the level locked at L0 (#124). The Revision tab SHALL show the exam time, the cited exam scope, notes, practice statistics, and the "tutor me" and "wrong answers only" buttons (#142).
+
+#### Scenario: Unknown weight in the ring
+- **WHEN** one assessment has no effective weight
+- **THEN** its segment uses the unknown-weight style and the final-score figure shows it is unavailable because weights are unknown
+
+#### Scenario: Owner changes a level
+- **WHEN** the owner sets an assessment's level to L1 on a course whose default is L0
+- **THEN** the change is saved through the owner session and the effective level shows L1
+
+#### Scenario: Component group
+- **WHEN** a component "Written assignments" of weight 15 has two graded items of derived weight 3.75 each, scored 80% and 100%
+- **THEN** the tab shows the group with 15% and 6.75 earned, and each item's weight marked as an even split
+
 ### Requirement: Assessment drawer with origins
 Clicking an assessment SHALL open a side drawer with its fields, each marked with its origin (platform, agent, or owner) (#138). Clicking an agent marker SHALL show the cited quote, a link to the original page, a note when the cited source text was copied by the agent (`source.record`), and "confirm" and "use my value" (see `agent-annotations`). The drawer SHALL show the effective estimate with its origin and reason, the actual time, the linked platform items, and buttons that open the Agent page with the "complete" or "explain" preset, except for exams.
 
