@@ -6,17 +6,17 @@
 
 ## 2. Delete the resident browser stack
 
-- [ ] 2.1 Remove `src/browser/**`, `src/capture/**`, `source-fetch.ts`, `source-transport.ts`, `src/protocol/browser-*.ts`, the `browser.*` and `confirmation.*` registry entries, the `browser.view` / `browser.image` HTTP routes, `coursework browser` CLI, the "Browser tools" journal conversation, the MCP profile filter, `autonomy.confirmation.set` and `confirmBeforeSubmit` from `autonomy.read`, and their tests; MCP tool-count assertion updated (scenario "Tool list"); `autonomy.check` kept (scenarios under "Enforce recorded policy and exact assessment grants" and "Append-only audit and run records fail safely"); adapter `screenshotRef` / `viewUrl` fields stay optional for historical rows; the adapter `confirmation` event is removed (the stored part stays readable)
-- [ ] 2.2 Remove `playwright` and `unpdf` from `package.json` and the lockfile
+- [x] 2.1 Remove `src/browser/**`, `src/capture/**`, `source-fetch.ts`, `source-transport.ts`, `src/protocol/browser-*.ts`, the `browser.*` and `confirmation.*` registry entries, the `browser.view` / `browser.image` HTTP routes, `coursework browser` CLI, the "Browser tools" journal conversation, the MCP profile filter, `autonomy.confirmation.set` and `confirmBeforeSubmit` from `autonomy.read`, and their tests; MCP tool-count assertion updated (scenario "Tool list"); `autonomy.check` kept (scenarios under "Enforce recorded policy and exact assessment grants" and "Append-only audit and run records fail safely"); adapter `screenshotRef` / `viewUrl` fields stay optional for historical rows; the adapter `confirmation` event is removed (the stored part stays readable)
+- [x] 2.2 Remove `playwright` and `unpdf` from `package.json` and the lockfile
 
 ## 3. Frontend
 
-- [ ] 3.1 Remove the sign-in button and per-site browser state, the confirmation card and needs-you item, tool-step screenshots and "view in Edge", the confirm-before-submit select; "needs you" and the status panel use only `sync.status` (scenarios "Sign-in expired", "Confirmation card"); agent-copied sources labelled in the drawer (scenario "Agent-copied source"); `web/src/client.ts` stops importing browser contracts; harness and web tests updated
-- [ ] 3.2 Real-browser check on the synthetic harness at 390 and 1440 px, light and dark
+- [x] 3.1 Remove the sign-in button and per-site browser state, the confirmation card and needs-you item, tool-step screenshots and "view in Edge", the confirm-before-submit select; "needs you" and the status panel use only `sync.status` (scenarios "Sign-in expired", "Confirmation card"); agent-copied sources labelled in the drawer (scenario "Agent-copied source"); `web/src/client.ts` stops importing browser contracts; harness and web tests updated
+- [x] 3.2 Real-browser check on the synthetic harness at 390 and 1440 px, light and dark
 
 ## 4. Docs and verification
 
-- [ ] 4.1 Docs: `docs/engineering/protocol.md` resident-browser section removed, `README.md` capture and managed-profile lines, `AGENTS.md` stack (Playwright), data-access red line (no managed Playwright profile or `coursework login`; Codex in the owner's Edge stops at sign-in) and autonomy red line (#121 audit/confirmation now historical), `docs/engineering/v1-technical-design.md` Playwright note; keep each edit short
-- [ ] 4.2 `openspec validate codex-browser-cleanup --strict`, `bash .claude/check.sh` (exit code), `npm ci && npm run build`
+- [x] 4.1 Docs: `docs/engineering/protocol.md` resident-browser section removed, `README.md` capture and managed-profile lines, `AGENTS.md` stack (Playwright), data-access red line (no managed Playwright profile or `coursework login`; Codex in the owner's Edge stops at sign-in) and autonomy red line (#121 audit/confirmation now historical), `docs/engineering/v1-technical-design.md` Playwright note; keep each edit short
+- [x] 4.2 `openspec validate codex-browser-cleanup --strict`, `bash .claude/check.sh` (exit code), `npm ci && npm run build`
 - [ ] 4.3 At archive, delete the emptied spec folders `openspec/specs/{resident-browser,agent-browser-tools,page-capture,ed-capture}`
 - [ ] 4.4 Owner morning acceptance with C-2's live run (decision #186)

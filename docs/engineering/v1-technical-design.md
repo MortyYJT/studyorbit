@@ -36,7 +36,7 @@ Out of version 1: iCal (#77), Notion (moved to version 2), multi-user hosting, m
 
 ```
 Canvas / Ed
-   │  capture: Playwright on the managed logged-in profile; same-origin JSON reads
+   │  capture: Playwright on the managed profile (replaced in C-2/C-3 by Codex reading in the owner's Edge)
    ▼
 raw snapshots (.local/, never in git)
    │  normalize → redact → diff
@@ -63,9 +63,9 @@ command registry (zod input/output per command)
 | Storage | `node:sqlite` behind a repository interface | built in | #18, #20 |
 | Validation and types | zod | 4.x, MIT | #35 |
 | CLI | commander | 15.x, MIT | #35 |
-| Browser | playwright, installed Edge/Chrome channel | 1.64, Apache-2.0 | #35, #45 |
+| Browser | none: playwright removed in C-3, Codex uses the owner's Edge (#167) | — | #35, #45, #187 |
 | Tests | vitest; `npm run check` = `tsc --noEmit && vitest run` | 5.x, MIT | #35 |
-| PDF text | unpdf | 1.8, MIT | #74 |
+| PDF text | none: unpdf removed in C-3, the agent records page text with `source.record` | — | #74, #187 |
 | MCP | @modelcontextprotocol/sdk, stdio | 1.32, MIT | #62 |
 | UI | Vite + React + react-dom + @vitejs/plugin-react | Vite 8, React 19, MIT | #64 |
 | UI server | `node:http`, bound to 127.0.0.1 only | built in | #64 |
