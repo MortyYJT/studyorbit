@@ -41,19 +41,16 @@ export function createMcpServer(options: McpOptions): McpServer {
   const stderr = options.stderr ?? (line => process.stderr.write(`${line}\n`));
   // Host-owned context without owner authority: MCP arguments can never establish an owner.
   const { registry, context } = options.registry.agentTools(options.context);
-  // The Codex profile (set only in Codex's MCP entry) hides our resident-browser tools; Codex uses its own computer use.
-  const hidden = (name: string) => process.env.COURSEWORK_MCP_PROFILE === 'codex' && name.startsWith('browser.');
   const server = new McpServer({ name: 'coursework', version: options.version ?? '0.0.0' }, { capabilities: { tools: {} } });
   // Low-level handlers keep advertised schemas derived from zod while leaving validation to dispatch().
   server.server.setRequestHandler(ListToolsRequestSchema, () => ({
     // Decision #87: agents never see owner-only tools; calling one by name is still refused below.
-    tools: registry.list().filter(entry => !hidden(entry.name)).map(entry => ({ name: entry.name, description: describe(entry), inputSchema: inputSchema(entry) })),
+    tools: registry.list().map(entry => ({ name: entry.name, description: describe(entry), inputSchema: inputSchema(entry) })),
   }));
   server.server.setRequestHandler(CallToolRequestSchema, async request => {
     let envelope: Envelope;
     try {
-      envelope = hidden(request.params.name) ? fail('unknown', 'NOT_FOUND', 'The command or requested record was not found.')
-        : await dispatch(registry, request.params.name, request.params.arguments ?? {}, context);
+      envelope = await dispatch(registry, request.params.name, request.params.arguments ?? {}, context);
     } catch {
       envelope = fail('unknown', 'INTERNAL', 'The command could not complete safely.');
     }

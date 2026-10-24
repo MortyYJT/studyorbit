@@ -6,10 +6,6 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ClaudeAdapter } from '../../src/agent/claude.js';
-import { browserAgentTools } from '../../src/protocol/browser-tools.js';
-import { CourseworkError } from '../../src/protocol/errors.js';
-import type { BrowserTools } from '../../src/browser/tools/service.js';
-import { createProductionProtocol } from '../../src/protocol/production.js';
 import type { AgentEvent, AgentInput } from '../../src/agent/adapter.js';
 const { query } = vi.hoisted(() => ({ query: vi.fn() }));
 vi.mock('@anthropic-ai/claude-agent-sdk', async importOriginal => ({ ...await importOriginal<object>(), query }));
@@ -104,7 +100,6 @@ it.each([
   ['Bash', { command: 'cat "$PWD/../coursework.db"' }],
   ['Bash', { command: 'curl --url=http://localhost:9222/json' }],
   ['Bash', { command: 'nc 0.0.0.0 4567' }],
-  ['browser.open', { url: 'http://127.0.0.1:4567/#s=synthetic' }],
 ])('denies %s %j before execution and stores one denied step', async (tool, args) => {
   const { ConversationService } = await import('../../src/agent/conversations.js');
   const { SqliteRepository } = await import('../../src/store/sqlite.js');
@@ -201,55 +196,3 @@ it('reads protected ports at call time so ports chosen after start are still den
   expect((await collect(late.start(input))).map(e => e.type)).toEqual(['tool_step', 'tool_step', 'result']);
 });
 
-it('11.1/11.3 SDK browser errors preserve safe status and recovery instead of Tool failed', async () => {
-  stub([result]);
-  let failure: Error = new CourseworkError('AUTH_EXPIRED', 'private raw diagnostic');
-  const tools = browserAgentTools({ execute: async () => { throw failure; } } as unknown as BrowserTools);
-  await collect(adapter().start({ ...input, tools }));
-  const server = query.mock.calls[0][0].options.mcpServers.coursework.instance as McpServer;
-  const [ct, st] = InMemoryTransport.createLinkedPair(); const client = new Client({ name: 'synthetic', version: '1' });
-  await server.connect(st); await client.connect(ct);
-  try {
-    for (const [code, message] of [['AUTH_EXPIRED', 'private raw diagnostic'], ['INVALID_INPUT', 'Browser action denied: grant-level.'], ['UNCERTAIN', 'private raw diagnostic'], ['INTERNAL', 'private raw diagnostic']]) {
-      failure = code === 'INTERNAL' ? new Error(message) : new CourseworkError(code as 'AUTH_EXPIRED' | 'INVALID_INPUT' | 'UNCERTAIN', message!);
-      const response = await client.callTool({ name: 'browser.open', arguments: {} });
-      expect(response.isError).toBe(true);
-      const text = (response.content as { text: string }[])[0]!.text;
-      const envelope = JSON.parse(text);
-      expect(envelope).toMatchObject({ ok: false, error: { code, retryable: false } });
-      expect(text).not.toContain('private raw diagnostic');
-      if (code === 'AUTH_EXPIRED') expect(envelope.error.next).toMatch(/sign in/i);
-      if (code === 'INVALID_INPUT') expect(envelope.error.message).toContain('grant-level');
-      if (code === 'UNCERTAIN') expect(envelope.error.message).toMatch(/inspect/i);
-    }
-  } finally { await client.close(); await server.close(); }
-});
-it('11.5 SDK browser results have one service-owned step per call and matching run counts', async () => {
-  query.mockImplementation(({ options }) => Object.assign((async function* () {
-    const server = options.mcpServers.coursework.instance as McpServer;
-    const [ct, st] = InMemoryTransport.createLinkedPair(); const client = new Client({ name: 'synthetic', version: '1' });
-    await server.connect(st); await client.connect(ct);
-    try {
-      for (const id of ['first', 'second']) {
-        const args = { url: 'https://canvas.lms.unimelb.edu.au/courses/42/quizzes/7' };
-        yield { type: 'assistant', message: { content: [{ type: 'tool_use', id, name: 'mcp__coursework__browser.open', input: args }] } };
-        const response = await client.callTool({ name: 'browser.open', arguments: args });
-        yield { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: response.content }] } };
-      }
-      yield result;
-    } finally { await client.close(); }
-  })(), { interrupt: async () => {} }));
-  const a = adapter(); vi.stubEnv('COURSEWORK_HOME', dirs.at(-1)!);
-  const host = createProductionProtocol({ agentAdapter: a, browserTools: { browser: { newPage: async () => ({
-    navigate: async () => {}, signedOut: async () => false,
-    url: () => 'https://canvas.lms.unimelb.edu.au/courses/42/quizzes/7', close: async () => {},
-  }) as any, close: async () => {} } } });
-  const owner = { assertOwner: async () => {} };
-  try {
-    const c = await host.chat.create({}, owner); await host.chat.send(c.id, 'Synthetic task', owner); await host.chat.waitForIdle(c.id);
-    const steps = host.chat.events(c.id).filter(e => e.event.type === 'tool_step');
-    expect(steps).toHaveLength(2);
-    expect(steps.map(s => s.event)).toEqual([expect.objectContaining({ tool: 'browser.open', outcome: 'ok', viewUrl: expect.any(String) }), expect.objectContaining({ tool: 'browser.open', outcome: 'ok', viewUrl: expect.any(String) })]);
-    expect(host.store.readAgentRuns().find(r => r.conversationId === c.id)).toMatchObject({ steps: 2 });
-  } finally { await host.close(); }
-});

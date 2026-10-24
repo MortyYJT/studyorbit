@@ -28,19 +28,6 @@ export class ConversationService {
       }
     }
   }
-  /** Host-created journal for external MCP browser steps; no request-supplied conversation or owner authority. */
-  toolScope() {
-    const at = now();
-    const conversation: Conversation = { id: randomUUID(), title: 'Browser tools', adapter: 'browser-tools', createdAt: at, updatedAt: at };
-    const reply: ActiveReply = { conversation, message: { id: randomUUID(), conversationId: conversation.id, seq: 0, role: 'agent', parts: [], stopped: false, at },
-      events: [], done: Promise.resolve(), finish() {}, terminal: false };
-    this.store.saveChat(conversation, reply.message, []);
-    const isActive = () => this.store.readConversations().some(c => c.id === conversation.id);
-    return { conversationId: conversation.id, isActive, emit: (event: AgentEvent) => {
-      if (!isActive()) throw new CourseworkError('NOT_FOUND', 'Browser conversation was deleted.');
-      this.commit(reply, AgentEventSchema.parse(event));
-    } };
-  }
   private async owner(owner?: OwnerInteraction) {
     if (!owner) throw new CourseworkError('INVALID_INPUT', 'Owner session required.');
     await owner.assertOwner('agent.chat');
@@ -104,7 +91,7 @@ export class ConversationService {
     try {
       if (reply.terminal) return;
       const c = reply.conversation;
-      reply.run = this.adapter.start({ prompt, transcript, tools: this.tools.map(tool => !tool.name.startsWith('browser.') ? tool : ({ ...tool, execute: input => tool.execute(input, { conversationId: c.id, emit: event => { if (!reply.terminal) this.commit(reply, AgentEventSchema.parse(event)); }, isActive: () => !reply.terminal }) })), sessionRef: c.sessionRef, courseId: c.courseId, assessmentId: c.assessmentId, preset: c.preset });
+      reply.run = this.adapter.start({ prompt, transcript, tools: this.tools, sessionRef: c.sessionRef, courseId: c.courseId, assessmentId: c.assessmentId, preset: c.preset });
       for await (const raw of reply.run) {
         if (reply.terminal) break;
         const event = AgentEventSchema.parse(raw);
@@ -126,7 +113,6 @@ export class ConversationService {
     if (event.type === 'text') message.parts.push({ type: 'text', text: event.text });
     if (event.type === 'tool_step') message.parts.push({ type: 'tool_step', tool: event.tool, ...(event.input === undefined ? {} : { input: event.input }),
       output: { outcome: event.outcome, ...(event.output === undefined ? {} : { value: event.output }), ...(event.screenshotRef ? { screenshotRef: event.screenshotRef } : {}), ...(event.viewUrl ? { viewUrl: event.viewUrl } : {}) } });
-    if (event.type === 'confirmation') message.parts.push({ ...event });
     if (event.type === 'stopped') message.stopped = true;
     if (event.type === 'result' && event.sessionRef) conversation.sessionRef = event.sessionRef;
     conversation.updatedAt = now();

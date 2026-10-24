@@ -149,19 +149,6 @@ it('stdio framing: stdout carries only JSON-RPC lines, diagnostics go to stderr,
   expect(diagnostics.join('\n')).not.toContain('not-a-number');
 });
 
-it('browser.status is L0 over MCP and returns one safe per-site result without lifecycle tools', async () => {
-  const status = { canvas: { state: 'signedOut' as const, checkedAt: '2026-01-01T00:00:00.000Z',
-    hint: { code: 'AUTH_EXPIRED' as const, next: 'Sign in to Canvas by hand in the resident browser.' as const } },
-    ed: { state: 'signedIn' as const, checkedAt: '2026-01-01T00:00:00.000Z' } };
-  const { client } = await connect(createRegistry({ browser: { status: async () => status } }), createFakeContext());
-  const tools = (await client.listTools()).tools;
-  expect(tools.find(tool => tool.name === 'browser.status')).toBeDefined();
-  expect(tools.some(tool => ['browser.start', 'browser.stop'].includes(tool.name))).toBe(false);
-  const result = envelope(await client.callTool({ name: 'browser.status', arguments: {} }));
-  expect(result.body).toMatchObject({ ok: true, command: 'browser.status', data: status });
-  expect(result.text).not.toMatch(/endpoint|cookies|token|body/);
-});
-
 it('audit.record is neither advertised nor callable over MCP and cannot attest an action', async () => {
   const context = createFakeContext({ owner: true });
   const { client } = await connect(createRegistry(), context);
@@ -171,17 +158,9 @@ it('audit.record is neither advertised nor callable over MCP and cannot attest a
   expect(context.events.some(event => event.action || event.confirmation)).toBe(false);
 });
 
-it('the codex profile lists no browser.* and no owner command; without it the list is unchanged (No resident-browser tools)', async () => {
-  const registry = createRegistry({ browser: { status: async () => ({}) as never } });
-  const names = async () => (await (await connect(registry, createFakeContext())).client.listTools()).tools.map(tool => tool.name);
-  const standard = await names();
-  expect(standard).toContain('browser.status');
-  vi.stubEnv('COURSEWORK_MCP_PROFILE', 'codex');
-  try {
-    const codex = await names();
-    expect(codex).toEqual(standard.filter(name => !name.startsWith('browser.')));
-    expect(codex.some(name => isOwnerCommand(name))).toBe(false);
-    const { client } = await connect(registry, createFakeContext());
-    expect(envelope(await client.callTool({ name: 'browser.status', arguments: {} })).body).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
-  } finally { vi.unstubAllEnvs(); }
+it('lists no browser.* and no owner command (No resident-browser tools)', async () => {
+  const names = (await (await connect(createRegistry(), createFakeContext())).client.listTools()).tools.map(tool => tool.name);
+  expect(names).toContain('source.record');
+  expect(names.some(name => name.startsWith('browser.') || name.startsWith('confirmation.'))).toBe(false);
+  expect(names.some(name => isOwnerCommand(name))).toBe(false);
 });

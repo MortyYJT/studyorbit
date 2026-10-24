@@ -25,7 +25,6 @@ const writes = [
   ['autonomy.default.set', { courseId, level: 1 }],
   ['autonomy.override.set', { assessmentId: 'd', level: 2 }],
   ['autonomy.override.clear', { assessmentId: 'd' }],
-  ['autonomy.confirmation.set', { courseId, confirmBeforeSubmit: false }],
 ] as const;
 it('required kind, cap and effective level follow work type, not browser action', () => {
   expect(['quiz', 'ongoing', 'assignment', 'exam', undefined].map(kind => required(kind))).toEqual([1, 1, 2, 2, 2]);
@@ -109,14 +108,11 @@ it.each(writes)('%s refuses agent HTTP, agent tools, non-TTY and TTY with no mut
   expect(store.readCourseAutonomy(courseId)).toEqual([]);
   expect(store.readAnnotations('course', courseId)).toEqual([]); expect(store.readAnnotations('assessment', 'd')).toEqual([]);
 });
-it('submission confirmation defaults true and survives default-level edits when switched off', async () => {
-  const { service, call } = setup();
-  expect(service.settings(courseId).confirmBeforeSubmit).toBe(true);
-  await call('autonomy.confirmation.set', { courseId, confirmBeforeSubmit: false });
-  await call('autonomy.default.set', { courseId, level: 2 });
-  expect(service.settings(courseId)).toMatchObject({ defaultLevel: 2, confirmBeforeSubmit: false });
-  await call('autonomy.confirmation.set', { courseId, confirmBeforeSubmit: true });
-  expect(service.settings(courseId).confirmBeforeSubmit).toBe(true);
+it('the confirm-before-submit command is gone and autonomy.read no longer reports it', async () => {
+  const { registry, call } = setup();
+  expect(registry.get('autonomy.confirmation.set')).toBeUndefined();
+  expect(await call('autonomy.confirmation.set', { courseId, confirmBeforeSubmit: false })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  expect(await readData(call)).not.toHaveProperty('confirmBeforeSubmit');
 });
 it('audit.record is absent and an agent cannot fabricate a browser action', async () => {
   const { registry, context } = setup();
@@ -214,12 +210,6 @@ it('autonomy.read gives exams no level and follows the effective kind for the re
   expect(row(data, 'final')).toEqual({ assessmentId: 'final', kind: 'exam', applicable: false, requiredLevel: null, override: null, effectiveLevel: null });
   expect(row(data, 'a')).toMatchObject({ kind: 'quiz', applicable: true, requiredLevel: 1, effectiveLevel: 2 });
   expect(data.assessments.map(item => item.assessmentId)).toEqual(['a', 'b', 'c', 'd', 'final']);
-});
-it('autonomy.read reports the confirm-before-submit switch, defaulting to true', async () => {
-  const { call } = setup();
-  expect(await readData(call)).toMatchObject({ defaultLevel: 0, confirmBeforeSubmit: true });
-  await call('autonomy.confirmation.set', { courseId, confirmBeforeSubmit: false });
-  expect(await readData(call)).toMatchObject({ confirmBeforeSubmit: false });
 });
 it('autonomy.read writes no audit rows, is an anonymous agent read and refuses unknown courses', async () => {
   const { call, context, registry } = setup();

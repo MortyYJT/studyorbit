@@ -4,7 +4,6 @@ import { Command } from 'commander';
 import { parseProtocolCLI } from './protocol/cli.js';
 import { fail } from './protocol/envelope.js';
 import { createProductionProtocol } from './protocol/production.js';
-import { browserCLIExitCode } from './browser/runtime.js';
 
 const { version } = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -45,7 +44,6 @@ else {
       await serveProductionHttp(host);
     } else await parseProtocolCLI(process.argv.slice(2), { ...host, program,
       result: async response => {
-        if (response.command.startsWith('browser.')) process.exitCode = browserCLIExitCode(response);
         return response;
       },
     });

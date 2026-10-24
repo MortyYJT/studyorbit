@@ -54,15 +54,6 @@ it('keeps exam scope per course and rejects a teaching-week scope', async () => 
   const { call, sourceRevision } = await setup();
   expect(await call('revision.write', { courseId: 'c', week: 1, type: 'exam-scope', sourceRevision, topics: [claim('Trees.')] })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
 });
-it('mounts source.fetch in production and names discussion refusals without fetching', async () => {
-  const { host } = await setup();
-  const read = vi.fn(async (url: string) => ({ url, status: 200, contentType: 'text/plain', body: new Uint8Array(Buffer.from('Synthetic fetched content.')) }));
-  const mounted = createProductionProtocol({ store: host.store, sourceTransport: { read } }); hosts.push(mounted);
-  const result = await dispatch(mounted.registry, 'source.fetch', { courseId: 'c', url: 'https://canvas.lms.unimelb.edu.au/courses/1/pages/lecture' }, mounted.context);
-  expect(result).toMatchObject({ ok: true, data: { items: [expect.objectContaining({ text: 'Synthetic fetched content.' })] } });
-  expect(await dispatch(mounted.registry, 'source.fetch', { courseId: 'c', url: 'https://edstem.org/api/threads/1' }, mounted.context)).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: expect.stringContaining('Discussion') } });
-  expect(read).toHaveBeenCalledOnce();
-});
 it('rejects duplicate practice question ids without replacing the accepted record', async () => {
   const { call, sourceRevision } = await setup();
   const question = { id: 'q', prompt: 'Name a topic.', kind: 'open', answer: 'Trees.', explanation: [claim('Trees.')] };
@@ -71,11 +62,6 @@ it('rejects duplicate practice question ids without replacing the accepted recor
   const revision = (initial as { data: { revision: string } }).data.revision;
   expect(await call('practice.write', { courseId: 'c', sourceRevision, previousRevision: revision, questions: [question, { ...question, prompt: 'Another topic?' }] })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
   expect(await call('practice.list', { courseId: 'c' })).toMatchObject({ ok: true, data: { items: [{ revision, questions: [question] }] } });
-});
-it('reports external redirect refusals through the production command', async () => {
-  const { host } = await setup();
-  const mounted = createProductionProtocol({ store: host.store, sourceTransport: { read: async () => ({ url: 'https://example.org/file', status: 302, contentType: 'text/plain', body: new Uint8Array() }) } }); hosts.push(mounted);
-  expect(await dispatch(mounted.registry, 'source.fetch', { courseId: 'c', url: 'https://canvas.lms.unimelb.edu.au/courses/1/pages/lecture' }, mounted.context)).toMatchObject({ ok: false, error: { message: expect.stringContaining('Redirects') } });
 });
 
 it('selects the final using owner-over-agent annotations in both directions and reads its effective due', async () => {

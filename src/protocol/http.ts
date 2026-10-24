@@ -1,4 +1,3 @@
-import { browserOwnerRoute, browserQuery, browserImage } from './browser-http.js';
 import type { ConversationService } from '../agent/conversations.js';
 import { agentRoute, agentMethod, agentCommand, streamAgent } from './agent-http.js';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
@@ -150,25 +149,6 @@ export async function startHttpTransport(options: HttpOptions): Promise<HttpTran
     const sessionAuthorized = headerCount(req, 'x-coursework-session') === 1
       && options.ownerSession?.accepts(header(req, 'x-coursework-session')) === true;
     const chatOwner = { assertOwner: async () => { if (closing || !sessionAuthorized) throw unavailable(); } };
-    const browserRoute = browserOwnerRoute(req.url ?? '');
-    if (browserRoute) {
-      if (!sessionAuthorized) { reject(403); return; }
-      if (req.method !== 'GET') { reject(405); return; }
-      if (headerCount(req, 'content-encoding') || headerCount(req, 'transfer-encoding') || Number(header(req, 'content-length') ?? 0) !== 0) { reject(400); return; }
-      void (async () => {
-        if (browserRoute === 'view') {
-          const tabId = browserQuery(req.url!, 'tabId');
-          const envelope = await dispatch(options.registry, 'browser.view', { tabId }, httpCommandContext(options.context, 'browser.view', true, () => closing));
-          reply(httpStatus(envelope), envelope);
-        } else {
-          const bytes = await browserImage(browserQuery(req.url!, 'screenshotRef'));
-          if (res.destroyed || res.writableEnded || closing) return;
-          res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': bytes.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', Connection: 'close' });
-          res.end(bytes);
-        }
-      })().catch(error => { const code = error instanceof CourseworkError ? error.code : 'INTERNAL'; reject(statuses[code], code); });
-      return;
-    }
     if (chatRoute) {
       if (!sessionAuthorized) { reject(403); return; }
       if (req.method !== agentMethod(chatRoute)) { reject(405); return; }

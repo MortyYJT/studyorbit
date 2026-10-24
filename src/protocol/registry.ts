@@ -1,6 +1,3 @@
-import { registerBrowserTools } from './browser-tools.js';
-import type { BrowserTools } from '../browser/tools/service.js';
-import type { ToolScope } from '../browser/tools/ports.js';
 import { metricsContracts } from '../metrics/contracts.js';
 import type { MetricsService } from '../metrics/service.js';
 import { annotationContracts, type AnnotationService } from './annotations.js';
@@ -8,15 +5,10 @@ import { planningContracts, planningOwnerCommands, planningSessionCommands } fro
 import type { PlanningService } from '../planning/service.js';
 import { syncContracts, type SyncCommands, type CourseReadingCommands, type SyncCommandName } from './sync.js';
 import { autonomyContracts, type AssessmentAutonomy } from './autonomy.js';
-import { safeBrowserChoiceMessage } from '../capture/browser.js';
-import { browserStatus, type BrowserStatus } from '../browser/status.js';
-import { bringSignInToFront, type SignInSite, type SignInResult } from '../browser/signin.js';
-import { ownerResidentBrowser } from '../browser/runtime.js';
-import type { BrowserState } from '../browser/resident.js';
 import { randomUUID } from 'node:crypto';
 import { sourceRecordRefusals } from '../revision/source-record.js';
 import { z } from 'zod';
-import { contracts, browserContracts, ownerCommands, FailureEnvelopeSchema, type Level, type CommandName } from './contracts.js';
+import { contracts, ownerCommands, FailureEnvelopeSchema, type Level, type CommandName } from './contracts.js';
 import type { TrustedContext, ReadCommand, WriteCommand, AuditEvent } from './context.js';
 import { ok, fail, withMetadata, type Envelope } from './envelope.js';
 import { AgentFacingError, CourseworkError, retryable, type ErrorCode } from './errors.js';
@@ -53,7 +45,7 @@ export function sessionOnlyCommand(entry: RegistryEntry | string): boolean {
   const name = typeof entry === 'string' ? entry : entry.name;
   return typeof entry !== 'string' && entry.authority === 'owner-session'
     || planningSessionCommands.has(name) || ['policy.record', 'grant.record', 'annotation.confirm', 'annotation.replace'].includes(name)
-    || ['browser.view', 'browser.image'].includes(name) || name.startsWith('confirmation.') || name.startsWith('autonomy.') && name !== 'autonomy.check' && name !== 'autonomy.read';
+    || name.startsWith('autonomy.') && name !== 'autonomy.check' && name !== 'autonomy.read';
 }
 export function isOwnerCommand(entry: RegistryEntry | string): boolean {
   return sessionOnlyCommand(entry) || planningOwnerCommands.has(typeof entry === 'string' ? entry : entry.name) || ownerCommands.has(typeof entry === 'string' ? entry : entry.name)
@@ -63,25 +55,14 @@ const safeMessages: Record<ErrorCode, string> = {
   UNCERTAIN: 'The write may have completed but mandatory recording failed; inspect local state before retrying.',
   INVALID_INPUT: 'Invalid input or required trusted authorization is unavailable.',
   NOT_FOUND: 'The command or requested record was not found.', CONFLICT: 'The target revision changed; refresh before retrying.',
-  AUTH_EXPIRED: 'Authentication expired. Run coursework browser start and ask the user to sign in.', SOURCE_UNAVAILABLE: 'The required source or adapter is unavailable.',
+  AUTH_EXPIRED: 'Authentication expired. Ask the owner to sign in in their Edge.', SOURCE_UNAVAILABLE: 'The required source or adapter is unavailable.',
   LOCKED: 'The target is locked.', CITATION_MISMATCH: 'Citation provenance could not be verified.',
   LIMIT_EXCEEDED: 'The response exceeds 64 KiB.', INTERNAL: 'The command could not complete safely.',
 };
 export function safeError(error: unknown, command?: string): CourseworkError {
   // Course reading refusals list contract paths so the agent can re-read and resubmit (#170).
   if (error instanceof AgentFacingError && ['courses.offer', 'course.import'].includes(command ?? '')) return new CourseworkError(error.code, error.message);
-  if (command === 'source.fetch' && error instanceof CourseworkError
-    && ['Off-origin source URLs are refused.', 'Discussion threads and replies are refused.',
-      'Authentication URLs and credentials are refused.', 'Redirects and unsuccessful source responses are refused.',
-      'Source download exceeds 10 MiB.'].includes(error.message)) return new CourseworkError(error.code, error.message);
   if (command === 'source.record' && error instanceof CourseworkError && sourceRecordRefusals.includes(error.message)) return new CourseworkError(error.code, error.message);
-  if (command?.startsWith('browser.') && error instanceof CourseworkError && /^Browser action denied: (?:grant-level|course-prohibited|audit-unavailable|authorization-unavailable|assessment-unavailable)\.$/.test(error.message)) return error;
-  if (command === 'browser.start') {
-    const choice = safeBrowserChoiceMessage(error);
-    if (choice) return new CourseworkError('INVALID_INPUT', choice);
-    if (error instanceof CourseworkError && error.code === 'LOCKED'
-      && /^Browser profile is locked by process [1-9]\d*\.$/.test(error.message)) return new CourseworkError('LOCKED', error.message);
-  }
   const code = error instanceof CourseworkError && Object.hasOwn(retryable, error.code) ? error.code : 'INTERNAL';
   return new CourseworkError(code, error instanceof CourseworkError && error.message === 'Open coursework ui to perform this owner action.' ? error.message : safeMessages[code]);
 }
@@ -152,16 +133,12 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   }
   return result;
 }
-const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'browser.status', 'browser.open', 'browser.read', 'browser.screenshot', 'browser.view', 'confirmation.list', 'sync.status', 'courses.candidates', 'plan.read', 'planning.settings.read', 'annotation.read', 'metrics.read', 'autonomy.read']));
+const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'sync.status', 'courses.candidates', 'plan.read', 'planning.settings.read', 'annotation.read', 'metrics.read', 'autonomy.read']));
 /** Contract commands that change state; transports require credentials for these whatever their autonomy level. */
-export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationContracts), ...Object.keys(syncContracts), 'browser.open', 'browser.click', 'browser.fill', 'browser.select', 'browser.submit'].filter(n => !readNames.has(n)));
+export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationContracts), ...Object.keys(syncContracts)].filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
 /** Bind the settled contract surface to injected ports; no production service is selected here. */
-export interface BrowserServices {
-  status(): Promise<BrowserStatus>; start(): Promise<BrowserState>; stop(): Promise<void>;
-  signin(site: SignInSite): Promise<SignInResult>;
-}
-export function createRegistry(options: { browser?: Partial<BrowserServices>; autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; courseReading?: CourseReadingCommands; annotations?: AnnotationService; browserTools?: BrowserTools; browserScope?: () => ToolScope; metrics?: MetricsService } = {}): Registry {
+export function createRegistry(options: { autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; courseReading?: CourseReadingCommands; annotations?: AnnotationService; metrics?: MetricsService } = {}): Registry {
   const registry = new Registry();
   const handlers = new Map<string, Handler>();
   for (const name of Object.keys(contracts) as CommandName[]) {
@@ -197,17 +174,6 @@ export function createRegistry(options: { browser?: Partial<BrowserServices>; au
     const canonicalHandler = handler;
     registry.register<z.ZodType, z.ZodType>({ name, ...contract, handler: canonicalHandler });
   }
-  registry.register({ name: 'browser.status', ...browserContracts['browser.status'], handler: async () =>
-    options.browser?.status ? options.browser.status() : browserStatus() });
-  registry.register({ name: 'browser.signin', ...browserContracts['browser.signin'], handler: async ({ site }) =>
-    options.browser?.signin ? options.browser.signin(site) : bringSignInToFront(site) });
-  registry.register({ name: 'browser.start', ...browserContracts['browser.start'], handler: async () => {
-    const state = await (options.browser?.start ? options.browser.start() : ownerResidentBrowser().start());
-    return { running: true as const, browser: state.browser, startedAt: state.startedAt };
-  } });
-  registry.register({ name: 'browser.stop', ...browserContracts['browser.stop'], handler: async () => {
-    await (options.browser?.stop ? options.browser.stop() : ownerResidentBrowser().stop()); return { running: false as const };
-  } });
   for (const name of Object.keys(autonomyContracts) as (keyof typeof autonomyContracts)[]) {
     // autonomy.read is an L0 read with no authority decision: it skips the audit journal (runs still record it).
     if (name === 'autonomy.read') {
@@ -254,7 +220,6 @@ export function createRegistry(options: { browser?: Partial<BrowserServices>; au
     if (name === 'courses.select') return reading.select(input as never);
     return reading.import(input as never);
   } });
-  registerBrowserTools(registry, options.browserTools, options.browserScope);
   for (const name of Object.keys(annotationContracts) as (keyof typeof annotationContracts)[]) {
     const owner = ['annotation.owner.record', 'annotation.confirm', 'annotation.replace'].includes(name);
     registry.register<z.ZodType, z.ZodType>({ name, ...annotationContracts[name], ...(owner ? { authority: name === 'annotation.owner.record' ? 'owner' as const : 'owner-session' as const } : {}), handler: async (input, context) => {

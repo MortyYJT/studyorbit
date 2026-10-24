@@ -128,12 +128,12 @@ it('Owner command through the shell: workspace-write sandbox in the workspace, p
   expect(call!.env.HOME).toBe(s.home);
 });
 
-it('Same data directory: the MCP server entry carries COURSEWORK_HOME and the codex profile', async () => {
+it('Same data directory: the MCP server entry carries COURSEWORK_HOME', async () => {
   const s = setup([{ fixture: fixture('codex-exec.jsonl') }]);
   await collect(s.adapter.start(input));
   const values = configs(s.calls()[0]!.argv);
   expect(values).toEqual(expect.arrayContaining([`mcp_servers.coursework.env.COURSEWORK_HOME=${JSON.stringify(s.data)}`,
-    'mcp_servers.coursework.env.COURSEWORK_MCP_PROFILE="codex"', `mcp_servers.coursework.command=${JSON.stringify(process.execPath)}`]));
+    `mcp_servers.coursework.command=${JSON.stringify(process.execPath)}`]));
   const args = values.find(value => value.startsWith('mcp_servers.coursework.args='))!;
   expect(JSON.parse(args.slice(args.indexOf('=') + 1))).toEqual([join(packageRoot(), 'dist', 'cli.js'), 'mcp']);
 });

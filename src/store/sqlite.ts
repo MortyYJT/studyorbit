@@ -196,24 +196,9 @@ export class SqliteRepository implements Repository, CurrentStateReader {
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
+  /** Historical table (#107): the submit-confirmation flow that wrote it is removed; rows stay readable. */
   appendPendingConfirmation(value: PendingConfirmation): void { this.append('pending_confirmations', PendingConfirmationSchema, value, ['id', 'conversationId', 'assessmentId']); }
   readPendingConfirmations(conversationId: string): PendingConfirmation[] { return this.history('pending_confirmations', PendingConfirmationSchema, { conversationId }); }
-  /** Durable browser confirmations share Issue A's table and never reconstruct actions. */
-  listPendingConfirmations(): PendingConfirmation[] {
-    return this.history('pending_confirmations', PendingConfirmationSchema, {});
-  }
-  savePendingConfirmation(input: PendingConfirmation): void {
-    const row = PendingConfirmationSchema.parse(input);
-    this.db.prepare(`INSERT INTO pending_confirmations (id, conversationId, assessmentId, json) VALUES (?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET json = excluded.json`).run(row.id, row.conversationId, row.assessmentId, JSON.stringify(row));
-  }
-  transitionPendingConfirmation(id: string, state: 'confirmed' | 'cancelled' | 'expired'): PendingConfirmation | undefined {
-    const row = this.db.prepare(`UPDATE pending_confirmations
-      SET json = json_set(json, '$.state', ?, '$.decidedAt', ?)
-      WHERE id = ? AND json_extract(json, '$.state') = 'pending' RETURNING json`)
-      .get(state, new Date().toISOString(), id);
-    return row ? PendingConfirmationSchema.parse(JSON.parse(row.json as string)) : undefined;
-  }
   appendPracticeAttempt(value: PracticeAttempt): void { this.append('practice_attempts', PracticeAttemptSchema, value, ['questionId', 'revision']); }
   readPracticeAttempts(questionId: string): PracticeAttempt[] { return this.history('practice_attempts', PracticeAttemptSchema, { questionId }); }
 

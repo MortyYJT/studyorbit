@@ -5,7 +5,6 @@ import type { StudyEvidenceProvider, StudyTarget } from '../protocol/citations.j
 import { CourseworkError } from '../protocol/errors.js';
 import { TrustedStoreEvidence } from '../protocol/reads.js';
 import type { SqliteRepository } from '../store/sqlite.js';
-import { SourceFetcher, type SourceTransport } from './source-fetch.js';
 import { courseEvidence } from './sources.js';
 import { SourceRecorder } from './source-record.js';
 
@@ -19,16 +18,12 @@ export class StoreStudyEvidence implements StudyEvidenceProvider {
   }
 }
 export class RevisionService implements ProtocolServices {
-  private readonly fetcher: SourceFetcher;
   private readonly recorder: SourceRecorder;
-  constructor(private readonly store: SqliteRepository, private readonly evidence: TrustedStoreEvidence,
-    options: { directory?: string; transport?: SourceTransport } = {}) {
-    this.fetcher = new SourceFetcher({ store, ...options });
+  constructor(private readonly store: SqliteRepository, private readonly evidence: TrustedStoreEvidence) {
     this.recorder = new SourceRecorder(store);
   }
   async write<N extends WriteCommand>(name: N, input: ServiceInput<N>, _context: TrustedContext): Promise<CommandOutput<N>> {
     if (name === 'source.record') return await this.recorder.record(input) as CommandOutput<N>;
-    if (name === 'source.fetch') return await this.fetcher.fetch(input) as CommandOutput<N>;
     if (name !== 'practice.attempt.record') throw new CourseworkError('SOURCE_UNAVAILABLE', 'Revision write unavailable.');
     const parsed = contracts['practice.attempt.record'].input.safeParse(input);
     if (!parsed.success) throw new CourseworkError('INVALID_INPUT', 'Attempt accepts identifiers, outcome and time only.');
