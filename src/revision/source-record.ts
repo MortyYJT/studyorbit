@@ -42,7 +42,10 @@ export class SourceRecorder {
     // Bind on the raw path: decoding first would let `courses/1%2F..%2Fcourses%2F99` pass as course 1.
     const path = url.pathname;
     // Announcements can carry replies from classmates, so they are refused like discussions.
-    if (platform === 'canvas' && /^\/(?:api\/v1\/)?courses\/[^/]+\/announcements(?:\/|$)/i.test(path)) throw new CourseworkError('INVALID_INPUT', ANNOUNCEMENTS);
+    // Matched on the decoded path too, so `%61nnouncements` cannot slip past; undecodable paths are refused.
+    let decoded: string;
+    try { decoded = decodeURIComponent(path); } catch { throw new CourseworkError('INVALID_INPUT', ANNOUNCEMENTS); }
+    if (platform === 'canvas' && [path, decoded].some(value => /^\/(?:api\/v1\/)?courses\/[^/]+\/announcements(?:\/|$)/i.test(value))) throw new CourseworkError('INVALID_INPUT', ANNOUNCEMENTS);
     const externalId = (platform === 'canvas' ? /^\/(?:api\/v1\/)?courses\/([^/]+)(?:\/|$)/ : /^\/(?:au\/|api\/)?courses\/([^/]+)(?:\/|$)/).exec(path)?.[1];
     // The URL must name one of this course's Canvas or Ed course ids; nothing else establishes ownership.
     if (!externalId || !course.sources?.some(source => source.platform === platform && source.externalId === externalId)) {

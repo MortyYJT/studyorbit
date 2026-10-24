@@ -89,7 +89,7 @@ it('binds the course on the raw path and refuses Canvas announcements like discu
   const { call, stored } = await setup();
   expect(await call('source.record', { courseId: 'c', url: 'https://canvas.lms.unimelb.edu.au/courses/1%2F..%2F..%2Fcourses%2F99/pages/lecture', title: 'x', text: 'Synthetic.' }))
     .toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: expect.stringContaining('course') } });
-  for (const url of ['https://canvas.lms.unimelb.edu.au/courses/1/announcements/2', 'https://canvas.lms.unimelb.edu.au/api/v1/courses/1/announcements'])
+  for (const url of ['https://canvas.lms.unimelb.edu.au/courses/1/announcements/2', 'https://canvas.lms.unimelb.edu.au/api/v1/courses/1/announcements', 'https://canvas.lms.unimelb.edu.au/courses/1/%61nnouncements/5'])
     expect(await call('source.record', { courseId: 'c', url, title: 'x', text: 'Synthetic.' }), url).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: expect.stringContaining('Announcements') } });
   expect(stored()).toEqual([]);
 });
