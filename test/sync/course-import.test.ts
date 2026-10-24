@@ -118,6 +118,14 @@ describe('store mapping and precedence (coursework-sync)', () => {
     expect(f.get(assessmentId(term, 'SYNA10001:ed:assignment:3'))).toMatchObject({ retired: true });
   });
 
+  it('a component with no items keeps its own weight read state on the remainder, not an even split', () => {
+    const f = setup();
+    f.save(document([written([item(1)]), component('project', 20, []), exam]));
+    expect(f.get(remainderAssessmentId(term, 'SYNA10001:project'))).toMatchObject({ weight: 20, readState: { weight: { state: 'found' } } });
+    // With items listed, the rest of the component weight is computed, so it stays derived.
+    expect(f.get(remainderAssessmentId(term, 'SYNA10001:written'))?.readState?.weight).toEqual({ state: 'derived' });
+  });
+
   it('remainder and component rows are retired only when the document reports componentsComplete', () => {
     const f = setup();
     f.save(document([written([item(1)]), component('project', 20, []), component('exam', 65, [], { kind: found('exam'), isFinal: found(true) })]));

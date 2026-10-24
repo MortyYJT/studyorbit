@@ -145,7 +145,8 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
         if (rest !== undefined) rest = Math.max(0, rest);
         produced.set(id, { id, courseId, name, ...(kind ? { kind } : {}), ...(rest !== undefined ? { weight: rest } : {}), isFinal: false, status: 'not_started',
           origin: 'sync', group: { ...group, role: 'remainder' }, readState: { name: entry(component.name), kind: entry(component.kind),
-            weight: rest !== undefined ? { state: 'derived' } : { state: 'unknown', checkedAt: component.weight.checkedAt ?? at } } });
+            // Without listed items the remainder is the whole component, so its weight is read, not computed.
+            weight: !items.length && rest !== undefined ? entry(component.weight) : rest !== undefined ? { state: 'derived' } : { state: 'unknown', checkedAt: component.weight.checkedAt ?? at } } });
       }
     }
 
