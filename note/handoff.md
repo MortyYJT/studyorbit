@@ -1,24 +1,23 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 改法见 #165–#175，PRD 待随子项目更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行，含已归档的 `v1-delivery`）和 `openspec/changes/codex-agent/`（唯一进行中的 change）；决定看 `note/decisions.md`（#1–#180）；进度看 `note/product/roadmap.md`。
+> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 改法见 #165–#175，PRD 待随子项目更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行，含已归档的 `v1-delivery`）（没有进行中的 change；下一个是 C-2 `agent-course-reading`，规格未写）；决定看 `note/decisions.md`（#1–#180）；进度看 `note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-24，Claude 会话，分支 `claude/codex-agent-proposal`。
-- **模式：** 重定方向后的设计阶段。所有 agent 换成 Codex，在你自己的 Edge 里工作（#167）；分子项目 C-1 `codex-agent` → C-2 `agent-course-reading` → C-3 `codex-browser-cleanup` → C-4 `long-term-memory`（#174、#178，roadmap C-1～C-4）。C-1 规格已合并（PR #153），等你同意后实现；C-2～C-4 开工前再写规格。
+- **最后更新：** 2026-10-24，Claude 会话，分支 `claude/archive-codex-agent`。
+- **模式：** C-1 `codex-agent` 已完成并归档（PR #155，你真机验收通过：约 20 秒读出 Ed 主页 3 门课，没有乱点、没有提交）。前端对话现在默认用 Codex（`COURSEWORK_AGENT=claude` 切回 Claude）。下一个是 C-2 `agent-course-reading`，规格开工前写；然后 C-3、C-4（roadmap C-1～C-4）。
 - **已归档：** `v1-delivery`（2026-10-24，#175）。它的代码全部在 main 上；未完成的真机任务已转走：10.4 → `codex-agent` 4.2，17.3 → Codex 子项目之后重做，17.2 取消（常驻 Edge 要删），5.6 停掉（接口同步要删）。
 - **今天的实验（证据只在会话里，结论记在 `codex-agent` 设计）：** 非交互 `codex exec` 能用电脑操作功能读你的 Edge（23–30 秒）；Edge 的元素树漏掉课程全名，截图读全；`codex exec --json` 只报 token、不报费用。
 - **真机同步第一次跑出的 bug：** Ed `/api/user` 的 `year` 是字符串，旧同步因此整个失败。修复在本地分支 `claude/ed-year-string`（d1005fa，未推送）；接口同步会在 C-2 删掉，所以不打算合并，C-2 合并后删这个分支。
 
 ## 没合并的工作
 
-- `claude/codex-agent-proposal`：本 PR（归档 `v1-delivery`、决定 #165–#175、`codex-agent` 规格、本文件和 roadmap）。
-- `claude/ed-year-string`：见上，不合并。
+- `claude/ed-year-string`：见上，不合并；C-2 删接口同步后删掉这个本地分支。
 
 ## 下一步（按顺序）
 
-1. 你审 `openspec/changes/codex-agent/`（proposal、design、specs、tasks）；同意后按 TDD 实现 C-1，最后你做 4.2 真机对话。
-2. C-1 合并后写 C-2 规格（三层 JSON 见 #169，流程见 #170），你审后实现；同时更新 PRD 里受影响的验收项。
-3. C-2 合并后写 C-3 规格并实现，然后按新流程重做真机验收（原 17.3）。
+1. 写 C-2 `agent-course-reading` 规格（三层 JSON #169、读取顺序 #170、单项权重 #171、删接口同步 #172、AI 开关 #180），你审后实现；同时更新 PRD 里受影响的验收项。真机实验已知：Edge 元素树读不到课程全名，需要截图补读。
+2. C-2 合并后写 C-3 规格并实现，然后按新流程重做真机验收（原 17.3）。
+3. 然后 C-4 长期记忆（#178）。
 
 ## 等你决定
 
@@ -31,7 +30,6 @@
 
 ## 等你动手
 
-- 审 `codex-agent` 规格（见下一步 1）。
 - GitHub 设置里勾选「Keep my email addresses private」：main 上旧的 squash 提交作者邮箱是私人邮箱（已推送，不能改写历史）；新提交都用 noreply。
 - 常驻 Edge 现在还开着（10-24 12:57 启动，用来测登录时长，已取消）：可以直接关掉那个窗口。
 
