@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
 import type { Copy, Language } from './i18n.js';
 import type { WeekStore, ManualFields } from './weekStore.js';
-import type { Client } from './client.js';
 import type { AgentPreset } from './chat.js';
-import type { PendingConfirmation } from '../../src/domain/schemas.js';
-import { ConfirmationCard } from './Agent.js';
 import { fieldName } from './shell.js';
 import { addDays, courseSummaries, deadlinesByDate, localDate, localTime, mondayOf, monthGrid, weekModel, zonedIso, type DeadlineEntry, type Need, type PlannedItem, type Task, type WorkRow } from './week.js';
 
@@ -12,24 +9,16 @@ const hours = (minutes: number) => `${Math.round(minutes / 6) / 10}`;
 function errorText(code: string, t: Copy) { return code === 'OWNER_SESSION_EXPIRED' ? t.session : `${t.error} (${code})`; }
 function scrollTo(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 
-export function NeedsYou({ needs, t, onStatus, onAgent, onSelect, onCourse, client, confirmations, onDecided }: { needs: Need[]; t: Copy; onStatus: () => void;
-  onAgent: (preset?: AgentPreset) => void; onSelect: () => void; onCourse: (courseId: string) => void; client: Client; confirmations: readonly PendingConfirmation[]; onDecided: () => void }) {
+export function NeedsYou({ needs, t, onStatus, onSelect, onCourse }: { needs: Need[]; t: Copy; onStatus: () => void;
+  onSelect: () => void; onCourse: (courseId: string) => void }) {
   const s = t.syncNeeds;
   if (!needs.length) return null;
   return <section className="needs" aria-labelledby="needs-title"><h2 id="needs-title">{t.needs}</h2>{needs.map(item => {
-    const pending = item.kind === 'confirm' ? confirmations.find(row => row.id === item.id) : undefined;
-    if (item.kind === 'confirm' && pending) return <div className="attention-row needs-confirm" key={`confirm-${item.id}`}>
-      <ConfirmationCard confirmation={pending} client={client} t={t} onDecided={onDecided} />
-      <div className="needs-actions"><button onClick={() => onAgent()}>{t.openAgent}</button>
-        {item.courseId && <button onClick={() => onAgent({ id: 'review-pending', courseId: item.courseId, assessmentId: item.assessmentId })}>{t.reviewWithAgent}</button>}</div>
-    </div>;
     const site = 'site' in item ? item.site === 'ed' ? 'Ed' : 'Canvas' : '';
     const course = 'courseId' in item && item.courseId ? item.courseId : undefined;
     const open: [string, () => void] | undefined = course ? [s.openCourse, () => onCourse(course)] : undefined;
     const [text, action] = ((): [ReactNode, [string, () => void] | undefined] => {
       switch (item.kind) {
-        case 'confirm': return [`${t.confirmPending}: ${item.summary}`, [t.openAgent, () => onAgent()]];
-        case 'signin': return [s.signinEdge.join(site), [t.status, onStatus]];
         case 'blocked': return [s.blockedHelp.join(site), [t.status, onStatus]];
         case 'failed': return [`${t.syncFailed} · ${s.outcomes[item.outcome]}${item.outcome === 'AGENT_UNAVAILABLE' ? ` · ${s.agentHelp}` : ''}`, [t.status, onStatus]];
         case 'select': return [item.count ? `${item.count} ${s.select}` : s.selectNone, [s.choose, onSelect]];
@@ -43,7 +32,7 @@ export function NeedsYou({ needs, t, onStatus, onAgent, onSelect, onCourse, clie
         case 'unestimated': return [`${item.count} ${t.unestimatedCount}`, [t.show, () => scrollTo('unestimated')]];
       }
     })();
-    const key = item.kind === 'confirm' ? item.id : item.kind === 'overflow' ? item.workId : 'site' in item ? `${item.kind}-${item.site}`
+    const key = item.kind === 'overflow' ? item.workId : 'site' in item ? `${item.kind}-${item.site}`
       : 'course' in item ? `${item.course}-${item.kind === 'weights' ? item.warning : ''}` : item.kind;
     return <div className="attention-row" key={`${item.kind}-${key}`}><span>{text}</span>{action && <button onClick={action[1]}>{action[0]}</button>}</div>;
   })}</section>;

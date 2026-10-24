@@ -5,14 +5,12 @@ export type Plan = Omit<PlanPage, 'nextCursor' | 'textContinuations'>;
 export type Course = Output<'courses.list'>['items'][number];
 export type Assessment = Output<'assessments.list'>['items'][number];
 export type Task = Output<'tasks.list'>['items'][number];
-export type Confirmation = Output<'confirmation.list'>['items'][number];
 export type Work = Plan['work'][number];
 export interface DeadlineEntry { id: string; title: string; courseCode?: string; kind: 'due' | 'exam' | 'all-day'; time?: string; done: boolean; manual: boolean }
 export interface PlannedItem { workId: string; title: string; courseCode?: string; minutes: number; startTime?: string; estimateMinutes?: number; actualMinutes: number; manual: boolean }
 export interface WorkRow { workId: string; title: string; courseCode?: string; minutes?: number; due?: string; estimateMinutes?: number; manual: boolean }
 export interface DayColumn { date: string; availableMinutes?: number; usedMinutes: number; deadlines: DeadlineEntry[]; items: PlannedItem[] }
-export type Need = { kind: 'confirm'; id: string; assessmentId: string; courseId?: string; summary: string }
-  | Attention | { kind: 'overflow'; workId: string; title: string; courseCode?: string; minutes: number }
+export type Need = Attention | { kind: 'overflow'; workId: string; title: string; courseCode?: string; minutes: number }
   | { kind: 'unestimated'; count: number };
 export interface CourseSummary { id: string; code: string; name: string; gradedWeight: number; unknownWeight: boolean; next?: { title: string; due: string }; undatedExams: string[] }
 export interface MonthCell { date: string; inMonth: boolean; deadlines: DeadlineEntry[] }
@@ -134,11 +132,9 @@ export function weekModel(input: { plan?: Plan; courses: readonly Course[]; asse
   const row = (workId: string, minutes?: number): WorkRow => { const { actualMinutes: _actual, ...rest } = describe(workId); return { ...rest, ...(minutes !== undefined ? { minutes } : {}) }; };
   return { days, overflow: (input.plan?.overflow ?? []).map(item => row(item.workId, item.minutes)), unestimated: (input.plan?.unestimated ?? []).map(item => row(item.workId)) };
 }
-export function needsYou(input: { attention: readonly Attention[];confirmations: readonly Confirmation[]; overflow: readonly WorkRow[]; unestimated: readonly WorkRow[];
+export function needsYou(input: { attention: readonly Attention[]; overflow: readonly WorkRow[]; unestimated: readonly WorkRow[];
   assessments?: readonly { id: string; courseId: string }[] }): Need[] {
-  const courseOf = new Map((input.assessments ?? []).map(item => [item.id, item.courseId]));
   return [
-    ...input.confirmations.filter(row => row.state === 'pending').map(row => ({ kind: 'confirm' as const, id: row.id, assessmentId: row.assessmentId, courseId: courseOf.get(row.assessmentId), summary: row.summary })),
     ...input.attention.map(item => 'site' in item ? { kind: item.kind, site: item.site } as Attention : item),
     ...input.overflow.map(item => ({ kind: 'overflow' as const, workId: item.workId, title: item.title, courseCode: item.courseCode, minutes: item.minutes ?? 0 })),
     ...input.unestimated.length ? [{ kind: 'unestimated' as const, count: input.unestimated.length }] : [],

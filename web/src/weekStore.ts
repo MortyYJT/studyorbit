@@ -1,13 +1,13 @@
 import { ClientError, type Client } from './client.js';
 import type { PlanScope } from '../../src/planning/contracts.js';
-import { localDate, mergePlanPages, pickTerm, type Assessment, type Confirmation, type Course, type Plan, type PlanPage, type Task } from './week.js';
+import { localDate, mergePlanPages, pickTerm, type Assessment, type Course, type Plan, type PlanPage, type Task } from './week.js';
 // One plan anchored at today: past days get no new minutes, and navigation only shows
 // slices of it, so reading another week never re-evaluates (and drops start times on) other dates.
 export const HORIZON_DAYS = 366;
 export const DEFAULT_TIME_ZONE = 'Australia/Melbourne'; // documented settings default
-type ErrorKey = 'courses' | 'assessments' | 'tasks' | 'plan' | 'confirmations' | 'action';
+type ErrorKey = 'courses' | 'assessments' | 'tasks' | 'plan' | 'action';
 export interface WeekState {
-  courses?: Course[]; assessments?: Assessment[]; tasks?: Task[]; confirmations?: Confirmation[];
+  courses?: Course[]; assessments?: Assessment[]; tasks?: Task[];
   plan?: Plan; scope?: PlanScope; term?: string; timeZone: string; today?: string;
   busy: boolean; errors: Partial<Record<ErrorKey, string>>;
 }
@@ -28,7 +28,7 @@ export class WeekStore {
     for (let page = 0; page < MAX_PAGES; page++) { const result = await read(cursor); items.push(...result.items); cursor = result.nextCursor; if (!cursor) return items; }
     throw new ClientError('LIMIT_EXCEEDED', 'Too many pages');
   }
-  private async load<K extends 'courses' | 'assessments' | 'tasks' | 'confirmations', T>(key: K, read: () => Promise<T>): Promise<T | undefined> {
+  private async load<K extends 'courses' | 'assessments' | 'tasks', T>(key: K, read: () => Promise<T>): Promise<T | undefined> {
     try { const value = await read(); this.update({ [key]: value } as Partial<WeekState>); this.setErrors({ [key]: undefined }); return value; }
     catch (error) { this.setErrors({ [key]: code(error) }); return undefined; }
   }
@@ -42,7 +42,6 @@ export class WeekStore {
       this.load('courses', () => this.pages(cursor => this.client.call('courses.list', { limit: 500, ...(cursor ? { cursor } : {}) }))),
       this.load('assessments', () => this.pages(cursor => this.client.call('assessments.list', { limit: 500, ...(cursor ? { cursor } : {}) }))),
       this.load('tasks', () => this.pages(cursor => this.client.call('tasks.list', { limit: 500, ...(cursor ? { cursor } : {}) }))),
-      this.client.hasSession() ? this.load('confirmations', () => this.pages(cursor => this.client.call('confirmation.list', { limit: 50, ...(cursor ? { cursor } : {}) }))) : undefined,
     ]);
     await this.readPlan(courses ?? this.state.courses ?? []);
   }

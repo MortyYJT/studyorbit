@@ -34,7 +34,7 @@ export function App({ store }: { store: ShellStore }) {
   const menuRoot = useRef<HTMLDivElement>(null);
   const t = language === 'zh' ? zh : en;
   const rows = useMemo(() => weekModel({ plan: weekState.plan, courses: weekState.courses ?? [], assessments: [], tasks: weekState.tasks ?? [], monday: weekState.today ?? '1970-01-05', timeZone: weekState.timeZone }), [weekState]);
-  const needs = needsYou({ attention: attention(state), confirmations: weekState.confirmations ?? [], overflow: rows.overflow, unestimated: rows.unestimated, assessments: weekState.assessments });
+  const needs = needsYou({ attention: attention(state), overflow: rows.overflow, unestimated: rows.unestimated, assessments: weekState.assessments });
   const refreshAll = () => Promise.all([store.refresh(), week.refresh()]);
   const running = state.syncing || state.sync?.running;
   useEffect(() => {
@@ -72,8 +72,8 @@ export function App({ store }: { store: ShellStore }) {
     <main>
       {!store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
       {state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
-      <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onAgent={openAgent} onSelect={() => setSelecting(true)}
-        onCourse={courseId => setView({ page: 'course', courseId })} client={store.client} confirmations={weekState.confirmations ?? []} onDecided={() => void week.refresh()} />
+      <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onSelect={() => setSelecting(true)}
+        onCourse={courseId => setView({ page: 'course', courseId })} />
       {view.page !== 'course' && <div className="page-heading"><h1>{t[view.page]}</h1><button onClick={() => void refreshAll()}>{t.refresh}</button></div>}
       {view.page === 'agent' ? <AgentPage client={store.client} t={t} language={language} preset={view.preset} onPresetDone={() => setView({ page: 'agent' })} />
         : view.page === 'course' ? <CoursePage key={view.courseId} courseId={view.courseId} client={store.client} t={t} language={language}
@@ -91,12 +91,9 @@ export function App({ store }: { store: ShellStore }) {
       <div className="dialog-heading"><h2 id="panel-title">{panel ? t[panel] : ''}</h2><button onClick={close}>{t.close}</button></div>
       {panel === 'status' && <><button onClick={() => void store.refresh()}>{t.refresh}</button>
         {(['canvas', 'ed'] as const).map(site => <section className="provider" key={site}><h3>{site === 'ed' ? 'Ed' : 'Canvas'}</h3>
-          <dl><dt>{t.status}</dt><dd>{state.errors.browser ? t.unavailable : state.browser?.[site] ? t[state.browser[site].state] : t.loading}</dd>
-            <dt>{t.checked}</dt><dd>{date(state.browser?.[site]?.checkedAt)}</dd>
-            <dt>{t.syncNeeds.lastRun}</dt><dd>{state.errors.sync ? t.unavailable : !state.sync?.lastRun ? t.never
+          <dl><dt>{t.syncNeeds.lastRun}</dt><dd>{state.errors.sync ? t.unavailable : !state.sync?.lastRun ? t.never
               : state.sync.blocked.includes(site) ? <b>{t.syncNeeds.blocked}</b> : t.syncNeeds.outcomes[state.sync.lastRun.outcome]}</dd></dl>
-          <button disabled={state.signingIn[site] || !store.client.hasSession()} aria-busy={state.signingIn[site]} aria-describedby={`focus-${site}`} onClick={() => void store.signIn(site)}>{state.signingIn[site] ? t.focusing : t.focus}</button><p id={`focus-${site}`} className="muted">{t.focusHelp}</p>
-          {state.errors[`${site}SignIn`] && <p role="status">{errorText(state.errors[`${site}SignIn`]!, t)}</p>}
+          {state.sync?.blocked.includes(site) && <p className="muted">{t.syncNeeds.blockedHelp.join(site === 'ed' ? 'Ed' : 'Canvas')}</p>}
         </section>)}
         {state.sync && <section className="provider"><h3>{t.syncNeeds.lastRun}</h3>
           {state.sync.running && <p role="status">{t.syncNeeds.running}</p>}
@@ -111,7 +108,7 @@ export function App({ store }: { store: ShellStore }) {
             <dt key={`${course.key}-t`}>{course.code}{course.name ? ` · ${course.name}` : ''}</dt>,
             <dd key={`${course.key}-d`}>{course.storedAt ? date(course.storedAt) : t.syncNeeds.notStored}</dd>])}</dl>}
         </section>}
-        {(state.errors.browser || state.errors.sync) && <p role="status">{t.error}</p>}
+        {state.errors.sync && <p role="status">{t.error}</p>}
       </>}
       {panel === 'metrics' && <MetricsPanel client={store.client} t={t} language={language} timeZone={state.planning?.settings?.timeZone} />}
       {panel === 'audit' && <><button disabled={state.auditLoading} onClick={() => void store.loadAudit()}>{t.refresh}</button>

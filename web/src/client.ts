@@ -1,28 +1,22 @@
 import { z } from 'zod';
-import { contracts, browserContracts, FailureEnvelopeSchema } from '../../src/protocol/contracts.js';
+import { contracts, FailureEnvelopeSchema } from '../../src/protocol/contracts.js';
 import { syncContracts } from '../../src/protocol/sync.js';
 import { planningContracts, planningInputs, settingsInput } from '../../src/planning/contracts.js';
 import { annotationCommands, autonomyCommands, autonomyReads, workCommands } from './course-contracts.js';
-import { PendingConfirmationSchema } from '../../src/domain/schemas.js';
-import { confirmationInput } from '../../src/browser/tools/contracts.js';
 import { metricsContracts } from '../../src/metrics/contracts.js';
 
 const commands = {
   'courses.list': contracts['courses.list'],
   'tasks.list': contracts['tasks.list'],
   'audit.list': contracts['audit.list'],
-  ...browserContracts,
   ...syncContracts,
   'planning.settings.read': planningContracts['planning.settings.read'],
   'planning.settings.set': { input: settingsInput, output: z.strictObject({ recorded: z.literal(true), id: z.string().optional() }) },
   // K2
   'assessments.list': contracts['assessments.list'],
   'plan.read': planningContracts['plan.read'],
-  'confirmation.list': { input: z.strictObject({ limit: z.number().int().min(1).max(50).optional(), cursor: z.string().max(512).optional() }),
-    output: z.object({ items: z.array(PendingConfirmationSchema), nextCursor: z.string().optional() }) },
   ...recorded('plan.start.set'), ...recorded('plan.start.clear'), ...recorded('time.record'),
   ...recorded('manual.create'), ...recorded('manual.edit'), ...recorded('manual.complete'), ...recorded('manual.delete'),
-  'confirmation.decide': { input: confirmationInput, output: z.strictObject({ recorded: z.literal(true) }) },
   ...metricsContracts,
   // K3 course page
   'sources.get': contracts['sources.get'], 'revision.read': contracts['revision.read'],
@@ -46,15 +40,15 @@ export function takeOwnerSession(location: Pick<Location, 'hash' | 'pathname' | 
   return value && /^[a-f0-9]{64}$/.test(value) ? value : undefined;
 }
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });
-// Commands that need the owner session; confirmation.list is a session-only read.
-const writes = new Set<Command>(['sync.run', 'courses.select','browser.start', 'browser.stop', 'browser.signin', 'planning.settings.set',
-  'confirmation.list', 'plan.start.set', 'plan.start.clear', 'time.record', 'manual.create', 'manual.edit', 'manual.complete', 'manual.delete', 'confirmation.decide',
+// Commands that need the owner session.
+const writes = new Set<Command>(['sync.run', 'courses.select', 'planning.settings.set',
+  'plan.start.set', 'plan.start.clear', 'time.record', 'manual.create', 'manual.edit', 'manual.complete', 'manual.delete',
   'annotation.confirm', 'annotation.replace', ...Object.keys(autonomyCommands) as Command[], ...Object.keys(workCommands) as Command[]]);
 export function createClient(initialSecret?: string, fetcher: typeof fetch = fetch) {
   let secret = initialSecret;
   return {
     hasSession: () => secret !== undefined,
-    /** Owner-session request for routes outside the command envelope map (agent chat, screenshots). */
+    /** Owner-session request for routes outside the command envelope map (agent chat). */
     async raw(path: string, init: RequestInit = {}): Promise<Response> {
       if (!secret) throw new ClientError('OWNER_SESSION_EXPIRED', 'Reopen with coursework ui.');
       const response = await fetcher(path, { ...init, cache: 'no-store', credentials: 'omit', headers: { ...init.headers as Record<string, string>, 'X-Coursework-Session': secret } });

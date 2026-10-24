@@ -147,12 +147,6 @@ button.small { padding:4px 10px; font-size:12px; }
 .step-head code { font-size:12px; }
 .step.denied small,.step.error small,.error-text { color:var(--muted); font-style:italic; }
 .step-reason { margin:0; font-size:13px; color:var(--muted); }
-.shot-toggle summary { cursor:pointer; font-size:13px; }
-.shot { display:block; max-width:100%; border:1px solid var(--line); border-radius:8px; margin-top:6px; }
-.confirm-card { border:1.5px solid var(--alert); background:var(--alert-bg); border-radius:10px; padding:10px 12px; display:grid; gap:8px; min-width:0; }
-.confirm-card > b { color:var(--alert); font-size:13px; }
-.confirm-summary { margin:0; white-space:pre-wrap; }
-.confirm-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .alert-button { background:var(--alert); border-color:var(--alert); color:var(--on-ink); font-weight:600; }
 .alert-button:hover:enabled { background:var(--alert); filter:brightness(1.08); }
 .ink-button { background:var(--ink); border-color:var(--ink); color:var(--on-ink); }
@@ -178,8 +172,6 @@ button.small { padding:4px 10px; font-size:12px; }
 .table-wrap th { color:var(--muted); font-weight:600; }
 @media(max-width:600px) { .metrics-range { grid-template-columns:1fr 1fr; } .metrics-range button { grid-column:1 / -1; } .kpis { grid-template-columns:1fr; } }
 /* K2 + K4: confirmation card inside "needs you" */
-.needs-confirm { flex-direction: column; align-items: stretch; gap: 8px; }
-.needs-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 /* K3 course page */
 .course-list .course-link { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 16px; width:100%; border:0; background:none; padding:0; text-align:left; }
 .course-list .course-link small { margin-left:auto; }
@@ -219,6 +211,7 @@ button.srcm { border:0; background:none; padding:0 2px; text-decoration:underlin
 .cite-panel { flex-basis:100%; grid-column:1 / -1; display:grid; gap:8px; margin:4px 0; }
 .cite { margin:0; padding:9px 12px; border-left:2px solid var(--ink); background:var(--hover); border-radius:0 8px 8px 0; font-size:13px; }
 .cite .src { font-size:11px; color:var(--muted); margin-top:4px; }
+.cite .copied { font-style:italic; }
 .cite a,.linked a { color:var(--text); }
 .verdicts { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .verdicts form { display:flex; gap:6px; min-width:0; flex:1; }
