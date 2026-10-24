@@ -8,7 +8,6 @@ export type Source = Output<'sources.get'>;
 type Section = 'course' | 'autonomy' | 'assessments' | 'plan' | 'revision' | 'notes' | 'stats' | 'detail' | 'source' | 'write';
 export interface CourseState {
   course?: CourseItem;
-  courseDetail?: AnnotationDetail;
   assessments?: AssessmentItem[];
   complete: boolean;
   work?: Record<string, Work>;
@@ -59,9 +58,8 @@ export class CourseStore {
       const found = (await pages(cursor => this.client.call('courses.list', { limit: 500, ...(cursor ? { cursor } : {}) })))
         .flatMap(page => page.items).find(course => course.id === this.courseId);
       if (!found) throw new ClientError('NOT_FOUND', 'Course not found.');
-      // Course annotation history holds the agent's policy suggestion even after the owner recorded a policy.
-      const courseDetail = await this.client.call('annotation.read', { entity: 'course', entityId: this.courseId, limit: 100 });
-      return { course: found, courseDetail };
+      // The agent-read policy and its quote are on the Course itself (#180); no annotation history is needed.
+      return { course: found };
     });
   }
   private loadAutonomy() {

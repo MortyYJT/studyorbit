@@ -17,10 +17,10 @@ it('defaults to the last 30 days in the owner time zone, end date inclusive, acr
 it('shows every metric without data as unavailable with its reason, never as zero', () => {
   const cards = metricsCards(empty, en, 'en');
   expect(cards.map(card => [card.key, card.value, card.reason])).toEqual([
-    ['canvas', undefined, en.mNoRuns], ['ed', undefined, en.mNoRuns], ['accuracy', undefined, en.mNoLabels],
+    ['runs', undefined, en.mNoRuns], ['accuracy', undefined, en.mNoLabels],
     ['estimates', undefined, en.mNoItems], ['agent', undefined, en.mNoConversations]]);
   expect(cards.flatMap(card => card.facts)).toEqual([]);
-  expect(metricsCards(empty, zh, 'zh')[2]!.reason).toBe(zh.mNoLabels);
+  expect(metricsCards(empty, zh, 'zh')[1]!.reason).toBe(zh.mNoLabels);
 });
 it('formats values with their counts and reports unknown costs separately', () => {
   const data = { ...empty,
@@ -28,7 +28,8 @@ it('formats values with their counts and reports unknown costs separately', () =
     accuracy: { available: true as const, count: 10, correct: 9, incorrect: 1, value: 0.9 },
     estimates: { available: true as const, count: 2, medianRatio: 1.25, meanRatio: 1.25 },
     agent: { available: true as const, count: 3, cost: { available: true as const, totalUsd: 0.06, count: 2, unknownCount: 1 }, conversations: [], byKind: [] } };
-  const [canvas, , accuracy, estimates, agent] = metricsCards(data, en, 'en');
+  const [runs, canvas, accuracy, estimates, agent] = metricsCards(data, en, 'en');
+  expect([runs!.key, runs!.reason, canvas!.key, canvas!.title]).toEqual(['runs', en.mNoRuns, 'canvas', `${en.mSyncHistory} · Canvas`]);
   expect(canvas!.value).toBe('2.5s · 75%');
   expect(canvas!.facts).toContainEqual([en.mSuccess, '3 / 4']);
   expect(canvas!.facts).toContainEqual([en.mMax, '3m 41s']);
@@ -39,6 +40,12 @@ it('formats values with their counts and reports unknown costs separately', () =
   expect(agent!.facts).toContainEqual([en.mCost, '$0.06 (2)']);
   expect(agent!.facts).toContainEqual([en.mCostUnknown, '1']);
   expect(formatDuration(850, zh)).toBe('850毫秒');
+});
+it('shows agent sync runs per run with success and durations', () => {
+  const runs = { available: true as const, count: 5, successes: 4, successRate: 0.8, medianDurationMs: 95000, maxDurationMs: 600000, durationBasis: 'sync_run' as const };
+  const [card] = metricsCards({ ...empty, sync: { ...empty.sync, runs } }, en, 'en');
+  expect(card).toMatchObject({ key: 'runs', title: en.mSyncRuns, value: '1m 35s · 80%', note: en.mSyncRunsBasis });
+  expect(card!.facts).toContainEqual([en.mSuccess, '4 / 5']);
 });
 it('pages conversation details and keeps the first page aggregates', async () => {
   const row = (id: string) => ({ conversationId: id, kind: 'quiz' as const, ...totals(2, 1) });

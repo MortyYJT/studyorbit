@@ -42,7 +42,46 @@ export function courseFigures(course: Course, items: readonly Assessment[], band
   return projectGrade(course, items, band);
 }
 
-export const presetIds = { complete: 'complete-assessment', explain: 'explain-assessment', tutor: 'tutor-revision', wrong: 'wrong-answers-only' } as const;
+type Grouped = Pick<Assessment, 'id' | 'weight' | 'score' | 'group' | 'readState'>;
+export interface AssessmentGroup<T> { key?: string; name?: string; weight?: number; earned: number; items: T[] }
+/** Groups by grading component in list order; assessments without a component come last in one unnamed group. */
+export function assessmentGroups<T extends Grouped>(items: readonly T[]): AssessmentGroup<T>[] {
+  const groups = new Map<string | undefined, AssessmentGroup<T>>();
+  for (const item of items) {
+    const key = item.group?.key;
+    const group = groups.get(key) ?? { ...(item.group ? { key: item.group.key, name: item.group.name, ...(item.group.weight !== undefined ? { weight: item.group.weight } : {}) } : {}), earned: 0, items: [] };
+    group.items.push(item);
+    // Earned share (#171): graded items of known weight contribute weight × score; the agent never fills this in.
+    if (item.weight !== undefined && item.score !== undefined) group.earned += item.weight * item.score / 100;
+    groups.set(key, group);
+  }
+  const loose = groups.get(undefined);
+  return [...[...groups.values()].filter(group => group !== loose), ...loose ? [loose] : []];
+}
+/**
+ * The unpublished share of a component: import gives it only name, kind and weight read states, while item rows carry
+ * `status` and final/hurdle component rows carry `isFinal`.
+ */
+export function isRemainder(item: Pick<Assessment, 'id' | 'group' | 'readState'>): boolean {
+  return item.group !== undefined && item.readState !== undefined && !('status' in item.readState) && !('isFinal' in item.readState);
+}
+export type ValueLabel = { kind: 'value' } | { kind: 'derived' } | { kind: 'unknown'; checkedAt?: string };
+/** A shown value, an evenly split weight (only while no owner or agent value replaced it), or unknown with its check time. */
+export function valueLabel(item: Pick<Assessment, 'weight' | 'due' | 'readState'> & { fields?: Record<string, Field> }, field: 'weight' | 'due'): ValueLabel {
+  const read = item.readState?.[field];
+  if (item[field] === undefined) return read?.state === 'unknown' && read.checkedAt ? { kind: 'unknown', checkedAt: read.checkedAt } : { kind: 'unknown' };
+  const origin = item.fields?.[field]?.origin ?? 'sync';
+  return field === 'weight' && read?.state === 'derived' && origin === 'sync' ? { kind: 'derived' } : { kind: 'value' };
+}
+export interface PolicyView { effective?: Policy; origin?: 'owner' | 'agent'; read?: Policy; quote?: string }
+/** Effective policy and origin from `autonomy.read`; the agent-read value and quote from the Course (#180). */
+export function policyView(course: Pick<Course, 'id' | 'aiPolicy' | 'readState'>, autonomy: Pick<AutonomyRead, 'policy' | 'policyOrigin'> | undefined): PolicyView {
+  const quote = course.readState?.aiPolicy?.quote;
+  return { ...(autonomy?.policy ? { effective: autonomy.policy } : {}), ...(autonomy?.policy && autonomy.policyOrigin ? { origin: autonomy.policyOrigin } : {}),
+    ...(course.aiPolicy ? { read: course.aiPolicy } : {}), ...(course.aiPolicy && quote ? { quote } : {}) };
+}
+
+export const presetIds ={ complete: 'complete-assessment', explain: 'explain-assessment', tutor: 'tutor-revision', wrong: 'wrong-answers-only' } as const;
 export type Field = z.output<typeof AnnotationFieldsSchema>[string];
 export type Origin = 'platform' | 'agent' | 'owner';
 export function originOf(field?: Field): Origin | undefined {

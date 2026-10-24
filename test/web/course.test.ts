@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { presets } from '../../src/agent/presets.js';
-import { UNKNOWN_SPAN, agentEntries, arcPath, canJudge, courseFigures, displayStatus, levelView, mergePlanWork, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink } from '../../web/src/course.js';
+import { UNKNOWN_SPAN, agentEntries, arcPath, assessmentGroups, isRemainder, policyView, valueLabel, canJudge, courseFigures, displayStatus, levelView, mergePlanWork, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink } from '../../web/src/course.js';
 
 const course = { id: 'c1', moduleId: 'm1', code: 'SYNA10001', name: 'Synthetic', term: '2026-S2', assessmentsComplete: false };
 const item = (id: string, weight: number | undefined, score?: number, isFinal = false) =>
@@ -100,6 +100,38 @@ it('merges paged plan work and applies text continuations at their offsets', () 
   ]);
   expect(merged.map(item => item.workId)).toEqual(['a', 'b']);
   expect(merged[0]!.agentEstimate?.reason).toBe('Long reason');
+});
+
+const written = { key: 'syna10001-written', name: 'Written assignments', weight: 15, count: 4 };
+const derived = { weight: { state: 'derived' as const } };
+const graded = (id: string, score: number) => ({ ...item(id, 3.75, score), group: written, readState: { ...derived, status: { state: 'found' as const } } });
+it('groups assessments by component with weight and the earned share computed by code (scenario "Component group")', () => {
+  const remainder = { ...item('rest', 7.5), group: written, readState: { name: { state: 'found' as const }, weight: { state: 'derived' as const } } };
+  const exam = { ...item('exam', 50, undefined, true), group: { key: 'syna10001-exam', name: 'Final exam', weight: 50 },
+    readState: { isFinal: { state: 'found' as const }, weight: { state: 'found' as const } } };
+  const groups = assessmentGroups([graded('a1', 80), item('loose', 10, 50), exam, graded('a2', 100), remainder]);
+  expect(groups.map(group => [group.key, group.name, group.weight, group.items.map(row => row.id)])).toEqual([
+    ['syna10001-written', 'Written assignments', 15, ['a1', 'a2', 'rest']], ['syna10001-exam', 'Final exam', 50, ['exam']], [undefined, undefined, undefined, ['loose']]]);
+  expect(groups[0]!.earned).toBeCloseTo(6.75);
+  expect(groups[1]!.earned).toBe(0);
+  expect(isRemainder(remainder)).toBe(true);
+  expect([graded('a1', 80), exam, item('loose', 10)].map(isRemainder)).toEqual([false, false, false]);
+  expect(valueLabel(graded('a1', 80), 'weight')).toEqual({ kind: 'derived' });
+});
+it('labels derived weights as an even split and unknown fields with their check time (scenario "Derived and unknown labels")', () => {
+  const unknownDue = { ...item('late', 10), readState: { due: { state: 'unknown' as const, checkedAt: '2026-10-24T03:00:00Z' }, weight: { state: 'found' as const } } };
+  expect(valueLabel(unknownDue, 'due')).toEqual({ kind: 'unknown', checkedAt: '2026-10-24T03:00:00Z' });
+  expect(valueLabel(unknownDue, 'weight')).toEqual({ kind: 'value' });
+  expect(valueLabel(item('plain', undefined), 'weight')).toEqual({ kind: 'unknown' });
+  // An owner or agent value replaces the even split, so it is no longer labelled derived.
+  const owned = { ...graded('a1', 80), weight: 4, fields: { weight: { value: 4, origin: 'owner' as const, citations: [], verdicts: [] } } };
+  expect(valueLabel(owned, 'weight')).toEqual({ kind: 'value' });
+});
+it('shows the agent-read AI policy with its quote and the effective origin', () => {
+  const read = { ...course, aiPolicy: 'prohibited' as const, readState: { aiPolicy: { state: 'found' as const, quote: 'No AI.' } } };
+  expect(policyView(read, { policy: 'prohibited', policyOrigin: 'agent' })).toEqual({ effective: 'prohibited', origin: 'agent', read: 'prohibited', quote: 'No AI.' });
+  expect(policyView(read, { policy: 'allowed', policyOrigin: 'owner' })).toEqual({ effective: 'allowed', origin: 'owner', read: 'prohibited', quote: 'No AI.' });
+  expect(policyView(course, undefined)).toEqual({});
 });
 
 it('uses the registered preset ids', () => {
