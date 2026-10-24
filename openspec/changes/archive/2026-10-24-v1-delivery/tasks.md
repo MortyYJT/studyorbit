@@ -43,7 +43,7 @@ Covers: US-1 items 1–5, item 6 manual part (email trigger deferred, #129). Spe
 - [x] 5.3 Failing tests for facts and sync assessments: Ed `effective_due_at` precedence; weighted Canvas groups create linked sync assessments; no split or zero weights; annotated fields and agent/owner links not overwritten
 - [x] 5.4 Failing tests: one transaction per course; complete reads mark missing items removed; partial reads remove nothing; redaction before storing; provider-isolated `AUTH_EXPIRED`; shared limiter; measured Run; Ed reads limited to sync scope
 - [x] 5.5 Failing tests for `sync.run`: one run at a time (`LOCKED`), last run and last success per provider readable; wire `coursework sync [--course]`
-- [ ] 5.6 Owner live check on the real profile; record actual counts and problems in the PR, separately from synthetic results
+- [x] 5.6 Owner live check on the real profile; record actual counts and problems in the PR, separately from synthetic results — Stopped (decision #174): the Canvas/Ed API sync it checks is being replaced by agent reading; the live check moves to that change.
 
 ## 6. Issue E — Agent annotations and owner verdicts
 
@@ -90,7 +90,7 @@ Covers: US-5 items 3 and 6. Spec: `agent-chat`. Depends on H. New dependency app
 - [x] 10.1 Install `@anthropic-ai/claude-agent-sdk` at an exact version; keep SDK types inside `src/agent/claude.ts`
 - [x] 10.2 Failing tests with a stubbed SDK `query`: message mapping to `AgentEvent`s, session resume, in-process MCP tool set wired, `cwd` is the agent workspace, skills injected per preset, cost and turns read from the result, not-signed-in → `AGENT_UNAVAILABLE`
 - [x] 10.3 Failing tests for the policy hook: data-directory access outside the workspace, `browser.json`, debugging port, local UI port, `coursework` owner commands, pseudo-terminal wrappers, `ps`, frontend origin are denied and stored as denied steps; ordinary workspace file writes are allowed
-- [ ] 10.4 Owner live check: one real conversation through the frontend backend with the signed-in agent; record steps and cost in the PR
+- [x] 10.4 Owner live check: one real conversation through the frontend backend with the signed-in agent; record steps and cost in the PR — Moved (decisions #167, #175): the live conversation check moves to `codex-agent`, which replaces the Claude adapter.
 
 ## 11. Issue J — Agent browser tools
 
@@ -148,6 +148,6 @@ Covers: PRD §1 auxiliary metrics (#133). Spec: `metrics`. Depends on D, E, F, I
 ## 17. Issue M — Acceptance and archive
 
 - [x] 17.1 Synthetic end-to-end test: status → sync → annotations → plan → UI reads → preset conversation with the synthetic adapter → browser tool submit with confirmation → audit and metrics
-- [ ] 17.2 Owner task R-B 3.5 (carried): start Edge on the managed profile, sign in by hand, run `browser status`, leave it overnight, record the sign-in lifetime and whether remote debugging or the fallback is used
-- [ ] 17.3 Owner acceptance on real data against every PRD acceptance item of US-1, US-2, US-3, US-5, US-6 and US-7; failures become new issues linked to their story
-- [ ] 17.4 `openspec validate v1-delivery --strict`, `bash .claude/check.sh`, `npm run build`; archive `v1-delivery` with specs; update the roadmap and handoff
+- [x] 17.2 Owner task R-B 3.5 (carried): start Edge on the managed profile, sign in by hand, run `browser status`, leave it overnight, record the sign-in lifetime and whether remote debugging or the fallback is used — Moved (decisions #173, #175): the resident Edge is removed in sub-project 3; sign-in lifetime is no longer needed for the new flow.
+- [x] 17.3 Owner acceptance on real data against every PRD acceptance item of US-1, US-2, US-3, US-5, US-6 and US-7; failures become new issues linked to their story — Moved (decision #175): owner acceptance on real data is redone after the Codex sub-projects land.
+- [x] 17.4 `openspec validate v1-delivery --strict`, `bash .claude/check.sh`, `npm run build`; archive `v1-delivery` with specs; update the roadmap and handoff — Done in part (decision #175): validated and archived before owner acceptance; roadmap and handoff updated in the same PR.
