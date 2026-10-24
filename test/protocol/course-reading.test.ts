@@ -158,3 +158,38 @@ describe('course.import (coursework-sync "Run state is shared through the store"
     expect(runner.store.query('courses', { limit: 10 }).items).toEqual([expect.objectContaining({ name: 'SYNA10001' })]);
   });
 });
+
+describe('review fixes: offers, import failures and closing', () => {
+  it('an offer with no courses and no blocked platform is refused with a fixed hint', async () => {
+    const f = setup();
+    const job = f.jobs.open([]);
+    expect(await f.agentCall('courses.offer', { jobId: job.id, courses: [], blocked: [] })).toMatchObject({ ok: false,
+      error: { code: 'INVALID_INPUT', message: 'Offer the courses you see, or report the platforms you could not read in `blocked`.' } });
+    expect(await f.agentCall('courses.offer', { jobId: job.id, courses: [], blocked: ['canvas', 'ed'] })).toMatchObject({ ok: true });
+    expect(f.store.loadSyncJob(job.id)?.blocked).toEqual(['canvas', 'ed']);
+  });
+
+  it('an unexpected store failure still counts the submission and returns a fixed refusal; nothing partial is stored', async () => {
+    const f = setup(); f.select();
+    const failing = new SyncJobs(f.store, { importer: store => {
+      store.saveModule({ id: 'partial', name: 'Partial', glyph: 'P', auto: false });
+      throw new Error('private detail');
+    } });
+    const job = failing.open([key]);
+    expect(() => failing.import({ jobId: job.id, document: document() })).toThrow('could not be stored');
+    expect(f.store.loadSyncJob(job.id)?.submissions).toEqual({ [key]: 1 });
+    expect(f.store.loadModule('partial')).toBeUndefined();
+    expect(() => failing.import({ jobId: job.id, document: document() })).not.toThrow('private detail');
+  });
+
+  it('close reads the job inside its transaction, so a late import is in the coverage', () => {
+    const f = setup();
+    const job = f.jobs.open([key]);
+    f.store.saveSyncJob({ ...job, submissions: { [key]: 2 } });
+    const seen = f.jobs.close(job.id, latest => ({ outcome: 'PARTIAL' as const, run: { id: job.id, command: 'sync', startedAt: job.startedAt, endedAt: now, steps: 0,
+      outcome: 'error' as const, turns: 0, syncOutcome: 'PARTIAL' as const, courseCoverage: [] }, value: latest.submissions[key] }));
+    expect(seen).toBe(2);
+    expect(f.store.loadSyncJob(job.id)).toMatchObject({ endedAt: now, outcome: 'PARTIAL' });
+    expect(f.store.loadRun(job.id)).toMatchObject({ syncOutcome: 'PARTIAL' });
+  });
+});

@@ -246,9 +246,24 @@ export class SqliteRepository implements Repository, CurrentStateReader {
     return rows.map(row => AssessmentLinkSchema.parse(JSON.parse(row.json as string)));
   }
 
-  /** One write transaction; nested calls join the outer one, so a caller can combine its own rows with saveBatch. */
+  private savepoints = 0;
+  /**
+   * One write transaction; a nested call runs in a savepoint of the outer one, so a caller can combine its own rows with
+   * saveBatch and a failing inner step is undone without losing the outer rows.
+   */
   transaction<T>(operation: () => T): T {
-    if (this.inTransaction) return operation();
+    if (this.inTransaction) {
+      const name = `nested_${++this.savepoints}`;
+      this.db.exec(`SAVEPOINT ${name}`);
+      try {
+        const result = operation();
+        this.db.exec(`RELEASE ${name}`);
+        return result;
+      } catch (error) {
+        this.db.exec(`ROLLBACK TO ${name}`); this.db.exec(`RELEASE ${name}`);
+        throw error;
+      } finally { this.savepoints--; }
+    }
     this.db.exec('BEGIN IMMEDIATE');
     this.inTransaction = true;
     try {

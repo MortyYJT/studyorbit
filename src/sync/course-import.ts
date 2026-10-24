@@ -21,7 +21,7 @@ export interface ImportOptions {
 }
 export interface ImportResult {
   courseId: string; components: number; items: number; assessments: number; retired: number;
-  warnings: 'REMAINDER_SHORTFALL'[]; policyChanged: boolean;
+  warnings: ('REMAINDER_SHORTFALL' | 'COUNT_MISMATCH')[]; policyChanged: boolean;
 }
 
 const known = <T>(field: Field<T>): T | undefined => (field.state === 'found' || field.state === 'derived') && field.value !== null ? field.value : undefined;
@@ -62,7 +62,9 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
     const readPolicy = known(document.course.aiPolicy);
     const policyChanged = readPolicy !== undefined && readPolicy !== existing?.aiPolicy;
     const aiPolicy = readPolicy ?? existing?.aiPolicy;
-    const policyState = readPolicy === undefined && existing?.readState?.aiPolicy ? existing.readState.aiPolicy : entry(document.course.aiPolicy);
+    // A missed read keeps the last found value and its quote, with the new check time.
+    const policyState = readPolicy === undefined && aiPolicy !== undefined && existing?.readState?.aiPolicy
+      ? { ...existing.readState.aiPolicy, checkedAt: document.course.aiPolicy.checkedAt ?? at } : entry(document.course.aiPolicy);
     const course: Course = { id: courseId, moduleId: existing?.moduleId ?? SCHOOL.id, code, name: known(document.course.name) ?? code, term,
       assessmentsComplete: existing?.assessmentsComplete ?? false, sources, ...(aiPolicy ? { aiPolicy } : {}),
       readState: { code: entry(document.course.code), name: entry(document.course.name), term: entry(document.course.term), aiPolicy: policyState } };
@@ -70,7 +72,9 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
     const links = currentLinks(store.listAssessmentLinks());
     const previous = all(store, 'assessments', { courseId, includeRetired: true });
     const produced = new Map<string, Assessment>(); const sourceItems: SourceItem[] = []; const newLinks: AssessmentLink[] = [];
-    const warnings = new Set<'REMAINDER_SHORTFALL'>();
+    const warnings = new Set<'REMAINDER_SHORTFALL' | 'COUNT_MISMATCH'>();
+    // Item rows superseded by an agent or owner link: retired whatever the platform state, so no weight counts twice.
+    const superseded = new Set<string>();
     const link = (assessment: string, sourceItem: string) => {
       const current = links.get(sourceItem);
       if (current && (current.origin !== 'sync' || current.assessmentId === assessment)) return;
@@ -85,7 +89,9 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
       // Stated weights win; the rest of the component weight is split evenly over the unstated slots (#171).
       const stated = items.map(item => item.weight.state === 'found' ? known(item.weight) : undefined);
       const statedSum = stated.reduce<number>((sum, value) => sum + (value ?? 0), 0);
-      const slots = (count ?? items.length) - stated.filter(value => value !== undefined).length;
+      // More listed items than the stated count: split over the listed items so the component never exceeds its weight.
+      if (count !== undefined && items.length > count) warnings.add('COUNT_MISMATCH');
+      const slots = Math.max(count ?? 0, items.length) - stated.filter(value => value !== undefined).length;
       const share = weight !== undefined && slots > 0 ? Math.max(0, (weight - statedSum) / slots) : undefined;
       const rows = items.map((item, index) => {
         const sourceId = sourceItemId(term, item.key);
@@ -100,7 +106,8 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
         const id = componentAssessmentId(term, component.key);
         const dues = rows.map(row => known(row.item.due)).filter((due): due is string => due !== undefined).sort((a, b) => Date.parse(a) - Date.parse(b));
         const scores = rows.map(row => percent(row.item));
-        const scored = rows.length > 0 && scores.every(score => score !== undefined);
+        // Graded only when every one of the component's items is listed and scored; otherwise the score is unknown.
+        const scored = rows.length > 0 && rows.length >= (count ?? rows.length) && scores.every(score => score !== undefined);
         const weights = rows.map(row => row.weight);
         const useWeights = weights.every(value => value !== undefined) && weights.reduce<number>((sum, value) => sum + value!, 0) > 0;
         const score = scored ? scores.reduce<number>((sum, value, index) => sum + value! * (useWeights ? weights[index]! : 1), 0)
@@ -120,7 +127,7 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
       const add = (value: number | undefined) => { if (value === undefined) sumKnown = false; else effectiveSum += value; };
       for (const row of rows) {
         // An item the agent or owner linked elsewhere keeps that link; its weight still counts against the remainder.
-        if (row.kept) { add(row.weight); continue; }
+        if (row.kept) { superseded.add(assessmentId(term, row.item.key)); add(row.weight); continue; }
         const id = assessmentId(term, row.item.key);
         const due = known(row.item.due); const score = percent(row.item);
         produced.set(id, { id, courseId, name: known(row.item.name)!, ...(kind ? { kind } : {}), ...(row.weight !== undefined ? { weight: row.weight } : {}),
@@ -152,10 +159,13 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
       const isRemainder = groupKey !== undefined && assessment.id === remainderAssessmentId(term, groupKey);
       const isComponent = groupKey !== undefined && assessment.id === componentAssessmentId(term, groupKey);
       let retire: boolean;
-      if (isRemainder && present.has(groupKey)) retire = true; // its component now lists all items
+      // A remainder whose component now lists all items, or a component row whose component is no longer final or hurdled.
+      if ((isRemainder || isComponent) && present.has(groupKey)) retire = true;
       else if (isRemainder || isComponent) retire = document.course.componentsComplete;
+      else if (superseded.has(assessment.id)) retire = true;
       else {
-        const platforms = [...links.values()].filter(row => row.assessmentId === assessment.id).map(row => store.loadSourceItem(row.sourceItemId)?.platform);
+        // The platform comes from every item ever linked to the row, not only current links (a moved item has none).
+        const platforms = [...new Set(store.readAssessmentLinks(assessment.id).map(row => row.sourceItemId))].map(id => store.loadSourceItem(id)?.platform);
         retire = platforms.length === 0 ? document.course.componentsComplete
           : platforms.every(platform => platform === 'canvas' || platform === 'ed' ? document.course.platforms[platform] === 'read' : document.course.componentsComplete);
       }

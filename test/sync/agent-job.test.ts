@@ -159,6 +159,17 @@ describe('agent sync job (coursework-sync)', () => {
     expect(result.run.courseCoverage).toEqual([expect.objectContaining({ stored: false, submissions: 0, platforms: { canvas: 'unread', ed: 'unread' } })]);
   });
 
+  it('a discovery with every platform blocked and no candidates ends AGENT_UNAVAILABLE, and the prompt says how to report it', async () => {
+    const f = setup(async function* (call, jobId) {
+      expect(await call('courses.offer', { jobId, courses: [], blocked: ['canvas', 'ed'] })).toMatchObject({ ok: true });
+      yield { type: 'result', turns: 1 };
+    });
+    const result = await f.sync.run({});
+    expect(result).toMatchObject({ outcome: 'AGENT_UNAVAILABLE', run: { syncOutcome: 'AGENT_UNAVAILABLE' } });
+    expect(f.sync.status()).toMatchObject({ blocked: ['canvas', 'ed'], lastRun: { outcome: 'AGENT_UNAVAILABLE' } });
+    expect(f.adapter.inputs[0]!.prompt).toMatch(/computer-use tool or the browser is unavailable[^\n]*locked[^\n]*both platforms in `blocked`/);
+  });
+
   it('records AGENT_UNAVAILABLE and keeps previously stored data, marked with its last stored time', async () => {
     let round = 0;
     const f = setup(async function* (call, jobId) {
