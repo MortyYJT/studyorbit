@@ -28,6 +28,11 @@ export class SyncJobs {
   active(): SyncJob | undefined { return this.store.listSyncJobs().find(job => this.isActive(job)); }
   load(id: string): SyncJob | undefined { return this.store.loadSyncJob(id); }
   candidates(): CourseSelection[] { return this.store.listCourseSelections(); }
+  /** When the newest stored document of this course was stored; undefined when no document was stored yet. */
+  storedAt(courseId: string): string | undefined {
+    return this.store.listSyncJobs().flatMap(job => Object.values(job.results ?? {})).filter(result => result.courseId === courseId)
+      .map(result => result.storedAt).sort().at(-1);
+  }
 
   /** The store's write lock makes this the cross-process lock: one active job at a time. */
   open(courses: readonly string[]): SyncJob {

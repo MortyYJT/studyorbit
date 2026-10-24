@@ -84,7 +84,9 @@ export const PolicyReceiptSchema = z.discriminatedUnion('status', [
 export const GrantReceiptSchema = z.strictObject({ recorded: z.literal('grant'), grantRef: HashSchema,
   courseId: IdSchema, assessmentId: IdSchema, category: GrantRecordSchema.shape.category,
   level: LevelSchema, recordedAt: z.iso.datetime() });
-const courses = { input: z.strictObject({ ...paging, term: text.optional() }), output: page(CourseSchema.strict().extend({ fields: AnnotationFieldsSchema.optional() })), level: 0 } as const;
+// `storedAt`: when the agent's last course document for this course was stored (agent-course-reading).
+const courses = { input: z.strictObject({ ...paging, term: text.optional() }), output: page(CourseSchema.strict().extend({ fields: AnnotationFieldsSchema.optional(),
+  storedAt: z.iso.datetime({ offset: true }).optional() })), level: 0 } as const;
 const policy = { input: PolicyRecordSchema, output: PolicyReceiptSchema, level: 0 } as const;
 const grant = { input: GrantRecordSchema, output: GrantReceiptSchema, level: 0 } as const;
 export const contracts = {

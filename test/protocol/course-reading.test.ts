@@ -73,6 +73,9 @@ describe('course.import (coursework-sync "Run state is shared through the store"
     expect(await f.agentCall('course.import', { jobId: job.id, document: document() })).toMatchObject({ ok: true,
       data: { stored: true, key, submission: 1, components: 2, items: 1, unknownFields: [], warnings: [] } });
     expect(f.store.loadSyncJob(job.id)).toMatchObject({ submissions: { [key]: 1 }, results: { [key]: { components: 2, items: 1, storedAt: expect.any(String) } } });
+    // protocol-reads: courses report the time of their last stored document.
+    const storedAt = f.store.loadSyncJob(job.id)!.results![key]!.storedAt;
+    expect(await f.agentCall('courses.list', {})).toMatchObject({ ok: true, data: { items: [expect.objectContaining({ code: 'SYNA10001', storedAt })] } });
   });
 
   it('Wrong field shape: INVALID_INPUT names the field path and nothing is stored', async () => {

@@ -30,6 +30,6 @@
 
 ## 7. Verification
 
-- [ ] 7.1 `openspec validate agent-course-reading --strict`, `bash .claude/check.sh` (exit code), `npm run build`
+- [x] 7.1 `openspec validate agent-course-reading --strict`, `bash .claude/check.sh` (exit code), `npm run build`
 - [ ] 7.2 Live run by Claude (#181) against a temporary data directory: real Codex reads the owner's current courses from their Edge, read-only; record courses, items, unknowns, retries, duration and turns in the PR
 - [ ] 7.3 Owner final acceptance in the frontend on their real data

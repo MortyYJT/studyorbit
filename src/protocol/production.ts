@@ -57,10 +57,21 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const annotations = new AnnotationService(store, evidence);
   const effectiveKind = (id: string) => annotations.read({ entity: 'assessment', entityId: id, limit: 0 }).fields.kind!.value as string | null;
   const autonomy = new AssessmentAutonomy(store, audit, effectiveKind);
+  // Import keeps the newest owner or valid agent weight of an item when it computes a component's remainder.
+  const annotatedWeight = (id: string) => {
+    if (!store.loadAssessment(id)) return undefined;
+    const weight = annotations.read({ entity: 'assessment', entityId: id, limit: 0 }).fields.weight;
+    return weight && weight.origin !== 'sync' && typeof weight.value === 'number' ? weight.value : undefined;
+  };
+  const jobs = new SyncJobs(store, { annotatedWeight });
   const repository = new StoreProtocolReads(store, evidence, {
     ...options.reads,
     assessments: { query: input => store.queryEffectiveAssessments(input, effectiveKind) },
-    project: (entity, value) => annotations.project(entity, value),
+    project: (entity, value) => {
+      const projected = annotations.project(entity, value);
+      const storedAt = entity === 'course' ? jobs.storedAt(value.id) : undefined;
+      return storedAt ? { ...projected, storedAt } : projected;
+    },
     platform: id => assessmentPlatformState(store, id),
     accepted: options.reads?.accepted ?? accepted,
     revision: { read: (name, input) => revision.read(name, input) },
@@ -106,13 +117,6 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const confirmations = options.browserTools?.confirmations ?? new BrowserConfirmationStore(store);
   const browserTools = new BrowserTools({ store, audit, autonomy, browser: options.browserTools?.browser ?? new ResidentToolBrowser(), confirmations, clock: options.browserTools?.clock, recoverOnStart: false });
   let externalScope: ReturnType<ConversationService['toolScope']> | undefined;
-  // Import keeps the newest owner or valid agent weight of an item when it computes a component's remainder.
-  const annotatedWeight = (id: string) => {
-    if (!store.loadAssessment(id)) return undefined;
-    const weight = annotations.read({ entity: 'assessment', entityId: id, limit: 0 }).fields.weight;
-    return weight && weight.origin !== 'sync' && typeof weight.value === 'number' ? weight.value : undefined;
-  };
-  const jobs = new SyncJobs(store, { annotatedWeight });
   // A sync run is an agent job over the chat adapter; adapter and tools are composed below and resolved per run.
   const sync = options.sync ?? new AgentSync({ store, jobs, adapter: () => adapter, tools: () => agentTools });
   const registry = createRegistry({ autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync, courseReading: jobs, browserTools, browserScope: () => {
