@@ -5,10 +5,10 @@
 
 ## 2. Codex adapter
 
-- [ ] 2.1 Spike against the real CLI (synthetic prompts only, no course pages): record `codex exec --json` and `codex exec resume <id> --json` lines (agent message, MCP tool call ok and failed, command execution, turn completed) as test fixtures; confirm which options `resume` accepts; confirm computer-use still works under `-s workspace-write`; note the computer-use item shape. Record findings in the PR
+- [ ] 2.1 Spike against the real CLI (synthetic prompts only, no course pages): record `codex exec --json` and `codex exec resume <id> --json` lines (agent message, MCP tool call ok and failed, command execution, turn completed) as test fixtures; confirm which options `resume` accepts; confirm computer-use still works under `-s workspace-write`; confirm the `coursework` MCP server runs outside Codex's sandbox, so a validated write reaches a temporary data directory (if it is sandboxed, stop and re-plan); note the computer-use item shape. Record findings in the PR
 - [ ] 2.2 Failing tests with a fake `codex` executable on `PATH`: "Codex events" mapping, "Resume" arguments, "Stop a Codex reply" (SIGTERM then SIGKILL), "Agent not signed in" (missing executable and auth exit), "Owner command through the shell" (arguments include `-s workspace-write` and the workspace, never bypass flags), "Same data directory" (MCP entry carries `COURSEWORK_HOME`), unknown item types ignored, raw output never stored
 - [ ] 2.3 Implement `src/agent/codex.ts`: spawn with argument arrays and a minimal environment, stdin prompt with preset skill text, JSONL parsing, event mapping, interrupt
-- [ ] 2.4 Failing test then implementation: the workspace (`~/.coursework/codex-workspace/<hash>`, mode 0700, no Git working tree above it) and its `AGENTS.md` from `src/agent/codex-instructions.md` are written before the child starts, with the no-final-submit, stop-at-sign-in, prohibited-course and granted-level rules (scenario "Workspace instructions")
+- [ ] 2.4 Failing test then implementation: the workspace (`~/.coursework/codex-workspace/<hash>`, mode 0700, no Git working tree above it) and its `AGENTS.md` from `src/agent/codex-instructions.md` are written before the child starts, with the no-final-submit, stop-at-sign-in, prohibited-course, granted-level and no-other-sites rules (scenario "Workspace instructions")
 
 ## 3. Wiring and policy
 

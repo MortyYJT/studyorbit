@@ -52,4 +52,4 @@ Each Codex session SHALL reach our tools only through the `coursework mcp` stdio
 
 #### Scenario: Workspace instructions
 - **WHEN** a Codex session starts
-- **THEN** the workspace has no Git working tree above it, and its `AGENTS.md` contains the no-final-submit, stop-at-sign-in, prohibited-course and granted-level rules before the child process is started
+- **THEN** the workspace has no Git working tree above it, and its `AGENTS.md` contains the no-final-submit, stop-at-sign-in, prohibited-course, granted-level and no-other-sites rules before the child process is started
