@@ -4,7 +4,7 @@
 TBD - created by archiving change v1-delivery. Update Purpose after archive.
 ## Requirements
 ### Requirement: Cited annotations set facts sync cannot know
-An agent SHALL be able to record an annotation that sets one field of one Assessment or Course: assessment `weight`, `kind` (`quiz` | `ongoing` | `assignment` | `exam`), `hurdleMin`, `isFinal`, `name`, `due`, or course `assessmentsComplete` and `aiPolicy` (the policy text the agent found, which the owner then confirms). Each agent annotation SHALL carry at least one citation whose quote is an exact normalized substring of a stored, redacted SourceItem of the same course (checked by the shared citation service). An annotation that fails validation SHALL be rejected without changing stored values, and the rejection SHALL be recorded in the run ledger. Owner annotations MAY omit citations and SHALL be recorded only through a trusted owner interaction (the frontend's owner session or a TTY, see `command-registry`).
+An agent SHALL be able to record an annotation that sets one field of one Assessment or Course: assessment `weight`, `kind` (`quiz` | `ongoing` | `assignment` | `exam`), `hurdleMin`, `isFinal`, `name`, `due`, or course `assessmentsComplete`. A course's AI policy is not an agent annotation: the agent reads it into the course document (see `coursework-sync`), and `annotation.record` SHALL refuse the field `aiPolicy` from agents. Each agent annotation SHALL carry at least one citation whose quote is an exact normalized substring of a stored, redacted SourceItem of the same course (checked by the shared citation service). An annotation that fails validation SHALL be rejected without changing stored values, and the rejection SHALL be recorded in the run ledger. Owner annotations MAY omit citations and SHALL be recorded only through a trusted owner interaction (the frontend's owner session or a TTY, see `command-registry`).
 
 #### Scenario: Weight from the syllabus
 - **WHEN** the agent annotates an assessment's weight as 40 citing the syllabus text "Final exam (40%)" from a stored page
@@ -13,6 +13,10 @@ An agent SHALL be able to record an annotation that sets one field of one Assess
 #### Scenario: Invented quote
 - **WHEN** the agent cites a quote that appears in no stored source of that course
 - **THEN** the annotation is rejected with `CITATION_MISMATCH` and the weight is unchanged
+
+#### Scenario: Agent policy annotation refused
+- **WHEN** an agent records an annotation of a course's `aiPolicy`
+- **THEN** it is rejected and nothing is stored
 
 ### Requirement: Agents create syllabus-only assessments and links
 An agent SHALL be able to create an Assessment that exists only in course documents (for example "Workshops 10%") with cited name and weight, and SHALL be able to link any number of platform items of the same course to one Assessment. A platform item SHALL belong to at most one Assessment; linking it elsewhere SHALL move it and keep the earlier link in history. Links SHALL record who made them. Links and created assessments MUST NOT cross courses.
@@ -26,7 +30,7 @@ An agent SHALL be able to create an Assessment that exists only in course docume
 - **THEN** it is rejected and nothing changes
 
 ### Requirement: Precedence and history
-The effective value of an annotated field SHALL be the newest owner annotation, else the newest valid agent annotation, else the sync value, else unknown. Annotations SHALL be append-only: a new annotation supersedes, never edits or deletes, an older one. Reads SHALL return the effective value with its origin (`owner`, `agent` or `sync`) and citations. Classification SHALL default to unknown, never to a guessed kind, until an annotation sets it.
+The effective value of an annotated field SHALL be the newest owner annotation, else the newest valid agent annotation, else the sync value (for imported data, the value of the course document), else unknown; an owner annotation whose value is `null` clears the owner's value for a course's `aiPolicy`, so the next source applies. Annotations SHALL be append-only: a new annotation supersedes, never edits or deletes, an older one. Reads SHALL return the effective value with its origin (`owner`, `agent` or `sync`) and citations. Classification SHALL default to unknown, never to a guessed kind, until an annotation sets it.
 
 #### Scenario: Owner overrides agent
 - **WHEN** an agent annotation sets weight 30 and a later owner annotation sets 25

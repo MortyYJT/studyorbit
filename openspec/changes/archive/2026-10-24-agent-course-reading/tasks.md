@@ -31,5 +31,5 @@
 ## 7. Verification
 
 - [x] 7.1 `openspec validate agent-course-reading --strict`, `bash .claude/check.sh` (exit code), `npm run build`
-- [ ] 7.2 Live run by Claude (#181) against a temporary data directory: real Codex reads the owner's current courses from their Edge, read-only; record courses, items, unknowns, retries, duration and turns in the PR
-- [ ] 7.3 Owner final acceptance in the frontend on their real data
+- [ ] 7.2 Live run by Claude (#181) against a temporary data directory: real Codex reads the owner's current courses from their Edge, read-only; record courses, items, unknowns, retries, duration and turns in the PR — Moved (decision #186): the 2026-10-24 night run could not read anything because the owner's screen was locked (#185); the live run is part of the owner's morning acceptance after C-3.
+- [ ] 7.3 Owner final acceptance in the frontend on their real data — Moved (decision #186): owner acceptance after C-3, together with the live run.
