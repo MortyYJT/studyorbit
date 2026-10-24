@@ -25,10 +25,11 @@ On 2026-10-24 the owner chose to move every agent task to Codex working in their
 | # | Change | Content | Depends on |
 | --- | --- | --- | --- |
 | 1 | `codex-agent` (this) | Codex adapter, tool exposure, workspace instructions, privacy red line | — |
-| 2 | `agent-course-reading` | Owner ticks courses in the frontend; Codex fills the three-level JSON (#169) and submits it through a validated MCP command; code checks format, sanity and required fields, returns errors for at most 2 retries (#170), writes the store; `unknown` fields re-checked each sync; per-item weights split evenly as `derived` (#171); earned score computed by code; Canvas/Ed API sync code deleted (#172) | 1 |
+| 2 | `agent-course-reading` | Owner ticks courses in the frontend; one `aiPolicy` field per course is the only AI switch, filled by the agent with its quote and effective at once, editable by the owner and then never overwritten, unknown means uncapped (#125), a new or changed value shows in "needs you" (#180); Codex fills the three-level JSON (#169) and submits it through a validated MCP command; code checks format, sanity and required fields, returns errors for at most 2 retries (#170), writes the store; `unknown` fields re-checked each sync; per-item weights split evenly as `derived` (#171); earned score computed by code; Canvas/Ed API sync code deleted (#172) | 1 |
+| 4 | `long-term-memory` | Facts (progress, wrong answers, time, open work) summarised by code at each conversation start; observations (habits, weak spots) recorded by the agent with date and source, viewable, editable and deletable in a frontend "memory" page (#178) | 1 |
 | 3 | `codex-browser-cleanup` | Delete the resident Edge, `browser.*` tools, sign-in front command and submit-confirmation UI; frontend and specs follow; agent instructions keep "stop before final submit" (#173) | 1, 2 |
 
-Specs for 2 and 3 are written when each starts (roadmap rule).
+Specs for 2–4 are written when each starts (roadmap rule). Conversation memory itself is in this change: our stored transcript is the memory, resume is only an accelerator (#177).
 
 ## Decisions
 

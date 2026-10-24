@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Agent adapters behind one interface
-The chat backend SHALL talk to agents only through an adapter interface that is independent of any one agent: start or resume a conversation with a prompt and a tool set, stream events (text, tool step, confirmation request, result with steps and cost, error) and interrupt. The default adapter SHALL start the owner's signed-in Codex CLI as a child process in non-interactive JSON mode, resuming its stored session id for later messages (#167); the Claude Agent SDK adapter SHALL remain available only when the owner selects it with `COURSEWORK_AGENT=claude`. A conversation started under a different adapter SHALL continue under the current one from its stored transcript: the other adapter's session reference SHALL NOT be passed on, and the conversation's stored adapter id and session reference SHALL be replaced by the new ones. Adding another agent SHALL need a new adapter only, not changes to conversation storage, streaming or the frontend. Our code SHALL NOT call a model API directly, read or store an API key, or handle model billing; it SHALL start the agent the owner has already signed in to (#123). When the agent is not signed in or not installed, the backend SHALL return a safe error the frontend can show, without asking for credentials. An adapter that reports no money cost SHALL leave the cost unknown.
+The chat backend SHALL talk to agents only through an adapter interface that is independent of any one agent: start or resume a conversation with a prompt and a tool set, stream events (text, tool step, confirmation request, result with steps and cost, error) and interrupt. The default adapter SHALL start the owner's signed-in Codex CLI as a child process in non-interactive JSON mode, resuming its stored session id for later messages (#167); the Claude Agent SDK adapter SHALL remain available only when the owner selects it with `COURSEWORK_AGENT=claude`. The stored conversation in our database is the conversation's memory (#177); an adapter's own session reference is only an accelerator: when resuming it fails, the adapter SHALL continue from the stored transcript in a new session without an error. A conversation started under a different adapter SHALL likewise continue under the current one from its stored transcript: the other adapter's session reference SHALL NOT be passed on, and the conversation's stored adapter id and session reference SHALL be replaced by the new ones. Adding another agent SHALL need a new adapter only, not changes to conversation storage, streaming or the frontend. Our code SHALL NOT call a model API directly, read or store an API key, or handle model billing; it SHALL start the agent the owner has already signed in to (#123). When the agent is not signed in or not installed, the backend SHALL return a safe error the frontend can show, without asking for credentials. An adapter that reports no money cost SHALL leave the cost unknown.
 
 #### Scenario: Fake adapter
 - **WHEN** the conversation service runs with a synthetic adapter that emits two text chunks, one tool step and a result
@@ -18,6 +18,10 @@ The chat backend SHALL talk to agents only through an adapter interface that is 
 #### Scenario: Resume
 - **WHEN** a conversation whose stored session reference is `t-1` receives a second owner message
 - **THEN** the adapter runs `codex exec resume t-1` with that message instead of starting a new thread
+
+#### Scenario: Resume fails
+- **WHEN** `codex exec resume t-1` exits reporting that the session cannot be found
+- **THEN** the adapter starts a new thread with the stored transcript, the reply streams normally, and the new thread id replaces `t-1`
 
 #### Scenario: Stop a Codex reply
 - **WHEN** the owner presses stop while the Codex child is running

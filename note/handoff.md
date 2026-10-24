@@ -1,10 +1,10 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 改法见 #165–#175，PRD 待随子项目更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行，含已归档的 `v1-delivery`）和 `openspec/changes/codex-agent/`（唯一进行中的 change）；决定看 `note/decisions.md`（#1–#176）；进度看 `note/product/roadmap.md`。
+> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 改法见 #165–#175，PRD 待随子项目更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行，含已归档的 `v1-delivery`）和 `openspec/changes/codex-agent/`（唯一进行中的 change）；决定看 `note/decisions.md`（#1–#180）；进度看 `note/product/roadmap.md`。
 
 - **最后更新：** 2026-10-24，Claude 会话，分支 `claude/codex-agent-proposal`。
-- **模式：** 重定方向后的设计阶段。所有 agent 换成 Codex，在你自己的 Edge 里工作（#167）；分三个子项目 C-1 `codex-agent` → C-2 `agent-course-reading` → C-3 `codex-browser-cleanup`（#174，roadmap C-1～C-3）。C-1 规格已写，等你审；C-2、C-3 开工前再写规格。
+- **模式：** 重定方向后的设计阶段。所有 agent 换成 Codex，在你自己的 Edge 里工作（#167）；分子项目 C-1 `codex-agent` → C-2 `agent-course-reading` → C-3 `codex-browser-cleanup` → C-4 `long-term-memory`（#174、#178，roadmap C-1～C-4）。C-1 规格已合并（PR #153），等你同意后实现；C-2～C-4 开工前再写规格。
 - **已归档：** `v1-delivery`（2026-10-24，#175）。它的代码全部在 main 上；未完成的真机任务已转走：10.4 → `codex-agent` 4.2，17.3 → Codex 子项目之后重做，17.2 取消（常驻 Edge 要删），5.6 停掉（接口同步要删）。
 - **今天的实验（证据只在会话里，结论记在 `codex-agent` 设计）：** 非交互 `codex exec` 能用电脑操作功能读你的 Edge（23–30 秒）；Edge 的元素树漏掉课程全名，截图读全；`codex exec --json` 只报 token、不报费用。
 - **真机同步第一次跑出的 bug：** Ed `/api/user` 的 `year` 是字符串，旧同步因此整个失败。修复在本地分支 `claude/ed-year-string`（d1005fa，未推送）；接口同步会在 C-2 删掉，所以不打算合并，C-2 合并后删这个分支。
