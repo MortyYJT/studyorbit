@@ -20,4 +20,4 @@
 ## 4. Verification
 
 - [x] 4.1 `openspec validate codex-agent --strict`, `bash .claude/check.sh` (exit code), `npm run build`
-- [ ] 4.2 Owner live check (moved from `v1-delivery` 10.4): `coursework ui`, one real conversation that asks Codex to read the Ed dashboard in the owner's Edge; record steps, turns, duration, that no submit happened, and that a shell write outside the workspace is refused; in the PR
+- [x] 4.2 Owner live check (moved from `v1-delivery` 10.4): `coursework ui`, one real conversation that asks Codex to read the Ed dashboard in the owner's Edge; record steps, turns, duration, that no submit happened, and that a shell write outside the workspace is refused; in the PR — Done 2026-10-24 by the owner: one real conversation read the Ed dashboard in their Edge in about 20 s (steps: shell, computer, coursework.courses.list, computer); all 3 course codes correct, no submit, no other sites; full course names missing again (accessibility tree), handled by sub-project 2.
