@@ -13,7 +13,7 @@ type Failure = Extract<AgentEvent, { type: 'error' }>;
 interface Attempt { threadId?: string; turns: number; emitted: number; code: number | null; missing: boolean; turnFailed: boolean; auth: boolean }
 const unavailable = (): Failure => ({ type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Sign in to the installed agent and retry.' });
 const failed = (turns = 0): Failure => ({ type: 'error', code: 'INTERNAL', message: 'Agent reply failed.', ...(turns ? { turns } : {}) });
-const authFailure = (text: string) => /not (?:signed|logged) in|login required|authentication/i.test(text);
+const authFailure = (text: string) => /not (?:signed|logged) in|login required|authentication|unauthorized|\b401\b/i.test(text);
 /** Outside any Git working tree, so no repository AGENTS.md applies; one per data directory. */
 export function codexWorkspace(dataDirectory: string): string {
   return join(homedir(), '.coursework', 'codex-workspace', createHash('sha256').update(resolve(dataDirectory)).digest('hex').slice(0, 12));
@@ -80,7 +80,8 @@ export class CodexAdapter implements AgentAdapter {
         if (event) { state.emitted++; yield event; }
       }
       await exited;
-      state.auth ||= authFailure(diagnostics);
+      // Other MCP servers in the owner's config can print auth warnings on a run that succeeds.
+      state.auth = (state.code !== 0 || state.turnFailed) && (state.auth || authFailure(diagnostics));
       return state;
     }
     return {

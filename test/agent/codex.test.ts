@@ -107,6 +107,7 @@ it('Stop a Codex reply: SIGTERM, then SIGKILL when the child ignores it, and a s
 it.each([
   ['missing executable', [], 'AGENT_UNAVAILABLE'],
   ['signed-out exit', [{ stderr: 'Error: Not logged in. Run codex login.\n', exit: 1 }], 'AGENT_UNAVAILABLE'],
+  ['401 exit', [{ stderr: 'Error: 401 Unauthorized\n', exit: 1 }], 'AGENT_UNAVAILABLE'],
   ['other failure', [{ stderr: 'SYNTHETIC-CRASH at /private/synthetic\n', exit: 2 }], 'INTERNAL'],
 ] as const)('Agent not signed in: %s returns a safe %s error', async (kind, runs, code) => {
   const s = setup([...runs]);
@@ -184,4 +185,11 @@ it('carries the preset skill text in the prompt', async () => {
   await collect(s.adapter.start({ ...input, preset: 'prepare-revision' }));
   const skill = readFileSync(join(packageRoot(), 'skills', 'revision', 'SKILL.md'), 'utf8');
   expect(s.calls()[0]!.stdin).toContain(skill); expect(s.calls()[0]!.stdin).toMatch(/Hello$/);
+});
+
+it('a successful run with an authentication warning in stderr still ends with a result', async () => {
+  const s = setup([{ fixture: fixture('codex-exec.jsonl'), stderr: 'MCP client for synthetic-other failed: authentication required\n', exit: 0 }]);
+  const events = await collect(s.adapter.start(input));
+  expect(events.at(-1)).toMatchObject({ type: 'result', sessionRef: 't-1' });
+  expect(events.some(event => event.type === 'error')).toBe(false);
 });
