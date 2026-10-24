@@ -6,7 +6,7 @@ On 2026-10-24 the owner chose to move every agent task to Codex working in their
 - `codex exec` (non-interactive) can use Codex's computer-use tool on the owner's Edge without a new permission prompt; reading the Ed dashboard took 23–30 s.
 - Edge's accessibility tree omitted visible course names; a screenshot read them. This drives sub-project 2's "tree first, screenshot for empty fields" rule (#170).
 - `codex exec --json` prints JSONL: `thread.started {thread_id}`, `turn.started`, `item.started|completed {item}` (agent messages, tool calls, commands), `turn.completed {usage}` with token counts and no money cost. `codex exec resume <id>` continues a thread. `--output-schema` constrains the final message.
-- Codex reads `AGENTS.md` from its working directory.
+- Codex reads `AGENTS.md` files from the Git root down to its working directory. The default data directory is `<repo>/.local`, inside the repository, so a workspace there would also load the repository's own development instructions.
 
 ## Goals / Non-Goals
 
@@ -33,9 +33,9 @@ Specs for 2 and 3 are written when each starts (roadmap rule).
 ## Decisions
 
 ### 1. Child process, not an SDK
-Spawn `codex` with `child_process.spawn` and parse JSONL. Alternatives: an npm Codex SDK (a new, unapproved dependency, and the CLI is what the owner already signed in to); the Codex app server protocol (more surface for no gain). Arguments are passed as an array, never through a shell, with a minimal environment (`HOME`, `PATH`, `TMPDIR`, `CODEX_HOME`), as the Claude adapter does.
+Spawn `codex` with `child_process.spawn` and parse JSONL. Alternatives: an npm Codex SDK (a new, unapproved dependency, and the CLI is what the owner already signed in to); the Codex app server protocol (more surface for no gain). Arguments are passed as an array, never through a shell, with a minimal environment (`HOME`, `PATH`, `TMPDIR`, `CODEX_HOME`), as the Claude adapter does. Because the MCP server is a separate process, its entry also carries `COURSEWORK_HOME` set to the host's resolved data directory, so it opens the same store.
 
-Invocation, new thread: `codex exec --json --skip-git-repo-check -C <workspace> -s workspace-write -c mcp_servers.coursework.command=<node> -c mcp_servers.coursework.args=[<cli.js>,"mcp"] -c mcp_servers.coursework.env.COURSEWORK_MCP_PROFILE="codex" -` with the prompt on stdin. Later messages: `codex exec resume <thread_id> --json ...` with the same options. The prompt carries the preset's skill text when a preset applies, as today.
+Invocation, new thread: `codex exec --json --skip-git-repo-check -C <workspace> -s workspace-write -c mcp_servers.coursework.command=<node> -c mcp_servers.coursework.args=[<cli.js>,"mcp"] -c mcp_servers.coursework.env.COURSEWORK_MCP_PROFILE="codex" -c mcp_servers.coursework.env.COURSEWORK_HOME=<data dir> -` with the prompt on stdin. Later messages: `codex exec resume <thread_id> --json ...` with the same options; task 2.1 checks which of these options `resume` accepts and that computer-use still works under `workspace-write` (the 2026-10-24 spikes ran with `-s read-only`). The prompt carries the preset's skill text when a preset applies, as today.
 
 ### 2. Event mapping
 | Codex JSONL | Agent event |
@@ -52,7 +52,10 @@ Unknown item types are ignored. Raw Codex output is never stored or logged (it c
 Codex cannot take in-process tools, so the adapter points it at our existing stdio MCP server. A `COURSEWORK_MCP_PROFILE=codex` environment variable, set only in the child's MCP server entry, removes `browser.*` from the listed tools; owner commands are already absent from MCP. Alternative: a new CLI flag on `coursework mcp` (the CLI currently treats `mcp` with extra arguments as an error; an environment variable keeps that rule).
 
 ### 4. Guardrails as workspace instructions, sandbox for the shell
-The Claude pre-tool hook cannot apply to Codex. The adapter writes `<data dir>/agent-workspace/AGENTS.md` at every session start (fixed text in `src/agent/codex-instructions.md`, English) and runs Codex with `-s workspace-write` rooted there. Owner protections that do not depend on the agent stay as they are: the owner session exists only in memory; owner commands need a terminal or the frontend session. Accepted (#168): screen content is not redacted, and on-screen actions are not blocked by code.
+The Claude pre-tool hook (which also blocked pseudo-terminal wrappers such as `script`) cannot apply to Codex. The code-side protection is Codex's `workspace-write` sandbox: shell writes outside the workspace and shell network access are refused, so an owner command the agent starts through a pseudo-terminal cannot write our database. The adapter never passes `--dangerously-bypass-approvals-and-sandbox` or `--approve-for-me`. Owner protections that do not depend on the agent stay: the owner session exists only in memory; session-only commands (levels, overrides, submit confirmation) refuse anything but the frontend session. The adapter writes the workspace `AGENTS.md` at every session start (fixed English text in `src/agent/codex-instructions.md`): no final submit (#173), stop at sign-in pages and never type a password or code (the data-access red line), prohibited courses read-only (#124), granted levels only, no other sites or tabs (Claude's addition, #176). Accepted (#168): screen content is not redacted, and on-screen actions are not blocked or audited by code.
+
+### 4a. Workspace outside the repository
+The workspace is `~/.coursework/codex-workspace/<first 12 hex of sha256(data dir)>`, created with mode 0700, so no repository `AGENTS.md` above it applies and two data directories never share one. Alternative: disabling Codex's project-doc discovery by configuration (relies on an undocumented-to-us option and still leaves the workspace inside the repository).
 
 ### 5. Adapter selection
 `createProductionProtocol` uses `CodexAdapter` unless `COURSEWORK_AGENT=claude`. The Claude adapter, its SDK dependency and its tests stay (#167).
@@ -71,8 +74,8 @@ The Claude pre-tool hook cannot apply to Codex. The adapter writes `<data dir>/a
 
 ## Migration Plan
 
-Merge with Codex as default. Rollback: set `COURSEWORK_AGENT=claude`, or revert the PR. No data migration: conversations keep their adapter id; a Claude conversation resumed under Codex starts a new Codex thread from the stored transcript, as the existing "start a new session with the stored transcript summary" rule already allows.
+Merge with Codex as default. Rollback: set `COURSEWORK_AGENT=claude`, or revert the PR. No data migration. `ConversationService.send` currently refuses a conversation whose stored adapter differs (`CONFLICT`); task 3.3 changes it so the current adapter continues from the stored transcript without the old session reference and records its own adapter id and thread id (scenario "Conversation from another adapter"). The same path makes rollback to `COURSEWORK_AGENT=claude` keep Codex conversations usable.
 
 ## Open Questions
 
-None blocking. Whether `codex exec` exposes a reliable per-turn tool name for computer-use calls is checked in task 2.1 against real output; if not, those steps are stored as `computer` steps.
+None blocking. Task 2.1 checks against real output: the item shape of computer-use calls (if no reliable tool name, those steps are stored as `computer` steps), which options `codex exec resume` accepts, and that computer-use works under `workspace-write`.

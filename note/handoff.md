@@ -1,7 +1,7 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 改法见 #165–#175，PRD 待随子项目更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行，含已归档的 `v1-delivery`）和 `openspec/changes/codex-agent/`（唯一进行中的 change）；决定看 `note/decisions.md`（#1–#175）；进度看 `note/product/roadmap.md`。
+> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 改法见 #165–#175，PRD 待随子项目更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行，含已归档的 `v1-delivery`）和 `openspec/changes/codex-agent/`（唯一进行中的 change）；决定看 `note/decisions.md`（#1–#176）；进度看 `note/product/roadmap.md`。
 
 - **最后更新：** 2026-10-24，Claude 会话，分支 `claude/codex-agent-proposal`。
 - **模式：** 重定方向后的设计阶段。所有 agent 换成 Codex，在你自己的 Edge 里工作（#167）；分三个子项目 C-1 `codex-agent` → C-2 `agent-course-reading` → C-3 `codex-browser-cleanup`（#174，roadmap C-1～C-3）。C-1 规格已写，等你审；C-2、C-3 开工前再写规格。
