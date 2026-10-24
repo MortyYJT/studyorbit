@@ -4,9 +4,9 @@ The owner wants the agent to remember them across conversations (#177, #178): fa
 
 ## What Changes
 
-- **Facts brief (code):** when an agent session starts, the backend prepends a bounded brief built from the store: open work due in the next 14 days, recent scores, practice statistics (wrong-answer counts), revision-note titles, fields still unknown, and the course's AI policy and level, for the conversation's course or, without one, for all selected courses. Code builds it; the agent never writes it.
-- **Observations (agent):** a new agent command `memory.record { courseId?, kind, text }` (`kind`: `habit` | `weakness` | `preference` | `other`; text ≤ 500 characters, redacted) stores an observation with its date and the conversation it came from. Agents cannot edit or delete memories.
-- **Owner control:** owner commands `memory.edit`, `memory.delete` (kept as deleted, never shown or sent again) and `memory.add`; L0 read `memory.list`. Up to 20 newest live memories (course-specific first, then general) are included in the brief.
+- **Facts brief (code):** when an agent session starts (decided by the adapter: new thread or fallback, never resume), the agent gets a bounded brief built from the store and never stored: the course's AI policy and level, open work due in the next 14 days, fields still unknown, recent scores, practice statistics (wrong-answer counts), revision notes per week (counts), for the conversation's course or, without one, for all selected courses. Code builds it; the agent never writes it.
+- **Observations (agent):** a new agent command `memory.record { courseId?, kind, text }` (`kind`: `habit` | `weakness` | `preference` | `other`; text ≤ 500 characters, redacted; the source conversation comes from the session) stores an observation with its date and the conversation it came from. Agents cannot edit or delete memories.
+- **Owner control:** owner commands `memory.edit`, `memory.delete` (kept as deleted, never shown or sent again) and `memory.add` (owner text redacted too); L0 read `memory.list`. Up to 20 newest live memories (course-specific first, then general) are included in the brief.
 - **Frontend:** a "Memory" panel in the avatar menu lists memories with kind, course, date and source conversation, with edit, delete and add.
 
 ## Capabilities
