@@ -40,3 +40,10 @@ A course page SHALL show the course's AI policy and its default level with the p
 #### Scenario: Component group
 - **WHEN** a component "Written assignments" of weight 15 has two graded items of derived weight 3.75 each, scored 80% and 100%
 - **THEN** the tab shows the group with 15% and 6.75 earned, and each item's weight marked as an even split
+
+### Requirement: Top bar and avatar menu
+The top bar SHALL have two entries, "This week" and "Agent", the sync button with its running state, and an avatar menu with: sync and sign-in status (per-site sign-in state, the last sync run with its outcome, the platforms it found blocked, per selected course the time of its last stored document, a button that brings the resident browser's sign-in page to the front by calling `POST /api/browser.signin` with `{ site: canvas | ed }` and the frontend's owner session in `X-Coursework-Session`), metrics, audit records, and settings (available hours per weekday, time zone, theme, language) (#142, #160). The button SHALL use the owner command defined in `command-registry`; K1 owns the frontend wiring. The interface SHALL support Chinese and English and light, dark and system themes; only "needs you" items use the alert colour (#140).
+
+#### Scenario: Sign-in expired
+- **WHEN** `browser.status` reports Ed signed out
+- **THEN** the status panel shows Ed as expired, and "needs you" shows a sign-in item
