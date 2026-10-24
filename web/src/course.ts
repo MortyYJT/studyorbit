@@ -58,12 +58,9 @@ export function assessmentGroups<T extends Grouped>(items: readonly T[]): Assess
   const loose = groups.get(undefined);
   return [...[...groups.values()].filter(group => group !== loose), ...loose ? [loose] : []];
 }
-/**
- * The unpublished share of a component: import gives it only name, kind and weight read states, while item rows carry
- * `status` and final/hurdle component rows carry `isFinal`.
- */
-export function isRemainder(item: Pick<Assessment, 'id' | 'group' | 'readState'>): boolean {
-  return item.group !== undefined && item.readState !== undefined && !('status' in item.readState) && !('isFinal' in item.readState);
+/** The unpublished share of a component, marked by import. */
+export function isRemainder(item: Pick<Assessment, 'id'> & { group?: Assessment['group'] }): boolean {
+  return item.group?.role === 'remainder';
 }
 export type ValueLabel = { kind: 'value' } | { kind: 'derived' } | { kind: 'unknown'; checkedAt?: string };
 /** A shown value, an evenly split weight (only while no owner or agent value replaced it), or unknown with its check time. */

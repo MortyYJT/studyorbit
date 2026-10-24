@@ -106,7 +106,7 @@ const written = { key: 'syna10001-written', name: 'Written assignments', weight:
 const derived = { weight: { state: 'derived' as const } };
 const graded = (id: string, score: number) => ({ ...item(id, 3.75, score), group: written, readState: { ...derived, status: { state: 'found' as const } } });
 it('groups assessments by component with weight and the earned share computed by code (scenario "Component group")', () => {
-  const remainder = { ...item('rest', 7.5), group: written, readState: { name: { state: 'found' as const }, weight: { state: 'derived' as const } } };
+  const remainder = { ...item('rest', 7.5), group: { ...written, role: 'remainder' as const }, readState: { weight: { state: 'derived' as const } } };
   const exam = { ...item('exam', 50, undefined, true), group: { key: 'syna10001-exam', name: 'Final exam', weight: 50 },
     readState: { isFinal: { state: 'found' as const }, weight: { state: 'found' as const } } };
   const groups = assessmentGroups([graded('a1', 80), item('loose', 10, 50), exam, graded('a2', 100), remainder]);
@@ -116,6 +116,8 @@ it('groups assessments by component with weight and the earned share computed by
   expect(groups[1]!.earned).toBe(0);
   expect(isRemainder(remainder)).toBe(true);
   expect([graded('a1', 80), exam, item('loose', 10)].map(isRemainder)).toEqual([false, false, false]);
+  // The role, not the shape of the read state, marks a remainder.
+  expect(isRemainder({ ...remainder, group: { ...written, role: 'item' as const } })).toBe(false);
   expect(valueLabel(graded('a1', 80), 'weight')).toEqual({ kind: 'derived' });
 });
 it('labels derived weights as an even split and unknown fields with their check time (scenario "Derived and unknown labels")', () => {
