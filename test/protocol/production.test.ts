@@ -6,6 +6,7 @@ import { createProductionProtocol } from '../../src/protocol/production.js';
 import { dispatch } from '../../src/protocol/registry.js';
 import { parseProtocolCLI } from '../../src/protocol/cli.js';
 import { synthetic } from '../fixtures/synthetic.js';
+import { fakeCodex, fixture } from '../agent/fake-codex.js';
 const { query } = vi.hoisted(() => ({ query: vi.fn() }));
 vi.mock('@anthropic-ai/claude-agent-sdk', async importOriginal => ({ ...await importOriginal<object>(), query }));
 const roots: string[] = []; const closes: (() => void)[] = [];
@@ -79,13 +80,27 @@ it('shared production file writer failure yields denied audit-unavailable', asyn
     .toMatchObject({ ok: true, data: { decision: 'denied', reason: 'audit-unavailable' } });
 });
 
-it('uses the Claude SDK for production chat while preserving explicit adapter overrides', async () => {
+it('production chat uses the Codex adapter by default without calling the Claude SDK', async () => {
+  const fake = fakeCodex([{ fixture: fixture('codex-exec.jsonl') }]); closes.push(fake.cleanup);
+  const host = await setup(); const owner = { assertOwner: async () => {} };
+  const conversation = await host.chat.create({}, owner);
+  expect(conversation.adapter).toBe('codex');
+  await host.chat.send(conversation.id, 'Synthetic prompt', owner); await host.chat.waitForIdle(conversation.id);
+  expect(fake.calls()).toHaveLength(1);
+  expect(host.chat.open(conversation.id).conversation.sessionRef).toBe('t-1');
+  expect(query).not.toHaveBeenCalled();
+});
+
+it('Claude on request: COURSEWORK_AGENT=claude uses the Claude SDK, never starts codex, and keeps explicit adapter overrides', async () => {
+  const fake = fakeCodex([{ fixture: fixture('codex-exec.jsonl') }]); closes.push(fake.cleanup);
+  vi.stubEnv('COURSEWORK_AGENT', 'claude');
   query.mockImplementation(() => Object.assign((async function* () {
     yield { type: 'assistant', message: { content: [{ type: 'text', text: 'Synthetic reply' }] } };
     yield { type: 'result', subtype: 'success', is_error: false, num_turns: 1, total_cost_usd: 0.01, session_id: 'synthetic-session' };
   })(), { interrupt: vi.fn() }));
   const host = await setup(); const owner = { assertOwner: async () => {} };
   const conversation = await host.chat.create({}, owner);
+  expect(conversation.adapter).toBe('claude');
   const { messageId } = await host.chat.send(conversation.id, 'Synthetic prompt', owner);
   await host.chat.waitForIdle(conversation.id);
   expect(query).toHaveBeenCalledOnce();
@@ -98,6 +113,7 @@ it('uses the Claude SDK for production chat while preserving explicit adapter ov
   await overridden.chat.send(other.id, 'No SDK call', owner); await overridden.chat.waitForIdle(other.id);
   expect(overridden.chat.events(other.id).at(-1)!.event).toMatchObject({ type: 'error', code: 'AGENT_UNAVAILABLE' });
   expect(query).toHaveBeenCalledOnce();
+  expect(fake.calls()).toHaveLength(0);
 });
 
 it('gives production chat the agent tool set and the live UI and debugging ports', async () => {
@@ -121,6 +137,7 @@ it('gives production chat the agent tool set and the live UI and debugging ports
     await client.close();
     yield { type: 'result', subtype: 'success', is_error: false, num_turns: 1, session_id: 'synthetic-session' };
   })(), { interrupt: vi.fn() }));
+  vi.stubEnv('COURSEWORK_AGENT', 'claude');
   const host = await setup(); const owner = { assertOwner: async () => {} };
   await writeFile(join(process.env.COURSEWORK_HOME!, 'browser.json'), JSON.stringify({ endpoint: 'http://127.0.0.1:9444', pid: process.pid, browser: 'chromium', startedAt: '2026-01-01T00:00:00.000Z' }));
   host.agentRuntime.frontendOrigin = 'http://127.0.0.1:4568';
@@ -139,6 +156,7 @@ it('keeps the UI origin denial when the resident browser state is unreadable', a
       .hookSpecificOutput.permissionDecision).toBe('deny');
     yield { type: 'result', subtype: 'success', is_error: false, num_turns: 1, session_id: 'synthetic-session' };
   })(), { interrupt: vi.fn() }));
+  vi.stubEnv('COURSEWORK_AGENT', 'claude');
   const host = await setup(); const owner = { assertOwner: async () => {} };
   await writeFile(join(process.env.COURSEWORK_HOME!, 'browser.json'), '{ corrupted');
   host.agentRuntime.frontendOrigin = 'http://127.0.0.1:4569';

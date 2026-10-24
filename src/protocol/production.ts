@@ -8,6 +8,7 @@ import { AnnotationService } from './annotations.js';
 import { ConversationService } from '../agent/conversations.js';
 import { type AgentAdapter, type AgentTool } from '../agent/adapter.js';
 import { ClaudeAdapter, type ProtectedPorts } from '../agent/claude.js';
+import { CodexAdapter } from '../agent/codex.js';
 import { ResidentBrowser } from '../browser/resident.js';
 import { describe, inputSchema } from './mcp.js';
 import { PlanningService } from '../planning/service.js';
@@ -116,12 +117,13 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   // The UI host records its origin here once it listens; the debugging port is read from the resident browser per call.
   const agentRuntime: Pick<ProtectedPorts, 'frontendOrigin'> = {};
   const resident = new ResidentBrowser();
-  const adapter = options.agentAdapter ?? new ClaudeAdapter({ dataDirectory: resolveDataDir(), runtime: () => {
+  // Codex is the default chat agent (#167); the Claude adapter is selected only with COURSEWORK_AGENT=claude.
+  const adapter = options.agentAdapter ?? (process.env.COURSEWORK_AGENT !== 'claude' ? new CodexAdapter({ dataDirectory: resolveDataDir() }) : new ClaudeAdapter({ dataDirectory: resolveDataDir(), runtime: () => {
     // An unreadable browser state must not drop the already known UI origin.
     let debuggingPort: number | undefined;
     try { const endpoint = resident.current()?.endpoint; if (endpoint) debuggingPort = Number(new URL(endpoint).port); } catch { /* Port unknown. */ }
     return { ...agentRuntime, ...(debuggingPort ? { debuggingPort } : {}) };
-  } });
+  } }));
   const chat = new ConversationService(store, adapter, [...agentTools, ...browserAgentTools(browserTools)]);
   let closing: Promise<void> | undefined;
   return { chat, agentRuntime, browserTools, registry, context, audit, store, close: () => closing ??= (async () => {

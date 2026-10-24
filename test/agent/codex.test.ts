@@ -5,6 +5,8 @@ import { dirname, join, resolve } from 'node:path';
 import { CodexAdapter } from '../../src/agent/codex.js';
 import { ConversationService } from '../../src/agent/conversations.js';
 import { packageRoot } from '../../src/config/data-dir.js';
+import { startOwnerUI } from '../../src/protocol/http-host.js';
+import { createProductionProtocol } from '../../src/protocol/production.js';
 import { SqliteRepository } from '../../src/store/sqlite.js';
 import type { AgentInput } from '../../src/agent/adapter.js';
 import type { Message } from '../../src/domain/schemas.js';
@@ -25,6 +27,8 @@ function chat(adapter: CodexAdapter, path = ':memory:') {
   return { store, service: new ConversationService(store, adapter) };
 }
 const input: AgentInput = { prompt: 'Hello', transcript: [], tools: [] };
+const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true })
+  .flatMap(entry => entry.isDirectory() ? files(join(dir, entry.name)) : [join(dir, entry.name)]);
 const configs = (argv: string[]) => argv.flatMap((arg, i) => arg === '-c' ? [argv[i + 1]!] : []);
 const message = (seq: number, role: 'owner' | 'agent', text: string): Message =>
   ({ id: `m-${seq}`, conversationId: 'c', seq, role, parts: [{ type: 'text', text }], stopped: false, at: '2026-10-24T00:00:00.000Z' });
@@ -54,8 +58,6 @@ it('maps shell and computer-use steps by name and outcome only and never stores 
   const run = store.loadRun(messageId);
   expect(run).toMatchObject({ turns: 2, steps: 4, outcome: 'ok' }); expect(run).not.toHaveProperty('costUsd');
   store.close();
-  const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true })
-    .flatMap(entry => entry.isDirectory() ? files(join(dir, entry.name)) : [join(dir, entry.name)]);
   const written = [...files(s.data), ...files(s.home)];
   expect(written.length).toBeGreaterThan(1);
   for (const file of written) expect(readFileSync(file, 'latin1')).not.toMatch(/SYNTHETIC-(?:OUTPUT|COMMAND|SCREEN|ERROR|NOISE|STDERR)/);
@@ -145,6 +147,36 @@ it('Workspace instructions: a private workspace with no Git tree above it gets t
   writeFileSync(join(s.workspace, 'AGENTS.md'), 'Synthetic tampering.');
   await collect(s.adapter.start(input));
   expect(s.calls()[1]!.agents).toBe(agents);
+});
+
+it('Conversation from another adapter: a stored claude conversation continues as a new Codex thread from its transcript', async () => {
+  const s = setup([{ fixture: fixture('codex-exec.jsonl') }]);
+  const { store, service } = chat(s.adapter);
+  const at = '2026-10-24T00:00:00.000Z';
+  store.saveChat({ id: 'c', title: 'Earlier', adapter: 'claude', sessionRef: 'claude-session', createdAt: at, updatedAt: at });
+  store.appendMessage(message(0, 'owner', 'Claude-era question')); store.appendMessage(message(1, 'agent', 'Claude-era answer'));
+  await service.send('c', 'Next question', owner); await service.waitForIdle('c');
+  const [call] = s.calls();
+  expect(call!.argv.slice(0, 2)).toEqual(['exec', '--json']); expect(call!.argv).not.toContain('claude-session');
+  expect(call!.stdin).toContain('Claude-era question'); expect(call!.stdin).toContain('Claude-era answer'); expect(call!.stdin).not.toContain('claude-session');
+  expect(service.open('c').conversation).toMatchObject({ adapter: 'codex', sessionRef: 't-1' });
+  expect(service.open('c').messages[3]!.parts[0]).toEqual({ type: 'text', text: 'Synthetic reply.' });
+});
+
+it('Reading the owner session: no file in the data directory, workspace or child record holds the secret while a reply runs', async () => {
+  const s = setup([{ stdout: ['{"type":"thread.started","thread_id":"t-4"}', '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Working"}}'], hang: true }]);
+  const host = createProductionProtocol({ agentAdapter: s.adapter }); cleanups.push(() => { void host.close(); });
+  const ui = join(s.root, 'ui'); mkdirSync(ui); writeFileSync(join(ui, 'index.html'), '<!doctype html><title>Synthetic</title>');
+  let url = '';
+  const transport = await startOwnerUI(host, { staticDirectory: ui, opener: async value => { url = value; } });
+  cleanups.push(() => { void transport.close(); });
+  const secret = new URL(url).hash.slice(3); expect(secret).toMatch(/^[0-9a-f]{64}$/);
+  const c = await host.chat.create({}, owner); await host.chat.send(c.id, 'Read my files', owner);
+  await until(() => host.chat.events(c.id).some(e => e.event.type === 'text'));
+  const written = [...files(s.data), ...files(s.home), ...files(s.bin)];
+  expect(written.some(file => file.endsWith('coursework.db'))).toBe(true);
+  for (const file of written) expect(readFileSync(file, 'latin1')).not.toContain(secret);
+  await host.chat.stop(c.id, owner);
 });
 
 it('carries the preset skill text in the prompt', async () => {
