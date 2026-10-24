@@ -10,8 +10,8 @@
 
 ## 3. Commands and policy
 
-- [ ] 3.1 Failing tests then the SyncJob store, `courses.offer`, `courses.candidates`, `courses.select` (owner only), `course.import` (job-scoped, counts in the store) (scenarios "First run", "Owner selects two courses", "Agent cannot select", "Import outside a run", "Count shared across processes"); MCP tool-count assertion updated
-- [ ] 3.2 Failing tests then AI policy: effective owner > agent-read > unknown, owner `null` clears, agents refused for `aiPolicy` annotations (scenario "Agent policy annotation refused"), reads report effective policy and origin, change notice on the Run (scenarios "Policy read changes", "Owner policy kept", "Owner clears the policy", "Agent-read policy caps the course")
+- [x] 3.1 Failing tests then the SyncJob store, `courses.offer`, `courses.candidates`, `courses.select` (owner only), `course.import` (job-scoped, counts in the store) (scenarios "First run", "Owner selects two courses", "Agent cannot select", "Import outside a run", "Count shared across processes"); MCP tool-count assertion updated
+- [x] 3.2 Failing tests then AI policy: effective owner > agent-read > unknown, owner `null` clears, agents refused for `aiPolicy` annotations (scenario "Agent policy annotation refused"), reads report effective policy and origin, change notice on the Run (scenarios "Policy read changes", "Owner policy kept", "Owner clears the policy", "Agent-read policy caps the course")
 
 ## 4. Agent job
 

@@ -124,8 +124,9 @@ it('course policy text never changes the owner-only autonomy grant or its prohib
   const f = await fixture();
   await f.call('autonomy.policy.set', { courseId: 'c', status: 'prohibited' }, true);
   await f.call('autonomy.default.set', { courseId: 'c', level: 2 }, true);
-  expect(await f.call('annotation.record', { entity: 'course', entityId: 'c', field: 'aiPolicy', value: 'Policy from syllabus', sourceRevision: f.revision(), citations: f.cite() })).toMatchObject({ ok: true });
-  expect(await f.call('annotation.owner.record', { entity: 'course', entityId: 'c', field: 'aiPolicy', value: 'Owner policy text' }, true)).toMatchObject({ ok: true });
+  // agent-course-reading (#180): agents never annotate a course policy, and the owner's value is a policy value or null.
+  expect(await f.call('annotation.record', { entity: 'course', entityId: 'c', field: 'aiPolicy', value: 'Policy from syllabus', sourceRevision: f.revision(), citations: f.cite() })).toMatchObject({ ok: false });
+  expect(await f.call('annotation.owner.record', { entity: 'course', entityId: 'c', field: 'aiPolicy', value: 'Owner policy text' }, true)).toMatchObject({ ok: false });
   expect(await f.call('autonomy.check', { assessmentId: 'a', action: 'fill' })).toMatchObject({ data: { decision: 'denied', reason: 'course-prohibited' } });
 });
 it('course completeness coverage follows the effective annotated value', async () => {

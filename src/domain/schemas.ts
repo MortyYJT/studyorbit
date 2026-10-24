@@ -214,7 +214,7 @@ export const CourseSelectionSchema = z.object({
 const SyncJobResultSchema = z.object({
   courseId: IdSchema, storedAt: TimeSchema, components: CountSchema, items: CountSchema,
   unknownFields: z.array(z.string().max(200)).max(500), dropped: z.array(z.string().max(200)).max(500),
-  warnings: z.array(z.enum(['WEIGHT_SUM', 'REMAINDER_SHORTFALL'])).max(10),
+  warnings: z.array(z.enum(['WEIGHT_SUM', 'REMAINDER_SHORTFALL'])).max(10), weightSum: z.number().optional(),
   platforms: z.object({ canvas: z.enum(['read', 'blocked', 'absent']), ed: z.enum(['read', 'blocked', 'absent']) }), policyChanged: z.boolean(),
 });
 /** Shared run state for the starting process and the `coursework mcp` process that executes the agent's commands. */

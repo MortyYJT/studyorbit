@@ -13,6 +13,7 @@ import { ResidentBrowser } from '../browser/resident.js';
 import { describe, inputSchema } from './mcp.js';
 import { PlanningService } from '../planning/service.js';
 import { productionSync } from '../sync/runtime.js';
+import { SyncJobs } from '../sync/jobs.js';
 import type { SyncCommands } from './sync.js';
 import { SqliteStudyRecordStore } from '../store/study-records.js';
 import { RevisionService, StoreStudyEvidence } from '../revision/service.js';
@@ -105,7 +106,14 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const confirmations = options.browserTools?.confirmations ?? new BrowserConfirmationStore(store);
   const browserTools = new BrowserTools({ store, audit, autonomy, browser: options.browserTools?.browser ?? new ResidentToolBrowser(), confirmations, clock: options.browserTools?.clock, recoverOnStart: false });
   let externalScope: ReturnType<ConversationService['toolScope']> | undefined;
-  const registry = createRegistry({ autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync: options.sync ?? productionSync(store), browserTools, browserScope: () => {
+  // Import keeps the newest owner or valid agent weight of an item when it computes a component's remainder.
+  const annotatedWeight = (id: string) => {
+    if (!store.loadAssessment(id)) return undefined;
+    const weight = annotations.read({ entity: 'assessment', entityId: id, limit: 0 }).fields.weight;
+    return weight && weight.origin !== 'sync' && typeof weight.value === 'number' ? weight.value : undefined;
+  };
+  const jobs = new SyncJobs(store, { annotatedWeight });
+  const registry = createRegistry({ autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync: options.sync ?? productionSync(store), courseReading: jobs, browserTools, browserScope: () => {
     if (!externalScope?.isActive()) externalScope = chat.toolScope();
     return externalScope;
   } });
