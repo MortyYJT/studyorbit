@@ -3,84 +3,139 @@
 ## Purpose
 TBD - created by archiving change v1-delivery. Update Purpose after archive.
 ## Requirements
-### Requirement: Sync current-term courses into the local store
-`coursework sync` SHALL attach to the resident browser and read, with same-origin GETs inside signed-in pages, Canvas `/api/v1` JSON for the owner's active current-term enrollments (courses, assignments, assignment groups, the owner's own submissions and scores, modules) and Ed JSON for active current-term courses through the `ed-capture` transport. It SHALL validate every response with zod, redact it (see "Redact before storing"), and write the latest state of courses, platform items and sync-derived assessments to the local store in one transaction per course. A `--course <code>` option SHALL limit the run to matching courses. It MUST NOT use a self-issued Canvas token, a bearer header, HTML parsing or a write method, and MUST NOT read other students' submissions.
-
-#### Scenario: Two sources, one run
-- **WHEN** synthetic Canvas and Ed responses for one current-term course are read
-- **THEN** the store holds that course, its platform items with due dates and the owner's scores, and one run record with measured counts
-
-#### Scenario: Limit to one course
-- **WHEN** sync runs with `--course ABCD10001`
-- **THEN** only that course's endpoints are requested
-
-### Requirement: Merge Canvas and Ed courses by normalized course code
-Sync SHALL derive a normalized code from each provider course by taking the single match of the pattern four capital letters followed by five digits (for example `ABCD10001` from `ABCD10001_2026_SM2`). A Canvas course and an Ed course in the same term with the same normalized code SHALL become one Course whose `sources` list both provider ids. A course with no match, or a code that matches more than one course on the same provider, SHALL stay a separate unmerged Course, and the run SHALL report the ambiguity. Merging MUST NOT use course names.
-
-#### Scenario: Same code on both providers
-- **WHEN** Canvas reports `ABCD10001_2026_SM2` and Ed reports `ABCD10001` in the same term
-- **THEN** one Course exists with both provider sources, and items from both attach to it
-
-#### Scenario: Ambiguous code
-- **WHEN** Ed lists two active courses whose codes both normalize to `ABCD10001`
-- **THEN** neither merges with the Canvas course, each stays its own Course, and the run reports the ambiguity
-
-### Requirement: Record platform facts, never guessed structure
-Sync SHALL store each gradable platform entry (Canvas assignment, Ed attempt lesson) as a SourceItem of kind `assignment` with platform facts copied from the response: due date (Ed `effective_due_at` when present, otherwise `due_at`), points possible, the owner's points and submitted state when the platform returns them. For a Canvas assignment group that has an explicit weight, sync SHALL create or update one sync-origin Assessment with that weight and link the group's assignments to it; the citation is the group's weight field. Sync MUST NOT divide a group weight across items, set a missing weight to zero, classify an item as exam or final, or set `assessmentsComplete`. Facts and assessments set by an annotation (see `agent-annotations`) MUST NOT be overwritten by sync, and sync MUST NOT re-link an item whose current link has origin `agent` or `owner`.
-
-#### Scenario: Weighted Canvas group
-- **WHEN** a synthetic Canvas group "Assignments" has `group_weight` 30 and two assignments
-- **THEN** one sync-origin Assessment of weight 30 exists, both assignments are linked to it, and neither item carries its own weight
-
-#### Scenario: Ed lesson without weight
-- **WHEN** an Ed attempt lesson has a due date and no weight information
-- **THEN** it is stored as a platform item with its due date, and no Assessment weight is invented
-
-#### Scenario: Agent link survives sync
-- **WHEN** the agent moved a Canvas assignment from its group's sync assessment to another assessment and sync runs again
-- **THEN** the item stays linked where the agent put it
-
-#### Scenario: Annotation survives sync
-- **WHEN** an owner annotation set an assessment's weight to 10 and the next sync sees a Canvas group weight of 15
-- **THEN** the stored weight stays 10 and the run reports the difference
-
-### Requirement: Latest state only
-Sync SHALL overwrite the stored platform state with the latest validated responses and SHALL NOT record change events (#101). An item missing from a complete read of its course collection SHALL be marked `removed` rather than deleted, so links and annotations keep their target. A partial read (auth expiry, cap, failure) MUST NOT mark anything removed.
-
-#### Scenario: Item disappears in a complete read
-- **WHEN** a complete synthetic assignments read no longer contains item 7
-- **THEN** item 7 is marked removed and its links remain
-
-#### Scenario: Partial read
-- **WHEN** the Canvas session expires halfway through a course
-- **THEN** no item of that course is marked removed and the run reports the gap
-
-### Requirement: Redact before storing
-Sync SHALL apply the deterministic default-on redaction (names harvested from author and people fields, emails, student numbers, phones, owner rules and a staff-name allow-list) to every text field before it is stored or can reach a model. Raw responses SHALL be kept only as private snapshots under `<data dir>/snapshots/`. Content whose safety cannot be established SHALL be withheld, never stored raw.
-
-#### Scenario: Classmate name in an announcement
-- **WHEN** a synthetic Ed thread author's name also appears in an assignment description
-- **THEN** the stored description contains a redaction marker instead of the name, and only the private snapshot keeps the original
-
-### Requirement: Bounded, measured, source-isolated runs
-All sync requests SHALL share the `ed-capture` limiter (at least one second between attempts, 300 attempts per run, no automatic retries). Canvas and Ed failures SHALL be isolated: one provider's `AUTH_EXPIRED` stops only that provider. Each run SHALL record a Run with measured pages, requests, failures and per-source coverage, and return one bounded `coursework.agent/v1` envelope with per-source outcomes. Metrics MUST reflect actual operations.
-
-#### Scenario: Ed expires, Canvas continues
-- **WHEN** Ed returns 401 during a run
-- **THEN** Ed reports `AUTH_EXPIRED`, Canvas finishes within the shared budget, and the Run records both outcomes
-
 ### Requirement: Sync is started by the owner and its state is visible
-Sync SHALL run only when started: by `coursework sync` or by the frontend's sync button through the `sync.run` command (#128); there is no schedule. One sync SHALL run at a time; a second start while one runs SHALL return `LOCKED` without starting another. The last run per provider (time, outcome, counts) and the current sign-in state from `browser.status` SHALL be readable, so the frontend can say when data is stale and why. When a provider returns `AUTH_EXPIRED`, its previously stored data SHALL stay readable and SHALL be marked with the time of the last successful sync for that provider.
+Sync SHALL run only when started: by `coursework sync` or by the frontend's sync button through the `sync.run` command (#128); there is no schedule. A run SHALL be an agent reading job (see "Agent discovery and owner course selection"); `--course <code>` SHALL limit it to one selected course. One sync SHALL run at a time; a second start while one runs SHALL return `LOCKED` without starting another. A run SHALL end within 20 minutes or be stopped and recorded as `TIMEOUT`. Each run SHALL record a Run with its start and end, sync outcome (`OK`, `PARTIAL`, `NEEDS_SELECTION`, `AGENT_UNAVAILABLE`, `TIMEOUT`, `FAILED`), per-course coverage (stored, submissions, fields left unknown, platforms read or blocked), AI-policy changes and the agent's turns and tool steps. `sync.status` SHALL report whether a run is active, the last run, the platforms the last run found blocked, and per selected course the time of its last stored document. When the agent is unavailable or a course could not be read, its previously stored data SHALL stay readable and SHALL be marked with the time of its last stored document.
 
 #### Scenario: Sync from the frontend
-- **WHEN** the owner presses the sync button and the resident browser is signed in to Canvas and Ed
+- **WHEN** the owner presses the sync button and the agent is signed in
 - **THEN** one sync run starts, the button shows it is running, and the frontend shows the new run's outcome when it ends
 
 #### Scenario: Expired sign-in is not hidden
-- **WHEN** Canvas returns `AUTH_EXPIRED` and Ed succeeds
-- **THEN** Ed data updates, Canvas data stays as it was, and reads report Canvas as signed out with its last successful sync time
+- **WHEN** the agent reports Canvas `blocked` by a sign-in page and reads Ed
+- **THEN** Ed-based data updates, Canvas-based data stays as it was, the run is `PARTIAL`, and `sync.status` lists Canvas as blocked so "needs you" asks the owner to sign in
 
 #### Scenario: Second start
 - **WHEN** a sync is running and another start arrives
 - **THEN** the second start returns `LOCKED` and no second run begins
+
+### Requirement: Agent discovery and owner course selection
+Each sync run SHALL start the chat agent adapter (Codex by default, see `agent-chat`) as a job with a fixed reading prompt and the `coursework` agent tools. The agent SHALL first list the courses it sees on the owner's Canvas dashboard and Ed dashboard and submit them with the agent command `courses.offer` (course code, name if visible, term, Canvas and Ed page URLs), together with the platforms it could not read because a sign-in page appeared (`blocked`). Offered courses SHALL be stored as CourseSelection candidates keyed by normalized code and term; a candidate the owner has not decided SHALL be undecided. Page URLs SHALL be accepted only on `https://canvas.lms.unimelb.edu.au` and `https://edstem.org`. The owner command `courses.select` SHALL record a selection (selected or not) for one or more candidates; agents SHALL have no command that changes a selection. Only selected courses SHALL be read in later steps of a run. A run with no selected course SHALL end after discovery with outcome `NEEDS_SELECTION`. An offer with no courses and no blocked platform SHALL be refused, so an agent that cannot read anything reports the platforms as blocked; the reading prompt SHALL tell the agent to report both platforms blocked and stop when its computer-use tool or the browser is unavailable (for example a locked screen). A run that stores nothing and finds both platforms blocked SHALL end with outcome `AGENT_UNAVAILABLE`.
+
+#### Scenario: First run
+- **WHEN** a run starts with no CourseSelection and the agent offers three courses
+- **THEN** three undecided candidates exist, no course is read, and the run ends with `NEEDS_SELECTION`
+
+#### Scenario: Owner selects two courses
+- **WHEN** the owner selects two of the three candidates and starts another run
+- **THEN** the agent is asked to read exactly those two courses
+
+#### Scenario: Nothing readable
+- **WHEN** the owner's screen is locked, the agent offers no course and reports Canvas and Ed blocked
+- **THEN** the run ends `AGENT_UNAVAILABLE`, not `NEEDS_SELECTION`, and an offer with no course and no blocked platform is refused
+
+#### Scenario: Agent cannot select
+- **WHEN** an agent calls `courses.select` through MCP or HTTP without the owner session
+- **THEN** it is refused and no selection changes
+
+### Requirement: Run state is shared through the store
+A run SHALL be recorded in the store when it starts, as an active sync job with its id, start time, selected courses and per-course submission counts, so that the `coursework mcp` process that executes the agent's commands and the process that started the run see the same state. `courses.offer` and `course.import` SHALL require the id of an active job, given to the agent in the prompt, and SHALL be refused for an unknown or ended job. Only one job SHALL be active; a job older than 25 minutes SHALL count as ended. The job SHALL be closed with its outcome when the run ends.
+
+#### Scenario: Import outside a run
+- **WHEN** an agent calls `course.import` with a job id that has ended
+- **THEN** it is refused and nothing is stored
+
+#### Scenario: Count shared across processes
+- **WHEN** two submissions of a course are refused by the MCP process and the third arrives
+- **THEN** the third is handled as the third submission, because the count is read from the store
+
+### Requirement: Course JSON contract
+For each selected course the agent SHALL submit one document with the agent command `course.import`. The document SHALL have a course level (`code`, `name`, `term`, `pages` with Canvas and Ed URLs, `aiPolicy`, `platforms` saying for Canvas and Ed whether they were `read`, `blocked` by a sign-in page or `absent` for this course, and `componentsComplete` saying whether the agent read the course's full grading breakdown), a list of grading components (`key`, `name`, `kind`, `count`, `weight`, `isFinal`, `hurdleMin`, `items`) and, per component, items (`key`, `name`, `due`, `status`, `score` with `outOf`, `weight`). `term` SHALL match `YYYY:S1`, `YYYY:S2`, `YYYY:SUMMER` or `YYYY:WINTER`. Every field SHALL be an object with `value` (or `null`), `state` (`found` | `unknown` | `not_applicable` | `derived`), `via` (`ax` | `screenshot`) when found, and `checkedAt` when unknown; `due`, `weight` and `hurdleMin` that are found SHALL carry the page `quote` and source URL. Component keys SHALL be the course code and a slug of the component name; item keys SHALL be the course code, the platform and the platform's id (for example `ABCD10001:canvas:assignment:500001`). The contract SHALL be one zod schema shared by the command and the reading prompt.
+
+#### Scenario: Valid document
+- **WHEN** the agent submits a document whose fields all follow the contract
+- **THEN** `course.import` returns `ok` with the counts of stored components and items
+
+#### Scenario: Wrong field shape
+- **WHEN** a found `due` has no quote or a value that is not an ISO time
+- **THEN** `course.import` returns `INVALID_INPUT` naming the field path, and nothing is stored
+
+### Requirement: Validation with two retries
+`course.import` SHALL check, in addition to the schema: due dates within the calendar year of the course term (Melbourne time); weights between 0 and 100; required fields (course code, name and term; component name and kind; item name, status and, for non-exam items, due) not `unknown`; at most one component with `isFinal` true; stated item weights of a component not above the component weight. A failed check SHALL return an error listing every failing field path so the agent can re-read the page, using a screenshot for empty fields (#170). On the third submission of a course in a run, every field that still fails a format, sanity or completeness check SHALL be stored as `unknown` with its `checkedAt` and reported in "needs you", and the rest of the document SHALL be stored, with these exceptions because the domain requires them: an item or component whose name or status is still invalid SHALL be left out and reported; a course whose name is still invalid SHALL be stored showing its code, with the name marked unknown; more than one final component SHALL be stored with `isFinal` unknown on all of them. Only a document without a valid course code and term SHALL still be refused, and that course SHALL be reported as not read. Component weights that do not add up to 100 SHALL be accepted and reported as a warning.
+
+#### Scenario: Missing name triggers a retry
+- **WHEN** the first submission of a course has its name `unknown`
+- **THEN** it is refused with the path `course.name`, and a second submission with the name found is stored
+
+#### Scenario: Third submission accepted with unknowns
+- **WHEN** the third submission of a course still has an item's due date `unknown` and another item's due date in the wrong year
+- **THEN** it is stored, both due dates are unknown with their check time, and "needs you" lists them
+
+#### Scenario: Weights do not add up
+- **WHEN** a course's component weights add up to 90
+- **THEN** the document is stored and the run reports a weight-sum warning for that course
+
+### Requirement: Store mapping and precedence
+A stored document SHALL write, in one transaction per course: the Course (found by normalized code and term, else created; its Canvas and Ed sources from the page URLs); for each item, one SourceItem (platform, platform id, title, URL, due and score facts, no page text) and one Assessment with the item's due date, status, score as a percentage of `outOf` (unknown when `outOf` is unknown or zero), weight, the component's `kind`, and a `group` tag with the component key, name, weight and count, linked to its SourceItem; and, while a component has fewer stored items than its `count` (or no items), one remainder Assessment with the component's name, kind and group tag, without `isFinal` or `hurdleMin`, and weight equal to the component weight minus the effective weights of its stored items, never below zero (a shortfall is reported as a warning). A component with `isFinal` or a `hurdleMin` SHALL instead always be stored as one component Assessment (due date its earliest item's, score the weighted mean of its items), linked to all its items; its items get no Assessment of their own and it has no remainder. An item whose current link has origin `agent` or `owner` SHALL keep that link and get no Assessment from import, and its weight counts against the remainder. Assessment ids SHALL be derived from the term and the item key, the component key (component Assessments) or the component key with a remainder suffix (remainders), so the three never collide. Imported values SHALL be the lowest-precedence platform values: owner and agent annotations keep winning (see `agent-annotations`). An Assessment of the course with origin `sync` that a document no longer produces SHALL be marked `retired`, never deleted: item Assessments only for platforms the document reports as `read`; remainder and component Assessments only when the document reports `componentsComplete`. A remainder whose component later has all its items SHALL be retired, and SHALL return if items disappear. Retired assessments SHALL be left out of every read, planning, the grade projection and the one-final rule. Agent- and owner-origin assessments SHALL NOT be retired by import. Each field's `state`, `via`, `checkedAt`, quote and source URL SHALL be stored in the entity's `readState`.
+
+#### Scenario: Items replace part of a placeholder
+- **WHEN** a component "Written assignments" of weight 15 and count 4 lists two published items
+- **THEN** two item Assessments of weight 3.75 with the group tag exist, and one remainder Assessment of weight 7.5 keeps the unpublished share in the grade
+
+#### Scenario: All items published
+- **WHEN** the same component later lists all four items
+- **THEN** four item Assessments exist and the remainder is retired
+
+#### Scenario: Owner value wins
+- **WHEN** the owner recorded an item's weight as 5 and the next import reads 3.75
+- **THEN** the effective weight stays 5 with origin `owner`
+
+#### Scenario: Old API data is reused
+- **WHEN** the store already holds a course with the same code and term from the old API sync
+- **THEN** the import updates that course instead of creating a second one, and its old sync-origin assessments not produced by the document are retired
+
+#### Scenario: Final exam with items
+- **WHEN** a component "Final exam" with `isFinal`, weight 50, hurdle 40 and count 2 lists one item
+- **THEN** one component Assessment of weight 50 marked final with the hurdle exists, linked to the item, with no remainder and no separate item Assessment
+
+#### Scenario: Agent link kept
+- **WHEN** the agent had linked an imported item to its own "Workshops" Assessment and the next import lists that item under a component
+- **THEN** the item stays linked to "Workshops", gets no import Assessment, and its weight counts against that component's remainder
+
+#### Scenario: Blocked platform keeps its data
+- **WHEN** a document reports Canvas `blocked` and Ed `read`
+- **THEN** Ed-based assessments are updated or retired as read, and no Canvas-based assessment of the course is retired
+
+### Requirement: Unknown fields are re-checked and derived weights split evenly
+Every run SHALL ask the agent to re-read each selected course in full, including fields stored as `unknown`; a later document that finds such a field SHALL replace the unknown value. When a component's weight is known, items whose own weight is not stated SHALL get state `derived` and an equal share of what remains, `(component weight − stated item weights) / (slots − number of items with a stated weight)`, where `slots` is the larger of `count` and the number of listed items (the listed items when `count` is unknown), and more listed items than `count` SHALL be reported as a `COUNT_MISMATCH` warning (#171); a later stated weight SHALL replace it. Earned totals per component SHALL be computed by code from item scores and weights, never taken from the agent.
+
+#### Scenario: A due date appears later
+- **WHEN** an item's due date was stored as unknown and the next run finds it
+- **THEN** the stored due date becomes the found value with state `found`
+
+#### Scenario: Even split
+- **WHEN** a component has weight 15, count 4 and no item weights
+- **THEN** each of its items has weight 3.75 with state `derived`
+
+#### Scenario: Split what remains
+- **WHEN** a component has weight 20, count 3, and one item states its weight as 10
+- **THEN** the other two items have weight 5 each with state `derived`
+
+### Requirement: One AI policy field per course
+The document's `aiPolicy` (`allowed` | `prohibited` | `owner-attested` | unknown) SHALL be the course's agent-read AI policy, stored on the Course with its quote and effective at once (#180). Agents SHALL NOT record a course `aiPolicy` annotation; `annotation.record` SHALL refuse that field. An owner policy recorded from the frontend SHALL take precedence and SHALL never be overwritten by import; an owner value of `null` SHALL clear the owner's policy, so the agent-read value applies again. Reads (`courses.list`, `annotation.read`, `autonomy.read`) SHALL report the effective policy with its origin. A run that reads the policy as unknown SHALL keep the previously stored agent-read value and its quote and update its check time, so a missed read never uncaps a course. When a run stores a value different from the previously stored agent-read value, "needs you" SHALL show the course, the new value and its quote until the next run; no confirmation is required.
+
+#### Scenario: Policy read changes
+- **WHEN** the agent reads `prohibited` for a course previously read as unknown
+- **THEN** the course is capped at L0 at once and "needs you" shows the change with the quote
+
+#### Scenario: Owner policy kept
+- **WHEN** the owner set a course to `allowed` and the agent reads `prohibited`
+- **THEN** the effective policy stays `allowed`, and the agent-read value and quote are stored for display
+
+#### Scenario: Missed policy read keeps the last value
+- **WHEN** the agent read `prohibited` earlier and this run reads the policy as unknown
+- **THEN** the stored agent-read value stays `prohibited` and its check time is updated
+
+#### Scenario: Owner clears the policy
+- **WHEN** the owner records `null` for a course whose agent-read policy is `prohibited`
+- **THEN** the effective policy is `prohibited` with origin `agent`
 
