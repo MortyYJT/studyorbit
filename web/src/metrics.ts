@@ -3,7 +3,7 @@ import type { Copy, Language } from './i18n.js';
 export type Metrics = Output<'metrics.read'>;
 export type DateRange = { from: string; to: string };
 type Cost = Extract<Metrics['agent'], { available: true }>['cost'];
-export type Card = { key: 'canvas' | 'ed' | 'accuracy' | 'estimates' | 'agent'; title: string; value?: string; reason?: string; facts: [string, string][]; note?: string };
+export type Card = { key: 'runs' | 'canvas' | 'ed' | 'accuracy' | 'estimates' | 'agent'; title: string; value?: string; reason?: string; facts: [string, string][]; note?: string };
 const day = 86400000;
 const isoDate = (at: number) => new Date(at).toISOString().slice(0, 10);
 function parts(at: number, timeZone: string) {
@@ -58,14 +58,16 @@ const reasons = (t: Copy): Record<string, string> => ({ no_runs: t.mNoRuns, no_l
 /** One card per metric; an unavailable metric carries its reason and no value or facts. */
 export function metricsCards(data: Metrics, t: Copy, language: Language): Card[] {
   const off = (key: Card['key'], title: string, metric: { reason: string }): Card => ({ key, title, reason: reasons(t)[metric.reason] ?? t.unavailable, facts: [] });
-  const sync = (site: 'canvas' | 'ed'): Card => {
-    const metric = data.sync[site]; const title = `${t.mSync} · ${site === 'ed' ? 'Ed' : 'Canvas'}`;
-    if (!metric.available) return off(site, title, metric);
-    return { key: site, title, value: `${formatDuration(metric.medianDurationMs, t)} · ${percent(metric.successRate, language)}`, note: t.mSyncBasis,
+  const sync = (key: 'runs' | 'canvas' | 'ed'): Card => {
+    const metric = data.sync[key];
+    const title = key === 'runs' ? t.mSyncRuns : `${t.mSyncHistory} · ${key === 'ed' ? 'Ed' : 'Canvas'}`;
+    if (!metric.available) return off(key, title, metric);
+    return { key, title, value: `${formatDuration(metric.medianDurationMs, t)} · ${percent(metric.successRate, language)}`, note: key === 'runs' ? t.mSyncRunsBasis : t.mSyncBasis,
       facts: [[t.mMedian, formatDuration(metric.medianDurationMs, t)], [t.mMax, formatDuration(metric.maxDurationMs, t)], [t.mSuccess, `${metric.successes} / ${metric.count}`]] };
   };
   const { accuracy, estimates, agent } = data;
-  return [sync('canvas'), sync('ed'),
+  // Agent sync runs replace the per-provider API sync; those cards stay only while their history has runs in range.
+  return [sync('runs'), ...(['canvas', 'ed'] as const).filter(site => data.sync[site].available).map(sync),
     accuracy.available ? { key: 'accuracy', title: t.mAccuracy, value: percent(accuracy.value, language),
       facts: [[t.mVerdicts, String(accuracy.count)], [t.mCorrect, String(accuracy.correct)], [t.mIncorrect, String(accuracy.incorrect)]] } : off('accuracy', t.mAccuracy, accuracy),
     estimates.available ? { key: 'estimates', title: t.mEstimates, value: `${number(estimates.medianRatio, language)}×`, note: t.mRatioHelp,

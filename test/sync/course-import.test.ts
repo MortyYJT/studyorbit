@@ -31,10 +31,10 @@ describe('store mapping and precedence (coursework-sync)', () => {
     const result = f.save(document([written([item(1), item(2)]), exam]));
     const group = { key: 'SYNA10001:written', name: 'Written assignments', weight: 15, count: 4 };
     for (const id of [1, 2]) {
-      expect(f.get(assessmentId(term, `SYNA10001:canvas:assignment:${id}`))).toMatchObject({ weight: 3.75, kind: 'assignment', origin: 'sync', group,
+      expect(f.get(assessmentId(term, `SYNA10001:canvas:assignment:${id}`))).toMatchObject({ weight: 3.75, kind: 'assignment', origin: 'sync', group: { ...group, role: 'item' },
         readState: { weight: { state: 'derived' } } });
     }
-    expect(f.get(remainderAssessmentId(term, 'SYNA10001:written'))).toMatchObject({ name: 'Written assignments', weight: 7.5, group, isFinal: false });
+    expect(f.get(remainderAssessmentId(term, 'SYNA10001:written'))).toMatchObject({ name: 'Written assignments', weight: 7.5, group: { ...group, role: 'remainder' }, isFinal: false });
     expect(f.get(remainderAssessmentId(term, 'SYNA10001:written'))?.hurdleMin).toBeUndefined();
     expect(result).toMatchObject({ components: 2, items: 2 });
   });
@@ -85,7 +85,7 @@ describe('store mapping and precedence (coursework-sync)', () => {
       { name: found('Final exam'), kind: found('exam'), isFinal: found(true), hurdleMin: quoted(40), count: found(2) });
     f.save(document([final, component('other', 50, [item(1)])]));
     const id = componentAssessmentId(term, 'SYNA10001:final-exam');
-    expect(f.get(id)).toMatchObject({ name: 'Final exam', weight: 50, isFinal: true, hurdleMin: 40, kind: 'exam', due: '2026-11-12T23:00:00Z', origin: 'sync' });
+    expect(f.get(id)).toMatchObject({ name: 'Final exam', weight: 50, isFinal: true, hurdleMin: 40, kind: 'exam', due: '2026-11-12T23:00:00Z', origin: 'sync', group: { role: 'component' } });
     expect(f.store.currentAssessmentLinks(id).map(link => link.sourceItemId)).toEqual([sourceItemId(term, 'SYNA10001:canvas:assignment:9')]);
     expect(f.get(assessmentId(term, 'SYNA10001:canvas:assignment:9'))).toBeUndefined();
     expect(f.get(remainderAssessmentId(term, 'SYNA10001:final-exam'))).toBeUndefined();
@@ -116,6 +116,14 @@ describe('store mapping and precedence (coursework-sync)', () => {
     expect(f.get(assessmentId(term, 'SYNA10001:canvas:assignment:1'))?.retired).toBeUndefined();
     expect(f.get(assessmentId(term, 'SYNA10001:ed:assignment:2'))).toMatchObject({ name: 'Renamed on Ed' });
     expect(f.get(assessmentId(term, 'SYNA10001:ed:assignment:3'))).toMatchObject({ retired: true });
+  });
+
+  it('a component with no items keeps its own weight read state on the remainder, not an even split', () => {
+    const f = setup();
+    f.save(document([written([item(1)]), component('project', 20, []), exam]));
+    expect(f.get(remainderAssessmentId(term, 'SYNA10001:project'))).toMatchObject({ weight: 20, readState: { weight: { state: 'found' } } });
+    // With items listed, the rest of the component weight is computed, so it stays derived.
+    expect(f.get(remainderAssessmentId(term, 'SYNA10001:written'))?.readState?.weight).toEqual({ state: 'derived' });
   });
 
   it('remainder and component rows are retired only when the document reports componentsComplete', () => {

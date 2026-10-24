@@ -3,7 +3,7 @@ import type { GradeBand, GradeNeed } from '../../src/domain/grade.js';
 import type { Client } from './client.js';
 import type { AgentPreset } from './chat.js';
 import type { Copy, Language } from './i18n.js';
-import { agentEntries, arcPath, canJudge, courseFigures, displayStatus, levelView, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink,
+import { agentEntries, arcPath, assessmentGroups, canJudge, isRemainder, policyView, valueLabel, courseFigures, displayStatus, levelView, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink,
   type EditableField, type Field, type LevelView, type Policy, type WorkLevel } from './course.js';
 import { CourseStore, type AssessmentItem, type CourseState } from './course-store.js';
 
@@ -21,6 +21,16 @@ export function CoursePage({ courseId, client, t, language, timeZone, openAgent,
   const c = t.coursePage;
   useEffect(() => { void store.load(); }, [store]);
   const date = (value?: string) => value ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(new Date(value)) : undefined;
+  const number = (value: number) => new Intl.NumberFormat(language, { maximumFractionDigits: 2 }).format(value);
+  const day = (value: string) => new Intl.DateTimeFormat(language, { day: 'numeric', month: 'short', timeZone }).format(new Date(value));
+  // Labels (#171): an even split is marked derived; an unknown value shows when it was last checked.
+  const value = (item: AssessmentItem, field: 'weight' | 'due') => {
+    const label = valueLabel(item, field);
+    if (label.kind === 'none') return c.none;
+    if (label.kind === 'unknown') return <span className="unknown">{label.checkedAt ? c.unknownChecked.join(day(label.checkedAt)) : t.unknown}</span>;
+    const shown = field === 'due' ? date(item.due) : `${number(item.weight!)}%`;
+    return label.kind === 'derived' ? <span title={c.evenSplit}>≈ {shown}<small className="derived">{c.evenSplit}</small></span> : shown;
+  };
   const policy: Policy | undefined = state.autonomy?.policy ?? undefined;
   const failed = (['autonomy', 'assessments', 'plan', 'revision', 'notes', 'stats'] as const).filter(key => state.errors[key]);
   if (state.errors.course) return <section className="card"><button className="crumb" onClick={onBack}>{c.back}</button><p>{state.errors.course === 'NOT_FOUND' ? c.notFound : errorText(state.errors.course, t)}</p></section>;
@@ -41,14 +51,24 @@ export function CoursePage({ courseId, client, t, language, timeZone, openAgent,
         : !state.assessments.length ? <p className="muted">{c.noAssessments}</p>
         : <div className="assessment-list">
           <div className="arow head" aria-hidden="true"><span>{c.name}</span><span>{c.due}</span><span className="num">{c.weight}</span><span className="num">{c.scoreCol}</span><span>{c.status}</span><span>{c.level}</span></div>
-          {state.assessments.map(item => <button key={item.id} className="arow" onClick={() => { setOpen(item.id); void store.openAssessment(item.id); }}>
-            <span className="aname">{item.name}{item.kind && <span className={`kind ${item.kind}`}>{c.kinds[item.kind]}</span>}</span>
-            <span className="muted">{date(item.due) ?? c.none}</span>
-            <span className="num">{item.weight === undefined ? <span className="unknown">{t.unknown}</span> : `${item.weight}%`}</span>
-            <span className="num">{item.score === undefined ? c.none : `${item.score}%`}</span>
-            <span>{c.statuses[displayStatus(item)]}</span>
-            <span><Level view={levelView(item, state.autonomy)} t={t} /></span>
-          </button>)}
+          {assessmentGroups(state.assessments).map((group, _, all) => <div className="agroup" role="group" key={group.key ?? ''} aria-label={group.name ?? c.otherGroup}>
+            {(group.key !== undefined || all.length > 1) && <div className="ghead"><b>{group.name ?? c.otherGroup}</b>
+              {group.key !== undefined && <span className="muted">{group.weight === undefined ? <span className="unknown">{t.unknown}</span> : `${number(group.weight)}%`}
+                {' · '}{group.earned === undefined ? <span className="unknown">{c.earnedUnknown}</span> : <>{number(group.earned)} {c.groupEarned}</>}</span>}</div>}
+            {group.items.map(item => isRemainder(item) ? <div key={item.id} className="arow remainder" title={c.remainderHelp}>
+              <span className="aname">{item.name}{item.kind && <span className={`kind ${item.kind}`}>{c.kinds[item.kind]}</span>}</span>
+              <span className="muted">{c.notPublished}</span>
+              <span className="num">{value(item, 'weight')}</span>
+              <span className="num">{c.none}</span><span className="muted">{c.notPublished}</span><span>{c.none}</span>
+            </div> : <button key={item.id} className="arow" onClick={() => { setOpen(item.id); void store.openAssessment(item.id); }}>
+              <span className="aname">{item.name}{item.kind && <span className={`kind ${item.kind}`}>{c.kinds[item.kind]}</span>}</span>
+              <span className="muted">{value(item, 'due')}</span>
+              <span className="num">{value(item, 'weight')}</span>
+              <span className="num">{item.score === undefined ? c.none : `${number(item.score)}%`}</span>
+              <span>{c.statuses[displayStatus(item)]}</span>
+              <span><Level view={levelView(item, state.autonomy)} t={t} /></span>
+            </button>)}
+          </div>)}
         </div>
         : <Revision store={store} state={state} t={t} date={date} onPreset={id => openAgent({ id, courseId })} />}
     </section>
@@ -104,15 +124,15 @@ function ScoreCard({ course, items, t }: { course: NonNullable<CourseState['cour
 
 function Header({ store, state, policy, t }: { store: CourseStore; state: CourseState; policy?: Policy; t: Copy }) {
   const c = t.coursePage;
-  const suggestion = state.courseDetail?.history.filter(row => row.field === 'aiPolicy' && row.origin === 'agent').at(-1);
-  const policyField = state.course?.fields?.aiPolicy;
+  // One policy field (#180): the owner's value wins over the agent-read one; the read value and its quote stay visible.
+  const view = state.course ? policyView(state.course, state.autonomy) : {};
   const busy = !!state.saving || !store.client.hasSession();
   return <section className="policy">
     <label className="inline">{c.policy}
       <select value={policy ?? ''} disabled={busy} onChange={event => void store.setPolicy(event.target.value ? event.target.value as Policy : null)}>
         <option value="">{c.policyNone}</option>{(['allowed', 'prohibited', 'owner-attested'] as const).map(value => <option key={value} value={value}>{c[value]}</option>)}
-      </select>{policy && <Marker field={policyField} store={store} state={state} t={t} />}</label>
-    {suggestion && <span className="suggestion">{c.suggestion}: “{String(suggestion.value)}” <Citations citations={suggestion.citations} store={store} state={state} t={t} /></span>}
+      </select>{view.origin && <span className="srcm">· {c.policyOrigins[view.origin]}</span>}</label>
+    {view.read && (view.origin !== 'agent' || view.quote) && <span className="policy-read">{c.policyRead}{t.colon}{c[view.read]}{view.quote && <> · <q>{view.quote}</q></>}</span>}
     {policy === 'prohibited' ? <span className="pill lock" title={c.lockedHelp}>{c.locked}</span> : <>
       <label className="inline">{c.defaultLevel}
         <select value={state.autonomy?.defaultLevel ?? ''} disabled={busy || !state.autonomy} onChange={event => void store.setDefault(Number(event.target.value) as WorkLevel)}>

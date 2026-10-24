@@ -5,14 +5,16 @@ import type { Client } from './client.js';
 import type { AgentPreset } from './chat.js';
 import type { PendingConfirmation } from '../../src/domain/schemas.js';
 import { ConfirmationCard } from './Agent.js';
+import { fieldName } from './shell.js';
 import { addDays, courseSummaries, deadlinesByDate, localDate, localTime, mondayOf, monthGrid, weekModel, zonedIso, type DeadlineEntry, type Need, type PlannedItem, type Task, type WorkRow } from './week.js';
 
 const hours = (minutes: number) => `${Math.round(minutes / 6) / 10}`;
 function errorText(code: string, t: Copy) { return code === 'OWNER_SESSION_EXPIRED' ? t.session : `${t.error} (${code})`; }
 function scrollTo(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 
-export function NeedsYou({ needs, t, onStatus, onAgent, client, confirmations, onDecided }: { needs: Need[]; t: Copy; onStatus: () => void;
-  onAgent: (preset?: AgentPreset) => void; client: Client; confirmations: readonly PendingConfirmation[]; onDecided: () => void }) {
+export function NeedsYou({ needs, t, onStatus, onAgent, onSelect, onCourse, client, confirmations, onDecided }: { needs: Need[]; t: Copy; onStatus: () => void;
+  onAgent: (preset?: AgentPreset) => void; onSelect: () => void; onCourse: (courseId: string) => void; client: Client; confirmations: readonly PendingConfirmation[]; onDecided: () => void }) {
+  const s = t.syncNeeds;
   if (!needs.length) return null;
   return <section className="needs" aria-labelledby="needs-title"><h2 id="needs-title">{t.needs}</h2>{needs.map(item => {
     const pending = item.kind === 'confirm' ? confirmations.find(row => row.id === item.id) : undefined;
@@ -22,13 +24,28 @@ export function NeedsYou({ needs, t, onStatus, onAgent, client, confirmations, o
         {item.courseId && <button onClick={() => onAgent({ id: 'review-pending', courseId: item.courseId, assessmentId: item.assessmentId })}>{t.reviewWithAgent}</button>}</div>
     </div>;
     const site = 'site' in item ? item.site === 'ed' ? 'Ed' : 'Canvas' : '';
-    const [text, action, run] = item.kind === 'confirm' ? [`${t.confirmPending}: ${item.summary}`, t.openAgent, () => onAgent()]
-      : item.kind === 'signin' ? [`${site} · ${t.signin}`, t.status, onStatus]
-      : item.kind === 'sync' ? [`${site} · ${t.syncFailed}`, t.status, onStatus]
-      : item.kind === 'overflow' ? [`${item.courseCode ? `${item.courseCode} · ` : ''}${item.title} · ${t.overflowMissing} ${hours(item.minutes)} ${t.h}`, t.show, () => scrollTo('overflow')]
-      : [`${item.count} ${t.unestimatedCount}`, t.show, () => scrollTo('unestimated')];
-    const key = item.kind === 'confirm' ? item.id : item.kind === 'overflow' ? item.workId : 'site' in item ? `${item.kind}-${item.site}` : item.kind;
-    return <div className="attention-row" key={`${item.kind}-${key}`}><span>{text}</span><button onClick={run}>{action}</button></div>;
+    const course = 'courseId' in item && item.courseId ? item.courseId : undefined;
+    const open: [string, () => void] | undefined = course ? [s.openCourse, () => onCourse(course)] : undefined;
+    const [text, action] = ((): [ReactNode, [string, () => void] | undefined] => {
+      switch (item.kind) {
+        case 'confirm': return [`${t.confirmPending}: ${item.summary}`, [t.openAgent, () => onAgent()]];
+        case 'signin': return [s.signinEdge.join(site), [t.status, onStatus]];
+        case 'blocked': return [s.blockedHelp.join(site), [t.status, onStatus]];
+        case 'failed': return [`${t.syncFailed} · ${s.outcomes[item.outcome]}${item.outcome === 'AGENT_UNAVAILABLE' ? ` · ${s.agentHelp}` : ''}`, [t.status, onStatus]];
+        case 'select': return [item.count ? `${item.count} ${s.select}` : s.selectNone, [s.choose, onSelect]];
+        case 'unknown': return [<>{item.course} · {item.fields.length > 0 && <>{s.unknown}{t.colon}{item.fields.map(path => fieldName(path, t)).join('; ')}</>}
+          {item.fields.length > 0 && item.dropped.length > 0 && ' · '}{item.dropped.length > 0 && <>{s.dropped}{t.colon}{item.dropped.map(path => fieldName(path, t)).join('; ')}</>}</>, open];
+        case 'weights': return [`${item.course} · ${item.warning === 'WEIGHT_SUM' ? item.sum === undefined ? s.weightSumUnknown : s.weightSum.join(String(item.sum))
+          : (s.warnings as Record<string, string>)[item.warning] ?? item.warning}`, open];
+        case 'policy': return [<>{item.course} · {item.value ? <>{s.policy} {t.coursePage[item.value]}</> : s.policyUnknown}{item.quote && <> · <q>{item.quote}</q></>}</>, open];
+        case 'unread': return [`${item.course} · ${s.unread}`, [t.status, onStatus]];
+        case 'overflow': return [`${item.courseCode ? `${item.courseCode} · ` : ''}${item.title} · ${t.overflowMissing} ${hours(item.minutes)} ${t.h}`, [t.show, () => scrollTo('overflow')]];
+        case 'unestimated': return [`${item.count} ${t.unestimatedCount}`, [t.show, () => scrollTo('unestimated')]];
+      }
+    })();
+    const key = item.kind === 'confirm' ? item.id : item.kind === 'overflow' ? item.workId : 'site' in item ? `${item.kind}-${item.site}`
+      : 'course' in item ? `${item.course}-${item.kind === 'weights' ? item.warning : ''}` : item.kind;
+    return <div className="attention-row" key={`${item.kind}-${key}`}><span>{text}</span>{action && <button onClick={action[1]}>{action[0]}</button>}</div>;
   })}</section>;
 }
 

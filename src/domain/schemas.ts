@@ -53,7 +53,8 @@ export const AssessmentSchema = z.object({
   isFinal: z.boolean(),
   status: z.enum(['not_started', 'in_progress', 'submitted', 'graded']),
   /** The grading component an item (or a component's remainder) belongs to. */
-  group: z.object({ key: IdSchema, name: z.string(), weight: PercentSchema.optional(), count: z.number().int().nonnegative().optional() }).optional(),
+  group: z.object({ key: IdSchema, name: z.string(), weight: PercentSchema.optional(), count: z.number().int().nonnegative().optional(),
+    role: z.enum(['item', 'remainder', 'component']).optional() }).optional(),
   /** No longer listed or replaced by its items; reads, planning and the grade projection omit retired assessments. */
   retired: z.boolean().optional(),
   readState: ReadStateSchema.optional(),

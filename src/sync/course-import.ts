@@ -118,7 +118,7 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
         const hurdleMin = known(component.hurdleMin);
         produced.set(id, { id, courseId, name, ...(kind ? { kind } : {}), ...(weight !== undefined ? { weight } : {}), ...(score !== undefined ? { score } : {}),
           ...(dues[0] ? { due: dues[0] } : {}), ...(hurdleMin !== undefined ? { hurdleMin } : {}), isFinal: known(component.isFinal) === true,
-          status, origin: 'sync', group, readState: { name: entry(component.name), kind: entry(component.kind), weight: entry(component.weight),
+          status, origin: 'sync', group: { ...group, role: 'component' }, readState: { name: entry(component.name), kind: entry(component.kind), weight: entry(component.weight),
             isFinal: entry(component.isFinal), hurdleMin: entry(component.hurdleMin), ...(dues[0] ? { due: { state: 'derived' } } : {}) } });
         for (const row of rows) if (!row.kept) link(id, row.sourceId);
         continue;
@@ -131,7 +131,7 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
         const id = assessmentId(term, row.item.key);
         const due = known(row.item.due); const score = percent(row.item);
         produced.set(id, { id, courseId, name: known(row.item.name)!, ...(kind ? { kind } : {}), ...(row.weight !== undefined ? { weight: row.weight } : {}),
-          ...(score !== undefined ? { score } : {}), ...(due ? { due } : {}), isFinal: false, status: known(row.item.status)!, origin: 'sync', group,
+          ...(score !== undefined ? { score } : {}), ...(due ? { due } : {}), isFinal: false, status: known(row.item.status)!, origin: 'sync', group: { ...group, role: 'item' },
           readState: { name: entry(row.item.name), due: entry(row.item.due), status: entry(row.item.status), score: entry(row.item.score),
             outOf: entry(row.item.outOf), weight: row.weightState, kind: entry(component.kind) } });
         link(id, row.sourceId);
@@ -144,8 +144,9 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
         if (rest !== undefined && rest < -1e-9) warnings.add('REMAINDER_SHORTFALL');
         if (rest !== undefined) rest = Math.max(0, rest);
         produced.set(id, { id, courseId, name, ...(kind ? { kind } : {}), ...(rest !== undefined ? { weight: rest } : {}), isFinal: false, status: 'not_started',
-          origin: 'sync', group, readState: { name: entry(component.name), kind: entry(component.kind),
-            weight: rest !== undefined ? { state: 'derived' } : { state: 'unknown', checkedAt: component.weight.checkedAt ?? at } } });
+          origin: 'sync', group: { ...group, role: 'remainder' }, readState: { name: entry(component.name), kind: entry(component.kind),
+            // Without listed items the remainder is the whole component, so its weight is read, not computed.
+            weight: !items.length && rest !== undefined ? entry(component.weight) : rest !== undefined ? { state: 'derived' } : { state: 'unknown', checkedAt: component.weight.checkedAt ?? at } } });
       }
     }
 

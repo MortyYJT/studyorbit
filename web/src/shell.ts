@@ -1,9 +1,23 @@
 import { type Client, type Output, ClientError } from './client.js';
 import { settingsInput } from '../../src/planning/contracts.js';
+import type { Copy } from './i18n.js';
 export type Settings = NonNullable<Output<'planning.settings.read'>['settings']>;
 export type Site = 'canvas' | 'ed';
+export type Candidate = Output<'courses.candidates'>['items'][number];
+type Policy = 'allowed' | 'prohibited' | 'owner-attested';
+/** "Needs you" items the shell derives from sign-in and the agent sync status (C-2). */
+type Warning = NonNullable<Output<'sync.status'>['courses'][number]['lastRun']>['warnings'][number];
+export type FailedOutcome = 'FAILED' | 'TIMEOUT' | 'AGENT_UNAVAILABLE';
+/** `signin`: the browser reports the site signed out; `blocked`: the last run's agent could not read the site. */
+export type Attention = { site: Site; kind: 'signin' | 'blocked' } | { kind: 'failed'; outcome: FailedOutcome } | { kind: 'select'; count: number }
+  | { kind: 'unknown'; course: string; courseId?: string; fields: string[]; dropped: string[] }
+  | { kind: 'weights'; course: string; courseId?: string; warning: Warning; sum?: number }
+  | { kind: 'policy'; course: string; courseId?: string; value?: Policy; quote?: string }
+  | { kind: 'unread'; course: string };
 export interface ShellState {
   courses?: Output<'courses.list'>;
+  candidates?: Candidate[];
+  selecting: boolean;
   tasks?: Output<'tasks.list'>;
   browser?: Partial<Output<'browser.status'>>;
   sync?: Output<'sync.status'>;
@@ -13,23 +27,60 @@ export interface ShellState {
   saving: boolean;
   auditLoading: boolean;
   signingIn: Record<Site, boolean>;
-  errors: Partial<Record<'courses' | 'tasks' | 'browser' | 'sync' | 'planning' | 'audit' | 'action' | 'canvasSignIn' | 'edSignIn', string>>;
+  errors: Partial<Record<'courses' | 'tasks' | 'browser' | 'sync' | 'planning' | 'audit' | 'action' | 'canvasSignIn' | 'edSignIn' | 'candidates' | 'select', string>>;
 }
 const code = (error: unknown) => error instanceof ClientError ? error.code : 'SOURCE_UNAVAILABLE';
 export function emptyStore(state: ShellState): boolean {
   return !!state.courses?.coverage.complete && !!state.tasks?.coverage.complete
     && !state.errors.courses && !state.errors.tasks && !state.courses.items.length && !state.tasks.items.length;
 }
-export function attention(state: ShellState): { site: Site; kind: 'signin' | 'sync' }[] {
-  // Interim mapping of the agent sync status (C-2); task 6.1 adds the new needs-you items.
-  const failed = ['FAILED', 'TIMEOUT', 'AGENT_UNAVAILABLE'].includes(state.sync?.lastRun?.outcome ?? '');
-  return (['canvas', 'ed'] as const).flatMap(site => {
-    const items: { site: Site; kind: 'signin' | 'sync' }[] = [];
-    const blocked = state.sync?.blocked.includes(site) === true;
-    if (state.browser?.[site]?.state === 'signedOut' || blocked) items.push({ site, kind: 'signin' });
-    if (failed && !blocked) items.push({ site, kind: 'sync' });
+export function attention(state: ShellState): Attention[] {
+  const outcome = state.sync?.lastRun?.outcome;
+  const blocked = state.sync?.blocked ?? [];
+  const allBlocked = outcome === 'AGENT_UNAVAILABLE' || blocked.length === 2;
+  const sites = (['canvas', 'ed'] as const).flatMap((site): Attention[] => blocked.includes(site) ? [{ site, kind: 'blocked' }]
+    : state.browser?.[site]?.state === 'signedOut' ? [{ site, kind: 'signin' }] : []);
+  // A discovery with every platform blocked ends AGENT_UNAVAILABLE; the blocked items already say what to do.
+  const failed: Attention[] = (outcome === 'FAILED' || outcome === 'TIMEOUT' || outcome === 'AGENT_UNAVAILABLE')
+    && !(outcome === 'AGENT_UNAVAILABLE' && blocked.length > 0) ? [{ kind: 'failed', outcome }] : [];
+  const courses = state.sync?.courses.flatMap(course => {
+    const run = course.lastRun;
+    if (!run) return [];
+    const ids = course.courseId ? { courseId: course.courseId } : {};
+    const items: Attention[] = [];
+    if (run.unknownFields.length || run.dropped.length) items.push({ kind: 'unknown', course: course.code, ...ids, fields: run.unknownFields, dropped: run.dropped });
+    for (const warning of run.warnings) items.push({ kind: 'weights', course: course.code, ...ids, warning,
+      ...(warning === 'WEIGHT_SUM' && run.weightSum !== undefined ? { sum: run.weightSum } : {}) });
+    if (run.policyChanged) {
+      // The new value and its quote are the agent-read policy stored on the Course (#180).
+      const stored = state.courses?.items.find(item => item.id === course.courseId);
+      const quote = stored?.readState?.aiPolicy?.quote;
+      items.push({ kind: 'policy', course: course.code, ...ids, ...(stored?.aiPolicy ? { value: stored.aiPolicy } : {}), ...(quote ? { quote } : {}) });
+    }
+    // A run blocked on every platform read no course; the blocked items already say why.
+    if (!run.stored && !allBlocked) items.push({ kind: 'unread', course: course.code });
     return items;
-  });
+  }) ?? [];
+  // A NEEDS_SELECTION run keeps the entry while no course is selected (even after declining all), so it is never a dead end.
+  const select = state.sync && (state.sync.undecided > 0 || outcome === 'NEEDS_SELECTION' && !state.sync.courses.length)
+    ? [{ kind: 'select' as const, count: state.sync.undecided }] : [];
+  return [...select, ...sites, ...failed, ...courses];
+}
+/** Contract path such as `components[1].items[0].due` in the owner's words (1-based positions). */
+export function fieldName(path: string, t: Copy): string {
+  const s = t.syncNeeds;
+  return path.split('.').map(part => {
+    const match = /^(components|items)\[(\d+)\]$/.exec(part);
+    if (match) return (match[1] === 'components' ? s.component : s.item).join(String(Number(match[2]) + 1));
+    return (s.fields as Record<string, string>)[part] ?? part;
+  }).join(' · ');
+}
+export interface SelectionRow { key: string; code: string; name?: string; term: string; undecided: boolean; checked: boolean }
+/** Undecided candidates first (unticked), then earlier decisions as recorded, so saving can also change them. */
+export function selectionRows(candidates: readonly Candidate[]): SelectionRow[] {
+  const row = (item: Candidate): SelectionRow => ({ key: item.key, code: item.code, ...(item.name ? { name: item.name } : {}), term: item.term,
+    undecided: item.selected === undefined, checked: item.selected === true });
+  return [...candidates.filter(item => item.selected === undefined), ...candidates.filter(item => item.selected !== undefined)].map(row);
 }
 export function settingsFromForm(previous: Settings | undefined, hours: string[], timeZone: string, anchor: string, breaks: string): Settings {
   const weekdayMinutes = hours.map(value => {
@@ -45,7 +96,7 @@ export function settingsFromForm(previous: Settings | undefined, hours: string[]
   });
 }
 export class ShellStore {
-  private state: ShellState = { syncing: false, saving: false, auditLoading: false, signingIn: { canvas: false, ed: false }, errors: {} };
+  private state: ShellState = { syncing: false, selecting: false, saving: false, auditLoading: false, signingIn: { canvas: false, ed: false }, errors: {} };
   private listeners = new Set<() => void>();
   private refreshing?: Promise<void>;
   constructor(readonly client: Client) {}
@@ -84,6 +135,24 @@ export class ShellStore {
       this.error('browser');
     } catch (error) { this.error(`${site}SignIn`, code(error)); }
     finally { this.update({ signingIn: { ...this.state.signingIn, [site]: false } }); }
+  }
+  async loadCandidates() {
+    this.error('candidates');
+    try { this.update({ candidates: (await this.client.call('courses.candidates', {})).items }); }
+    catch (error) { this.error('candidates', code(error)); }
+  }
+  /** Records every listed course as ticked or not through the owner session, then re-reads status and candidates. */
+  async selectCourses(rows: readonly SelectionRow[], checked: ReadonlySet<string>): Promise<boolean> {
+    if (this.state.selecting || !rows.length) return false;
+    this.update({ selecting: true }); this.error('select');
+    try {
+      // Only undecided rows and changed decisions are written, at most 100 per call (the contract's bound).
+      const selections = rows.filter(row => row.undecided || row.checked !== checked.has(row.key)).map(row => ({ key: row.key, selected: checked.has(row.key) }));
+      for (let start = 0; start < selections.length; start += 100) await this.client.call('courses.select', { selections: selections.slice(start, start + 100) });
+      await Promise.all([this.refresh(), this.loadCandidates()]);
+      return true;
+    } catch (error) { this.error('select', code(error)); return false; }
+    finally { this.update({ selecting: false }); }
   }
   async saveSettings(settings: Settings) {
     if (this.state.saving) return false;
