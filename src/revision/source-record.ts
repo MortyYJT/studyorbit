@@ -14,13 +14,14 @@ import { courseEvidence, materialIdentity, sourceURL } from './sources.js';
  */
 export const MAX_RECORDED_BYTES = 60_000;
 const TOO_LARGE = 'Source page text exceeds 60,000 bytes (UTF-8, JSON-encoded); record it in parts, adding #part-2, #part-3 and so on to the URL.';
+const ANNOUNCEMENTS = 'Announcements are refused like discussions, because they can carry replies.';
 const UNSAFE = 'The text contains something the privacy check cannot make safe; remove other people\'s names or identifiers and record again.';
 const encodedBytes = (text: string) => Buffer.byteLength(JSON.stringify(text), 'utf8') - 2;
 /** Refusal messages that name their reason to the agent (see `safeError`). */
 export const sourceRecordRefusals: readonly string[] = [
   'Off-origin source URLs are refused.', 'Discussion threads and replies are refused.',
   'Authentication URLs and credentials are refused.', 'Source URL does not belong to this course.',
-  TOO_LARGE, UNSAFE,
+  TOO_LARGE, UNSAFE, ANNOUNCEMENTS,
 ];
 
 /**
@@ -38,7 +39,10 @@ export class SourceRecorder {
     const course = this.store.loadCourse(courseId);
     if (!course) throw new CourseworkError('NOT_FOUND', 'Course not found.');
     const platform = url.origin === CANVAS_ORIGIN ? 'canvas' as const : 'ed' as const;
-    const path = decodeURIComponent(url.pathname);
+    // Bind on the raw path: decoding first would let `courses/1%2F..%2Fcourses%2F99` pass as course 1.
+    const path = url.pathname;
+    // Announcements can carry replies from classmates, so they are refused like discussions.
+    if (platform === 'canvas' && /^\/(?:api\/v1\/)?courses\/[^/]+\/announcements(?:\/|$)/i.test(path)) throw new CourseworkError('INVALID_INPUT', ANNOUNCEMENTS);
     const externalId = (platform === 'canvas' ? /^\/(?:api\/v1\/)?courses\/([^/]+)(?:\/|$)/ : /^\/(?:au\/|api\/)?courses\/([^/]+)(?:\/|$)/).exec(path)?.[1];
     // The URL must name one of this course's Canvas or Ed course ids; nothing else establishes ownership.
     if (!externalId || !course.sources?.some(source => source.platform === platform && source.externalId === externalId)) {

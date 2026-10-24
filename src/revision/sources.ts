@@ -18,7 +18,13 @@ export function sourceURL(value: string): URL {
   if (/^\/(?:api\/v1\/|api\/|au\/)?(?:courses\/[^/]+\/)?(?:discussion(?:_topics|s)?|threads?|replies)(?:\/|[?#]|$)/i.test(decoded)) {
     throw new CourseworkError('INVALID_INPUT', 'Discussion threads and replies are refused.');
   }
-  if (url.username || url.password || /%[a-f0-9]{2}|\\|\/login|\/auth|token|password|credential/i.test(decoded)) {
+  // Authentication words count only as whole path segments (so `pages/tokenizers` is a page); queries and fragments
+  // that mention credentials are refused outright.
+  const path = decoded.split(/[?#]/, 1)[0]!;
+  const rest = decoded.slice(path.length);
+  if (url.username || url.password || /%[a-f0-9]{2}|\\/i.test(decoded)
+    || path.split('/').some(segment => /^(?:auth|oauth|authorize|login|logout|sso|saml|tokens?|passwords?|credentials?)$/i.test(segment))
+    || /token|password|credential/i.test(rest)) {
     throw new CourseworkError('INVALID_INPUT', 'Authentication URLs and credentials are refused.');
   }
   return url;

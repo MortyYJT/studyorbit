@@ -75,6 +75,25 @@ it('Page of another course: refuses an Ed lesson of another course and names the
   expect(await call('sources.get', { sourceItemId: recorded.data.sourceItemId })).toMatchObject({ ok: true, data: { provenance: 'ed', copiedBy: 'agent' } });
 });
 
+it('accepts pages whose names only contain auth or token words, and refuses authentication paths and credential queries', async () => {
+  const { call, stored } = await setup();
+  for (const page of ['authentication-basics', 'tokenizers'])
+    expect(await call('source.record', { courseId: 'c', url: `https://canvas.lms.unimelb.edu.au/courses/1/pages/${page}`, title: page, text: 'Synthetic.' }), page).toMatchObject({ ok: true });
+  for (const url of ['https://canvas.lms.unimelb.edu.au/courses/1/login', 'https://canvas.lms.unimelb.edu.au/courses/1/auth/saml',
+    'https://canvas.lms.unimelb.edu.au/courses/1/pages/x?token=secret', 'https://edstem.org/au/courses/10/lessons/1#access_token=x'])
+    expect(await call('source.record', { courseId: 'c', url, title: 'x', text: 'Synthetic.' }), url).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: expect.stringContaining('Authentication') } });
+  expect(stored()).toHaveLength(2);
+});
+
+it('binds the course on the raw path and refuses Canvas announcements like discussions', async () => {
+  const { call, stored } = await setup();
+  expect(await call('source.record', { courseId: 'c', url: 'https://canvas.lms.unimelb.edu.au/courses/1%2F..%2F..%2Fcourses%2F99/pages/lecture', title: 'x', text: 'Synthetic.' }))
+    .toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: expect.stringContaining('course') } });
+  for (const url of ['https://canvas.lms.unimelb.edu.au/courses/1/announcements/2', 'https://canvas.lms.unimelb.edu.au/api/v1/courses/1/announcements'])
+    expect(await call('source.record', { courseId: 'c', url, title: 'x', text: 'Synthetic.' }), url).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: expect.stringContaining('Announcements') } });
+  expect(stored()).toEqual([]);
+});
+
 it('Off-origin link: refuses with the reason and stores nothing', async () => {
   const { call, stored } = await setup();
   expect(await call('source.record', { courseId: 'c', url: 'https://example.org/courses/1/files/2', title: 'Elsewhere', text: 'Synthetic.' }))
