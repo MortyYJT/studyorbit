@@ -5,8 +5,8 @@
 
 ## 2. Store mapping
 
-- [ ] 2.1 Failing tests then `src/sync/course-import.ts`: per-course transaction, ids with term, SourceItems and links, score percentage, kind inheritance, group tags, remainder weights, final/hurdle components as one Assessment without remainder, agent/owner links kept, remainder floored at 0, retire per platform read and remainder/component rows only when `componentsComplete`, old-sync course reused, owner value wins, readState, derived split, unknown replaced, third-submission stand-ins (scenarios under "Store mapping and precedence" and "Unknown fields are re-checked and derived weights split evenly")
-- [ ] 2.2 Retired assessments skipped by `assessments.list`, planning `collectWork`, grade projection and `autonomy.read`
+- [x] 2.1 Failing tests then `src/sync/course-import.ts`: per-course transaction, ids with term, SourceItems and links, score percentage, kind inheritance, group tags, remainder weights, final/hurdle components as one Assessment without remainder, agent/owner links kept, remainder floored at 0, retire per platform read and remainder/component rows only when `componentsComplete`, old-sync course reused, owner value wins, readState, derived split, unknown replaced, third-submission stand-ins (scenarios under "Store mapping and precedence" and "Unknown fields are re-checked and derived weights split evenly")
+- [x] 2.2 Retired assessments skipped by `assessments.list`, planning `collectWork`, grade projection and `autonomy.read`
 
 ## 3. Commands and policy
 

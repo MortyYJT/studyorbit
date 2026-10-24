@@ -6,7 +6,8 @@ const paging = { limit: z.number().int().min(1).max(500), cursor: z.string().reg
 const id = z.string().min(1).max(256);
 export const queryDefinitions = {
   courses: { table: 'courses', schema: CourseSchema, filters: z.strictObject({ ...paging, term: z.string().optional() }) },
-  assessments: { table: 'assessments', schema: AssessmentSchema, filters: z.strictObject({ ...paging, courseId: id.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }) },
+  // Retired assessments are left out unless a caller that maintains them (import) asks for them.
+  assessments: { table: 'assessments', schema: AssessmentSchema, filters: z.strictObject({ ...paging, courseId: id.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional(), includeRetired: z.boolean().optional() }) },
   tasks: { table: 'tasks', schema: TaskSchema, filters: z.strictObject({ ...paging, courseId: id.optional(), assessmentId: id.optional(), moduleId: id.optional() }) },
   sourceItems: { table: 'source_items', schema: SourceItemSchema, filters: z.strictObject({ ...paging, courseId: id.optional(), id: id.optional(), continuationScope: z.string().max(1024).optional(), kind: SourceItemSchema.shape.kind.optional() }) },
   runs: { table: 'runs', schema: RunSchema, filters: z.strictObject({ ...paging, command: id.optional(), outcome: RunSchema.shape.outcome.optional() }) },
@@ -36,9 +37,10 @@ export function queryPlan<K extends Collection>(collection: K, input: QueryInput
     } catch { throw invalid(); }
   }
   // Keys are accepted only by the strict, collection-specific schema above; values are always bound.
-  const sqlEntries = entries.filter(([key]) => key !== 'continuationScope');
+  const sqlEntries = entries.filter(([key]) => key !== 'continuationScope' && key !== 'includeRetired');
   const clauses = sqlEntries.map(([key]) => `json_extract(json, '$.${key}') = ?`);
   const params: (string | number)[] = sqlEntries.map(([, value]) => value as string);
+  if (collection === 'assessments' && (filters as { includeRetired?: boolean }).includeRetired !== true) clauses.push("COALESCE(json_extract(json, '$.retired'), 0) = 0");
   if (after !== undefined) { clauses.push('id > ?'); params.push(after); }
   params.push(limit + 1);
   return { sql: `SELECT json FROM ${definition.table}${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''} ORDER BY id ASC LIMIT ?`,

@@ -15,7 +15,8 @@ export class MetricsService {
   private all<K extends Collection>(collection: K): QueryItem<K>[] {
     const rows: QueryItem<K>[] = []; let cursor: string | undefined;
     do {
-      const page = this.store.query(collection, { limit: 500, cursor } as QueryInput<K>);
+      // Retired assessments keep their annotations and verdicts, which still count as recorded labels.
+      const page = this.store.query(collection, { limit: 500, cursor, ...(collection === 'assessments' ? { includeRetired: true } : {}) } as QueryInput<K>);
       rows.push(...page.items); cursor = page.nextCursor;
     } while (cursor);
     return rows;
