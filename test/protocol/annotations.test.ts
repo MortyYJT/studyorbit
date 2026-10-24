@@ -2,8 +2,9 @@ import { mkdtemp, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import { SyncService } from '../../src/sync/service.js';
-import { bodies, clock, readers } from '../sync/delivery-fixture.js';
+import { validateCourseDocument } from '../../src/sync/course-json.js';
+import { assessmentId, importCourseDocument } from '../../src/sync/course-import.js';
+import { component, document, item, now, quoted } from '../sync/course-document.js';
 import { hash } from '../../src/citations/exact.js';
 import { SqliteRepository } from '../../src/store/sqlite.js';
 import { ProtocolFiles } from '../../src/protocol/files.js';
@@ -202,17 +203,18 @@ it('review 3: pages growing history within the byte bound without losing effecti
   expect(await f.call('annotation.confirm', { entity: 'assessment', entityId: 'a', field: 'weight', annotationId: 'history-199' }, true)).toMatchObject({ ok: true });
 });
 
-it('review 4: sync keeps platform weight independent of an agent claim that later loses evidence', async () => {
+it('review 4: import keeps the platform weight independent of an agent claim that later loses evidence', async () => {
   const f = await fixture();
-  const ports = readers(bodies());
-  const sync = new SyncService({ store: f.store, clock: clock(), readers: async () => ports });
-  await sync.run({});
-  const assessment = f.store.query('assessments', { limit: 100 }).items.find(item => item.courseId !== 'c')!;
+  // The course document is the platform value; it is re-imported as a later sync would.
+  const sync = { run: () => importCourseDocument(f.store, validateCourseDocument(document([component('work', 100, [item(1, { weight: quoted(30) })], {})]),
+    { final: false, now }).document!, { at: now }) };
+  sync.run();
+  const assessment = f.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1'))!;
   f.store.saveSourceItem({ ...f.store.loadSourceItem('syllabus')!, courseId: assessment.courseId });
   const sourceRevision = courseEvidenceSnapshot(f.store, new TrustedStoreEvidence(f.store), assessment.courseId).sourceRevision;
   expect(await f.call('annotation.record', { entity: 'assessment', entityId: assessment.id, field: 'weight', value: 40,
     sourceRevision, citations: f.cite() })).toMatchObject({ ok: true });
-  await sync.run({});
+  sync.run();
   expect(await f.read(assessment.id)).toMatchObject({ ok: true, data: { fields: { weight: { value: 40, origin: 'agent', citations: f.cite() } } } });
   const text = 'Revised syllabus';
   f.store.saveSourceItem({ ...f.store.loadSourceItem('syllabus')!, text, contentHash: hash(text) });

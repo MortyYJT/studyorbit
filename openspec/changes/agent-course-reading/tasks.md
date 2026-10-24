@@ -20,7 +20,7 @@
 
 ## 5. Delete the API sync
 
-- [ ] 5.1 Remove the orchestration modules listed in design §6 and their tests; rewrite tests and the UI harness that seeded through `SyncService` to seed through `course.import` or the store; keep modules other code imports
+- [x] 5.1 Remove the orchestration modules listed in design §6 and their tests; rewrite tests and the UI harness that seeded through `SyncService` to seed through `course.import` or the store; keep modules other code imports
 
 ## 6. Frontend
 

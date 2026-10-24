@@ -1,8 +1,10 @@
 import type { Page, Route } from 'playwright';
 import { CourseworkError } from '../protocol/errors.js';
 import type { CaptureLimiter } from './limiter.js';
-import type { JsonResponse } from '../sync/canvas-reader.js';
+import type { EdResponse } from './ed-transport.js';
 import { CANVAS_ORIGIN } from '../sync/ed-scope.js';
+/** Moved here from the removed API sync reader (agent-course-reading); C-3 removes the transport. */
+export type JsonResponse = EdResponse | { kind: 'json'; status: number; body: unknown; next?: string };
 export interface CanvasPage { url(): string; evaluate<T>(script: string): Promise<T> }
 export function safeCanvasEndpoint(endpoint: string): boolean {
   return /^\/api\/v1\/(?:courses\?enrollment_type=student&enrollment_state=active&include\[\]=term&per_page=100&page=[1-9]\d?|courses\/[1-9]\d*\/(?:assignments|assignment_groups|modules)\?per_page=100&page=[1-9]\d?|courses\/[1-9]\d*\/assignments\/[1-9]\d*\/submissions\/self)$/.test(endpoint);
