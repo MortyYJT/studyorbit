@@ -4,7 +4,7 @@
 TBD - created by archiving change v1-protocol. Update Purpose after archive.
 ## Requirements
 ### Requirement: Enforce recorded policy and exact assessment grants
-Levels SHALL be by type of work (#120): L0 read (information, planning, revision), L1 complete quizzes, L2 complete assignments and essays; a higher level includes the lower ones. The level an assessment needs SHALL follow its effective kind: `quiz` and `ongoing` need L1; `assignment`, `exam` and unknown kind need L2. Each course SHALL have a default level and each assessment MAY have an override, higher or lower (#117). The course cap SHALL be L0 when the course's effective AI policy prohibits AI (#124), and L2 otherwise, including when no policy is known (#125). The effective policy SHALL be the owner's recorded policy, else the agent-read `aiPolicy` of the course (#180), else unknown; an owner value of `null` clears the owner's policy. The effective level of an assessment SHALL be the minimum of its override (or the course default when there is none) and the course cap. Exams SHALL have no separate code check (#126); the frontend offers no agent entry for them (#146). Course policies, default levels, overrides and the confirm-before-submit switch SHALL be recorded only from the frontend's owner session (#122) and audited; agents SHALL have no command that changes them, the agent-read `aiPolicy` takes effect without confirmation but never overrides an owner policy, and agents SHALL NOT record a course policy annotation. A read command `autonomy.check` SHALL return, for one assessment and a requested action, `allowed` or `denied` with a reason code, and the browser tools SHALL call it before every write (see `agent-browser-tools`). L0 SHALL NOT allow graded answers disguised as practice content. Private repository visibility SHALL be verified before pushing answering or submission code (#57).
+Levels SHALL be by type of work (#120): L0 read (information, planning, revision), L1 complete quizzes, L2 complete assignments and essays; a higher level includes the lower ones. The level an assessment needs SHALL follow its effective kind: `quiz` and `ongoing` need L1; `assignment`, `exam` and unknown kind need L2. Each course SHALL have a default level and each assessment MAY have an override, higher or lower (#117). The course cap SHALL be L0 when the course's effective AI policy prohibits AI (#124), and L2 otherwise, including when no policy is known (#125). The effective policy SHALL be the owner's recorded policy, else the agent-read `aiPolicy` of the course (#180), else unknown; an owner value of `null` clears the owner's policy. The effective level of an assessment SHALL be the minimum of its override (or the course default when there is none) and the course cap. Exams SHALL have no separate code check (#126); the frontend offers no agent entry for them (#146). Course policies, default levels and overrides SHALL be recorded only from the frontend's owner session (#122) and audited; agents SHALL have no command that changes them, the agent-read `aiPolicy` takes effect without confirmation but never overrides an owner policy, and agents SHALL NOT record a course policy annotation. A read command `autonomy.check` SHALL return, for one assessment and a requested action, `allowed` or `denied` with a reason code; the workspace rules tell Codex to call it before acting (see `agent-chat`), but no code path depends on it, because Codex acts on the screen (#168). L0 SHALL NOT allow graded answers disguised as practice content. Private repository visibility SHALL be verified before pushing answering or submission code (#57).
 
 #### Scenario: Missing policy or prohibited course
 - **WHEN** a course is recorded as prohibiting AI and an assessment override says L2
@@ -27,21 +27,21 @@ Levels SHALL be by type of work (#120): L0 read (information, planning, revision
 - **THEN** the effective level of every assessment of that course is L0 and `autonomy.read` reports the policy as `prohibited`
 
 ### Requirement: Append-only audit and run records fail safely
-Policy and level changes, permission checks, denials and every agent browser write (click, fill, select, submit) SHALL produce append-only audit metadata linking run, conversation, target assessment, effective level, policy, and the observed outcome. A submit record SHALL state how it was confirmed: `owner-ui` after the owner confirmed in the frontend, or `not-required` when the owner switched confirmation off for that course (#121). A submit on a course that requires confirmation without an owner confirmation SHALL be recorded as a violation, not as success. Only code SHALL write browser-action audit entries: the agent-callable `audit.record` command is removed, so no agent can record an action or a confirmation it did not go through. Audit SHALL exclude prose, answers, quotes, personal data, raw errors and credentials. If the audit writer fails, `autonomy.check` SHALL return `denied` with an audit-unavailable reason. The run ledger SHALL remain separate and record citation failures and actual measurements only.
+Policy and level changes, permission checks and denials SHALL produce append-only audit metadata linking run, conversation, target assessment, effective level, policy, and the observed outcome. Codex's on-screen actions are not audited by code (#168); historical browser-write and submit records stay readable. The agent-callable `audit.record` command does not exist, so no agent can record an action it did not go through. Audit SHALL exclude prose, answers, quotes, personal data, raw errors and credentials. If the audit writer fails, `autonomy.check` SHALL return `denied` with an audit-unavailable reason. The run ledger SHALL remain separate and record citation failures and actual measurements only.
 
 #### Scenario: Intent audit unavailable
 - **WHEN** the audit writer fails during `autonomy.check`
-- **THEN** the check returns `denied` with an audit-unavailable reason and no browser write happens
+- **THEN** the check returns `denied` with an audit-unavailable reason
 
 #### Scenario: Completion failure after external action
-- **WHEN** a browser write completes and the audit append fails
-- **THEN** the tool reports the recording failure and the actual or uncertain browser state, and the write is not repeated
+- **WHEN** an owner level change completes and the audit append fails
+- **THEN** the command reports the recording failure and the stored change, and the change is not repeated
 
 #### Scenario: Agent cannot write audit entries
 - **WHEN** an agent tries to call `audit.record` through MCP or its tool set
 - **THEN** the command is not listed and the call fails, and no audit entry is written
 
 #### Scenario: Recorded submit
-- **WHEN** the agent submits a quiz at L1 after the owner pressed "confirm submit" in the frontend
-- **THEN** one append-only audit entry links the assessment, level, policy and confirmation `owner-ui`, and contains no answer text
+- **WHEN** a historical submit record with confirmation `owner-ui` is read after this change
+- **THEN** it is returned unchanged and contains no answer text
 
