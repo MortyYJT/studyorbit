@@ -174,13 +174,42 @@ it('lists candidates undecided first and records the ticked selection through th
   const store = new ShellStore(createClient(secret, normal));
   await store.loadCandidates();
   expect(store.getSnapshot().candidates).toHaveLength(5);
-  expect(await store.selectCourses(rows, new Set(['SYNB20002:2026:S2', 'SYNC30003:2026:S2', 'SYNA10001:2026:S2']))).toBe(true);
+  // Ticks B and C, leaves D unticked, unticks A; E stays unticked as recorded.
+  expect(await store.selectCourses(rows, new Set(['SYNB20002:2026:S2', 'SYNC30003:2026:S2']))).toBe(true);
   const call = normal.mock.calls.find(([url]) => url === '/api/courses.select')! as unknown as [string, RequestInit];
   expect(call[1].headers).toMatchObject({ 'X-Coursework-Session': secret });
+  // Only undecided and changed rows are sent: unchanged decisions need no write.
   expect(JSON.parse(String(call[1].body))).toEqual({ selections: [
     { key: 'SYNB20002:2026:S2', selected: true }, { key: 'SYNC30003:2026:S2', selected: true }, { key: 'SYND40004:2026:S2', selected: false },
-    { key: 'SYNA10001:2026:S2', selected: true }, { key: 'SYNE50005:2026:S2', selected: false }] });
+    { key: 'SYNA10001:2026:S2', selected: false }] });
   // Saving re-reads the status and the candidates so "needs you" drops the item.
   expect(normal.mock.calls.filter(([url]) => url === '/api/sync.status')).toHaveLength(1);
   expect(normal.mock.calls.filter(([url]) => url === '/api/courses.candidates')).toHaveLength(2);
+});
+it('sends more than 100 changes in batches the contract accepts', async () => {
+  const items = Array.from({ length: 150 }, (_, index) => candidate(`SYNA${String(10000 + index)}`));
+  const normal = fixture({ 'courses.candidates': { items }, 'courses.select': { recorded: 1 } });
+  const store = new ShellStore(createClient('c'.repeat(64), normal));
+  expect(await store.selectCourses(selectionRows(items), new Set([items[0]!.key]))).toBe(true);
+  const sizes = normal.mock.calls.filter(([url]) => url === '/api/courses.select')
+    .map(call => JSON.parse(String((call as unknown as [string, RequestInit])[1].body)).selections.length);
+  expect(sizes).toEqual([100, 50]);
+});
+it('offers course selection after a NEEDS_SELECTION run even when nothing is undecided', async () => {
+  const store = new ShellStore(createClient(undefined, fixture({ 'sync.status': { running: false, lastRun: lastRun('NEEDS_SELECTION'), blocked: [], undecided: 0, courses: [] },
+    'browser.status': { canvas: signedIn, ed: signedIn } })));
+  await store.refresh();
+  expect(attention(store.getSnapshot())).toEqual([{ kind: 'select', count: 0 }]);
+});
+it('lists no per-course "not read" lines when the whole run was blocked', async () => {
+  const unread = (code: string) => ({ key: `${code}:2026:S2`, code, term: '2026:S2', lastRun: { stored: false, unknownFields: [], dropped: [], warnings: [], policyChanged: false } });
+  const read = async (outcome: string, blocked: string[]) => {
+    const store = new ShellStore(createClient(undefined, fixture({ 'sync.status': { running: false, lastRun: lastRun(outcome), blocked, undecided: 0,
+      courses: [unread('SYNA10001'), unread('SYNB20002')] }, 'browser.status': { canvas: signedIn, ed: signedIn } })));
+    await store.refresh();
+    return attention(store.getSnapshot()).map(item => item.kind);
+  };
+  expect(await read('AGENT_UNAVAILABLE', ['canvas', 'ed'])).toEqual(['blocked', 'blocked']);
+  expect(await read('PARTIAL', ['canvas', 'ed'])).toEqual(['blocked', 'blocked']);
+  expect(await read('PARTIAL', ['ed'])).toEqual(['blocked', 'unread', 'unread']);
 });

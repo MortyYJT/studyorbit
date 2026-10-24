@@ -252,3 +252,4 @@ button.primary:hover:enabled { background:var(--ink); opacity:.9; }
 .ghead { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 12px; padding:16px 4px 6px; border-bottom:1px solid var(--line); font-size:13px; }
 .arow .derived { display:block; font-size:11px; color:var(--muted); font-style:italic; }
 .arow.remainder { color:var(--muted); cursor:default; }
+.row-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }

@@ -37,6 +37,7 @@ export function emptyStore(state: ShellState): boolean {
 export function attention(state: ShellState): Attention[] {
   const outcome = state.sync?.lastRun?.outcome;
   const blocked = state.sync?.blocked ?? [];
+  const allBlocked = outcome === 'AGENT_UNAVAILABLE' || blocked.length === 2;
   const sites = (['canvas', 'ed'] as const).flatMap((site): Attention[] => blocked.includes(site) ? [{ site, kind: 'blocked' }]
     : state.browser?.[site]?.state === 'signedOut' ? [{ site, kind: 'signin' }] : []);
   // A discovery with every platform blocked ends AGENT_UNAVAILABLE; the blocked items already say what to do.
@@ -56,10 +57,13 @@ export function attention(state: ShellState): Attention[] {
       const quote = stored?.readState?.aiPolicy?.quote;
       items.push({ kind: 'policy', course: course.code, ...ids, ...(stored?.aiPolicy ? { value: stored.aiPolicy } : {}), ...(quote ? { quote } : {}) });
     }
-    if (!run.stored) items.push({ kind: 'unread', course: course.code });
+    // A run blocked on every platform read no course; the blocked items already say why.
+    if (!run.stored && !allBlocked) items.push({ kind: 'unread', course: course.code });
     return items;
   }) ?? [];
-  return [...state.sync?.undecided ? [{ kind: 'select' as const, count: state.sync.undecided }] : [], ...sites, ...failed, ...courses];
+  // A NEEDS_SELECTION run keeps the entry even after the owner decided against every course, so it is never a dead end.
+  const select = state.sync && (state.sync.undecided > 0 || outcome === 'NEEDS_SELECTION') ? [{ kind: 'select' as const, count: state.sync.undecided }] : [];
+  return [...select, ...sites, ...failed, ...courses];
 }
 /** Contract path such as `components[1].items[0].due` in the owner's words (1-based positions). */
 export function fieldName(path: string, t: Copy): string {
@@ -141,7 +145,9 @@ export class ShellStore {
     if (this.state.selecting || !rows.length) return false;
     this.update({ selecting: true }); this.error('select');
     try {
-      await this.client.call('courses.select', { selections: rows.map(row => ({ key: row.key, selected: checked.has(row.key) })) });
+      // Only undecided rows and changed decisions are written, at most 100 per call (the contract's bound).
+      const selections = rows.filter(row => row.undecided || row.checked !== checked.has(row.key)).map(row => ({ key: row.key, selected: checked.has(row.key) }));
+      for (let start = 0; start < selections.length; start += 100) await this.client.call('courses.select', { selections: selections.slice(start, start + 100) });
       await Promise.all([this.refresh(), this.loadCandidates()]);
       return true;
     } catch (error) { this.error('select', code(error)); return false; }

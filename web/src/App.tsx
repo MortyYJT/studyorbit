@@ -106,7 +106,7 @@ export function App({ store }: { store: ShellStore }) {
             <dt>{t.syncNeeds.turns} · {t.syncNeeds.steps}</dt><dd>{state.sync.lastRun.turns} · {state.sync.lastRun.steps}</dd>
             <dt>{t.syncNeeds.blocked}</dt><dd>{state.sync.blocked.length ? state.sync.blocked.map(site => site === 'ed' ? 'Ed' : 'Canvas').join(', ') : t.syncNeeds.none}</dd>
           </dl>}
-          <h3>{t.syncNeeds.selected}</h3>
+          <div className="row-heading"><h3>{t.syncNeeds.selected}</h3><button disabled={!store.client.hasSession()} onClick={() => { close(); setSelecting(true); }}>{t.syncNeeds.choose}</button></div>
           {!state.sync.courses.length ? <p className="muted">{t.syncNeeds.noSelected}</p> : <dl>{state.sync.courses.flatMap(course => [
             <dt key={`${course.key}-t`}>{course.code}{course.name ? ` · ${course.name}` : ''}</dt>,
             <dd key={`${course.key}-d`}>{course.storedAt ? date(course.storedAt) : t.syncNeeds.notStored}</dd>])}</dl>}

@@ -32,7 +32,7 @@ export function NeedsYou({ needs, t, onStatus, onAgent, onSelect, onCourse, clie
         case 'signin': return [s.signinEdge.join(site), [t.status, onStatus]];
         case 'blocked': return [s.blockedHelp.join(site), [t.status, onStatus]];
         case 'failed': return [`${t.syncFailed} · ${s.outcomes[item.outcome]}${item.outcome === 'AGENT_UNAVAILABLE' ? ` · ${s.agentHelp}` : ''}`, [t.status, onStatus]];
-        case 'select': return [`${item.count} ${s.select}`, [s.choose, onSelect]];
+        case 'select': return [item.count ? `${item.count} ${s.select}` : s.selectNone, [s.choose, onSelect]];
         case 'unknown': return [<>{item.course} · {item.fields.length > 0 && <>{s.unknown}{t.colon}{item.fields.map(path => fieldName(path, t)).join('; ')}</>}
           {item.fields.length > 0 && item.dropped.length > 0 && ' · '}{item.dropped.length > 0 && <>{s.dropped}{t.colon}{item.dropped.map(path => fieldName(path, t)).join('; ')}</>}</>, open];
         case 'weights': return [`${item.course} · ${item.warning === 'WEIGHT_SUM' ? item.sum === undefined ? s.weightSumUnknown : s.weightSum.join(String(item.sum))
