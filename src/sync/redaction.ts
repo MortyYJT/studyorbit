@@ -16,7 +16,13 @@ const credentialSyntax = /authToken|x-token|authorization|\b(?:password|csrf|acc
 const assessmentCredentialSyntax = /authToken|x-token|\baccess_token\b|\b(?:token|api[_-]?key|secret|session[_-]?id|cookie|password|csrf|authorization)\s*[:=]|\bbearer\s+\S/iu;
 export function unsafeSource(): CourseworkError { return new CourseworkError('SOURCE_UNAVAILABLE', 'Normalized source withheld by privacy validation.'); }
 /** Scope-wide harvesting must finish before any projection. Owner rules are literals, never executable regexes. */
-export function createRedactor(scope: unknown, configuration: unknown = {}): { text(value: unknown): string; readText(value: unknown, options?: { assessmentPage?: boolean }): string; url(value: string): string; identifier(value: string): boolean } {
+/**
+ * `assessmentPage`: quiz and workshop pages (#112). `agentCopy`: text the agent copied with `source.record` (#187); it is
+ * plain text for the model, so `<`/`>` stay, format characters are dropped, and contact details and numbers are still
+ * masked, but words such as "student" or "password" in ordinary prose are not refused.
+ */
+export interface TextMode { assessmentPage?: boolean; agentCopy?: boolean }
+export function createRedactor(scope: unknown, configuration: unknown = {}): { text(value: unknown, mode?: TextMode): string; readText(value: unknown, options?: TextMode): string; url(value: string): string; identifier(value: string): boolean } {
   const parsed = rulesSchema.safeParse(configuration);
   if (!parsed.success) throw unsafeSource();
   const names = new Set<string>(); const identifiers = new Set<string>(); const phones = new Set<string>(); let nodes = 0;
@@ -65,7 +71,8 @@ export function createRedactor(scope: unknown, configuration: unknown = {}): { t
   const personalIdentity = (value: string): boolean => patterns.some(pattern => {
     pattern.lastIndex = 0; return pattern.test(value.normalize('NFKC'));
   });
-  const text = (value: unknown, assessmentPage = false): string => {
+  const text = (value: unknown, mode: TextMode = {}): string => {
+    const assessmentPage = mode.assessmentPage === true; const prose = assessmentPage || mode.agentCopy === true;
     if (typeof value !== 'string' || value.length > 1_000_000) throw unsafeSource();
     let text = value.normalize('NFKC');
     // Decode URL escapes before privacy checks; malformed encodings cannot fall back to raw text.
@@ -76,9 +83,9 @@ export function createRedactor(scope: unknown, configuration: unknown = {}): { t
     text = text.normalize('NFKC');
     // Quiz and workshop pages are returned unredacted (#112): invisible format characters are dropped
     // instead of refusing the page, and only other students' details are masked below.
-    if (assessmentPage) text = text.replace(/[^\P{C}\t\n\r]/gu, '');
-    if (/[\p{C}]/u.test(text.replace(/[\t\n\r]/g, '')) || (!assessmentPage && /[<>]/u.test(text))
-      || (assessmentPage ? assessmentCredentialSyntax : credentialSyntax).test(text)) throw unsafeSource();
+    if (prose) text = text.replace(/[^\P{C}\t\n\r]/gu, '');
+    if (/[\p{C}]/u.test(text.replace(/[\t\n\r]/g, '')) || (!prose && /[<>]/u.test(text))
+      || (prose ? assessmentCredentialSyntax : credentialSyntax).test(text)) throw unsafeSource();
     for (const pattern of patterns) text = text.replace(pattern, '[redacted]');
     text = text.replace(/\b((?:student[\s_-]*(?:number|no\.?|id)|sid|id)\s*[:#=-]?\s*)\d{6,}\b/giu, '$1[redacted]')
       // Same result as /[^\s/?:#=&]*@[^\s/?:#=&]+/ but linear: that pattern backtracks quadratically on long tokens (#71).
@@ -87,7 +94,7 @@ export function createRedactor(scope: unknown, configuration: unknown = {}): { t
     // Assessment prose keeps unlabelled mathematical values; labelled ids and contact details do not.
     if (!assessmentPage) text = text.replace(/\b\d{8,15}\b/gu, '[redacted]');
     for (const pattern of patterns) { pattern.lastIndex = 0; if (pattern.test(text)) throw unsafeSource(); }
-    if (!assessmentPage && /\b(?:classmate|student|author|user)\s+(?!(?:\[redacted\]|number\b|id\b))\p{L}+/iu.test(text)) throw unsafeSource();
+    if (!prose && /\b(?:classmate|student|author|user)\s+(?!(?:\[redacted\]|number\b|id\b))\p{L}+/iu.test(text)) throw unsafeSource();
     return text;
   };
   const decode = (value: string): string => {
@@ -134,7 +141,7 @@ export function createRedactor(scope: unknown, configuration: unknown = {}): { t
   return { text, url,
     readText(value: unknown, options = {}): string {
       if (typeof value !== 'string' || value.length > 1_000_000) throw unsafeSource();
-      return value.split(/(https?:\/\/[^\s]+)/giu).map(part => /^https?:\/\//i.test(part) ? url(part) : text(part, options.assessmentPage)).join('');
+      return value.split(/(https?:\/\/[^\s]+)/giu).map(part => /^https?:\/\//i.test(part) ? url(part) : text(part, options)).join('');
     },
     identifier(value: string): boolean {
       // Structural fields retain numeric runs. Harvested identities and sensitive syntax still fail closed.

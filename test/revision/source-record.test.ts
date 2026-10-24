@@ -115,6 +115,30 @@ it('redacts emails and student numbers in agent text before storing', async () =
   expect(JSON.stringify(stored())).not.toMatch(/synthetic@example.org|1234567/);
 });
 
+it.each([
+  ['a comparison', 'if a < b then swap a > c', 'if a < b then swap a > c'],
+  ['student learning outcomes', 'The student learning outcomes are listed.', 'The student learning outcomes are listed.'],
+  ['user interface', 'user interface design', 'user interface design'],
+  ['soft hyphens and zero-width spaces', 'recur\u00ADsion and base\u200Bcase', 'recursion and basecase'],
+])('stores ordinary lecture text with %s and reads it back', async (_name, text, expected) => {
+  const { call } = await setup();
+  const recorded = await call('source.record', { courseId: 'c', url: pdfURL, title: 'Lecture', text, page: 1 });
+  expect(recorded).toMatchObject({ ok: true, data: { empty: false } });
+  expect(await call('sources.get', { sourceItemId: recorded.data.sourceItemId })).toMatchObject({ ok: true, data: { text: expected, copiedBy: 'agent' } });
+  // Study writes keep the strict model-output check, so only quotes it accepts can cite (here: the cleaned text).
+  if (!/[<>]|student|user/.test(expected)) expect(await call('revision.write', { courseId: 'c', sourceRevision: recorded.data.sourceRevision,
+    claims: [{ text: 'Synthetic claim.', citations: [{ sourceItemId: recorded.data.sourceItemId, quote: expected, locator: 'page:1' }] }] })).toMatchObject({ ok: true });
+});
+
+it('masks a classmate email and refuses what the privacy check cannot make safe, without a retry hint', async () => {
+  const { call, stored } = await setup();
+  expect(await call('source.record', { courseId: 'c', url: pdfURL, title: 'Lecture', text: 'Ask your classmate fictional.peer@example.org for notes.', page: 1 })).toMatchObject({ ok: true });
+  expect(stored()[0]!.text).toBe('Ask your classmate [redacted] for notes.');
+  const refused = await call('source.record', { courseId: 'c', url: pdfURL, title: 'Lecture', text: 'Use Authorization: Bearer abc123 for the API.', page: 2 });
+  expect(refused).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', retryable: false, message: expect.stringContaining('privacy check cannot make safe') } });
+  expect(stored()).toHaveLength(1);
+});
+
 it('stores an empty page as empty and reports it without evidence', async () => {
   const { call, stored } = await setup();
   expect(await call('source.record', { courseId: 'c', url: pdfURL, title: 'Lecture', text: '   ', page: 4 }))

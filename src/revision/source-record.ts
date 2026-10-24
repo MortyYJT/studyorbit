@@ -14,12 +14,13 @@ import { courseEvidence, materialIdentity, sourceURL } from './sources.js';
  */
 export const MAX_RECORDED_BYTES = 60_000;
 const TOO_LARGE = 'Source page text exceeds 60,000 bytes (UTF-8, JSON-encoded); record it in parts, adding #part-2, #part-3 and so on to the URL.';
+const UNSAFE = 'The text contains something the privacy check cannot make safe; remove other people\'s names or identifiers and record again.';
 const encodedBytes = (text: string) => Buffer.byteLength(JSON.stringify(text), 'utf8') - 2;
 /** Refusal messages that name their reason to the agent (see `safeError`). */
 export const sourceRecordRefusals: readonly string[] = [
   'Off-origin source URLs are refused.', 'Discussion threads and replies are refused.',
   'Authentication URLs and credentials are refused.', 'Source URL does not belong to this course.',
-  TOO_LARGE,
+  TOO_LARGE, UNSAFE,
 ];
 
 /**
@@ -47,9 +48,18 @@ export class SourceRecorder {
     const redactor = createRedactor({ scope: {}, output: [title, text] });
     const safeURL = redactor.url(url.href);
     if (safeURL !== url.href) throw new CourseworkError('INVALID_INPUT', 'Source URL contains personal data.');
-    const safe = protectRead(redactor.readText(text).trim(), {}) as string;
+    // Format characters (soft hyphens, zero-width spaces) are dropped before redaction and hashing.
+    const plain = text.replace(/[^\P{C}\t\n]/gu, '');
+    const copy = { agentCopy: true } as const;
+    let safe: string; let safeTitle: string;
+    try {
+      safe = protectRead(redactor.readText(plain, copy).trim(), {}, copy) as string;
+      safeTitle = (protectRead(redactor.readText(title.replace(/[^\P{C}]/gu, ''), copy).trim(), {}, copy) as string) || 'Material';
+    } catch (error) {
+      if (error instanceof CourseworkError && error.code === 'SOURCE_UNAVAILABLE') throw new CourseworkError('INVALID_INPUT', UNSAFE);
+      throw error;
+    }
     if (encodedBytes(safe) > MAX_RECORDED_BYTES) throw new CourseworkError('LIMIT_EXCEEDED', TOO_LARGE);
-    const safeTitle = (protectRead(redactor.readText(title).trim(), {}) as string) || 'Material';
     const id = `material-${hash([courseId, url.href, page ?? null]).slice(0, 32)}`;
     // Same URL and page keep the same id, so recording again replaces the text and its hash.
     this.store.saveSourceItem({ id, courseId, platform, externalId: materialIdentity(url.href, page), kind: 'material',
