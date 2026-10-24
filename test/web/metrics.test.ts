@@ -7,7 +7,7 @@ const range = { from: '2026-09-23T14:00:00.000Z', to: '2026-10-23T13:00:00.000Z'
 const none = <R extends string>(reason: R) => ({ available: false as const, reason, count: 0 as const });
 const totals = (steps: number, turns: number, totalUsd?: number) => ({ steps, turns,
   cost: totalUsd === undefined ? { ...none('no_reported_costs'), unknownCount: 1 } : { available: true as const, totalUsd, count: 1, unknownCount: 0 } });
-const empty = { ...range, sync: { canvas: none('no_runs'), ed: none('no_runs') }, accuracy: none('no_labels'), estimates: none('no_items'), agent: none('no_conversations') };
+const empty = { ...range, sync: { runs: none('no_runs'), canvas: none('no_runs'), ed: none('no_runs') }, accuracy: none('no_labels'), estimates: none('no_items'), agent: none('no_conversations') };
 it('defaults to the last 30 days in the owner time zone, end date inclusive, across a DST change', () => {
   const dates = defaultRange(new Date('2026-10-23T05:00:00Z'), 'Australia/Melbourne');
   expect(dates).toEqual({ from: '2026-09-24', to: '2026-10-23' });
@@ -24,7 +24,7 @@ it('shows every metric without data as unavailable with its reason, never as zer
 });
 it('formats values with their counts and reports unknown costs separately', () => {
   const data = { ...empty,
-    sync: { canvas: { available: true as const, count: 4, successes: 3, successRate: 0.75, medianDurationMs: 2500, maxDurationMs: 221000, durationBasis: 'sync_run' as const }, ed: none('no_runs') },
+    sync: { runs: none('no_runs'), canvas: { available: true as const, count: 4, successes: 3, successRate: 0.75, medianDurationMs: 2500, maxDurationMs: 221000, durationBasis: 'sync_run' as const }, ed: none('no_runs') },
     accuracy: { available: true as const, count: 10, correct: 9, incorrect: 1, value: 0.9 },
     estimates: { available: true as const, count: 2, medianRatio: 1.25, meanRatio: 1.25 },
     agent: { available: true as const, count: 3, cost: { available: true as const, totalUsd: 0.06, count: 2, unknownCount: 1 }, conversations: [], byKind: [] } };

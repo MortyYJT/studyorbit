@@ -18,7 +18,9 @@ const KindSchema = AssessmentSchema.shape.kind.unwrap();
 /** One assessment's authority as the owner UI shows it; exams carry no level (#126, #146). */
 export const AutonomyAssessmentSchema = z.strictObject({ assessmentId: AuditIdSchema, kind: KindSchema.nullable(), applicable: z.boolean(),
   requiredLevel: z.union([z.literal(1), z.literal(2)]).nullable(), override: WorkLevelSchema.nullable(), effectiveLevel: WorkLevelSchema.nullable() });
-export const AutonomyReadSchema = z.strictObject({ courseId: AuditIdSchema, policy: PolicySchema.nullable(), cap: z.union([z.literal(0), z.literal(2)]),
+export const AutonomyReadSchema = z.strictObject({ courseId: AuditIdSchema, policy: PolicySchema.nullable(),
+  /** Who set the effective policy: the owner, or the agent's read of the course (#180); null when unknown. */
+  policyOrigin: z.enum(['owner', 'agent']).nullable(), cap: z.union([z.literal(0), z.literal(2)]),
   defaultLevel: WorkLevelSchema, confirmBeforeSubmit: z.boolean(), assessments: z.array(AutonomyAssessmentSchema).max(500) });
 export const autonomyContracts = {
   'autonomy.check': { input: z.strictObject({ assessmentId: AuditIdSchema, action: z.enum(['read', 'click', 'fill', 'select', 'submit', 'other']) }),
@@ -65,11 +67,16 @@ export class AssessmentAutonomy {
   private ownerField(entity: 'course' | 'assessment', id: string, field: string) {
     return this.store.readAnnotations(entity, id).filter(row => row.origin === 'owner' && row.field === field).at(-1);
   }
-  private policy(courseId: string) {
-    // Policy prose is evidence, not an authority setting. Only owner enum records set the cap.
+  /** Effective policy: the owner's recorded value, else the agent-read Course.aiPolicy, else unknown (#180, #125). */
+  private policy(courseId: string): { value?: Policy; origin?: 'owner' | 'agent'; ref?: string } {
+    // Policy prose is evidence, not an authority setting. Only owner enum records set the cap; null clears them.
     const row = this.store.readAnnotations('course', courseId).filter(row => row.origin === 'owner' && row.field === 'aiPolicy'
       && (row.value === null || PolicySchema.safeParse(row.value).success)).at(-1);
-    return { value: row && row.value !== null ? PolicySchema.parse(row.value) : undefined, ref: row ? hash(row) : undefined };
+    if (row && row.value !== null) return { value: PolicySchema.parse(row.value), origin: 'owner', ref: hash(row) };
+    const course = this.store.loadCourse(courseId);
+    const read = PolicySchema.safeParse(course?.aiPolicy);
+    if (read.success) return { value: read.data, origin: 'agent', ref: hash({ courseId, aiPolicy: read.data, readState: course?.readState?.aiPolicy ?? null }) };
+    return { ref: row ? hash(row) : undefined };
   }
   private kind(assessmentId: string, fallback: unknown) {
     if (this.resolveKind) return this.resolveKind(assessmentId) ?? undefined;
@@ -86,7 +93,7 @@ export class AssessmentAutonomy {
     const grantRef = value !== undefined ? hash(override!) : 'at' in settings ? hash(settings) : undefined;
     const refs: AuthorityReferences = { courseId, ...(assessmentId ? { assessmentId } : {}), level,
       ...(policy.ref ? { policyRef: policy.ref } : {}), ...(grantRef ? { grantRef } : {}) };
-    return { level, policy: policy.value, refs };
+    return { level, policy: policy.value, policyOrigin: policy.origin, refs };
   }
   references(name: AutonomyCommand, input: unknown): AuthorityReferences {
     const parsed = autonomyContracts[name].input.parse(input);
@@ -139,7 +146,7 @@ export class AssessmentAutonomy {
       }
       cursor = page.nextCursor;
     } while (cursor);
-    return { courseId, policy: course.policy ?? null, cap: cap(course.policy), defaultLevel: WorkLevelSchema.parse(settings.defaultLevel),
+    return { courseId, policy: course.policy ?? null, policyOrigin: course.policyOrigin ?? null, cap: cap(course.policy), defaultLevel: WorkLevelSchema.parse(settings.defaultLevel),
       // Same truthiness the browser submit path applies to this setting.
       confirmBeforeSubmit: Boolean(settings.confirmBeforeSubmit), assessments };
   }

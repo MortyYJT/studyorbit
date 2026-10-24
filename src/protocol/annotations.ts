@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AssessmentSchema, AnnotationSchema, AnnotationVerdictSchema, AssessmentLinkSchema, type Annotation } from '../domain/schemas.js';
+import { AiPolicySchema, AssessmentSchema, AnnotationSchema, AnnotationVerdictSchema, AssessmentLinkSchema, type Annotation } from '../domain/schemas.js';
 import { hash, citationMismatch, validateCitation } from '../citations/exact.js';
 import type { SqliteRepository } from '../store/sqlite.js';
 import { courseEvidenceSnapshot } from '../revision/source-fetch.js';
@@ -50,7 +50,8 @@ export class AnnotationService {
   }
   private validateValue(entity: 'assessment' | 'course', field: string, value: unknown) {
     const schema = entity === 'course'
-      ? field === 'assessmentsComplete' ? z.boolean() : field === 'aiPolicy' ? z.string().trim().min(1).max(100000) : undefined
+      // The owner's course policy is one of the policy values, or null to clear it (#180).
+      ? field === 'assessmentsComplete' ? z.boolean() : field === 'aiPolicy' ? AiPolicySchema.nullable() : undefined
       : field === 'name' ? z.string().trim().min(1).max(100000)
         : field === 'kind' ? AssessmentSchema.shape.kind.nullable()
           : field === 'due' ? AssessmentSchema.shape.due.nullable()
@@ -101,6 +102,13 @@ export class AnnotationService {
     });
     const fields = Object.fromEntries((data.entity === 'assessment' ? assessmentFields : courseFields).map(field => {
       const candidates = history.filter(row => row.field === field);
+      if (data.entity === 'course' && field === 'aiPolicy') {
+        // Owner policy, else the agent-read value stored on the Course; an owner null clears the owner's policy (#180).
+        const owner = candidates.filter(row => row.origin === 'owner' && (row.value === null || AiPolicySchema.safeParse(row.value).success)).at(-1);
+        if (owner && owner.value !== null) return [field, { value: owner.value, origin: 'owner', annotationId: owner.id, citations: owner.citations, verdicts: owner.verdicts }];
+        const read = (value as { aiPolicy?: string }).aiPolicy;
+        return [field, { value: read ?? null, origin: read === undefined ? null : 'agent', citations: [], verdicts: [] }];
+      }
       const effective = candidates.filter(row => row.origin === 'owner').at(-1) ?? candidates.filter(row => row.origin === 'agent' && row.coverage.complete).at(-1);
       // Agent-created facts are materialized for identity, not an independent sync fallback.
       const materializedAgentFact = 'origin' in value && value.origin === 'agent' && candidates.some(row => row.origin === 'agent');
@@ -160,6 +168,8 @@ export class AnnotationService {
       if (!context.owner) throw invalid();
       await context.owner.assertOwner(name);
     }
+    // A course's AI policy is read into the course document, never annotated by an agent (#180).
+    if (!owner && 'field' in data && data.field === 'aiPolicy') throw invalid();
     await context.authorization.check(name, 0, data);
     this.safe(data);
     const at = new Date().toISOString();
@@ -190,8 +200,8 @@ export class AnnotationService {
     const target = this.target(write.entity, write.entityId);
     if ('value' in write) {
       this.validateValue(write.entity, write.field, write.value);
-      // Enum policy values also change autonomy, which the owner may set only in the frontend.
-      if (owner && write.entity === 'course' && write.field === 'aiPolicy' && ['allowed', 'prohibited', 'owner-attested'].includes(String(write.value))) {
+      // Policy values (and null, which clears them) change autonomy, which the owner may set only in the frontend.
+      if (owner && write.entity === 'course' && write.field === 'aiPolicy') {
         await context.owner!.assertOwner('autonomy.policy.set');
       }
     }

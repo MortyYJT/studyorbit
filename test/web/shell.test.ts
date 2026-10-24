@@ -9,7 +9,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
   return vi.fn(async (url: string | URL | Request) => {
     const command = String(url).slice(5);
     const data = { 'courses.list': page, 'tasks.list': page, 'browser.status': { canvas: signedIn, ed: { ...signedIn, state: 'signedOut' } },
-      'sync.status': { running: false, canvas: {}, ed: {} }, 'planning.settings.read': { settings }, 'audit.list': page, ...overrides }[command];
+      'sync.status': { running: false, blocked: [], undecided: 0, courses: [] }, 'planning.settings.read': { settings }, 'audit.list': page, ...overrides }[command];
     return new Response(JSON.stringify({ protocol: 'coursework.agent/v1', command, ok: true, data, meta }));
   });
 }

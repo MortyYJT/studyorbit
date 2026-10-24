@@ -19,7 +19,7 @@ const graded = { id: 'graded', courseId: 'c1', name: 'Quiz 1', kind: 'quiz', wei
 function autonomyServer() {
   const state = { defaultLevel: 0 as 0 | 1 | 2, confirmBeforeSubmit: true, override: null as 0 | 1 | 2 | null };
   return {
-    'autonomy.read': () => ({ courseId: 'c1', policy: 'allowed', cap: 2, defaultLevel: state.defaultLevel, confirmBeforeSubmit: state.confirmBeforeSubmit,
+    'autonomy.read': () => ({ courseId: 'c1', policy: 'allowed', policyOrigin: 'owner', cap: 2, defaultLevel: state.defaultLevel, confirmBeforeSubmit: state.confirmBeforeSubmit,
       assessments: [{ assessmentId: 'quiz', kind: 'quiz', applicable: true, requiredLevel: 1, override: state.override, effectiveLevel: state.override ?? state.defaultLevel }] }),
     'autonomy.override.set': (input: Record<string, unknown>) => { state.override = input.level as 0 | 1 | 2; return { recorded: true }; },
     'autonomy.override.clear': () => { state.override = null; return { recorded: true }; },

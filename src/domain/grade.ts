@@ -21,7 +21,9 @@ export const GradeProjectionSchema = z.object({
 });
 export type GradeProjection = z.infer<typeof GradeProjectionSchema>;
 
-export function projectGrade(course: Course, assessments: readonly Assessment[], band: GradeBand): GradeProjection {
+export function projectGrade(course: Course, all: readonly Assessment[], band: GradeBand): GradeProjection {
+  // Retired assessments (no longer listed, or replaced by their items) take no part in the grade.
+  const assessments = all.filter(a => a.retired !== true);
   const graded = assessments.filter((a) => a.score !== undefined && a.weight !== undefined);
   const gradedWeight = graded.reduce((sum, a) => sum + (a.weight ?? 0), 0);
   const earned = graded.reduce((sum, a) => sum + ((a.weight ?? 0) * (a.score ?? 0)) / 100, 0);

@@ -36,7 +36,7 @@ The SyncJob row (migration `004`: `course_selection`, `sync_jobs`) is the cross-
 - Components with `isFinal` or `hurdleMin`: one Assessment (`id = sha256(term:component key)`) linked to all items; due = earliest item due; score = weighted mean of item scores; items get no Assessment of their own; no remainder.
 - Items whose current link is agent/owner origin keep it and get no import Assessment.
 - Third-submission stand-ins: items/components without a valid name or status are left out; a course without a name shows its code; several finals → `isFinal` unknown on all.
-- Derived weights: `(component weight − stated) / (count − stated count)`, or listed items when `count` is unknown.
+- Derived weights: `(component weight − stated) / (max(count, listed items) − stated count)`; more listed items than `count` → `COUNT_MISMATCH` warning.
 - Retire sync-origin assessments of the course not produced by the document: item rows only for platforms reported `read`, remainder and component rows only when `componentsComplete`; never agent or owner origin.
 Domain additions are optional JSON fields; `RunSchema` allows `turns` without a conversation for `sync.run`. Reads (`assessments.list`, planning `collectWork`, grade projection, `autonomy.read`) skip retired assessments.
 

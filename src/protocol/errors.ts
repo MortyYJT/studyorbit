@@ -25,3 +25,9 @@ export class CourseworkError extends Error {
     this.next = code === 'AUTH_EXPIRED' ? 'Ask the user to sign in again.' : next;
   }
 }
+
+/**
+ * A refusal whose message our own code composed (fixed text, course keys and contract field paths, never request
+ * prose), so the dispatcher may pass it to the agent: course reading needs the failing paths to retry (#170).
+ */
+export class AgentFacingError extends CourseworkError {}

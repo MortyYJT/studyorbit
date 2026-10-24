@@ -19,8 +19,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import {
-  ModuleSchema, CourseSchema, AssessmentSchema, SourceItemSchema, TaskSchema, RunSchema,
-  type Module, type Course, type Assessment, type SourceItem, type Task, type Run,
+  ModuleSchema, CourseSchema, AssessmentSchema, SourceItemSchema, TaskSchema, RunSchema, CourseSelectionSchema, SyncJobSchema,
+  type Module, type Course, type Assessment, type SourceItem, type Task, type Run, type CourseSelection, type SyncJob,
 } from '../domain/schemas.js';
 import { migrate } from './migrations/index.js';
 import type { Repository, SaveBatch } from './repository.js';
@@ -33,10 +33,12 @@ interface EntitySchema<T> { parse(value: unknown): T }
 export class SqliteRepository implements Repository, CurrentStateReader {
   private readonly db: DatabaseSync;
   private closed = false;
+  private inTransaction = false;
 
   constructor(path: string) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-    this.db = new DatabaseSync(path);
+    // The `coursework mcp` process writes agent results while the starting process reads; wait briefly for locks.
+    this.db = new DatabaseSync(path, { timeout: 5000 });
     try {
       migrate(this.db);
     } catch (error) {
@@ -244,9 +246,61 @@ export class SqliteRepository implements Repository, CurrentStateReader {
     return rows.map(row => AssessmentLinkSchema.parse(JSON.parse(row.json as string)));
   }
 
-  saveBatch(batch: SaveBatch, validate?: () => void): void {
+  private savepoints = 0;
+  /**
+   * One write transaction; a nested call runs in a savepoint of the outer one, so a caller can combine its own rows with
+   * saveBatch and a failing inner step is undone without losing the outer rows.
+   */
+  transaction<T>(operation: () => T): T {
+    if (this.inTransaction) {
+      const name = `nested_${++this.savepoints}`;
+      this.db.exec(`SAVEPOINT ${name}`);
+      try {
+        const result = operation();
+        this.db.exec(`RELEASE ${name}`);
+        return result;
+      } catch (error) {
+        this.db.exec(`ROLLBACK TO ${name}`); this.db.exec(`RELEASE ${name}`);
+        throw error;
+      } finally { this.savepoints--; }
+    }
     this.db.exec('BEGIN IMMEDIATE');
+    this.inTransaction = true;
     try {
+      const result = operation();
+      this.db.exec('COMMIT');
+      return result;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    } finally { this.inTransaction = false; }
+  }
+  listCourseSelections(): CourseSelection[] {
+    return this.db.prepare('SELECT json FROM course_selection ORDER BY key').all().map(row => CourseSelectionSchema.parse(JSON.parse(row.json as string)));
+  }
+  saveCourseSelections(rows: readonly CourseSelection[]): void {
+    this.transaction(() => {
+      for (const row of rows) {
+        const value = CourseSelectionSchema.parse(row);
+        this.db.prepare('INSERT INTO course_selection (key, json) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET json = excluded.json').run(value.key, JSON.stringify(value));
+      }
+    });
+  }
+  loadSyncJob(id: string): SyncJob | undefined { return this.load('sync_jobs', 'id', id, SyncJobSchema); }
+  /** Newest first. */
+  listSyncJobs(): SyncJob[] {
+    return this.db.prepare('SELECT json FROM sync_jobs ORDER BY startedAt DESC, id DESC').all().map(row => SyncJobSchema.parse(JSON.parse(row.json as string)));
+  }
+  saveSyncJob(job: SyncJob): void {
+    const value = SyncJobSchema.parse(job);
+    this.transaction(() => {
+      this.db.prepare(`INSERT INTO sync_jobs (id, startedAt, endedAt, json) VALUES (?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET endedAt = excluded.endedAt, json = excluded.json`).run(value.id, value.startedAt, value.endedAt ?? null, JSON.stringify(value));
+    });
+  }
+
+  saveBatch(batch: SaveBatch, validate?: () => void): void {
+    this.transaction(() => {
       validate?.();
       for (const value of batch.modules ?? []) this.write('modules', ModuleSchema, value);
       for (const value of batch.courses ?? []) this.write('courses', CourseSchema, value, ['moduleId', 'sources']);
@@ -257,10 +311,6 @@ export class SqliteRepository implements Repository, CurrentStateReader {
       for (const value of batch.assessmentLinks ?? []) this.appendAssessmentLink(value);
       for (const value of batch.annotations ?? []) this.appendAnnotation(value);
       for (const value of batch.annotationVerdicts ?? []) this.appendAnnotationVerdict(value);
-      this.db.exec('COMMIT');
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
+    });
   }
 }

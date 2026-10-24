@@ -47,6 +47,19 @@ it('aggregates recorded sync-run durations and provider success independently, e
     ed: { available: true, count: 2, medianDurationMs: 2000, maxDurationMs: 3000, successes: 1, successRate: 0.5 },
   } } });
 });
+it('Sync success per run: OK, PARTIAL and OK give 2/3 over 3 agent runs; a NEEDS_SELECTION run changes neither count', async () => {
+  const { store, read } = await setup();
+  const agentRun = (id: string, start: string, durationMs: number, syncOutcome: 'OK' | 'PARTIAL' | 'NEEDS_SELECTION') => store.recordRun({ id, command: 'sync',
+    startedAt: start, endedAt: new Date(Date.parse(start) + durationMs).toISOString(), steps: 3, outcome: syncOutcome === 'PARTIAL' ? 'error' : 'ok',
+    turns: 4, syncOutcome, courseCoverage: [] });
+  agentRun('r1', '2026-01-02T00:00:00Z', 60_000, 'OK');
+  agentRun('r2', '2026-01-03T00:00:00Z', 120_000, 'PARTIAL');
+  agentRun('r3', '2026-01-04T00:00:00Z', 90_000, 'OK');
+  expect(await read()).toMatchObject({ ok: true, data: { sync: { runs: { available: true, count: 3, successes: 2, successRate: 2 / 3,
+    medianDurationMs: 90_000, maxDurationMs: 120_000, durationBasis: 'sync_run' }, canvas: { available: false }, ed: { available: false } } } });
+  agentRun('r4', '2026-01-05T00:00:00Z', 10_000, 'NEEDS_SELECTION');
+  expect(await read()).toMatchObject({ ok: true, data: { sync: { runs: { count: 3, successes: 2, maxDurationMs: 120_000 } } } });
+});
 it('computes accuracy only from in-range owner verdicts on agent annotations, including course annotations', async () => {
   const { store, read } = await setup();
   for (const [id, entity, entityId, origin] of [['agent-one', 'assessment', 'a', 'agent'], ['agent-two', 'course', synthetic.course.id, 'agent'], ['owner', 'assessment', 'a', 'owner']] as const) {

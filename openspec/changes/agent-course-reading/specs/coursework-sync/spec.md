@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Agent discovery and owner course selection
-Each sync run SHALL start the chat agent adapter (Codex by default, see `agent-chat`) as a job with a fixed reading prompt and the `coursework` agent tools. The agent SHALL first list the courses it sees on the owner's Canvas dashboard and Ed dashboard and submit them with the agent command `courses.offer` (course code, name if visible, term, Canvas and Ed page URLs), together with the platforms it could not read because a sign-in page appeared (`blocked`). Offered courses SHALL be stored as CourseSelection candidates keyed by normalized code and term; a candidate the owner has not decided SHALL be undecided. Page URLs SHALL be accepted only on `https://canvas.lms.unimelb.edu.au` and `https://edstem.org`. The owner command `courses.select` SHALL record a selection (selected or not) for one or more candidates; agents SHALL have no command that changes a selection. Only selected courses SHALL be read in later steps of a run. A run with no selected course SHALL end after discovery with outcome `NEEDS_SELECTION`.
+Each sync run SHALL start the chat agent adapter (Codex by default, see `agent-chat`) as a job with a fixed reading prompt and the `coursework` agent tools. The agent SHALL first list the courses it sees on the owner's Canvas dashboard and Ed dashboard and submit them with the agent command `courses.offer` (course code, name if visible, term, Canvas and Ed page URLs), together with the platforms it could not read because a sign-in page appeared (`blocked`). Offered courses SHALL be stored as CourseSelection candidates keyed by normalized code and term; a candidate the owner has not decided SHALL be undecided. Page URLs SHALL be accepted only on `https://canvas.lms.unimelb.edu.au` and `https://edstem.org`. The owner command `courses.select` SHALL record a selection (selected or not) for one or more candidates; agents SHALL have no command that changes a selection. Only selected courses SHALL be read in later steps of a run. A run with no selected course SHALL end after discovery with outcome `NEEDS_SELECTION`. An offer with no courses and no blocked platform SHALL be refused, so an agent that cannot read anything reports the platforms as blocked; the reading prompt SHALL tell the agent to report both platforms blocked and stop when its computer-use tool or the browser is unavailable (for example a locked screen). A run that stores nothing and finds both platforms blocked SHALL end with outcome `AGENT_UNAVAILABLE`.
 
 #### Scenario: First run
 - **WHEN** a run starts with no CourseSelection and the agent offers three courses
@@ -10,6 +10,10 @@ Each sync run SHALL start the chat agent adapter (Codex by default, see `agent-c
 #### Scenario: Owner selects two courses
 - **WHEN** the owner selects two of the three candidates and starts another run
 - **THEN** the agent is asked to read exactly those two courses
+
+#### Scenario: Nothing readable
+- **WHEN** the owner's screen is locked, the agent offers no course and reports Canvas and Ed blocked
+- **THEN** the run ends `AGENT_UNAVAILABLE`, not `NEEDS_SELECTION`, and an offer with no course and no blocked platform is refused
 
 #### Scenario: Agent cannot select
 - **WHEN** an agent calls `courses.select` through MCP or HTTP without the owner session
@@ -84,7 +88,7 @@ A stored document SHALL write, in one transaction per course: the Course (found 
 - **THEN** Ed-based assessments are updated or retired as read, and no Canvas-based assessment of the course is retired
 
 ### Requirement: Unknown fields are re-checked and derived weights split evenly
-Every run SHALL ask the agent to re-read each selected course in full, including fields stored as `unknown`; a later document that finds such a field SHALL replace the unknown value. When a component's weight is known, items whose own weight is not stated SHALL get state `derived` and an equal share of what remains, `(component weight − stated item weights) / (count − number of items with a stated weight)`, using the number of listed items when `count` is unknown (#171); a later stated weight SHALL replace it. Earned totals per component SHALL be computed by code from item scores and weights, never taken from the agent.
+Every run SHALL ask the agent to re-read each selected course in full, including fields stored as `unknown`; a later document that finds such a field SHALL replace the unknown value. When a component's weight is known, items whose own weight is not stated SHALL get state `derived` and an equal share of what remains, `(component weight − stated item weights) / (slots − number of items with a stated weight)`, where `slots` is the larger of `count` and the number of listed items (the listed items when `count` is unknown), and more listed items than `count` SHALL be reported as a `COUNT_MISMATCH` warning (#171); a later stated weight SHALL replace it. Earned totals per component SHALL be computed by code from item scores and weights, never taken from the agent.
 
 #### Scenario: A due date appears later
 - **WHEN** an item's due date was stored as unknown and the next run finds it
@@ -99,7 +103,7 @@ Every run SHALL ask the agent to re-read each selected course in full, including
 - **THEN** the other two items have weight 5 each with state `derived`
 
 ### Requirement: One AI policy field per course
-The document's `aiPolicy` (`allowed` | `prohibited` | `owner-attested` | unknown) SHALL be the course's agent-read AI policy, stored on the Course with its quote and effective at once (#180). Agents SHALL NOT record a course `aiPolicy` annotation; `annotation.record` SHALL refuse that field. An owner policy recorded from the frontend SHALL take precedence and SHALL never be overwritten by import; an owner value of `null` SHALL clear the owner's policy, so the agent-read value applies again. Reads (`courses.list`, `annotation.read`, `autonomy.read`) SHALL report the effective policy with its origin. When a run stores a value different from the previously stored agent-read value, "needs you" SHALL show the course, the new value and its quote until the next run; no confirmation is required.
+The document's `aiPolicy` (`allowed` | `prohibited` | `owner-attested` | unknown) SHALL be the course's agent-read AI policy, stored on the Course with its quote and effective at once (#180). Agents SHALL NOT record a course `aiPolicy` annotation; `annotation.record` SHALL refuse that field. An owner policy recorded from the frontend SHALL take precedence and SHALL never be overwritten by import; an owner value of `null` SHALL clear the owner's policy, so the agent-read value applies again. Reads (`courses.list`, `annotation.read`, `autonomy.read`) SHALL report the effective policy with its origin. A run that reads the policy as unknown SHALL keep the previously stored agent-read value and its quote and update its check time, so a missed read never uncaps a course. When a run stores a value different from the previously stored agent-read value, "needs you" SHALL show the course, the new value and its quote until the next run; no confirmation is required.
 
 #### Scenario: Policy read changes
 - **WHEN** the agent reads `prohibited` for a course previously read as unknown
@@ -108,6 +112,10 @@ The document's `aiPolicy` (`allowed` | `prohibited` | `owner-attested` | unknown
 #### Scenario: Owner policy kept
 - **WHEN** the owner set a course to `allowed` and the agent reads `prohibited`
 - **THEN** the effective policy stays `allowed`, and the agent-read value and quote are stored for display
+
+#### Scenario: Missed policy read keeps the last value
+- **WHEN** the agent read `prohibited` earlier and this run reads the policy as unknown
+- **THEN** the stored agent-read value stays `prohibited` and its check time is updated
 
 #### Scenario: Owner clears the policy
 - **WHEN** the owner records `null` for a course whose agent-read policy is `prohibited`

@@ -21,11 +21,13 @@ export function emptyStore(state: ShellState): boolean {
     && !state.errors.courses && !state.errors.tasks && !state.courses.items.length && !state.tasks.items.length;
 }
 export function attention(state: ShellState): { site: Site; kind: 'signin' | 'sync' }[] {
+  // Interim mapping of the agent sync status (C-2); task 6.1 adds the new needs-you items.
+  const failed = ['FAILED', 'TIMEOUT', 'AGENT_UNAVAILABLE'].includes(state.sync?.lastRun?.outcome ?? '');
   return (['canvas', 'ed'] as const).flatMap(site => {
     const items: { site: Site; kind: 'signin' | 'sync' }[] = [];
-    if (state.browser?.[site]?.state === 'signedOut' || state.sync?.[site].lastRun?.status === 'AUTH_EXPIRED') items.push({ site, kind: 'signin' });
-    const status = state.sync?.[site].lastRun?.status;
-    if (status && status !== 'OK' && status !== 'AUTH_EXPIRED') items.push({ site, kind: 'sync' });
+    const blocked = state.sync?.blocked.includes(site) === true;
+    if (state.browser?.[site]?.state === 'signedOut' || blocked) items.push({ site, kind: 'signin' });
+    if (failed && !blocked) items.push({ site, kind: 'sync' });
     return items;
   });
 }

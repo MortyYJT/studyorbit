@@ -6,7 +6,7 @@ import type { MetricsService } from '../metrics/service.js';
 import { annotationContracts, type AnnotationService } from './annotations.js';
 import { planningContracts, planningOwnerCommands, planningSessionCommands } from '../planning/contracts.js';
 import type { PlanningService } from '../planning/service.js';
-import { syncContracts, type SyncCommands } from './sync.js';
+import { syncContracts, type SyncCommands, type CourseReadingCommands, type SyncCommandName } from './sync.js';
 import { autonomyContracts, type AssessmentAutonomy } from './autonomy.js';
 import { safeBrowserChoiceMessage } from '../capture/browser.js';
 import { browserStatus, type BrowserStatus } from '../browser/status.js';
@@ -18,7 +18,7 @@ import { z } from 'zod';
 import { contracts, browserContracts, ownerCommands, FailureEnvelopeSchema, type Level, type CommandName } from './contracts.js';
 import type { TrustedContext, ReadCommand, WriteCommand, AuditEvent } from './context.js';
 import { ok, fail, withMetadata, type Envelope } from './envelope.js';
-import { CourseworkError, retryable, type ErrorCode } from './errors.js';
+import { AgentFacingError, CourseworkError, retryable, type ErrorCode } from './errors.js';
 
 export type Handler<I = unknown, O = unknown> = (input: I, context: TrustedContext) => O | Promise<O>;
 export interface RegistryEntry<I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType> {
@@ -67,6 +67,8 @@ const safeMessages: Record<ErrorCode, string> = {
   LIMIT_EXCEEDED: 'The response exceeds 64 KiB.', INTERNAL: 'The command could not complete safely.',
 };
 export function safeError(error: unknown, command?: string): CourseworkError {
+  // Course reading refusals list contract paths so the agent can re-read and resubmit (#170).
+  if (error instanceof AgentFacingError && ['courses.offer', 'course.import'].includes(command ?? '')) return new CourseworkError(error.code, error.message);
   if (command === 'source.fetch' && error instanceof CourseworkError
     && ['Off-origin source URLs are refused.', 'Discussion threads and replies are refused.',
       'Authentication URLs and credentials are refused.', 'Redirects and unsuccessful source responses are refused.',
@@ -148,16 +150,16 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   }
   return result;
 }
-const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'browser.status', 'browser.open', 'browser.read', 'browser.screenshot', 'browser.view', 'confirmation.list', 'sync.status', 'plan.read', 'planning.settings.read', 'annotation.read', 'metrics.read', 'autonomy.read']));
+const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'browser.status', 'browser.open', 'browser.read', 'browser.screenshot', 'browser.view', 'confirmation.list', 'sync.status', 'courses.candidates', 'plan.read', 'planning.settings.read', 'annotation.read', 'metrics.read', 'autonomy.read']));
 /** Contract commands that change state; transports require credentials for these whatever their autonomy level. */
-export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationContracts), 'browser.open', 'browser.click', 'browser.fill', 'browser.select', 'browser.submit'].filter(n => !readNames.has(n)));
+export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationContracts), ...Object.keys(syncContracts), 'browser.open', 'browser.click', 'browser.fill', 'browser.select', 'browser.submit'].filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
 /** Bind the settled contract surface to injected ports; no production service is selected here. */
 export interface BrowserServices {
   status(): Promise<BrowserStatus>; start(): Promise<BrowserState>; stop(): Promise<void>;
   signin(site: SignInSite): Promise<SignInResult>;
 }
-export function createRegistry(options: { browser?: Partial<BrowserServices>; autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; annotations?: AnnotationService; browserTools?: BrowserTools; browserScope?: () => ToolScope; metrics?: MetricsService } = {}): Registry {
+export function createRegistry(options: { browser?: Partial<BrowserServices>; autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; courseReading?: CourseReadingCommands; annotations?: AnnotationService; browserTools?: BrowserTools; browserScope?: () => ToolScope; metrics?: MetricsService } = {}): Registry {
   const registry = new Registry();
   const handlers = new Map<string, Handler>();
   for (const name of Object.keys(contracts) as CommandName[]) {
@@ -232,13 +234,23 @@ export function createRegistry(options: { browser?: Partial<BrowserServices>; au
       },
     });
   }
-  for (const name of ['sync.run', 'sync.status'] as const) registry.register<z.ZodType, z.ZodType>({ name, ...syncContracts[name], handler: async (input, context) => {
-    if (name === 'sync.run') {
-      if (!context.owner) throw new CourseworkError('INVALID_INPUT', safeMessages.INVALID_INPUT);
-      await context.owner.assertOwner(name);
+  for (const name of Object.keys(syncContracts) as SyncCommandName[]) registry.register<z.ZodType, z.ZodType>({ name, ...syncContracts[name],
+    // Course selection is the owner's (frontend session or TTY); agents have no command that changes it.
+    ...(name === 'courses.select' ? { authority: 'owner' as const } : {}), handler: async (input, context) => {
+    if (name === 'sync.run' || name === 'sync.status') {
+      if (name === 'sync.run') {
+        if (!context.owner) throw new CourseworkError('INVALID_INPUT', safeMessages.INVALID_INPUT);
+        await context.owner.assertOwner(name);
+      }
+      if (!options.sync) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
+      return name === 'sync.run' ? options.sync.run(input as { course?: string }) : options.sync.status();
     }
-    if (!options.sync) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
-    return name === 'sync.run' ? options.sync.run(input as { course?: string }) : options.sync.status();
+    const reading = options.courseReading;
+    if (!reading) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
+    if (name === 'courses.offer') return reading.offer(input as never);
+    if (name === 'courses.candidates') return { items: reading.candidates() };
+    if (name === 'courses.select') return reading.select(input as never);
+    return reading.import(input as never);
   } });
   registerBrowserTools(registry, options.browserTools, options.browserScope);
   for (const name of Object.keys(annotationContracts) as (keyof typeof annotationContracts)[]) {

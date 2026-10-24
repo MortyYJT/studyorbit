@@ -84,7 +84,9 @@ export const PolicyReceiptSchema = z.discriminatedUnion('status', [
 export const GrantReceiptSchema = z.strictObject({ recorded: z.literal('grant'), grantRef: HashSchema,
   courseId: IdSchema, assessmentId: IdSchema, category: GrantRecordSchema.shape.category,
   level: LevelSchema, recordedAt: z.iso.datetime() });
-const courses = { input: z.strictObject({ ...paging, term: text.optional() }), output: page(CourseSchema.strict().extend({ fields: AnnotationFieldsSchema.optional() })), level: 0 } as const;
+// `storedAt`: when the agent's last course document for this course was stored (agent-course-reading).
+const courses = { input: z.strictObject({ ...paging, term: text.optional() }), output: page(CourseSchema.strict().extend({ fields: AnnotationFieldsSchema.optional(),
+  storedAt: z.iso.datetime({ offset: true }).optional() })), level: 0 } as const;
 const policy = { input: PolicyRecordSchema, output: PolicyReceiptSchema, level: 0 } as const;
 const grant = { input: GrantRecordSchema, output: GrantReceiptSchema, level: 0 } as const;
 export const contracts = {
@@ -125,7 +127,7 @@ export type CommandName = keyof typeof contracts;
 export type CommandInput<N extends CommandName> = z.input<(typeof contracts)[N]['input']>;
 export type ParsedCommandInput<N extends CommandName> = z.output<(typeof contracts)[N]['input']>;
 export type CommandOutput<N extends CommandName> = z.output<(typeof contracts)[N]['output']>;
-export const ownerCommands: ReadonlySet<string> = new Set(['sync.run', 'policy.record', 'grant.record', 'browser.start', 'browser.stop', 'browser.signin', 'annotation.owner.record', 'annotation.confirm', 'annotation.replace', 'planning.settings.record']);
+export const ownerCommands: ReadonlySet<string> = new Set(['sync.run', 'policy.record', 'grant.record', 'browser.start', 'browser.stop', 'browser.signin', 'annotation.owner.record', 'annotation.confirm', 'annotation.replace', 'planning.settings.record', 'courses.select']);
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });
 export const FailureEnvelopeSchema = z.strictObject({ protocol: z.literal('coursework.agent/v1'), command: z.string(), meta,
   ok: z.literal(false), error: z.strictObject({ code: z.enum(Object.keys(retryable) as (keyof typeof retryable)[]), message: z.string(), retryable: z.boolean(), next: z.string().optional() }) }).refine(e => e.error.retryable === retryable[e.error.code]);
