@@ -13,10 +13,10 @@ The schemas SHALL contain at least these fields (ids are non-empty strings; time
 - Estimate: `workId` (an assessment id, task step id or manual task id), `minutes` (positive integer), `origin` (`agent` | `owner`), `reason?` (required when origin is `agent`), `at`.
 - StartTime: `workId`, `date` (local date), `time` (`HH:MM`), `at`.
 - TimeLog: `workId`, `minutes` (positive integer), `at`.
-- CourseAutonomy: `courseId`, `defaultLevel` (0 | 1 | 2), `confirmBeforeSubmit` (default true), `at`.
+- CourseAutonomy: `courseId`, `defaultLevel` (0 | 1 | 2), `confirmBeforeSubmit` (historical; no longer read or written after the submit-confirmation flow was removed), `at`.
 - Conversation: `id`, `title`, `adapter`, `sessionRef?`, `courseId?`, `assessmentId?`, `preset?`, `createdAt`, `updatedAt`.
 - Message: `id`, `conversationId`, `seq`, `role` (`owner` | `agent`), `parts` (text, tool step, confirmation), `stopped`, `at`.
-- PendingConfirmation: `id`, `conversationId`, `assessmentId`, `summary`, `screenshotRef`, `state` (`pending` | `confirmed` | `cancelled` | `expired`), `createdAt`, `decidedAt?`.
+- PendingConfirmation (historical; no longer written): `id`, `conversationId`, `assessmentId`, `summary`, `screenshotRef`, `state` (`pending` | `confirmed` | `cancelled` | `expired`), `createdAt`, `decidedAt?`.
 - PracticeAttempt: `questionId`, `revision`, `outcome` (`correct` | `incorrect` | `skipped`), `at` (no answer text).
 - Citation: `sourceItemId`, `quote`, `locator`.
 - Step: `title`, `estimateMinutes`, `done`, `citations` (array, may be empty only for manual tasks).

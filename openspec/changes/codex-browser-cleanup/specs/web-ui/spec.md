@@ -1,5 +1,16 @@
 ## MODIFIED Requirements
 
+### Requirement: Assessment drawer with origins
+Clicking an assessment SHALL open a side drawer with its fields, each marked with its origin (platform, agent, or owner) (#138). Clicking an agent marker SHALL show the cited quote, a link to the original page, a note when the cited source text was copied by the agent (`source.record`), and "confirm" and "use my value" (see `agent-annotations`). The drawer SHALL show the effective estimate with its origin and reason, the actual time, the linked platform items, and buttons that open the Agent page with the "complete" or "explain" preset, except for exams.
+
+#### Scenario: Agent value
+- **WHEN** the owner opens an assessment whose weight came from an agent annotation
+- **THEN** the weight shows the agent marker, and clicking it shows the quote and the source link
+
+#### Scenario: Agent-copied source
+- **WHEN** an agent value cites a source recorded with `source.record`
+- **THEN** the quote shows that its source text was copied by the agent
+
 ### Requirement: One local frontend with an owner session
 `coursework ui` SHALL build-check and serve the React frontend from `dist/ui` in the same loopback process as the HTTP transport, bound to `127.0.0.1` with the existing Host/Origin checks, and open it in the owner's system browser, printing the URL if opening fails. At each start it SHALL create a random owner session secret kept only in server memory and pass it to the system browser in the URL fragment; the page SHALL move it into memory (not into browser storage) and remove it from the address bar. Owner commands over HTTP (see `command-registry`) SHALL require this secret; our code SHALL never write it to disk or log it, and it SHALL never be sent to an agent. Restarting the server SHALL invalidate it. The frontend SHALL let the owner change levels, overrides, policies, estimates, start times, manual tasks, actual time, planning settings and owner annotations (#116); it SHALL be the only place for autonomy settings (#122), while the other owner changes are also accepted from a TTY (see `command-registry`).
 
