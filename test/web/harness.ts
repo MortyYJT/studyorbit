@@ -136,22 +136,24 @@ const assignments = { key: 'syna10001-assignments', name: 'Assignments', weight:
 const written = { key: 'syna10001-written-assignments', name: 'Written assignments', weight: 15, count: 4 };
 const examGroup = { key: 'syna10001-final-exam', name: 'Final exam', weight: 30, count: 1 };
 const assessments: Assessment[] = [
-  assessment({ id: 'syn-a-quiz-1', courseId: 'syn-course-a', name: 'Synthetic Quiz 1', kind: 'quiz', weight: 5, score: 80, due: due(-14), status: 'graded', group: quizzes, readState: itemRead() }),
-  // Weight unknown after retries; an agent annotation below proposes 5% with a citation.
-  assessment({ id: 'syn-a-quiz-2', courseId: 'syn-course-a', name: 'Synthetic Quiz 2', kind: 'quiz', due: soon(1), status: 'not_started', group: quizzes,
+  // Graded but its weight stayed unknown after retries, so the Quizzes earned share is unknown (as in the ring).
+  assessment({ id: 'syn-a-quiz-1', courseId: 'syn-course-a', name: 'Synthetic Quiz 1', kind: 'quiz', score: 80, due: due(-14), status: 'graded', group: { ...quizzes, role: 'item' },
     readState: itemRead({ weight: { state: 'unknown', via: 'screenshot', checkedAt: found.checkedAt } }) }),
-  assessment({ id: 'syn-a-assign-1', courseId: 'syn-course-a', name: 'Synthetic Assignment 1', kind: 'assignment', weight: 20, score: 72, due: due(-7), status: 'graded', group: assignments, readState: itemRead() }),
-  assessment({ id: 'syn-a-assign-2', courseId: 'syn-course-a', name: 'Synthetic Assignment 2', kind: 'assignment', weight: 25, due: soon(3), status: 'in_progress', group: assignments, readState: itemRead() }),
+  // Weight unknown after retries; an agent annotation below proposes 5% with a citation.
+  assessment({ id: 'syn-a-quiz-2', courseId: 'syn-course-a', name: 'Synthetic Quiz 2', kind: 'quiz', due: soon(1), status: 'not_started', group: { ...quizzes, role: 'item' },
+    readState: itemRead({ weight: { state: 'unknown', via: 'screenshot', checkedAt: found.checkedAt } }) }),
+  assessment({ id: 'syn-a-assign-1', courseId: 'syn-course-a', name: 'Synthetic Assignment 1', kind: 'assignment', weight: 20, score: 72, due: due(-7), status: 'graded', group: { ...assignments, role: 'item' }, readState: itemRead() }),
+  assessment({ id: 'syn-a-assign-2', courseId: 'syn-course-a', name: 'Synthetic Assignment 2', kind: 'assignment', weight: 25, due: soon(3), status: 'in_progress', group: { ...assignments, role: 'item' }, readState: itemRead() }),
   // Scenario "Component group": 15% over four items, two published and graded (80% and 100%), each an even split of 3.75.
   assessment({ id: 'syn-a-written-1', courseId: 'syn-course-a', name: 'Synthetic Written Task 1', kind: 'assignment', weight: 3.75, score: 80, due: due(-10), status: 'graded',
-    group: written, readState: itemRead({ weight: derived }) }),
+    group: { ...written, role: 'item' }, readState: itemRead({ weight: derived }) }),
   // Scenario "Derived and unknown labels": due date unknown after retries, with its check time.
   assessment({ id: 'syn-a-written-2', courseId: 'syn-course-a', name: 'Synthetic Written Task 2', kind: 'assignment', weight: 3.75, score: 100, status: 'graded',
-    group: written, readState: itemRead({ weight: derived, due: { state: 'unknown', via: 'screenshot', checkedAt: found.checkedAt } }) }),
+    group: { ...written, role: 'item' }, readState: itemRead({ weight: derived, due: { state: 'unknown', via: 'screenshot', checkedAt: found.checkedAt } }) }),
   assessment({ id: 'syn-a-written-rest', courseId: 'syn-course-a', name: 'Written assignments', kind: 'assignment', weight: 7.5, status: 'not_started',
-    group: written, readState: { name: found, kind: found, weight: derived } }),
+    group: { ...written, role: 'remainder' }, readState: { name: found, kind: found, weight: derived } }),
   assessment({ id: 'syn-a-exam', courseId: 'syn-course-a', name: 'Synthetic Systems final exam', kind: 'exam', weight: 30, hurdleMin: 40, isFinal: true, due: soon(5, '00:00:00Z'), status: 'not_started',
-    group: examGroup, readState: { name: found, kind: found, weight: found, isFinal: found, hurdleMin: found, due: derived } }),
+    group: { ...examGroup, role: 'component' }, readState: { name: found, kind: found, weight: found, isFinal: found, hurdleMin: found, due: derived } }),
   assessment({ id: 'syn-b-lab', courseId: 'syn-course-b', name: 'Synthetic Lab Quiz', kind: 'quiz', weight: 15, score: 90, due: due(0, '05:00:00Z'), status: 'graded' }),
   // Weight unknown and never annotated.
   assessment({ id: 'syn-b-reflection', courseId: 'syn-course-b', name: 'Synthetic Weekly Reflection', kind: 'ongoing', due: soon(2), status: 'not_started' }),
