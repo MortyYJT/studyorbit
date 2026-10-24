@@ -170,6 +170,50 @@ describe('store mapping and precedence (coursework-sync)', () => {
   });
 });
 
+describe('review fixes: no weight counted twice', () => {
+  const total = (f: ReturnType<typeof setup>) => f.live().reduce((sum, a) => sum + (a.weight ?? 0), 0);
+  it('a component that stops being final retires its component row even without componentsComplete', () => {
+    const f = setup();
+    f.save(document([component('exam', 50, [item(1)], { kind: found('exam'), isFinal: found(true), count: found(1) }), component('work', 50, [item(2)])]));
+    expect(total(f)).toBe(100);
+    f.save(document([component('exam', 50, [item(1)], { kind: found('exam'), isFinal: found(false), count: found(1) }), component('work', 50, [item(2)])],
+      { componentsComplete: false }));
+    expect(f.get(componentAssessmentId(term, 'SYNA10001:exam'))).toMatchObject({ retired: true });
+    expect(total(f)).toBe(100);
+  });
+
+  it('an item moved to an agent link retires its old sync item row even without componentsComplete', () => {
+    const f = setup();
+    const workshops = component('workshops', 20, [item(1, { weight: quoted(5) }), item(2)], { count: found(3) });
+    f.save(document([workshops, component('exam', 80, [], { kind: found('exam'), isFinal: found(true) })]));
+    const courseId = f.get(assessmentId(term, 'SYNA10001:canvas:assignment:1'))!.courseId;
+    f.store.saveBatch({ assessmentLinks: [{ assessmentId: 'agent-workshops', sourceItemId: sourceItemId(term, 'SYNA10001:canvas:assignment:1'), origin: 'agent', at: now }],
+      assessments: [{ id: 'agent-workshops', courseId, name: 'Workshops', origin: 'agent', isFinal: false, status: 'not_started' }] });
+    f.save(document([workshops, component('exam', 80, [], { kind: found('exam'), isFinal: found(true) })], { componentsComplete: false }));
+    expect(f.get(assessmentId(term, 'SYNA10001:canvas:assignment:1'))).toMatchObject({ retired: true });
+    // 7.5 item + 7.5 remainder + 80 exam; the agent's own Workshops row carries no weight here.
+    expect(total(f)).toBe(95);
+  });
+
+  it('more listed items than count split over the listed items and warn COUNT_MISMATCH', () => {
+    const f = setup();
+    const result = f.save(document([component('work', 30, [item(1), item(2), item(3)], { count: found(2) }), component('exam', 70, [], { kind: found('exam'), isFinal: found(true) })]));
+    expect([1, 2, 3].map(id => f.get(assessmentId(term, `SYNA10001:canvas:assignment:${id}`))?.weight)).toEqual([10, 10, 10]);
+    expect(result.warnings).toContain('COUNT_MISMATCH');
+  });
+
+  it('a final component is graded only when all count items are listed and scored', () => {
+    const f = setup();
+    const scored = (id: number) => item(id, { status: found('graded'), score: found(8), outOf: found(10) });
+    const final = (items: Record<string, unknown>[]) => component('final', 50, items, { kind: found('exam'), isFinal: found(true), count: found(2) });
+    f.save(document([final([scored(1)]), component('work', 50, [item(3)])]));
+    expect(f.get(componentAssessmentId(term, 'SYNA10001:final'))?.score).toBeUndefined();
+    expect(f.get(componentAssessmentId(term, 'SYNA10001:final'))?.status).not.toBe('graded');
+    f.save(document([final([scored(1), scored(2)]), component('work', 50, [item(3)])]));
+    expect(f.get(componentAssessmentId(term, 'SYNA10001:final'))).toMatchObject({ score: 80, status: 'graded' });
+  });
+});
+
 describe('unknown fields are re-checked and derived weights split evenly (coursework-sync)', () => {
   it('A due date appears later: an unknown due date becomes the found value', () => {
     const f = setup();

@@ -6,7 +6,7 @@ const id = z.string().trim().min(1).max(256);
 const count = z.number().int().nonnegative();
 const time = z.iso.datetime({ offset: true });
 const platform = z.enum(['canvas', 'ed']);
-const warningCode = z.enum(['WEIGHT_SUM', 'REMAINDER_SHORTFALL']);
+const warningCode = z.enum(['WEIGHT_SUM', 'REMAINDER_SHORTFALL', 'COUNT_MISMATCH']);
 const paths = z.array(z.string().max(200)).max(500);
 export const SyncStatusSchema = z.strictObject({
   /** A sync job is active (its lock is held in the store). */
