@@ -19,7 +19,9 @@ export const ClaimSchema = z.strictObject({ text, citations: z.array(CitationInp
 const sourceText = z.string().min(1).max(100000).refine(value => value.trim().length > 0);
 export const SourceEvidenceSchema = z.strictObject({ sourceItemId: IdSchema, courseId: IdSchema, text: sourceText,
   sourceHash: HashSchema, locator: text, page: z.number().int().positive().safe().optional(),
-  provenance: z.enum(['canvas', 'ed', 'manual']), url: z.url().max(2048).optional(), redacted: z.literal(true) });
+  provenance: z.enum(['canvas', 'ed', 'manual']), url: z.url().max(2048).optional(), redacted: z.literal(true),
+  // Set when the agent supplied the text (`source.record`): a citation shows the quote is in the recorded text, not that the page says it.
+  copiedBy: z.literal('agent').optional() });
 export const CoverageSchema = z.strictObject({ complete: z.boolean(), gaps: z.array(z.strictObject({
   code: z.enum(['MISSING_EVIDENCE', 'UNSUPPORTED', 'INCOMPLETE']), reference: IdSchema.optional(),
 })).max(500) });
@@ -94,6 +96,12 @@ export const contracts = {
   'practice.stats': { input: z.strictObject({ courseId: IdSchema }), output: z.strictObject({ questions: count, attempted: count, correct: count, incorrect: count, wrongQuestions: z.array(z.strictObject({ questionId: IdSchema, revision: z.uuid() })).max(500) }), level: 0 },
   'practice.attempt.record': { input: z.strictObject({ questionId: IdSchema, revision: z.uuid(), outcome: z.enum(['correct', 'incorrect', 'skipped']), at: z.iso.datetime({ offset: true }) }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
   'source.fetch': { input: z.strictObject({ courseId: IdSchema, url: z.url().max(2048) }), output: z.strictObject({ items: z.array(SourceEvidenceSchema).max(500), emptyPages: z.array(z.number().int().positive()).max(500), sourceRevision: HashSchema }), level: 0 },
+  // The agent copies a page it read in the owner's Edge; one call per PDF page (#187).
+  'source.record': { input: z.strictObject({ courseId: IdSchema, url: z.url().max(2048), title: z.string().trim().min(1).max(500),
+    text: z.string().max(1_000_000), page: z.number().int().positive().max(2000).optional() }),
+    // The receipt omits the text so a full 100,000-character page still fits the 64 KiB envelope; `sources.get` reads it back.
+    output: z.strictObject({ sourceItemId: IdSchema, empty: z.boolean(), locator: text, page: z.number().int().positive().safe().optional(),
+      sourceHash: HashSchema, copiedBy: z.literal('agent'), sourceRevision: HashSchema }), level: 0 },
   'courses.list': courses,
   'assessments.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }), output: page(AssessmentSchema.strict().extend({ fields: AnnotationFieldsSchema.optional(),
     // Derived from currently linked platform items; `linked: false` means submission state is unknown.

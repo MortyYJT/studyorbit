@@ -7,7 +7,7 @@ import { createProductionProtocol } from '../../src/protocol/production.js';
 import { ProtocolFiles } from '../../src/protocol/files.js';
 import { dispatch } from '../../src/protocol/registry.js';
 import { SyncJobs } from '../../src/sync/jobs.js';
-import { courseEvidenceSnapshot, materialIdentity } from '../../src/revision/source-fetch.js';
+import { courseEvidenceSnapshot, materialIdentity } from '../../src/revision/sources.js';
 import { TrustedStoreEvidence } from '../../src/protocol/reads.js';
 import { hash } from '../../src/citations/exact.js';
 import { component, document, found, item, now, quoted } from '../sync/course-document.js';

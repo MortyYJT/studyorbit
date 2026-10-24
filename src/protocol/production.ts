@@ -105,7 +105,7 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const context: TrustedContext = {
     repository, authorization, audit, runs,
     services: new ComposedServices({ 'policy.record': authorization.services, 'grant.record': authorization.services,
-      'breakdown.write': study, 'revision.write': study, 'practice.write': study, 'source.fetch': revision, 'practice.attempt.record': revision }),
+      'breakdown.write': study, 'revision.write': study, 'practice.write': study, 'source.fetch': revision, 'source.record': revision, 'practice.attempt.record': revision }),
     evidence: new ComposedEvidence({ 'breakdown.write': studyEvidence, 'revision.write': studyEvidence, 'practice.write': studyEvidence }),
     // Autonomy outputs are closed enums validated by their schemas; free-text filtering would only corrupt reason codes.
     privacy: { protect: async (command, value) => command.startsWith('autonomy.') || command.startsWith('browser.') || command.startsWith('confirmation.') ? value : evidence.protect(value) },

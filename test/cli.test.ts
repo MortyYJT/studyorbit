@@ -67,9 +67,9 @@ it('coursework mcp over real stdio pipes writes only MCP frames to stdout and ex
   const frames = stdout.split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, any>);
   expect(frames.map(frame => frame.id)).toEqual([1, 2, 3, 4]);
   for (const frame of frames) expect(frame.jsonrpc).toBe('2.0');
-  // 31 agent commands (incl. metrics.read, autonomy.read and, from agent-course-reading, courses.offer, courses.candidates
+  // 32 agent commands (incl. metrics.read, autonomy.read, source.record and, from agent-course-reading, courses.offer, courses.candidates
   // and course.import) plus seven browser tools; owner commands (incl. courses.select) remain excluded.
-  expect(frames[1]!.result.tools.length).toBe(38);
+  expect(frames[1]!.result.tools.length).toBe(39);
   expect(frames[1]!.result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining(['courses.offer', 'courses.candidates', 'course.import']));
   expect(frames[1]!.result.tools.map((tool: { name: string }) => tool.name)).not.toContain('courses.select');
   expect(frames[1]!.result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining([

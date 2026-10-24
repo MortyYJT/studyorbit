@@ -72,6 +72,8 @@ export const SourceItemSchema = z.object({
   contentHash: z.string(),
   fetchedAt: TimeSchema,
   removed: z.boolean().default(false).optional(),
+  /** `agent` when the agent copied this text from the owner's Edge with `source.record` (#187). */
+  copiedBy: z.literal('agent').optional(),
   facts: z.object({ due: TimeSchema.optional(), pointsPossible: z.number().nonnegative().optional(),
     pointsEarned: z.number().nonnegative().optional(), submitted: z.boolean().optional() }).optional(),
 }).superRefine((source, ctx) => {

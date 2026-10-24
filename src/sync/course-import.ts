@@ -194,7 +194,7 @@ function sourceItem(item: CourseItem, id: string, courseId: string, at: string):
   const origin = platform === 'canvas' ? CANVAS_ORIGIN : ED_ORIGIN;
   const url = item.url && new URL(item.url).origin === origin ? item.url : undefined;
   const title = known(item.name)!;
-  // No page text: imported items carry facts only; citations still need `source.fetch` text.
+  // No page text: imported items carry facts only; citable text comes from `source.record`.
   return { id, platform, externalId: rest.join(':'), courseId, kind: 'assignment', title, ...(url ? { url } : {}), text: '',
     contentHash: sha256(JSON.stringify([title, facts, url ?? null])), fetchedAt: at, removed: false, facts };
 }

@@ -14,6 +14,7 @@ import { bringSignInToFront, type SignInSite, type SignInResult } from '../brows
 import { ownerResidentBrowser } from '../browser/runtime.js';
 import type { BrowserState } from '../browser/resident.js';
 import { randomUUID } from 'node:crypto';
+import { sourceRecordRefusals } from '../revision/source-record.js';
 import { z } from 'zod';
 import { contracts, browserContracts, ownerCommands, FailureEnvelopeSchema, type Level, type CommandName } from './contracts.js';
 import type { TrustedContext, ReadCommand, WriteCommand, AuditEvent } from './context.js';
@@ -73,6 +74,7 @@ export function safeError(error: unknown, command?: string): CourseworkError {
     && ['Off-origin source URLs are refused.', 'Discussion threads and replies are refused.',
       'Authentication URLs and credentials are refused.', 'Redirects and unsuccessful source responses are refused.',
       'Source download exceeds 10 MiB.'].includes(error.message)) return new CourseworkError(error.code, error.message);
+  if (command === 'source.record' && error instanceof CourseworkError && sourceRecordRefusals.includes(error.message)) return new CourseworkError(error.code, error.message);
   if (command?.startsWith('browser.') && error instanceof CourseworkError && /^Browser action denied: (?:grant-level|course-prohibited|audit-unavailable|authorization-unavailable|assessment-unavailable)\.$/.test(error.message)) return error;
   if (command === 'browser.start') {
     const choice = safeBrowserChoiceMessage(error);

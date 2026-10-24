@@ -5,7 +5,7 @@ import { assertStudyRecordReadable, recordSchemas, type StudyRecord } from '../p
 import type { StudyCommand } from '../protocol/citations.js';
 import { CourseworkError } from '../protocol/errors.js';
 import { TrustedStoreEvidence } from '../protocol/reads.js';
-import { courseEvidenceSnapshot } from '../revision/source-fetch.js';
+import { courseEvidenceSnapshot } from '../revision/sources.js';
 import {
   AssessmentLinkSchema, type AssessmentLink, AnnotationSchema, type Annotation,
   AnnotationVerdictSchema, type AnnotationVerdict, PlanningSettingsSchema, type PlanningSettings,

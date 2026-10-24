@@ -2,7 +2,8 @@ import type { Page } from 'playwright';
 import { withResidentBrowser, type AttachOptions } from '../browser/attach.js';
 import { CourseworkError } from '../protocol/errors.js';
 import { ED_ORIGIN } from '../capture/ed-transport.js';
-import { MAX_SOURCE_BYTES, sourceURL, type SourceResponse, type SourceTransport } from './source-fetch.js';
+import { MAX_SOURCE_BYTES, type SourceResponse, type SourceTransport } from './source-fetch.js';
+import { sourceURL } from './sources.js';
 
 /** Cookies and Ed tokens remain inside the resident page; no remote page script is executed. */
 export class ResidentSourceTransport implements SourceTransport {

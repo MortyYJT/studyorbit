@@ -10,7 +10,7 @@ import { SqliteRepository } from '../../src/store/sqlite.js';
 import { ProtocolFiles } from '../../src/protocol/files.js';
 import { createProductionProtocol } from '../../src/protocol/production.js';
 import { dispatch } from '../../src/protocol/registry.js';
-import { courseEvidenceSnapshot, materialIdentity } from '../../src/revision/source-fetch.js';
+import { courseEvidenceSnapshot, materialIdentity } from '../../src/revision/sources.js';
 import { TrustedStoreEvidence } from '../../src/protocol/reads.js';
 
 const cleanups: (() => Promise<void>)[] = [];
