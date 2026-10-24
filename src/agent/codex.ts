@@ -54,7 +54,6 @@ export class CodexAdapter implements AgentAdapter {
       'sandbox_mode="workspace-write"',
       `mcp_servers.coursework.command=${JSON.stringify(process.execPath)}`,
       `mcp_servers.coursework.args=${JSON.stringify([join(packageRoot(), 'dist', 'cli.js'), 'mcp'])}`,
-      'mcp_servers.coursework.env.COURSEWORK_MCP_PROFILE="codex"',
       `mcp_servers.coursework.env.COURSEWORK_HOME=${JSON.stringify(resolve(dataDirectory))}`,
       // Without pre-approval `codex exec` refuses every MCP call.
       'mcp_servers.coursework.default_tools_approval_mode="approve"',

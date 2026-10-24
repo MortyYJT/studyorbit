@@ -1,4 +1,4 @@
-import { materialMetadata } from '../revision/source-fetch.js';
+import { materialMetadata } from '../revision/sources.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { AcceptedRecordReader } from '../store/accepted-records.js';
@@ -59,7 +59,7 @@ export class TrustedStoreEvidence implements SourceEvidenceReader {
     } else if (/^page[: ]/i.test(locator)) throw unsafeSource();
     const evidence = SourceEvidenceSchema.parse({ sourceItemId: source.id, courseId: source.courseId,
       text: safe.text, sourceHash, locator, ...(metadata?.page !== undefined ? { page: metadata.page } : {}),
-      provenance: source.platform, ...(safe.url ? { url: safe.url } : {}), redacted: true });
+      provenance: source.platform, ...(safe.url ? { url: safe.url } : {}), redacted: true, ...(source.copiedBy ? { copiedBy: source.copiedBy } : {}) });
     // Revalidation cannot change text, locators or identity under already accepted hashes/offsets.
     if (JSON.stringify(this.protect(evidence)) !== JSON.stringify(evidence)) throw unsafeSource();
     return evidence;

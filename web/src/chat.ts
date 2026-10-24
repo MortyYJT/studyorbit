@@ -1,9 +1,11 @@
 import { z } from 'zod';
 import { AgentEventSchema } from '../../src/agent/adapter.js';
-import type { Conversation, Message, PendingConfirmation } from '../../src/domain/schemas.js';
+import type { Conversation, Message } from '../../src/domain/schemas.js';
 
+// Journals written before the submit-confirmation flow was removed may hold confirmation events; they parse and are not shown.
+const HistoricalConfirmationSchema = z.object({ type: z.literal('confirmation'), confirmationId: z.string().min(1) });
 export const StoredEventSchema = z.object({ id: z.string().min(1), messageId: z.string().min(1),
-  event: z.union([AgentEventSchema, z.object({ type: z.literal('stopped') })]) });
+  event: z.union([AgentEventSchema, z.object({ type: z.literal('stopped') }), HistoricalConfirmationSchema]) });
 export type StoredEvent = z.infer<typeof StoredEventSchema>;
 export interface Opened { conversation: Conversation; messages: Message[]; events: StoredEvent[] }
 export interface ChatState extends Opened { cursor?: string; running: boolean }
@@ -12,8 +14,7 @@ export interface AgentPreset { id: string; courseId?: string; assessmentId?: str
 export type ChatItem =
   | { kind: 'owner'; id: string; text: string; preset: boolean }
   | { kind: 'text'; id: string; text: string }
-  | { kind: 'step'; id: string; tool: string; outcome: 'ok' | 'error' | 'denied' | 'waiting'; screenshotRef?: string; tabId?: string; reason?: string }
-  | { kind: 'confirmation'; id: string; confirmationId: string; decision: 'pending' | 'confirmed' | 'cancelled' | 'expired' }
+  | { kind: 'step'; id: string; tool: string; outcome: 'ok' | 'error' | 'denied' | 'waiting'; reason?: string }
   | { kind: 'stopped'; id: string }
   | { kind: 'error'; id: string; code: 'AGENT_UNAVAILABLE' | 'INTERNAL' };
 
@@ -54,21 +55,16 @@ export function fromOpen(previous: ChatState | undefined, opened: Opened): ChatS
   const state = settle(opened);
   return previous?.conversation.id === opened.conversation.id ? applyEvents(state, previous.events) : state;
 }
-const viewPath = /^\/api\/browser\.view\?tabId=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
-function replyItems(events: StoredEvent[], decisions: Map<string, ChatItem & { kind: 'confirmation' }>): ChatItem[] {
+function replyItems(events: StoredEvent[]): ChatItem[] {
   const items: ChatItem[] = [];
   for (const { id, event } of events) {
     const previous = items.at(-1);
     if (event.type === 'text') {
       if (previous?.kind === 'text') previous.text += event.text; else items.push({ kind: 'text', id, text: event.text });
     } else if (event.type === 'tool_step') {
-      const tabId = event.viewUrl ? viewPath.exec(event.viewUrl)?.[1] : undefined;
-      items.push({ kind: 'step', id, tool: event.tool, outcome: event.outcome, ...(event.screenshotRef ? { screenshotRef: event.screenshotRef } : {}),
-        ...(tabId ? { tabId } : {}), ...(typeof event.output === 'string' && event.outcome !== 'ok' ? { reason: event.output } : {}) });
-    } else if (event.type === 'confirmation') {
-      const known = decisions.get(event.confirmationId);
-      if (known) known.decision = event.decision ?? 'pending';
-      else { const item = { kind: 'confirmation' as const, id, confirmationId: event.confirmationId, decision: event.decision ?? 'pending' }; decisions.set(event.confirmationId, item); items.push(item); }
+      // Historical resident-browser steps may carry screenshotRef/viewUrl; neither is shown any more.
+      items.push({ kind: 'step', id, tool: event.tool, outcome: event.outcome,
+        ...(typeof event.output === 'string' && event.outcome !== 'ok' ? { reason: event.output } : {}) });
     } else if (event.type === 'stopped') items.push({ kind: 'stopped', id });
     else if (event.type === 'error') items.push({ kind: 'error', id, code: event.code });
   }
@@ -76,32 +72,14 @@ function replyItems(events: StoredEvent[], decisions: Map<string, ChatItem & { k
 }
 /** Owner prompts from the transcript; agent replies from the event journal, which also holds errors and stops. */
 export function chatItems(state: ChatState): ChatItem[] {
-  const decisions = new Map<string, ChatItem & { kind: 'confirmation' }>();
   const messages = [...state.messages].sort((a, b) => a.seq - b.seq);
   const of = (id: string) => state.events.filter(e => e.messageId === id);
   const items = messages.flatMap((message, index): ChatItem[] => message.role === 'owner'
     ? [{ kind: 'owner', id: message.id, preset: index === 0 && !!state.conversation.preset,
       text: message.parts.map(part => part.type === 'text' ? part.text : '').join('') }]
-    : replyItems(of(message.id), decisions));
+    : replyItems(of(message.id)));
   const unknown = [...new Set(state.events.map(e => e.messageId))].filter(id => !messages.some(m => m.id === id));
-  return [...items, ...unknown.flatMap(id => replyItems(of(id), decisions))];
-}
-export function pendingConfirmations(state: ChatState): string[] {
-  return chatItems(state).flatMap(item => item.kind === 'confirmation' && item.decision === 'pending' ? [item.confirmationId] : []);
-}
-/** Pending records of this conversation that no journal event references, shown after the transcript. */
-export function unlinkedConfirmations<T extends { id: string; conversationId: string }>(state: ChatState, records: T[]): T[] {
-  const linked = new Set(chatItems(state).flatMap(item => item.kind === 'confirmation' ? [item.confirmationId] : []));
-  return records.filter(row => row.conversationId === state.conversation.id && !linked.has(row.id));
-}
-export type ConfirmationList = { rows: readonly PendingConfirmation[] } | 'loading' | 'failed';
-/** A journal-pending confirmation absent from a successfully loaded pending list was settled elsewhere (stop, expiry, restart). */
-export function confirmationStatus(id: string, list: ConfirmationList):
-  { kind: 'card'; row: PendingConfirmation } | { kind: 'gone' } | { kind: 'loading' } | { kind: 'unavailable' } {
-  if (list === 'loading') return { kind: 'loading' };
-  if (list === 'failed') return { kind: 'unavailable' };
-  const row = list.rows.find(r => r.id === id);
-  return row ? { kind: 'card', row } : { kind: 'gone' };
+  return [...items, ...unknown.flatMap(id => replyItems(of(id)))];
 }
 const fatal = new Set(['NOT_FOUND', 'INVALID_INPUT', 'OWNER_SESSION_EXPIRED']);
 /** Keeps one stream open, reconnecting from the last applied event id; resolves with the fatal code that ended it, or undefined when aborted. */

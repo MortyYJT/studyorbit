@@ -17,14 +17,13 @@ const quiz = { id: 'quiz', courseId: 'c1', name: 'Quiz 2', kind: 'quiz', weight:
 const graded = { id: 'graded', courseId: 'c1', name: 'Quiz 1', kind: 'quiz', weight: 5, score: 80, isFinal: false, status: 'graded' };
 /** Server-side autonomy state the fixture's writes change and autonomy.read returns. */
 function autonomyServer() {
-  const state = { defaultLevel: 0 as 0 | 1 | 2, confirmBeforeSubmit: true, override: null as 0 | 1 | 2 | null };
+  const state = { defaultLevel: 0 as 0 | 1 | 2, override: null as 0 | 1 | 2 | null };
   return {
-    'autonomy.read': () => ({ courseId: 'c1', policy: 'allowed', policyOrigin: 'owner', cap: 2, defaultLevel: state.defaultLevel, confirmBeforeSubmit: state.confirmBeforeSubmit,
+    'autonomy.read': () => ({ courseId: 'c1', policy: 'allowed', policyOrigin: 'owner', cap: 2, defaultLevel: state.defaultLevel,
       assessments: [{ assessmentId: 'quiz', kind: 'quiz', applicable: true, requiredLevel: 1, override: state.override, effectiveLevel: state.override ?? state.defaultLevel }] }),
     'autonomy.override.set': (input: Record<string, unknown>) => { state.override = input.level as 0 | 1 | 2; return { recorded: true }; },
     'autonomy.override.clear': () => { state.override = null; return { recorded: true }; },
     'autonomy.default.set': (input: Record<string, unknown>) => { state.defaultLevel = input.level as 0 | 1 | 2; return { recorded: true }; },
-    'autonomy.confirmation.set': (input: Record<string, unknown>) => { state.confirmBeforeSubmit = input.confirmBeforeSubmit as boolean; return { recorded: true }; },
   };
 }
 const scope = { id: 'scope', revision: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', courseId: 'c1', sourceRevision: hash, type: 'exam-scope',
@@ -66,7 +65,7 @@ it('loads the course, its assessments, estimates and revision data through regis
   await store.load();
   const state = store.getSnapshot();
   expect(state.course?.code).toBe('SYNA10001');
-  expect(state.autonomy).toMatchObject({ policy: 'allowed', defaultLevel: 0, confirmBeforeSubmit: true });
+  expect(state.autonomy).toMatchObject({ policy: 'allowed', defaultLevel: 0 });
   expect(state.assessments?.map(item => item.id)).toEqual(['quiz', 'graded']);
   expect(state.work?.quiz).toMatchObject({ estimateMinutes: 60, estimateOrigin: 'agent', actualMinutes: 30 });
   expect(calls(fetcher, 'plan.read')[0]!.body).toMatchObject({ term: '2026-S2', horizonDays: 1 });
@@ -84,18 +83,17 @@ it('saves an assessment level through the owner session and shows the effective 
   expect(calls(fetcher, 'autonomy.override.set')).toEqual([{ body: { assessmentId: 'quiz', level: 1 }, session: secret }]);
   expect(levelView(quiz, store.getSnapshot().autonomy)).toEqual({ kind: 'level', level: 1, source: 'override' });
   expect(await store.setDefault(2)).toBe(true);
-  expect(await store.setConfirm(false)).toBe(true);
   expect(await store.setOverride('quiz', null)).toBe(true);
   expect(calls(fetcher, 'autonomy.override.clear')[0]!.body).toEqual({ assessmentId: 'quiz' });
-  expect(store.getSnapshot().autonomy).toMatchObject({ defaultLevel: 2, confirmBeforeSubmit: false });
+  expect(store.getSnapshot().autonomy).toMatchObject({ defaultLevel: 2 });
   expect(levelView(quiz, store.getSnapshot().autonomy)).toEqual({ kind: 'level', level: 2, source: 'default' });
-  // One initial read plus one after each of the four writes; nothing is computed locally.
-  expect(calls(fetcher, 'autonomy.read')).toHaveLength(5);
+  // One initial read plus one after each of the three writes; nothing is computed locally.
+  expect(calls(fetcher, 'autonomy.read')).toHaveLength(4);
 });
 
 it('shows save errors and changes nothing when a write is refused or the session is missing', async () => {
   const anonymous = new CourseStore(createClient(undefined, fixture()), 'c1');
-  expect(await anonymous.setConfirm(false)).toBe(false);
+  expect(await anonymous.setDefault(1)).toBe(false);
   expect(anonymous.getSnapshot().errors.write).toBe('OWNER_SESSION_EXPIRED');
   const refused = new CourseStore(createClient(secret, fixture({ 'autonomy.default.set': () => { throw new Error('CONFLICT'); } })), 'c1');
   await refused.load();
@@ -134,4 +132,14 @@ it('records estimates and actual time, including for graded work outside the pla
   expect(calls(fetcher, 'time.record')[0]).toEqual({ body: { workId: 'graded', minutes: 20 }, session: secret });
   expect(store.getSnapshot().recorded).toEqual({ graded: 20 });
   expect(calls(fetcher, 'plan.read').length).toBe(3);
+});
+
+it('Agent-copied source: concurrent source reads all land, and the copied marker reaches the drawer state', async () => {
+  const fetcher = fixture({ 'sources.get': input => ({ sourceItemId: input.sourceItemId, courseId: 'c1', text: 'Synthetic text.', sourceHash: hash,
+    locator: 'page:1', page: 1, provenance: 'canvas', redacted: true, ...(input.sourceItemId === 'copied' ? { copiedBy: 'agent' } : {}) }) });
+  const store = new CourseStore(createClient(undefined, fetcher), 'c1');
+  await Promise.all([store.source('platform'), store.source('copied')]);
+  expect(Object.keys(store.getSnapshot().sources).sort()).toEqual(['copied', 'platform']);
+  expect(store.getSnapshot().sources.copied).toMatchObject({ copiedBy: 'agent' });
+  expect(store.getSnapshot().sources.platform).not.toHaveProperty('copiedBy');
 });

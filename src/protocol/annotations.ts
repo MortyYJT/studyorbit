@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AiPolicySchema, AssessmentSchema, AnnotationSchema, AnnotationVerdictSchema, AssessmentLinkSchema, type Annotation } from '../domain/schemas.js';
 import { hash, citationMismatch, validateCitation } from '../citations/exact.js';
 import type { SqliteRepository } from '../store/sqlite.js';
-import { courseEvidenceSnapshot } from '../revision/source-fetch.js';
+import { courseEvidenceSnapshot } from '../revision/sources.js';
 import { IdSchema, HashSchema, CitationInputSchema, VerifiedCitationSchema, AnnotationFieldsSchema, CoverageSchema, CursorSchema } from './contracts.js';
 import { TrustedStoreEvidence } from './reads.js';
 import type { TrustedContext } from './context.js';

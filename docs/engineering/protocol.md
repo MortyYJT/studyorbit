@@ -329,59 +329,16 @@ Issue I wires production ports. Hermes mounting/scheduling remains M4.
   provider resolves the course, so a mismatched `task.courseId` is rejected. The previous accepted record is kept by
   compare-and-swap. `InMemoryStudyRecordStore` is the only store; durable tables need owner approval.
 
-## Resident browser (issue #87)
+## Resident browser (removed)
 
-Run `coursework browser start` in the owner's terminal, sign in to Canvas and Ed by hand,
-then use `coursework browser status`. `coursework browser stop` closes the managed browser.
-Start/stop are owner-only registry entries, hidden from MCP and refused from non-TTY CLI calls.
-Status is L0 on CLI, MCP (`browser.status`) and the existing HTTP transport
-(`POST /api/browser.status` with `{}`); it requires no owner capability. Other production
-ports remain unmounted until protocol integration.
-
-The implementation launches the detected executable with a custom managed profile and an
-OS-selected CDP port bound to `127.0.0.1`. It reads `DevToolsActivePort`, records private
-`browser.json` (0600), and transfers `profiles/default.lock` to the browser PID. A detached
-observer removes dead resident state and the lock after browser exit; start/status also
-recover dead state. Start returns the same private host endpoint on reuse, while its protocol
-receipt includes only `running`, `browser` and `startedAt`. Stop retains ownership if the
-process does not exit. No fallback is selected: custom-profile CDP is the shipped mechanism;
-actual platform behavior still requires the owner's live check (task 3.5).
-
-Browser selection reuses the capture detector and `COURSEWORK_BROWSER`. Browser CLI failures
-exit 1, invalid overrides exit 2, and locked profiles exit 3 with the holder PID. Recovery
-messages are restricted to known detector messages; arbitrary exceptions are withheld.
-The endpoint is never part of an envelope or log. Cookies and Ed tokens stay inside pages.
-
-`withResidentBrowser` attaches with Playwright `chromium.connectOverCDP` (`noDefaults: true`),
-exposes only creation of owned tabs, closes those tabs in a finally block, and disconnects
-without closing the resident context. A missing resident returns one `AUTH_EXPIRED` envelope
-with `coursework browser start` in its recovery message. It launches and prompts nothing.
-Consumers must return only validated, privacy-safe data through their registry contracts.
-
-Status uses a fresh owned page for each provider and returns `canvas` and `ed`, each with
-`state` (`signedIn`, `signedOut`, `unknown`) and `checkedAt`. Signed-out sites also carry
-an `AUTH_EXPIRED` hint for manual sign-in. Canvas checks same-origin GET `/api/v1/users/self`
-with session cookies. Ed checks the page's regional `authToken:au|us|eu` and GET `/api/user`
-with `x-token`, following the retained Ed transport rules. The host's Ed region defaults to
-`au` and is injectable. Redirects and auth failures report signed out; unavailable checks
-report unknown independently. Bodies are never read. Explicit navigations and API checks
-use the shared injectable request limiter; no check renews a token or fills credentials.
-
-`highlightThenClick(page, target, clock)` fronts the page, sets a red outline, waits at least
-one second, rechecks visibility and clicks once. Hidden targets are refused. This helper
-provides visibility, not assessment authorization: callers still need the course policy,
-assessment grant and audit required by the autonomy specification.
-
-Synthetic tests cover lifecycle, exit observation, detection errors, attachment ownership,
-site checks, CLI/MCP and the HTTP routing callback without opening a socket, and highlighted
-clicks. They do not establish real-browser CDP compatibility, actual loopback binding,
-manual window visibility, university endpoint behavior or overnight session lifetime.
+The resident browser (issue #87), our Playwright browser tools, the submit-confirmation flow and `source.fetch`
+were removed in `codex-browser-cleanup` (C-3): Codex reads and acts in the owner's own Edge (#167) and records cited
+page text with `source.record` (#187); sign-in problems come from the sync job (`sync.status.blocked`).
 
 ## Production composition after v1-rescope
 
 `createProductionProtocol` mounts the real SQLite current-state reader, canonical owner policy/grant
-files, append-only audit and separate run journals for CLI, MCP and loopback HTTP. Browser status
-uses the resident attach path; lifecycle commands remain owner-terminal only. Missing study write
+files, append-only audit and separate run journals for CLI, MCP and loopback HTTP. Missing study write
 ports fail closed until the revision milestone installs durable study storage. No fill/submit gates,
 Q1 services, proposal services or change-event adapters are mounted.
 

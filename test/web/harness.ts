@@ -60,7 +60,7 @@ class ScriptedAdapter implements AgentAdapter {
       { type: 'text', text: 'Reading the synthetic assignment brief. ' },
       { type: 'tool_step', tool: 'sources.get', outcome: 'ok', input: { sourceItemId: 'syn-src-a-outline' } },
       { type: 'text', text: 'Assignment 2 is worth 25% of the final mark. ' },
-      { type: 'tool_step', tool: 'browser.fill', outcome: 'denied', input: { assessmentId: 'syn-b-essay' } },
+      { type: 'tool_step', tool: 'autonomy.check', outcome: 'ok', input: { assessmentId: 'syn-b-essay', action: 'fill' } },
       { type: 'text', text: 'I cannot fill the essay: that course prohibits AI assistance.' },
       { type: 'result', turns: 3, costUsd: 0.0123, sessionRef: 'synthetic-session' },
     ];
@@ -94,12 +94,8 @@ const agentSync = new AgentSync({ store, adapter: () => { throw new CourseworkEr
 const host = createProductionProtocol({
   store,
   agentAdapter: new ScriptedAdapter(),
-  // Status reads the seeded runs; a real sync would need the resident browser and university sign-in.
+  // Status reads the seeded runs; a real sync would need Codex and the owner's sign-in in their Edge.
   sync: { status: () => agentSync.status(), run: async () => { throw new CourseworkError('SOURCE_UNAVAILABLE', 'Sync is disabled in the synthetic harness.'); } },
-  browserTools: { browser: {
-    newPage: async () => { throw new CourseworkError('SOURCE_UNAVAILABLE', 'No browser in the synthetic harness.'); },
-    close: async () => {},
-  } },
 });
 const owner: OwnerInteraction = { assertOwner: async () => {} };
 async function call(name: string, input: unknown): Promise<Record<string, unknown>> {
@@ -162,16 +158,17 @@ const assessments: Assessment[] = [
 ];
 const fetchedAt = new Date(Date.now() - 3600_000).toISOString();
 const source = (id: string, courseId: string, platform: SourceItem['platform'], kind: SourceItem['kind'], title: string, text: string,
-  extra: Partial<Pick<SourceItem, 'facts' | 'externalId'>> = {}): SourceItem => ({
+  extra: Partial<Pick<SourceItem, 'facts' | 'externalId' | 'copiedBy'>> = {}): SourceItem => ({
   id, platform, externalId: `${id}-external`, courseId, kind, title, text, contentHash: hash(text), fetchedAt, removed: false,
   // Evidence only accepts provider origins; the path is invented, so the UI link is exercised without naming real content.
   url: `https://canvas.lms.unimelb.edu.au/courses/900000/pages/${id}`, ...extra,
 });
-// Materials only count as evidence with fetched page metadata, carried in the external id as source.fetch stores it.
+// Materials only count as evidence with page metadata, carried in the external id as source.record stores it.
 const materialPage = (name: string, page: number) => JSON.stringify({ version: 1, kind: 'fetched-material', urlHash: hash(name), page, locator: `page:${page}` });
 const texts = {
   outline: 'Synthetic Systems assessment outline. Quiz 2 is worth 5% of the final mark. Assignment 2 is worth 25% of the final mark and is due later this week. The final exam is worth 30% and has a 40% hurdle.',
   brief: 'Assignment 2 brief. Design a fictional scheduler for imaginary queues. Submit a short report and the source code. Reports longer than four pages lose marks.',
+  lecture: 'Lecture 5 slides. Assignment 2 is an individual assignment marked out of 100.',
   week: 'Week notes. A synthetic scheduler allocates fictional work across imaginary queues. A round-robin scheduler gives each queue an equal time slice. Starvation happens when one queue never receives a slice.',
   policy: 'Synthetic Ethics Seminar policy. Generative AI tools are not permitted for any assessment in this subject.',
   ethics: 'Synthetic Ethics Seminar outline. The essay is worth 25% of the final mark. The lab quiz is worth 15%. The final exam is worth 50%.',
@@ -180,6 +177,8 @@ const sourceItems: SourceItem[] = [
   source('syn-src-a-outline', 'syn-course-a', 'canvas', 'announcement', 'Synthetic Systems subject outline', texts.outline),
   source('syn-src-a-brief', 'syn-course-a', 'canvas', 'assignment', 'Synthetic Assignment 2 brief', texts.brief, { facts: { due: soon(3), pointsPossible: 100, submitted: false } }),
   source('syn-src-a-week', 'syn-course-a', 'canvas', 'material', 'Synthetic week notes', texts.week, { externalId: materialPage('synthetic-week-notes', 1) }),
+  // Text the agent copied from the owner's Edge with source.record; the drawer labels quotes from it.
+  source('syn-src-a-lecture', 'syn-course-a', 'canvas', 'material', 'Synthetic lecture 5', texts.lecture, { externalId: materialPage('synthetic-lecture-5', 1), copiedBy: 'agent' }),
   source('syn-src-b-policy', 'syn-course-b', 'canvas', 'announcement', 'Synthetic AI policy', texts.policy),
   source('syn-src-b-outline', 'syn-course-b', 'canvas', 'announcement', 'Synthetic Ethics Seminar outline', texts.ethics),
 ];
@@ -229,12 +228,13 @@ await call('autonomy.default.set', { courseId: 'syn-course-a', level: 1 });
 await call('autonomy.override.set', { assessmentId: 'syn-a-assign-2', level: 2 });
 // Course B keeps no owner policy: its effective policy is the agent-read one with its quote (#180).
 await call('autonomy.default.set', { courseId: 'syn-course-b', level: 1 });
-await call('autonomy.confirmation.set', { courseId: 'syn-course-b', confirmBeforeSubmit: true });
 
 const quote = (sourceItemId: string, text: string, locator = sourceItemId) => ({ sourceItemId, quote: text, locator });
 const revisionA = await sourceRevision('syn-course-a');
 await call('annotation.record', { entity: 'assessment', entityId: 'syn-a-quiz-2', field: 'weight', value: 5, sourceRevision: revisionA,
   citations: [quote('syn-src-a-outline', 'Quiz 2 is worth 5% of the final mark.')] });
+await call('annotation.record', { entity: 'assessment', entityId: 'syn-a-assign-2', field: 'kind', value: 'assignment', sourceRevision: revisionA,
+  citations: [quote('syn-src-a-lecture', 'Assignment 2 is an individual assignment', 'page:1')] });
 
 await call('estimate.agent.set', { workId: 'syn-a-assign-2', minutes: 300, reason: 'The brief asks for a report and source code.' });
 await call('estimate.owner.set', { workId: 'syn-b-essay', minutes: 240 });
@@ -270,10 +270,6 @@ await host.chat.waitForIdle(chat.id);
 // ---- Serve ---------------------------------------------------------------------------------------------------
 let url = '';
 const transport = await startOwnerUI(host, { isTTY: true, staticDirectory: join(root, 'dist', 'ui'), opener: async value => { url = value; } });
-// startOwnerUI expires pending confirmations left by a previous process, so this one is seeded afterwards.
-// It has no live browser waiter: confirming or cancelling only changes its stored state.
-store.savePendingConfirmation({ id: 'syn-confirmation-1', conversationId: chat.id, assessmentId: 'syn-a-assign-2',
-  summary: 'Submit the synthetic Assignment 2 report.', screenshotRef: 'syn-missing-screenshot', state: 'pending', createdAt: now() });
 
 process.stdout.write([
   'coursework synthetic UI harness',

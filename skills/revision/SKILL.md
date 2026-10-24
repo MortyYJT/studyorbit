@@ -5,28 +5,31 @@ description: Prepare cited revision material, tutor from stored notes, or practi
 
 # Revision presets
 
-Use the course id supplied by the preset. All preparation uses L0 reads and
-`source.fetch`; do not change autonomy grants, start sync, read discussion threads,
-or use browser writes. Store revision material only through the validated commands.
+Use the course id supplied by the preset. All preparation uses L0 reads, the owner's
+Edge (through your computer use) and `source.record`; do not change autonomy grants,
+start sync, read discussion threads, or fill or submit anything on Canvas or Ed.
+Store revision material only through the validated commands.
 This skill never answers, fills, drafts, or submits graded assessments, including exams.
 If a request is graded work, stop and explain that this preset is for revision only.
 There is no scheduled revision stage in v1.
 
 ## Prepare revision
 
-1. Call `browser.status` first, before reading course content or writing anything.
-   Identify the sites needed for this course. If any needed site is signed out or its
-   state is unknown, stop with a clear message asking the owner to sign in by hand
-   in the resident browser. Do not attempt login or collect credentials.
+1. Open the needed Canvas or Ed page in the owner's Edge first, before reading course
+   content or writing anything. If it shows a sign-in page, stop: read nothing, write
+   nothing, and ask the owner to sign in in their Edge. Never type a password or code.
 2. Read `courses.list`, `assessments.list`, `materials.list`, and `revision.read`
    for the selected course. Find the final assessment and exam-information material
    through L0 reads. Exam time comes from `revision.read.examTime` (the final's
    effective due), never a guessed date. Missing or ambiguous scope/time stays unknown.
-3. Fetch linked course pages, JSON, or PDFs through `source.fetch` using only the
-   recorded Canvas or Ed URLs. Never supply source text, scrape discussion threads,
-   use shell/web tools to bypass a refused fetch, or infer text from image-only pages.
-   Report empty pages and coverage gaps. Use `sources.get` to read stored evidence.
-4. After all fetches, call `revision.read` again for the current `sourceRevision`.
+3. Read each course page or PDF you will cite in the owner's Edge and record it with
+   `source.record { courseId, url, title, text, page? }`: the page's Canvas or Ed URL
+   (under this course), its title and the text exactly as shown, one call per PDF page
+   with its one-based `page`. Copy text faithfully; never add, summarise or invent text,
+   never record discussion threads, and never work around a refusal. Image-only pages
+   are recorded empty and reported. A page refused as over 60,000 bytes is recorded in parts, adding
+   `#part-2`, `#part-3` and so on to the URL. Use `sources.get` to read stored evidence.
+4. After recording, call `revision.read` again for the current `sourceRevision`.
    Record scope with `revision.write` using `type: "exam-scope"` and `topics`:
    each topic is `{ text, citations: [{ sourceItemId, quote, locator }] }`.
    Scope is per course, so omit `week`. Copy quotes and locators from stored redacted
@@ -57,7 +60,8 @@ There is no scheduled revision stage in v1.
    `skipped`), and ISO timestamp `at`. Never include the owner's answer text.
    A stale revision requires rereading the stored question before recording.
 4. If a topic is absent from stored notes/questions, say plainly that stored material
-   does not cover it and offer to prepare it. Preparation starts with `browser.status`.
+   does not cover it and offer to prepare it. Preparation starts at the course page in
+   the owner's Edge and stops at a sign-in page.
 
 ## Wrong answers only
 

@@ -21,7 +21,7 @@ export const AutonomyAssessmentSchema = z.strictObject({ assessmentId: AuditIdSc
 export const AutonomyReadSchema = z.strictObject({ courseId: AuditIdSchema, policy: PolicySchema.nullable(),
   /** Who set the effective policy: the owner, or the agent's read of the course (#180); null when unknown. */
   policyOrigin: z.enum(['owner', 'agent']).nullable(), cap: z.union([z.literal(0), z.literal(2)]),
-  defaultLevel: WorkLevelSchema, confirmBeforeSubmit: z.boolean(), assessments: z.array(AutonomyAssessmentSchema).max(500) });
+  defaultLevel: WorkLevelSchema, assessments: z.array(AutonomyAssessmentSchema).max(500) });
 export const autonomyContracts = {
   'autonomy.check': { input: z.strictObject({ assessmentId: AuditIdSchema, action: z.enum(['read', 'click', 'fill', 'select', 'submit', 'other']) }),
     output: z.strictObject({ decision: z.enum(['allowed', 'denied']), reason: ReasonSchema }), level: 0 },
@@ -30,7 +30,6 @@ export const autonomyContracts = {
   'autonomy.default.set': { input: z.strictObject({ courseId: AuditIdSchema, level: WorkLevelSchema }), output: receipt, level: 0 },
   'autonomy.override.set': { input: z.strictObject({ assessmentId: AuditIdSchema, level: WorkLevelSchema }), output: receipt, level: 0 },
   'autonomy.override.clear': { input: z.strictObject({ assessmentId: AuditIdSchema }), output: receipt, level: 0 },
-  'autonomy.confirmation.set': { input: z.strictObject({ courseId: AuditIdSchema, confirmBeforeSubmit: z.boolean() }), output: receipt, level: 0 },
 } as const;
 export type AutonomyCommand = keyof typeof autonomyContracts;
 type CheckInput = z.infer<typeof autonomyContracts['autonomy.check']['input']>;
@@ -62,7 +61,7 @@ export class AssessmentAutonomy {
   }
   settings(courseId: string) {
     this.course(courseId);
-    return this.store.readCourseAutonomy(courseId).at(-1) ?? { courseId, defaultLevel: 0 as const, confirmBeforeSubmit: true };
+    return this.store.readCourseAutonomy(courseId).at(-1) ?? { courseId, defaultLevel: 0 as const };
   }
   private ownerField(entity: 'course' | 'assessment', id: string, field: string) {
     return this.store.readAnnotations(entity, id).filter(row => row.origin === 'owner' && row.field === field).at(-1);
@@ -117,8 +116,8 @@ export class AssessmentAutonomy {
         field: entity === 'course' ? 'aiPolicy' : 'autonomyLevel', value, origin: 'owner', citations: [], at });
     } else {
       const previous = this.settings(refs.courseId!);
-      this.store.appendCourseAutonomy({ courseId: refs.courseId!, defaultLevel: 'level' in parsed ? parsed.level : previous.defaultLevel,
-        confirmBeforeSubmit: 'confirmBeforeSubmit' in parsed ? parsed.confirmBeforeSubmit : previous.confirmBeforeSubmit, at });
+      // `confirmBeforeSubmit` is historical (no submit-confirmation flow); the schema default fills it.
+      this.store.appendCourseAutonomy({ courseId: refs.courseId!, defaultLevel: 'level' in parsed ? parsed.level : previous.defaultLevel, at });
     }
     // Capture this mutation's version synchronously, before another owner call can write.
     context.setAuditReferences?.(this.references(name, parsed));
@@ -146,9 +145,7 @@ export class AssessmentAutonomy {
       }
       cursor = page.nextCursor;
     } while (cursor);
-    return { courseId, policy: course.policy ?? null, policyOrigin: course.policyOrigin ?? null, cap: cap(course.policy), defaultLevel: WorkLevelSchema.parse(settings.defaultLevel),
-      // Same truthiness the browser submit path applies to this setting.
-      confirmBeforeSubmit: Boolean(settings.confirmBeforeSubmit), assessments };
+    return { courseId, policy: course.policy ?? null, policyOrigin: course.policyOrigin ?? null, cap: cap(course.policy), defaultLevel: WorkLevelSchema.parse(settings.defaultLevel), assessments };
   }
   async check(input: CheckInput, runId: string = randomUUID()): Promise<Decision> {
     const { assessmentId, action } = autonomyContracts['autonomy.check'].input.parse(input);

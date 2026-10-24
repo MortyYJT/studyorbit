@@ -111,7 +111,7 @@ it.each([0.42, undefined])('records reply steps, turns and reported cost (%s); m
 });
 it('forwards tool sets and transcript when no resumable session was reported; safe unavailable errors need no credentials', async () => {
   const adapter = new SyntheticAdapter([
-    { type: 'confirmation', confirmationId: 'pending-1', decision: 'pending' },
+    { type: 'text', text: 'Synthetic partial reply.' },
     { type: 'error', code: 'AGENT_UNAVAILABLE', message: 'unsafe adapter diagnostic' },
   ]);
   const { store } = setup(adapter);
@@ -121,21 +121,23 @@ it('forwards tool sets and transcript when no resumable session was reported; sa
   const sent = await service.send(c.id, 'Hello', owner); await service.waitForIdle(c.id);
   expect(service.events(c.id).at(-1)!.event).toEqual({ type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Sign in to the installed agent and retry.' });
   expect(store.loadRun(sent.messageId)).toMatchObject({ outcome: 'error', errorCode: 'AGENT_UNAVAILABLE' });
-  expect(service.open(c.id).messages[1].parts).toEqual([{ type: 'confirmation', confirmationId: 'pending-1', decision: 'pending' }]);
+  expect(service.open(c.id).messages[1].parts).toEqual([{ type: 'text', text: 'Synthetic partial reply.' }]);
   const reopened = new ConversationService(store, adapter);
-  expect(reopened.open(c.id).events[0].event).toEqual({ type: 'confirmation', confirmationId: 'pending-1', decision: 'pending' });
+  expect(reopened.open(c.id).events[0].event).toEqual({ type: 'text', text: 'Synthetic partial reply.' });
   await service.send(c.id, 'Retry', owner); await service.waitForIdle(c.id);
   expect(adapter.inputs[1]).toMatchObject({ tools, transcript: expect.arrayContaining([expect.objectContaining({ role: 'owner' }), expect.objectContaining({ role: 'agent' })]) });
   expect(adapter.inputs[1].sessionRef).toBeUndefined();
 });
-it('persists confirmation decisions and restores them in the transcript without a resumable session', async () => {
+it('historical confirmation parts stay readable and reach the transcript without a resumable session', async () => {
   const decisions = [undefined, 'pending', 'confirmed', 'cancelled', 'expired'] as const;
   const parts = decisions.map((decision, index) => ({ type: 'confirmation' as const, confirmationId: `p${index}`,
     ...(decision === undefined ? {} : { decision }) }));
-  const { service, store } = setup(new SyntheticAdapter([...parts, { type: 'result', turns: 1 }]));
+  const { service, store } = setup(new SyntheticAdapter([{ type: 'result', turns: 1 }]));
   const c = await service.create({ title: 'Confirmations' }, owner);
   await service.send(c.id, 'Decide', owner); await service.waitForIdle(c.id);
-  expect(service.open(c.id).messages[1].parts).toEqual(parts);
+  const stored = service.open(c.id);
+  // Rows written before the submit-confirmation flow was removed.
+  store.saveChat(stored.conversation, { ...stored.messages[1]!, parts }, []);
   const adapter = new SyntheticAdapter();
   const restarted = new ConversationService(store, adapter);
   expect(restarted.open(c.id).messages[1].parts).toEqual(parts);

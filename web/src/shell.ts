@@ -5,11 +5,11 @@ export type Settings = NonNullable<Output<'planning.settings.read'>['settings']>
 export type Site = 'canvas' | 'ed';
 export type Candidate = Output<'courses.candidates'>['items'][number];
 type Policy = 'allowed' | 'prohibited' | 'owner-attested';
-/** "Needs you" items the shell derives from sign-in and the agent sync status (C-2). */
+/** "Needs you" items the shell derives from the agent sync status (C-2); sign-in problems come only from the last run. */
 type Warning = NonNullable<Output<'sync.status'>['courses'][number]['lastRun']>['warnings'][number];
 export type FailedOutcome = 'FAILED' | 'TIMEOUT' | 'AGENT_UNAVAILABLE';
-/** `signin`: the browser reports the site signed out; `blocked`: the last run's agent could not read the site. */
-export type Attention = { site: Site; kind: 'signin' | 'blocked' } | { kind: 'failed'; outcome: FailedOutcome } | { kind: 'select'; count: number }
+/** `blocked`: the last run's agent could not read the site (sign-in page or locked screen). */
+export type Attention = { site: Site; kind: 'blocked' } | { kind: 'failed'; outcome: FailedOutcome } | { kind: 'select'; count: number }
   | { kind: 'unknown'; course: string; courseId?: string; fields: string[]; dropped: string[] }
   | { kind: 'weights'; course: string; courseId?: string; warning: Warning; sum?: number }
   | { kind: 'policy'; course: string; courseId?: string; value?: Policy; quote?: string }
@@ -19,15 +19,13 @@ export interface ShellState {
   candidates?: Candidate[];
   selecting: boolean;
   tasks?: Output<'tasks.list'>;
-  browser?: Partial<Output<'browser.status'>>;
   sync?: Output<'sync.status'>;
   planning?: Output<'planning.settings.read'>;
   audit?: Output<'audit.list'>;
   syncing: boolean;
   saving: boolean;
   auditLoading: boolean;
-  signingIn: Record<Site, boolean>;
-  errors: Partial<Record<'courses' | 'tasks' | 'browser' | 'sync' | 'planning' | 'audit' | 'action' | 'canvasSignIn' | 'edSignIn' | 'candidates' | 'select', string>>;
+  errors: Partial<Record<'courses' | 'tasks' | 'sync' | 'planning' | 'audit' | 'action' | 'candidates' | 'select', string>>;
 }
 const code = (error: unknown) => error instanceof ClientError ? error.code : 'SOURCE_UNAVAILABLE';
 export function emptyStore(state: ShellState): boolean {
@@ -38,8 +36,7 @@ export function attention(state: ShellState): Attention[] {
   const outcome = state.sync?.lastRun?.outcome;
   const blocked = state.sync?.blocked ?? [];
   const allBlocked = outcome === 'AGENT_UNAVAILABLE' || blocked.length === 2;
-  const sites = (['canvas', 'ed'] as const).flatMap((site): Attention[] => blocked.includes(site) ? [{ site, kind: 'blocked' }]
-    : state.browser?.[site]?.state === 'signedOut' ? [{ site, kind: 'signin' }] : []);
+  const sites = (['canvas', 'ed'] as const).flatMap((site): Attention[] => blocked.includes(site) ? [{ site, kind: 'blocked' }] : []);
   // A discovery with every platform blocked ends AGENT_UNAVAILABLE; the blocked items already say what to do.
   const failed: Attention[] = (outcome === 'FAILED' || outcome === 'TIMEOUT' || outcome === 'AGENT_UNAVAILABLE')
     && !(outcome === 'AGENT_UNAVAILABLE' && blocked.length > 0) ? [{ kind: 'failed', outcome }] : [];
@@ -96,7 +93,7 @@ export function settingsFromForm(previous: Settings | undefined, hours: string[]
   });
 }
 export class ShellStore {
-  private state: ShellState = { syncing: false, selecting: false, saving: false, auditLoading: false, signingIn: { canvas: false, ed: false }, errors: {} };
+  private state: ShellState = { syncing: false, selecting: false, saving: false, auditLoading: false, errors: {} };
   private listeners = new Set<() => void>();
   private refreshing?: Promise<void>;
   constructor(readonly client: Client) {}
@@ -111,7 +108,7 @@ export class ShellStore {
   }
   private async readStatus() {
     await Promise.all(([
-      ['courses', 'courses.list'], ['tasks', 'tasks.list'], ['browser', 'browser.status'],
+      ['courses', 'courses.list'], ['tasks', 'tasks.list'],
       ['sync', 'sync.status'], ['planning', 'planning.settings.read'],
     ] as const).map(async ([key, command]) => {
       try { const data = await this.client.call(command, {}); this.update({ [key]: data }); this.error(key); }
@@ -124,17 +121,6 @@ export class ShellStore {
     try { await this.client.call('sync.run', {}); }
     catch (error) { this.error('action', code(error)); }
     finally { await this.refresh(); this.update({ syncing: false }); }
-  }
-  async signIn(site: Site) {
-    if (this.state.signingIn[site]) return;
-    this.update({ signingIn: { ...this.state.signingIn, [site]: true } });
-    this.error(`${site}SignIn`);
-    try {
-      const result = await this.client.call('browser.signin', { site });
-      this.update({ browser: { ...this.state.browser, [site]: result.status } });
-      this.error('browser');
-    } catch (error) { this.error(`${site}SignIn`, code(error)); }
-    finally { this.update({ signingIn: { ...this.state.signingIn, [site]: false } }); }
   }
   async loadCandidates() {
     this.error('candidates');

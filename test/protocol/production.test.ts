@@ -45,11 +45,10 @@ it('new owner settings survive reopen and legacy L4 grants remain unread and unc
   expect(await call('grant.record', grant)).toMatchObject({ ok: true });
   expect(await call('autonomy.check', { assessmentId: 'd', action: 'fill' })).toMatchObject({ data: { decision: 'denied', reason: 'grant-level' } });
   await call('autonomy.default.set', { courseId: synthetic.course.id, level: 2 });
-  await call('autonomy.confirmation.set', { courseId: synthetic.course.id, confirmBeforeSubmit: false });
   await call('autonomy.override.set', { assessmentId: 'd', level: 0 });
   host.close();
   const next = createProductionProtocol({ owner: { assertOwner: async () => {} } }); closes.push(next.close);
-  expect(next.store.readCourseAutonomy(synthetic.course.id).at(-1)).toMatchObject({ defaultLevel: 2, confirmBeforeSubmit: false });
+  expect(next.store.readCourseAutonomy(synthetic.course.id).at(-1)).toMatchObject({ defaultLevel: 2 });
   expect(await dispatch(next.registry, 'autonomy.check', { assessmentId: 'd', action: 'fill' }, next.context)).toMatchObject({ data: { decision: 'denied' } });
   await dispatch(next.registry, 'autonomy.override.clear', { assessmentId: 'd' }, next.context);
   expect(await dispatch(next.registry, 'autonomy.check', { assessmentId: 'd', action: 'fill' }, next.context)).toMatchObject({ data: { decision: 'allowed' } });
@@ -116,12 +115,12 @@ it('Claude on request: COURSEWORK_AGENT=claude uses the Claude SDK, never starts
   expect(fake.calls()).toHaveLength(0);
 });
 
-it('gives production chat the agent tool set and the live UI and debugging ports', async () => {
+it('gives production chat the agent tool set and the live UI port', async () => {
   const { writeFile } = await import('node:fs/promises');
   query.mockImplementation(({ options }) => Object.assign((async function* () {
     const hook = options.hooks.PreToolUse[0].hooks[0];
     const call = (command: string) => hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, tool_use_id: command, cwd: options.cwd }, command, {});
-    for (const command of ['curl http://127.0.0.1:4568/api/status', 'curl http://localhost:9444/json']) {
+    for (const command of ['curl http://127.0.0.1:4568/api/status']) {
       expect((await call(command)).hookSpecificOutput.permissionDecision).toBe('deny');
     }
     const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
@@ -130,7 +129,7 @@ it('gives production chat the agent tool set and the live UI and debugging ports
     const client = new Client({ name: 'synthetic', version: '1' });
     await options.mcpServers.coursework.instance.connect(serverTransport); await client.connect(clientTransport);
     const names = (await client.listTools()).tools.map(t => t.name);
-    expect(names).toEqual(expect.arrayContaining(['courses.list', 'source.fetch']));
+    expect(names).toEqual(expect.arrayContaining(['courses.list', 'source.record']));
     expect(names).not.toContain('grant.record'); expect(names).not.toContain('sync.run');
     const listed = await client.callTool({ name: 'courses.list', arguments: {} });
     expect(JSON.parse((listed.content as { text: string }[])[0]!.text)).toMatchObject({ ok: true });
@@ -139,15 +138,14 @@ it('gives production chat the agent tool set and the live UI and debugging ports
   })(), { interrupt: vi.fn() }));
   vi.stubEnv('COURSEWORK_AGENT', 'claude');
   const host = await setup(); const owner = { assertOwner: async () => {} };
-  await writeFile(join(process.env.COURSEWORK_HOME!, 'browser.json'), JSON.stringify({ endpoint: 'http://127.0.0.1:9444', pid: process.pid, browser: 'chromium', startedAt: '2026-01-01T00:00:00.000Z' }));
   host.agentRuntime.frontendOrigin = 'http://127.0.0.1:4568';
   const conversation = await host.chat.create({}, owner);
   const { messageId } = await host.chat.send(conversation.id, 'Synthetic prompt', owner);
   await host.chat.waitForIdle(conversation.id);
-  expect(host.store.loadRun(messageId)).toMatchObject({ outcome: 'ok', steps: 2 });
+  expect(host.store.loadRun(messageId)).toMatchObject({ outcome: 'ok', steps: 1 });
 });
 
-it('keeps the UI origin denial when the resident browser state is unreadable', async () => {
+it('keeps the UI origin denial when a leftover browser.json is unreadable', async () => {
   const { writeFile } = await import('node:fs/promises');
   query.mockImplementation(({ options }) => Object.assign((async function* () {
     const hook = options.hooks.PreToolUse[0].hooks[0];

@@ -140,11 +140,6 @@ function Header({ store, state, policy, t }: { store: CourseStore; state: Course
           {levels.map(level => <option key={level} value={level}>{c.levelNames[level]}</option>)}
         </select></label>
     </>}
-    <label className="inline">{c.confirm}
-      <select value={state.autonomy ? String(state.autonomy.confirmBeforeSubmit) : ''} disabled={busy || !state.autonomy} onChange={event => void store.setConfirm(event.target.value === 'true')}>
-        {!state.autonomy && <option value="" disabled>{c.notReadable}</option>}
-        <option value="true">{c.confirmOn}</option><option value="false">{c.confirmOff}</option>
-      </select></label>
     {policy === 'prohibited' && <p className="muted help">{c.lockedHelp}</p>}
     {state.errors.write && <p role="status" className="error">{errorText(state.errors.write, t)}</p>}
   </section>;
@@ -174,7 +169,8 @@ function Quotes({ citations, store, state, t }: { citations: Citation[]; store: 
     const source = state.sources[citation.sourceItemId];
     return <blockquote className="cite" key={`${citation.sourceItemId}-${index}`}><span className="visually-hidden">{c.quote}: </span>“{citation.quote}”
       <div className="src">{source ? <>{source.provenance === 'ed' ? 'Ed' : source.provenance === 'canvas' ? 'Canvas' : source.provenance} · {citation.locator}{' · '}
-        {sourceLink(source.url) ? <a href={sourceLink(source.url)} target="_blank" rel="noreferrer noopener">{c.openSource}</a> : c.noLink}</>
+        {sourceLink(source.url) ? <a href={sourceLink(source.url)} target="_blank" rel="noreferrer noopener">{c.openSource}</a> : c.noLink}
+        {source.copiedBy === 'agent' && <span className="copied" title={c.copiedHelp}>{' · '}{c.copiedByAgent}</span>}</>
         : state.errors.source ? c.sourceMissing : t.loading}</div></blockquote>;
   })}</>;
 }

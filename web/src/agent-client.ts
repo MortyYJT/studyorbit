@@ -18,7 +18,7 @@ async function envelope<T extends z.ZodType>(response: Response, command: string
   if (!value.ok) throw new ClientError(value.error.code, value.error.message);
   return value.data;
 }
-/** Agent chat routes and owner-only browser routes; every request carries the owner session header, never a URL secret. */
+/** Agent chat routes; every request carries the owner session header, never a URL secret. */
 export function createAgentClient(client: Client) {
   const get = <T extends z.ZodType>(route: string, query: Record<string, string | undefined>, data: T) => {
     const params = new URLSearchParams(Object.entries(query).filter((entry): entry is [string, string] => entry[1] !== undefined));
@@ -47,12 +47,6 @@ export function createAgentClient(client: Client) {
         }
       } finally { reader.cancel().catch(() => {}); }
     },
-    async image(screenshotRef: string): Promise<Blob> {
-      const response = await client.raw(`/api/browser.image?${new URLSearchParams({ screenshotRef })}`);
-      if (!response.ok || response.headers.get('Content-Type') !== 'image/png') await envelope(response, 'browser.image', z.never());
-      return response.blob();
-    },
-    view: (tabId: string) => client.raw(`/api/browser.view?${new URLSearchParams({ tabId })}`).then(response => envelope(response, 'browser.view', z.object({ focused: z.literal(true) }))),
   };
 }
 export type AgentClient = ReturnType<typeof createAgentClient>;

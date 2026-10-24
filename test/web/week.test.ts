@@ -43,22 +43,15 @@ it('shows overflow with its missing minutes and unestimated work without guessin
   const model = weekModel({ plan, courses: [course], assessments: [], tasks: [], monday: '2026-10-19', timeZone: settings.timeZone });
   expect(model.overflow).toEqual([expect.objectContaining({ workId: 'a1', minutes: 90 })]);
   expect(model.unestimated).toEqual([expect.objectContaining({ workId: 'a2', estimateMinutes: undefined })]);
-  const needs = needsYou({ attention: [{ site: 'ed', kind: 'signin' }], confirmations: [{ id: 'k1', conversationId: 'v1', assessmentId: 'a1', summary: 'Answers filled', screenshotRef: 's1', state: 'pending', createdAt: '2026-10-20T00:00:00Z' }],
-    overflow: model.overflow, unestimated: model.unestimated });
-  expect(needs).toEqual([expect.objectContaining({ kind: 'confirm', id: 'k1' }), { kind: 'signin', site: 'ed' },
+  const needs = needsYou({ attention: [{ site: 'ed', kind: 'blocked' }], overflow: model.overflow, unestimated: model.unestimated });
+  expect(needs).toEqual([{ kind: 'blocked', site: 'ed' },
     expect.objectContaining({ kind: 'overflow', workId: 'a1', minutes: 90 }), { kind: 'unestimated', count: 1 }]);
 });
 
-it('keeps the sync status items in "needs you" after confirmations and before planning gaps', () => {
+it('keeps the sync status items in "needs you" before planning gaps', () => {
   const sync = [{ kind: 'select' as const, count: 3 }, { kind: 'policy' as const, course: 'SYNB20002', courseId: 'c2', value: 'prohibited' as const, quote: 'No AI.' }];
-  expect(needsYou({ attention: sync, confirmations: [], overflow: [], unestimated: [{ workId: 'a2', title: 'a2', manual: false }] }))
+  expect(needsYou({ attention: sync, overflow: [], unestimated: [{ workId: 'a2', title: 'a2', manual: false }] }))
     .toEqual([...sync, { kind: 'unestimated', count: 1 }]);
-});
-
-it('gives a pending confirmation the course of its assessment for the review preset', () => {
-  const pending = { id: 'k1', conversationId: 'v1', assessmentId: 'a1', summary: 'Answers filled', screenshotRef: 's1', state: 'pending' as const, createdAt: '2026-10-20T00:00:00Z' };
-  const needs = needsYou({ attention: [], confirmations: [pending, { ...pending, id: 'k2', assessmentId: 'gone' }], overflow: [], unestimated: [], assessments: [assessment('a1')] });
-  expect(needs).toEqual([expect.objectContaining({ kind: 'confirm', id: 'k1', courseId: 'c1' }), expect.objectContaining({ kind: 'confirm', id: 'k2', courseId: undefined })]);
 });
 
 it('summarises courses with graded weight, unknown weights and the next deadline', () => {
@@ -125,7 +118,7 @@ it('reads every plan page from today and sends owner writes with the session and
       : { ...emptyPlan, days: [{ date: '2026-10-19', availableMinutes: 120, items: [] }], work: [{ workId: 'a1', title: 'Assessment a1', courseId: 'c1', estimateMinutes: 60, estimateOrigin: 'owner', actualMinutes: 0 }], nextCursor: 'p2' });
     if (command === 'assessments.list') return envelope(command, body.cursor ? list([assessment('a2')]) : list([assessment('a1')], 'n'));
     return envelope(command, { 'courses.list': list([course]), 'tasks.list': list([]), 'planning.settings.read': { settings },
-      'confirmation.list': { items: [] }, 'plan.start.set': { recorded: true } }[command]);
+      'plan.start.set': { recorded: true } }[command]);
   });
   const store = new WeekStore(createClient(secret, fetcher), () => new Date('2026-10-23T02:00:00Z'));
   await store.refresh();

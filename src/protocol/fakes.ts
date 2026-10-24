@@ -31,7 +31,8 @@ const policy = { version: 1 as const, courseId: course.id, status: 'owner-attest
 const grant = { version: 1 as const, courseId: course.id, assessmentId: assessment.id, category: 'assignment' as const, level: 4 as const, date: '2026-01-01' };
 function page<T>(item: T) { return { items: [item], evidence: [source], coverage: { complete: false, gaps: [{ code: 'INCOMPLETE' as const }] } }; }
 export const examples = {
-  'source.fetch': { input: { courseId: course.id, url: 'https://canvas.lms.unimelb.edu.au/courses/1/pages/synthetic' }, output: { items: [source], emptyPages: [], sourceRevision: digest } },
+  'source.record': { input: { courseId: course.id, url: 'https://canvas.lms.unimelb.edu.au/courses/1/pages/synthetic', title: 'Synthetic page', text: 'Read the synthetic guide.' },
+    output: { sourceItemId: source.sourceItemId, empty: false, locator: 'text', sourceHash: digest, copiedBy: 'agent' as const, sourceRevision: digest } },
   'revision.read': { input: { courseId: course.id }, output: { sourceRevision: digest, examScope: null } },
   'practice.stats': { input: { courseId: course.id }, output: { questions: 1, attempted: 0, correct: 0, incorrect: 0, wrongQuestions: [] } },
   'practice.attempt.record': { input: { questionId: practiceQuestion.id, revision, outcome: 'incorrect' as const, at }, output: { recorded: true as const } },

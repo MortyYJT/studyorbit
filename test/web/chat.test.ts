@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyEvents, chatItems, confirmationStatus, unlinkedConfirmations, fromOpen, launchPresetOnce, pendingConfirmations, runStream, sseParser, type Opened, type StoredEvent } from '../../web/src/chat.js';
+import { applyEvents, chatItems, fromOpen, launchPresetOnce, runStream, sseParser, type Opened, type StoredEvent } from '../../web/src/chat.js';
 
 const at = '2026-10-20T10:00:00.000Z';
 const conversation = { id: 'c-1', title: 'Quiz 3', adapter: 'synthetic', preset: 'complete-assessment', createdAt: at, updatedAt: at };
@@ -62,7 +62,8 @@ describe('agent chat view model', () => {
     expect(chatItems(state)).toEqual([
       { kind: 'owner', id: 'm-0', text: 'Complete the assessment.', preset: true },
       { kind: 'text', id: '1:0', text: 'Opening the quiz.' },
-      { kind: 'step', id: '1:2', tool: 'browser.screenshot', outcome: 'ok', screenshotRef: shot, tabId: tab },
+      // Historical resident-browser steps keep their name and outcome; screenshots and "view in Edge" are no longer shown.
+      { kind: 'step', id: '1:2', tool: 'browser.screenshot', outcome: 'ok' },
       { kind: 'step', id: '1:3', tool: 'Bash', outcome: 'denied', reason: 'Owner commands are refused.' },
       { kind: 'step', id: '1:4', tool: 'browser.open', outcome: 'ok' },
       { kind: 'stopped', id: '1:5' },
@@ -73,29 +74,14 @@ describe('agent chat view model', () => {
     const state = applyEvents(fromOpen(undefined, { conversation, messages: [], events: [] }), [ev(0, { type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Sign in.' }, 'm-9', 3)]);
     expect(chatItems(state)).toEqual([{ kind: 'error', id: '3:0', code: 'AGENT_UNAVAILABLE' }]);
   });
-  it('tracks the latest decision of each confirmation in the conversation', () => {
-    const state = fromOpen(undefined, opened([
-      ev(0, { type: 'confirmation', confirmationId: 'p-1', decision: 'pending' }), ev(1, { type: 'confirmation', confirmationId: 'p-1', decision: 'cancelled' }),
-      ev(2, { type: 'confirmation', confirmationId: 'p-2', decision: 'pending' }),
-    ]));
-    expect(pendingConfirmations(state)).toEqual(['p-2']);
-    const row = (id: string, conversationId = 'c-1') => ({ id, conversationId, assessmentId: 'a-1', summary: 'Answers', screenshotRef: 's', state: 'pending' as const, createdAt: at });
-    // A pending record of this conversation without a journal event (e.g. recorded by an external tool scope) still shows.
-    expect(unlinkedConfirmations(state, [row('p-2'), row('p-3'), row('p-4', 'c-other')]).map(r => r.id)).toEqual(['p-3']);
-    expect(chatItems(state).filter(i => i.kind === 'confirmation')).toEqual([
-      { kind: 'confirmation', id: '1:0', confirmationId: 'p-1', decision: 'cancelled' },
-      { kind: 'confirmation', id: '1:2', confirmationId: 'p-2', decision: 'pending' },
+  it('parses historical confirmation events without showing a card (Confirmation card)', () => {
+    const state = fromOpen(undefined, opened([ev(0, { type: 'text', text: 'Filled; please review and submit in your Edge.' }),
+      ev(1, { type: 'confirmation', confirmationId: 'p-1' }), ev(2, { type: 'result', turns: 1 })]));
+    expect(chatItems(state)).toEqual([
+      { kind: 'owner', id: 'm-0', text: 'Complete the assessment.', preset: true },
+      { kind: 'text', id: '1:0', text: 'Filled; please review and submit in your Edge.' },
     ]);
-  });
-});
-describe('confirmation status in a conversation', () => {
-  const row = { id: 'p-1', conversationId: 'c-1', assessmentId: 'a-1', summary: 'Answers', screenshotRef: 's', state: 'pending' as const, createdAt: at };
-  it('shows the card while the record is pending, and a journal-pending confirmation absent from a loaded list as no longer pending', () => {
-    expect(confirmationStatus('p-1', { rows: [row] })).toEqual({ kind: 'card', row });
-    // A reply stopped while waiting leaves the journal at pending; the record has left the pending list.
-    expect(confirmationStatus('p-2', { rows: [row] })).toEqual({ kind: 'gone' });
-    expect(confirmationStatus('p-1', 'loading')).toEqual({ kind: 'loading' });
-    expect(confirmationStatus('p-1', 'failed')).toEqual({ kind: 'unavailable' });
+    expect(state.running).toBe(false);
   });
 });
 describe('agent presets', () => {

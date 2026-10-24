@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { SqliteRepository } from '../../src/store/sqlite.js';
 import { SqliteStudyRecordStore } from '../../src/store/study-records.js';
-import { courseEvidence } from '../../src/revision/source-fetch.js';
+import { courseEvidence } from '../../src/revision/sources.js';
 import { TrustedStoreEvidence } from '../../src/protocol/reads.js';
 import { hash } from '../../src/citations/exact.js';
 

@@ -87,7 +87,12 @@ export class CourseStore {
   }
   async source(id: string) {
     if (this.state.sources[id]) return;
-    await this.section('source', async () => ({ sources: { ...this.state.sources, [id]: await this.client.call('sources.get', { sourceItemId: id }) } }));
+    // Merge synchronously right after the read: a snapshot taken earlier would drop sources that concurrent reads stored meanwhile.
+    await this.section('source', async () => {
+      const source = await this.client.call('sources.get', { sourceItemId: id });
+      this.update({ sources: { ...this.state.sources, [id]: source } });
+      return {};
+    });
   }
   private async write(key: string, run: () => Promise<unknown>, after: () => Promise<unknown> | Partial<CourseState> = () => ({})): Promise<boolean> {
     if (this.state.saving) return false;
@@ -105,9 +110,6 @@ export class CourseStore {
   }
   setDefault(level: WorkLevel) {
     return this.write('default', () => this.client.call('autonomy.default.set', { courseId: this.courseId, level }), () => this.loadAutonomy());
-  }
-  setConfirm(confirmBeforeSubmit: boolean) {
-    return this.write('confirm', () => this.client.call('autonomy.confirmation.set', { courseId: this.courseId, confirmBeforeSubmit }), () => this.loadAutonomy());
   }
   setOverride(assessmentId: string, level: WorkLevel | null) {
     return this.write(`level:${assessmentId}`, () => level === null ? this.client.call('autonomy.override.clear', { assessmentId })

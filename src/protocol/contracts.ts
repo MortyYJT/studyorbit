@@ -19,7 +19,9 @@ export const ClaimSchema = z.strictObject({ text, citations: z.array(CitationInp
 const sourceText = z.string().min(1).max(100000).refine(value => value.trim().length > 0);
 export const SourceEvidenceSchema = z.strictObject({ sourceItemId: IdSchema, courseId: IdSchema, text: sourceText,
   sourceHash: HashSchema, locator: text, page: z.number().int().positive().safe().optional(),
-  provenance: z.enum(['canvas', 'ed', 'manual']), url: z.url().max(2048).optional(), redacted: z.literal(true) });
+  provenance: z.enum(['canvas', 'ed', 'manual']), url: z.url().max(2048).optional(), redacted: z.literal(true),
+  // Set when the agent supplied the text (`source.record`): a citation shows the quote is in the recorded text, not that the page says it.
+  copiedBy: z.literal('agent').optional() });
 export const CoverageSchema = z.strictObject({ complete: z.boolean(), gaps: z.array(z.strictObject({
   code: z.enum(['MISSING_EVIDENCE', 'UNSUPPORTED', 'INCOMPLETE']), reference: IdSchema.optional(),
 })).max(500) });
@@ -93,7 +95,12 @@ export const contracts = {
   'revision.read': { input: z.strictObject({ courseId: IdSchema }), output: z.strictObject({ sourceRevision: HashSchema, examScope: ExamScopeRecordSchema.nullable(), examTime: z.iso.datetime({ offset: true }).optional(), finalAssessmentId: IdSchema.optional() }), level: 0 },
   'practice.stats': { input: z.strictObject({ courseId: IdSchema }), output: z.strictObject({ questions: count, attempted: count, correct: count, incorrect: count, wrongQuestions: z.array(z.strictObject({ questionId: IdSchema, revision: z.uuid() })).max(500) }), level: 0 },
   'practice.attempt.record': { input: z.strictObject({ questionId: IdSchema, revision: z.uuid(), outcome: z.enum(['correct', 'incorrect', 'skipped']), at: z.iso.datetime({ offset: true }) }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
-  'source.fetch': { input: z.strictObject({ courseId: IdSchema, url: z.url().max(2048) }), output: z.strictObject({ items: z.array(SourceEvidenceSchema).max(500), emptyPages: z.array(z.number().int().positive()).max(500), sourceRevision: HashSchema }), level: 0 },
+  // The agent copies a page it read in the owner's Edge; one call per PDF page (#187).
+  'source.record': { input: z.strictObject({ courseId: IdSchema, url: z.url().max(2048), title: z.string().trim().min(1).max(500),
+    text: z.string().max(1_000_000), page: z.number().int().positive().max(2000).optional() }),
+    // The receipt omits the text; `sources.get` reads it back. Pages are bounded to 60,000 encoded bytes (see source-record.ts).
+    output: z.strictObject({ sourceItemId: IdSchema, empty: z.boolean(), locator: text, page: z.number().int().positive().safe().optional(),
+      sourceHash: HashSchema, copiedBy: z.literal('agent'), sourceRevision: HashSchema }), level: 0 },
   'courses.list': courses,
   'assessments.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }), output: page(AssessmentSchema.strict().extend({ fields: AnnotationFieldsSchema.optional(),
     // Derived from currently linked platform items; `linked: false` means submission state is unknown.
@@ -111,23 +118,11 @@ export const contracts = {
   'grant.record': grant,
   'audit.list': { input: z.strictObject({ ...paging, assessmentId: IdSchema.optional(), command: IdSchema.optional() }), output: page(AuditRecordSchema), level: 0 },
 } as const;
-// Browser lifecycle is a host service, separate from repository read/write port types.
-const siteStatus = z.strictObject({ state: z.enum(['signedIn', 'signedOut', 'unknown']), checkedAt: z.iso.datetime(),
-  hint: z.strictObject({ code: z.literal('AUTH_EXPIRED'), next: z.enum([
-    'Sign in to Canvas by hand in the resident browser.',
-    'Sign in to Ed by hand in the resident browser.',
-  ]) }).optional() });
-export const browserContracts = {
-  'browser.signin': { input: z.strictObject({ site: z.enum(['canvas', 'ed']) }), output: z.strictObject({ site: z.enum(['canvas', 'ed']), status: siteStatus }), level: 0 },
-  'browser.status': { input: z.strictObject({}), output: z.strictObject({ canvas: siteStatus, ed: siteStatus }), level: 0 },
-  'browser.start': { input: z.strictObject({}), output: z.strictObject({ running: z.literal(true), browser: z.enum(['msedge', 'chrome', 'chromium']), startedAt: z.iso.datetime() }), level: 0 },
-  'browser.stop': { input: z.strictObject({}), output: z.strictObject({ running: z.literal(false) }), level: 0 },
-} as const;
 export type CommandName = keyof typeof contracts;
 export type CommandInput<N extends CommandName> = z.input<(typeof contracts)[N]['input']>;
 export type ParsedCommandInput<N extends CommandName> = z.output<(typeof contracts)[N]['input']>;
 export type CommandOutput<N extends CommandName> = z.output<(typeof contracts)[N]['output']>;
-export const ownerCommands: ReadonlySet<string> = new Set(['sync.run', 'policy.record', 'grant.record', 'browser.start', 'browser.stop', 'browser.signin', 'annotation.owner.record', 'annotation.confirm', 'annotation.replace', 'planning.settings.record', 'courses.select']);
+export const ownerCommands: ReadonlySet<string> = new Set(['sync.run', 'policy.record', 'grant.record', 'annotation.owner.record', 'annotation.confirm', 'annotation.replace', 'planning.settings.record', 'courses.select']);
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });
 export const FailureEnvelopeSchema = z.strictObject({ protocol: z.literal('coursework.agent/v1'), command: z.string(), meta,
   ok: z.literal(false), error: z.strictObject({ code: z.enum(Object.keys(retryable) as (keyof typeof retryable)[]), message: z.string(), retryable: z.boolean(), next: z.string().optional() }) }).refine(e => e.error.retryable === retryable[e.error.code]);
