@@ -1,7 +1,7 @@
 /**
  * Task 17.1: one synthetic walk through the v1 delivery flow on the production composition.
  * Every step shares one temporary COURSEWORK_HOME and one owner UI host bound to a real loopback socket.
- * Only the provider readers (Canvas/Ed JSON), the tool browser page and the chat agent are fakes; all data is invented.
+ * Only the agent (course reading and chat), the tool browser page and the fetched syllabus text are fakes; all data is invented.
  */
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,31 +13,52 @@ import type { HttpTransport } from '../../src/protocol/http.js';
 import { dispatch } from '../../src/protocol/registry.js';
 import { SqliteRepository } from '../../src/store/sqlite.js';
 import { databasePath } from '../../src/config/data-dir.js';
-import { SyncService } from '../../src/sync/service.js';
 import type { ToolPage } from '../../src/browser/tools/ports.js';
+import type { AgentAdapter, AgentEvent, AgentInput } from '../../src/agent/adapter.js';
+import { hash } from '../../src/citations/exact.js';
 import { SyntheticAdapter } from '../agent/synthetic.js';
-import { bodies, clock, readers } from '../sync/delivery-fixture.js';
+import { component, document, found, item, quoted } from '../sync/course-document.js';
 
 // Locally this file runs in about 2 s; sync, UI bootstrap and the confirmation polling get headroom on slow CI runners.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const quizName = 'Synthetic weekly quiz 1';
 const quizUrl = 'https://canvas.lms.unimelb.edu.au/courses/1/quizzes/7';
-// The shared delivery fixture, adjusted so the synced group is still open and its linked assignment reads as a quiz.
-const providerBodies = { ...bodies(),
-  '/api/v1/courses/1/assignment_groups?per_page=100&page=1': [{ id: 3, name: 'Weekly quizzes', group_weight: 30 }],
-  '/api/v1/courses/1/assignments?per_page=100&page=1': [{ id: 7, name: quizName, assignment_group_id: 3, description: 'Synthetic quiz instructions', points_possible: 10 }],
-  '/api/v1/courses/1/assignments/7/submissions/self': { assignment_id: 7, score: null, submitted_at: null, workflow_state: 'unsubmitted' },
-};
+// The quiz is due in two days; the term takes that date's Melbourne year so the document passes the term-year check.
+const due = new Date(Date.now() + 2 * 86_400_000).toISOString();
+const term = `${new Intl.DateTimeFormat('en', { timeZone: 'Australia/Melbourne', year: 'numeric' }).format(new Date(due))}:S2`;
+const pages = { canvas: 'https://canvas.lms.unimelb.edu.au/courses/1', ed: 'https://edstem.org/au/courses/9' };
+const quizCourse = document([component('weekly-quizzes', 30, [item(7, { name: found(quizName), url: quizUrl, due: quoted(due, 'Due in two days', quizUrl) }, 'ABCD10001')],
+  { name: found('Weekly quizzes'), kind: found('quiz') }, 'ABCD10001'), component('final-exam', 70, [], { kind: found('exam'), isFinal: found(true) }, 'ABCD10001')],
+  { name: found('Synthetic Canvas'), pages, platforms: { canvas: 'read', ed: 'absent' } }, 'ABCD10001', term);
+/** Synthetic course reading: offers the course while nothing is selected, then imports it through `course.import`. */
+function readCourses(input: AgentInput): AsyncIterable<AgentEvent> {
+  const jobId = /Job id: (\S+)/.exec(input.prompt)![1]!;
+  const call = (name: string, args: unknown) => input.tools.find(tool => tool.name === name)!.execute(args) as Promise<{ ok: boolean }>;
+  return (async function* () {
+    const result = input.prompt.includes('Selected courses: none')
+      ? await call('courses.offer', { jobId, courses: [{ code: 'ABCD10001', name: 'Synthetic Canvas', term, pages }], blocked: [] })
+      : await call('course.import', { jobId, document: quizCourse });
+    yield { type: 'tool_step', tool: 'coursework.sync', outcome: result.ok ? 'ok' : 'error' } as const;
+    yield { type: 'result', turns: 3 } as const;
+  })();
+}
 
 describe('v1 delivery end to end (synthetic)', () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'coursework-e2e-')));
-  const ports = readers(providerBodies);
+  const readings: AgentInput[] = [];
   const clicks = vi.fn(async () => {});
   const page: ToolPage = { navigate: async () => {}, url: () => quizUrl, signedOut: async () => false,
     read: async () => ({ text: 'Synthetic quiz page', targets: [{ ref: 'r1', kind: 'button', description: 'Submit synthetic quiz' }], people: [], peers: [] }),
     front: async () => {}, highlight: async () => {}, isVisible: async () => true, act: clicks, screenshot: async () => 'shot-1', close: async () => {} };
-  const adapter = new SyntheticAdapter();
+  const chatAgent = new SyntheticAdapter();
+  // One adapter, as in production: reading jobs carry a job id, chat replies do not.
+  const adapter: AgentAdapter = { id: 'synthetic', start: input => {
+    if (!input.prompt.includes('Job id: ')) return chatAgent.start(input);
+    readings.push(input);
+    const events = readCourses(input);
+    return { [Symbol.asyncIterator]: () => events[Symbol.asyncIterator](), interrupt() {} };
+  } };
   let tick = 0;
   let store: SqliteRepository; let host: ReturnType<typeof createProductionProtocol>; let transport: HttpTransport; let secret = '';
   const state = { courseId: '', assessmentId: '', annotationId: '', conversationId: '' };
@@ -46,9 +67,7 @@ describe('v1 delivery end to end (synthetic)', () => {
     vi.stubEnv('COURSEWORK_HOME', root);
     const ui = join(root, 'ui'); mkdirSync(ui); writeFileSync(join(ui, 'index.html'), '<html>synthetic</html>');
     store = new SqliteRepository(databasePath());
-    const sync = new SyncService({ store, clock: clock(), readers: async limiter => ({
-      canvas: { read: p => limiter.attempt(() => ports.canvas.read(p)) }, ed: { read: p => limiter.attempt(() => ports.ed.read(p)) } }) });
-    host = createProductionProtocol({ store, sync, agentAdapter: adapter, owner: { assertOwner: async () => { throw new Error('No terminal owner in this test.'); } },
+    host = createProductionProtocol({ store, agentAdapter: adapter, owner: { assertOwner: async () => { throw new Error('No terminal owner in this test.'); } },
       browserTools: { browser: { newPage: async () => page, close: async () => {} }, clock: { now: () => tick, sleep: async ms => { tick += ms; } } } });
     let opened = '';
     transport = await startOwnerUI(host, { staticDirectory: ui, capabilityDirectory: join(root, 'http'), opener: async url => { opened = url; } });
@@ -71,32 +90,43 @@ describe('v1 delivery end to end (synthetic)', () => {
   const agentCall = (name: string, input: unknown) => { const agent = host.registry.agentTools(host.context); return dispatch(agent.registry, name, input, agent.context); };
 
   it('1. reports no sync history and a signed-out browser before any sync', async () => {
-    expect(await api('sync.status')).toMatchObject({ status: 200, body: { ok: true, data: { running: false, canvas: {}, ed: {} } } });
+    expect(await api('sync.status')).toMatchObject({ status: 200, body: { ok: true, data: { running: false, blocked: [], undecided: 0, courses: [] } } });
     // No resident browser is running in the temporary home, so status asks the owner to sign in.
     expect(await api('browser.status')).toMatchObject({ status: 401, body: { ok: false, error: { code: 'AUTH_EXPIRED' } } });
-    expect(ports.read).not.toHaveBeenCalled();
+    expect(readings).toHaveLength(0);
   });
 
-  it('2. owner sync stores the synthetic course and assessment, then lists show them', async () => {
+  it('2. owner sync offers the course, the owner selects it, and the next run stores the course and its quiz', async () => {
     expect((await api('sync.run')).status).toBe(403);
-    expect(ports.read).not.toHaveBeenCalled();
+    expect(readings).toHaveLength(0);
+    expect(await api('sync.run', {}, true)).toMatchObject({ status: 200, body: { ok: true, data: { outcome: 'NEEDS_SELECTION' } } });
+    const candidates = (await api('courses.candidates')).body.data.items;
+    expect(candidates).toEqual([expect.objectContaining({ key: `ABCD10001:${term}`, name: 'Synthetic Canvas' })]);
+    // The agent's commands need credentials over HTTP; the selection needs the owner session.
+    expect((await api('courses.offer', { jobId: 'any', courses: [], blocked: [] })).status).toBe(403);
+    const selection = { selections: [{ key: candidates[0].key, selected: true }] };
+    expect((await api('courses.select', selection)).status).toBe(403);
+    expect(await api('courses.select', selection, true)).toMatchObject({ status: 200, body: { ok: true, data: { recorded: 1 } } });
     const run = await api('sync.run', {}, true);
-    expect(run).toMatchObject({ status: 200, body: { ok: true, data: { providers: { canvas: { status: 'OK' }, ed: { status: 'OK' } } } } });
-    expect(await api('sync.status')).toMatchObject({ body: { data: { canvas: { lastSuccess: { id: run.body.data.run.id } } } } });
+    expect(run).toMatchObject({ status: 200, body: { ok: true, data: { outcome: 'OK', run: { syncOutcome: 'OK', courseCoverage: [expect.objectContaining({ stored: true })] } } } });
+    expect(await api('sync.status')).toMatchObject({ body: { data: { lastRun: { id: run.body.data.run.id, outcome: 'OK' }, courses: [expect.objectContaining({ storedAt: expect.any(String) })] } } });
     const courses = (await api('courses.list')).body.data.items;
     expect(courses).toEqual([expect.objectContaining({ code: 'ABCD10001', name: 'Synthetic Canvas', sources: expect.arrayContaining([{ platform: 'canvas', externalId: '1' }]) })]);
     const assessments = (await api('assessments.list')).body.data.items;
-    expect(assessments).toEqual([expect.objectContaining({ name: 'Weekly quizzes', weight: 30, platform: expect.objectContaining({ submitted: false }) })]);
-    expect(assessments[0].fields.kind.value).toBeNull();
-    state.courseId = courses[0].id; state.assessmentId = assessments[0].id;
+    expect(assessments.find((a: { name: string }) => a.name === quizName)).toEqual(expect.objectContaining({ weight: 30, kind: 'quiz', group: expect.objectContaining({ name: 'Weekly quizzes' }),
+      platform: expect.objectContaining({ linked: true, submitted: false }) }));
+    state.courseId = courses[0].id; state.assessmentId = assessments.find((a: { name: string }) => a.name === quizName).id;
   });
 
   it('3. an agent annotation with a verified citation is confirmed by the owner over HTTP', async () => {
-    const source = store.readAssessmentLinks(state.assessmentId).map(link => store.loadSourceItem(link.sourceItemId)!).find(item => item.title === quizName)!;
+    // Imported items carry no page text; a fetched syllabus page is what an agent cites.
+    const text = `${quizName} is a quiz worth 30% of the final mark.`;
+    store.saveSourceItem({ id: 'syllabus-page', platform: 'canvas', externalId: 'page:syllabus', courseId: state.courseId, kind: 'announcement',
+      title: 'Synthetic syllabus', text, contentHash: hash(text), fetchedAt: new Date().toISOString(), url: 'https://canvas.lms.unimelb.edu.au/courses/1/assignments/syllabus' });
     const sourceRevision = (await api('revision.read', { courseId: state.courseId })).body.data.sourceRevision;
     const recorded = await agentCall('annotation.record', { entity: 'assessment', entityId: state.assessmentId, field: 'kind', value: 'quiz', sourceRevision,
-      citations: [{ sourceItemId: source.id, quote: `name: ${quizName}`, locator: source.id }] });
-    expect(recorded).toMatchObject({ ok: true, data: { citations: [expect.objectContaining({ sourceItemId: source.id })] } });
+      citations: [{ sourceItemId: 'syllabus-page', quote: `${quizName} is a quiz`, locator: 'syllabus-page' }] });
+    expect(recorded).toMatchObject({ ok: true, data: { citations: [expect.objectContaining({ sourceItemId: 'syllabus-page' })] } });
     state.annotationId = (recorded as { data: { id: string } }).data.id;
     const confirm = { entity: 'assessment', entityId: state.assessmentId, field: 'kind', annotationId: state.annotationId };
     expect((await api('annotation.confirm', confirm)).status).toBe(403);
@@ -111,7 +141,7 @@ describe('v1 delivery end to end (synthetic)', () => {
     const settings = { timeZone: 'Australia/Melbourne', weekdayMinutes: [120, 120, 120, 120, 120, 60, 60], teachingWeekAnchor: '2026-07-27', breakWeeks: [] };
     expect(await api('planning.settings.set', settings, true)).toMatchObject({ status: 200, body: { ok: true } });
     expect(await agentCall('estimate.agent.set', { workId: state.assessmentId, minutes: 120, reason: 'Synthetic quiz of ten points.' })).toMatchObject({ ok: true });
-    const plan = (await api('plan.read', { term: '2026:S2', startDate: today, horizonDays: 7 })).body.data;
+    const plan = (await api('plan.read', { term, startDate: today, horizonDays: 7 })).body.data;
     expect(plan.days.flatMap((day: { items: { workId: string; minutes: number }[] }) => day.items))
       .toEqual(expect.arrayContaining([expect.objectContaining({ workId: state.assessmentId })]));
     expect(plan.work).toEqual(expect.arrayContaining([expect.objectContaining({ workId: state.assessmentId, estimateMinutes: 120, estimateOrigin: 'agent' })]));
@@ -135,14 +165,14 @@ describe('v1 delivery end to end (synthetic)', () => {
     expect(created).toMatchObject({ status: 200, body: { ok: true, data: { preset: 'explain-assessment', assessmentId: state.assessmentId } } });
     state.conversationId = created.body.data.id;
     await host.chat.waitForIdle(state.conversationId);
-    expect(adapter.inputs).toHaveLength(1);
-    expect(adapter.inputs[0]).toMatchObject({ prompt: expect.stringContaining('Explain the assessment requirements'), assessmentId: state.assessmentId, preset: 'explain-assessment' });
+    expect(chatAgent.inputs).toHaveLength(1);
+    expect(chatAgent.inputs[0]).toMatchObject({ prompt: expect.stringContaining('Explain the assessment requirements'), assessmentId: state.assessmentId, preset: 'explain-assessment' });
     for (let i = 0; i < 2; i++) {
       const opened = (await http(`/api/agent/open?conversation=${encodeURIComponent(state.conversationId)}`, undefined, true)).body.data;
       expect(opened.messages.map((m: { role: string }) => m.role)).toEqual(['owner', 'agent']);
       expect(opened.messages[1].parts).toEqual(expect.arrayContaining([{ type: 'text', text: 'First' }, { type: 'text', text: ' second' }]));
     }
-    expect(adapter.inputs).toHaveLength(1);
+    expect(chatAgent.inputs).toHaveLength(1);
   });
 
   it('7. browser.submit on the L1 quiz waits for owner confirmation, then clicks exactly once', async () => {
@@ -176,7 +206,8 @@ describe('v1 delivery end to end (synthetic)', () => {
     expect(audit.some(row => row.command === 'confirmation.decide')).toBe(true);
     const metrics = await api('metrics.read', { from: '2026-01-01T00:00:00Z', to: new Date(Date.now() + 86_400_000).toISOString() });
     expect(metrics).toMatchObject({ status: 200, body: { ok: true, data: {
-      sync: { canvas: { available: true, count: 1, successRate: 1 }, ed: { available: true, count: 1, successRate: 1 } },
+      // The NEEDS_SELECTION run counts neither way; the reading run succeeded.
+      sync: { runs: { available: true, count: 1, successRate: 1 }, canvas: { available: false }, ed: { available: false } },
       accuracy: { available: true, count: 1, correct: 1, incorrect: 0, value: 1 },
       estimates: { available: true, count: 1, medianRatio: 0.75 },
       agent: { available: true, conversations: expect.arrayContaining([

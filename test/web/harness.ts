@@ -12,7 +12,7 @@
  * transformation (enums, parameter properties, namespaces) so plain type stripping keeps working.
  *
  * Everything seeded here is invented. Nothing reads or writes the real data directory, no real browser is
- * attached, and sync runs are refused. Stop with Ctrl-C; the temporary directory is removed on exit.
+ * attached, and sync runs are refused (the status shows a seeded agent sync job). Stop with Ctrl-C; the temporary directory is removed on exit.
  * The printed URL carries the owner session in its fragment, so treat it as a local secret.
  */
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
@@ -30,7 +30,7 @@ type Registry = typeof import('../../src/protocol/registry.js');
 type Sqlite = typeof import('../../src/store/sqlite.js');
 type DataDir = typeof import('../../src/config/data-dir.js');
 type Errors = typeof import('../../src/protocol/errors.js');
-type SyncRuntime = typeof import('../../src/sync/runtime.js');
+type AgentJob = typeof import('../../src/sync/agent-job.js');
 type Citations = typeof import('../../src/citations/exact.js');
 
 const root = resolve(import.meta.dirname, '../..');
@@ -49,7 +49,7 @@ const { dispatch } = await import(dist('protocol/registry.js')) as Registry;
 const { SqliteRepository } = await import(dist('store/sqlite.js')) as Sqlite;
 const { databasePath } = await import(dist('config/data-dir.js')) as DataDir;
 const { CourseworkError } = await import(dist('protocol/errors.js')) as Errors;
-const { productionSync } = await import(dist('sync/runtime.js')) as SyncRuntime;
+const { AgentSync } = await import(dist('sync/agent-job.js')) as AgentJob;
 const { hash } = await import(dist('citations/exact.js')) as Citations;
 
 /** Scripted chat replies: streamed text, an allowed and a denied tool step, then a costed result. */
@@ -86,15 +86,16 @@ const monday = addDays(today, -((new Date(`${today}T00:00:00Z`).getUTCDay() + 6)
 const due = (dayOffset: number, utcTime = '12:59:00Z') => `${addDays(monday, dayOffset)}T${utcTime}`;
 const soon = (dayOffset: number, utcTime = '12:59:00Z') => `${addDays(today, dayOffset)}T${utcTime}`;
 const now = () => new Date().toISOString();
-const term = `${today.slice(0, 4)}-S${Number(today.slice(5, 7)) >= 7 ? 2 : 1}`;
+const term = `${today.slice(0, 4)}:S${Number(today.slice(5, 7)) >= 7 ? 2 : 1}`;
 
 const store = new SqliteRepository(databasePath());
-const realSync = productionSync(store);
+// Status reads the seeded sync job from the store; running a job would need the real agent and the owner's sign-in.
+const agentSync = new AgentSync({ store, adapter: () => { throw new CourseworkError('SOURCE_UNAVAILABLE', 'No agent in the synthetic harness.'); }, tools: () => [] });
 const host = createProductionProtocol({
   store,
   agentAdapter: new ScriptedAdapter(),
   // Status reads the seeded runs; a real sync would need the resident browser and university sign-in.
-  sync: { status: () => realSync.status(), run: async () => { throw new CourseworkError('SOURCE_UNAVAILABLE', 'Sync is disabled in the synthetic harness.'); } },
+  sync: { status: () => agentSync.status(), run: async () => { throw new CourseworkError('SOURCE_UNAVAILABLE', 'Sync is disabled in the synthetic harness.'); } },
   browserTools: { browser: {
     newPage: async () => { throw new CourseworkError('SOURCE_UNAVAILABLE', 'No browser in the synthetic harness.'); },
     close: async () => {},
@@ -118,8 +119,11 @@ const modules: Module[] = [
 const courses: Course[] = [
   { id: 'syn-course-a', moduleId: 'syn-module-a', code: 'SYNA10001', name: 'Synthetic Systems', term,
     assessmentsComplete: true, sources: [{ platform: 'canvas', externalId: '900001' }, { platform: 'ed', externalId: '800001' }] },
+  // The agent-read AI policy with its quote, as a course document stores it (#180).
   { id: 'syn-course-b', moduleId: 'syn-module-b', code: 'SYNB20002', name: 'Synthetic Ethics Seminar', term,
-    assessmentsComplete: false, sources: [{ platform: 'canvas', externalId: '900002' }] },
+    assessmentsComplete: false, sources: [{ platform: 'canvas', externalId: '900002' }], aiPolicy: 'prohibited',
+    readState: { aiPolicy: { state: 'found', via: 'ax', quote: 'Generative AI tools are not permitted for any assessment in this subject.',
+      source: 'https://canvas.lms.unimelb.edu.au/courses/900002/assignments/syllabus' } } },
 ];
 const assessment = (value: Omit<Assessment, 'origin' | 'isFinal'> & { isFinal?: boolean }): Assessment => ({ origin: 'sync', isFinal: false, ...value });
 const assessments: Assessment[] = [
@@ -168,9 +172,22 @@ const run = (id: string, startedAt: string, durationMs: number, edFailed: boolea
   ],
 });
 const linkedAt = fetchedAt;
+// One finished agent sync job: course A stored, Ed behind a sign-in page.
+const keys = courses.map(course => `${course.code}:${term}`);
+const jobEnd = new Date(Date.parse(fetchedAt) + 95_000).toISOString();
+store.saveCourseSelections([
+  ...courses.map((course, index) => ({ key: keys[index]!, code: course.code, term, name: course.name, pages: {}, offeredAt: fetchedAt, selected: true, decidedAt: fetchedAt })),
+  { key: `SYNC30003:${term}`, code: 'SYNC30003', term, name: 'Synthetic Undecided Elective', pages: {}, offeredAt: fetchedAt },
+]);
+const agentRun: Run = { id: 'syn-agent-sync', command: 'sync', startedAt: fetchedAt, endedAt: jobEnd, steps: 14, outcome: 'error', errorCode: 'PARTIAL', turns: 9,
+  syncOutcome: 'PARTIAL', courseCoverage: keys.map((key, index) => ({ courseRef: hash(key), stored: index === 0, submissions: index === 0 ? 2 : 0,
+    unknownFields: index === 0 ? 1 : 0, platforms: { canvas: index === 0 ? 'read' : 'unread', ed: 'blocked' }, policyChanged: false })) };
+store.saveSyncJob({ id: 'syn-agent-sync', startedAt: fetchedAt, endedAt: jobEnd, courses: keys, submissions: { [keys[0]!]: 2 }, outcome: 'PARTIAL', blocked: ['ed'],
+  results: { [keys[0]!]: { courseId: 'syn-course-a', storedAt: jobEnd, components: 4, items: 4, unknownFields: ['components[1].items[0].due'], dropped: [],
+    warnings: [], platforms: { canvas: 'read', ed: 'blocked' }, policyChanged: false } } });
 store.saveBatch({
   modules, courses, assessments, sourceItems,
-  runs: [run('syn-sync-failed', new Date(Date.now() - 2 * 86400_000).toISOString(), 41_000, true), run('syn-sync-ok', fetchedAt, 37_000, false)],
+  runs: [run('syn-sync-failed', new Date(Date.now() - 2 * 86400_000).toISOString(), 41_000, true), run('syn-sync-ok', fetchedAt, 37_000, false), agentRun],
   assessmentLinks: [
     { assessmentId: 'syn-a-assign-2', sourceItemId: 'syn-src-a-brief', origin: 'sync', at: linkedAt },
     { assessmentId: 'syn-a-quiz-2', sourceItemId: 'syn-src-a-outline', origin: 'sync', at: linkedAt },
@@ -190,8 +207,6 @@ const quote = (sourceItemId: string, text: string, locator = sourceItemId) => ({
 const revisionA = await sourceRevision('syn-course-a');
 await call('annotation.record', { entity: 'assessment', entityId: 'syn-a-quiz-2', field: 'weight', value: 5, sourceRevision: revisionA,
   citations: [quote('syn-src-a-outline', 'Quiz 2 is worth 5% of the final mark.')] });
-await call('annotation.record', { entity: 'course', entityId: 'syn-course-b', field: 'aiPolicy', value: 'prohibited', sourceRevision: await sourceRevision('syn-course-b'),
-  citations: [quote('syn-src-b-policy', 'Generative AI tools are not permitted for any assessment in this subject.')] });
 
 await call('estimate.agent.set', { workId: 'syn-a-assign-2', minutes: 300, reason: 'The brief asks for a report and source code.' });
 await call('estimate.owner.set', { workId: 'syn-b-essay', minutes: 240 });

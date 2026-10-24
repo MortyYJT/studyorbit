@@ -36,6 +36,15 @@ export class MetricsService {
       return { available: true as const, count: measured.length, successes, successRate: successes / measured.length,
         medianDurationMs: median(durations), maxDurationMs: durations.reduce((max, duration) => Math.max(max, duration), 0), durationBasis: 'sync_run' as const };
     };
+    // Agent sync jobs are measured per run; a run waiting for the owner's course selection is neither a success nor a failure.
+    const agentRuns = runs.filter(run => run.command === 'sync' && run.syncOutcome !== undefined && run.syncOutcome !== 'NEEDS_SELECTION');
+    const perRun = () => {
+      if (!agentRuns.length) return unavailable('no_runs');
+      const durations = agentRuns.map(run => Date.parse(run.endedAt) - Date.parse(run.startedAt));
+      const successes = agentRuns.filter(run => run.syncOutcome === 'OK').length;
+      return { available: true as const, count: agentRuns.length, successes, successRate: successes / agentRuns.length,
+        medianDurationMs: median(durations), maxDurationMs: Math.max(...durations), durationBasis: 'sync_run' as const };
+    };
     const assessments = this.all('assessments');
     const targets = [...assessments.map(item => ({ entity: 'assessment', id: item.id })),
       ...this.all('courses').map(item => ({ entity: 'course', id: item.id }))];
@@ -91,7 +100,7 @@ export class MetricsService {
         : { ...unavailable('no_reported_costs'), unknownCount };
     };
     const totals = (items: ConversationTotals[]) => ({ steps: sum(items.map(row => row.steps)), turns: sum(items.map(row => row.turns)), cost: costs(items) });
-    return metricsContracts['metrics.read'].output.parse({ from, to, sync: { canvas: provider('canvas'), ed: provider('ed') },
+    return metricsContracts['metrics.read'].output.parse({ from, to, sync: { runs: perRun(), canvas: provider('canvas'), ed: provider('ed') },
       accuracy: verdicts.length ? { available: true, count: verdicts.length, correct, incorrect: verdicts.length - correct, value: correct / verdicts.length } : unavailable('no_labels'),
       estimates: ratios.length ? { available: true, count: ratios.length, medianRatio: median(ratios), meanRatio: sum(ratios) / ratios.length } : unavailable('no_items'),
       agent: rows.length ? { available: true, count: rows.length, cost: costs(rows),

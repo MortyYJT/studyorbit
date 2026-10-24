@@ -12,8 +12,8 @@ import { CodexAdapter } from '../agent/codex.js';
 import { ResidentBrowser } from '../browser/resident.js';
 import { describe, inputSchema } from './mcp.js';
 import { PlanningService } from '../planning/service.js';
-import { productionSync } from '../sync/runtime.js';
 import { SyncJobs } from '../sync/jobs.js';
+import { AgentSync } from '../sync/agent-job.js';
 import type { SyncCommands } from './sync.js';
 import { SqliteStudyRecordStore } from '../store/study-records.js';
 import { RevisionService, StoreStudyEvidence } from '../revision/service.js';
@@ -113,7 +113,9 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
     return weight && weight.origin !== 'sync' && typeof weight.value === 'number' ? weight.value : undefined;
   };
   const jobs = new SyncJobs(store, { annotatedWeight });
-  const registry = createRegistry({ autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync: options.sync ?? productionSync(store), courseReading: jobs, browserTools, browserScope: () => {
+  // A sync run is an agent job over the chat adapter; adapter and tools are composed below and resolved per run.
+  const sync = options.sync ?? new AgentSync({ store, jobs, adapter: () => adapter, tools: () => agentTools });
+  const registry = createRegistry({ autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync, courseReading: jobs, browserTools, browserScope: () => {
     if (!externalScope?.isActive()) externalScope = chat.toolScope();
     return externalScope;
   } });

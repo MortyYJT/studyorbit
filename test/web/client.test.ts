@@ -14,7 +14,7 @@ describe('owner frontend client', () => {
     expect(takeOwnerSession({ hash: '#s=invalid', pathname: '/', search: '' }, { replaceState })).toBeUndefined();
   });
   it('validates shared command data and sends the owner secret only as a header', async () => {
-    const fetcher = vi.fn(async () => response('sync.status', { running: false, canvas: {}, ed: {} }));
+    const fetcher = vi.fn(async () => response('sync.status', { running: false, blocked: [], undecided: 0, courses: [] }));
     const client = createClient('a'.repeat(64), fetcher);
     expect((await client.call('sync.status', {})).running).toBe(false);
     const [url, init] = fetcher.mock.calls[0]! as unknown as [string, RequestInit];

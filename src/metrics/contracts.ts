@@ -20,7 +20,8 @@ export const metricsContracts = {
       .refine(value => Date.parse(value.from) < Date.parse(value.to), 'from must precede to'),
     output: z.strictObject({
       from: z.iso.datetime({ offset: true }), to: z.iso.datetime({ offset: true }),
-      sync: z.strictObject({ canvas: sync, ed: sync }),
+      // `runs`: agent sync jobs, successful when OK, NEEDS_SELECTION left out; canvas/ed: historical API sync runs per provider.
+      sync: z.strictObject({ runs: sync, canvas: sync, ed: sync }),
       accuracy: z.union([unavailable('no_labels'), z.strictObject({ available: z.literal(true), count, correct: count, incorrect: count, value: number.max(1) })]),
       estimates: z.union([unavailable('no_items'), z.strictObject({ available: z.literal(true), count, medianRatio: number, meanRatio: number })]),
       agent: z.union([unavailable('no_conversations'), z.strictObject({ available: z.literal(true), count, cost,

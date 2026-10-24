@@ -15,8 +15,8 @@
 
 ## 4. Agent job
 
-- [ ] 4.1 Failing tests with a synthetic adapter that calls the commands, then `src/sync/agent-job.ts` and the prompt `src/agent/course-reading.md`: discovery, `NEEDS_SELECTION`, selected courses only, `--course`, 20-minute bound, Run outcome and course coverage, blocked platforms, `LOCKED` (scenarios "Sync from the frontend", "Expired sign-in is not hidden", "Second start", "Blocked platform keeps its data")
-- [ ] 4.2 `sync.run`, `sync.status` (new shape) and `coursework sync` use the job; metrics per run (scenario "Sync success per run")
+- [x] 4.1 Failing tests with a synthetic adapter that calls the commands, then `src/sync/agent-job.ts` and the prompt `src/agent/course-reading.md`: discovery, `NEEDS_SELECTION`, selected courses only, `--course`, 20-minute bound, Run outcome and course coverage, blocked platforms, `LOCKED` (scenarios "Sync from the frontend", "Expired sign-in is not hidden", "Second start", "Blocked platform keeps its data")
+- [x] 4.2 `sync.run`, `sync.status` (new shape) and `coursework sync` use the job; metrics per run (scenario "Sync success per run")
 
 ## 5. Delete the API sync
 
