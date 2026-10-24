@@ -6,7 +6,7 @@
 > 2026-10-12 修订：不设日期（#67，推翻 #32 的 10/15）；复习功能提前进第一版（#70）；做 L4（#56，推翻 #3）；Notion 挪到第二版（#71）；新增 Q1 真实 quiz 场景（#75）。每个里程碑结束给用户一份验收清单（#68）。
 > 2026-10-13：本表是**唯一的进度表**，每合并一个 PR 就更新「状态」和「卡在哪」。
 > 2026-10-14 重定范围（#100–#111）：agent 负责理解和操作网页，固定代码负责记忆、排期、视图和护栏。`v1-foundation`、`capture-selection-ed`、`v1-protocol` 已连规格归档（现行规格在 `openspec/specs/`）；`v1-sync`、`ed-quiz-assist`、`v1-ui` 已关闭；剩下的 v1 工作全部在 `v1-rescope`。
-> 2026-10-24 重定方向（#165–#175）：所有 agent 换成 Codex，在你自己的 Edge 里读课程、对话、复习；课程信息由 agent 读取、脚本只做验证；分三个子项目 C-1～C-3 依次做。
+> 2026-10-24 重定方向（#165–#175）：所有 agent 换成 Codex，在你自己的 Edge 里读课程、对话、复习；课程信息由 agent 读取、脚本只做验证；分子项目 C-1～C-4 依次做。
 > 2026-10-15：暂停开发写 PRD（#114）。`v1-rescope` 只带已实现的 A–C 规格归档（#151）；剩下的 v1 工作全部在 `v1-delivery`，按 PRD 拆成 issue A–M（下表 V-*）。
 
 ## 第一版：自动 + 可信 + 排得动 + 复习 + 分级代做
@@ -29,8 +29,9 @@
 | V-K1–K4 | 前端 | 外壳和菜单、七列周视图、课程页和抽屉、Agent 对话页 | 已完成：K1（PR #139）、K4（PR #143）、K2（PR #144）、K3（PR #147）；合成数据 harness（PR #141）；补的读命令 `autonomy.read` 和平台提交状态（PR #146） | — | `v1-delivery` |
 | V-L/M | 指标 + 验收 | 四项指标；你按 PRD 逐条验收后归档 | 已完成：L（PR #132、#142、#148）；M 17.1（PR #149）；`v1-delivery` 2026-10-24 未经真机验收先归档（#175），真机验收转到 Codex 子项目之后 | — | `v1-delivery`（已归档） |
 | C-1 | Codex 对话 | 前端对话改用 Codex（`codex exec` 子进程），Codex 用电脑操作功能在你的 Edge 里工作；工具走 `coursework mcp`；护栏写进工作区 `AGENTS.md`（#167、#168、#173） | 规格已写 | 你审规格；实现后你真机对话一次（原 10.4） | `codex-agent` |
-| C-2 | agent 读课程 | 你勾选课程 → Codex 填三层 JSON → 代码查格式、常识、必填 → 写库；删接口同步（#165、#166、#169–#172） | 未开始 | C-1 | `agent-course-reading`（未写） |
+| C-2 | agent 读课程 | 你勾选课程 → Codex 填三层 JSON → 代码查格式、常识、必填 → 写库；删接口同步；每门课一个 `aiPolicy` 字段管能否用 AI（#165、#166、#169–#172、#180） | 未开始 | C-1 | `agent-course-reading`（未写） |
 | C-3 | 浏览器清理 | 删常驻 Edge、我们的浏览器工具和提交确认；Codex 只填不交（#173） | 未开始 | C-1、C-2 | `codex-browser-cleanup`（未写） |
+| C-4 | 长期记忆 | 事实由代码汇总、观察由 agent 记录；前端「记忆」页可看改删（#178） | 未开始 | C-1 | `long-term-memory`（未写） |
 | 以后 | 邮件入口 | 邮件作为新的信息来源（#99） | 未开始 | — | 未写 |
 
 实现说明：M2 已实现的接口见 `docs/engineering/protocol.md`；Canvas 探针见 `docs/engineering/canvas-student-session-spike.md`。
