@@ -47,7 +47,7 @@ export function takeOwnerSession(location: Pick<Location, 'hash' | 'pathname' | 
 }
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });
 // Commands that need the owner session; confirmation.list is a session-only read.
-const writes = new Set<Command>(['sync.run', 'browser.start', 'browser.stop', 'browser.signin', 'planning.settings.set',
+const writes = new Set<Command>(['sync.run', 'courses.select','browser.start', 'browser.stop', 'browser.signin', 'planning.settings.set',
   'confirmation.list', 'plan.start.set', 'plan.start.clear', 'time.record', 'manual.create', 'manual.edit', 'manual.complete', 'manual.delete', 'confirmation.decide',
   'annotation.confirm', 'annotation.replace', ...Object.keys(autonomyCommands) as Command[], ...Object.keys(workCommands) as Command[]]);
 export function createClient(initialSecret?: string, fetcher: typeof fetch = fetch) {
