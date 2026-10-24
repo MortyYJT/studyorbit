@@ -19,7 +19,7 @@ The schemas SHALL contain at least these fields (ids are non-empty strings; time
 - Module: `id`, `name`, `glyph`, `auto` (fed by coursework sources).
 - Course: `id`, `moduleId`, `code`, `name`, `term`, `assessmentsComplete`, `sources` (array of `{ platform: canvas | ed, externalId }`, may be empty for manual courses), `aiPolicy?` (the agent-read policy: `allowed` | `prohibited` | `owner-attested`; absent means unknown), `readState?` (per field: `state`, `via?`, `checkedAt?`, `quote?`, `source?`).
 - Assessment: `id`, `courseId`, `name`, `kind?` (`quiz` | `ongoing` | `assignment` | `exam`; absent means unknown), `weight?` (absent means unknown), `score?`, `due?`, `hurdleMin?`, `isFinal`, `status` (`not_started` | `in_progress` | `submitted` | `graded`), `origin` (`sync` | `agent` | `owner`), `group?` (`{ key, name, weight?, count?, role? }`, the grading component an assessment belongs to; `role` is `item`, `remainder` or `component`), `retired?` (true when no longer listed or replaced by its items; reads omit retired assessments), `readState?` (per field, as for Course; `state` may be `derived` for an evenly split weight).
-- SourceItem: `id`, `platform` (`canvas` | `ed` | `manual`), `externalId`, `courseId?`, `kind` (`assignment` | `announcement` | `material` | `post` | `event`), `title`, `url?`, `text` (already redacted), `contentHash`, `fetchedAt`, `removed` (boolean), `facts?` (`{ due?, pointsPossible?, pointsEarned?, submitted? }`, only for kind `assignment`).
+- SourceItem: `id`, `platform` (`canvas` | `ed` | `manual`), `externalId`, `courseId?`, `kind` (`assignment` | `announcement` | `material` | `post` | `event`), `title`, `url?`, `text` (already redacted), `contentHash`, `fetchedAt`, `removed` (boolean), `copiedBy?` (`agent` when the text was recorded by the agent with `source.record`), `facts?` (`{ due?, pointsPossible?, pointsEarned?, submitted? }`, only for kind `assignment`).
 - AssessmentLink: `assessmentId`, `sourceItemId`, `origin` (`sync` | `agent` | `owner`), `at`.
 - Annotation: `id`, `entity` (`assessment` | `course`), `entityId`, `field`, `value`, `origin` (`agent` | `owner`), `citations` (array; at least one when origin is `agent`), `at`.
 - AnnotationVerdict: `annotationId`, `verdict` (`correct` | `incorrect`), `at` (owner only).
@@ -27,10 +27,10 @@ The schemas SHALL contain at least these fields (ids are non-empty strings; time
 - Estimate: `workId` (an assessment id, task step id or manual task id), `minutes` (positive integer), `origin` (`agent` | `owner`), `reason?` (required when origin is `agent`), `at`.
 - StartTime: `workId`, `date` (local date), `time` (`HH:MM`), `at`.
 - TimeLog: `workId`, `minutes` (positive integer), `at`.
-- CourseAutonomy: `courseId`, `defaultLevel` (0 | 1 | 2), `confirmBeforeSubmit` (default true), `at`.
+- CourseAutonomy: `courseId`, `defaultLevel` (0 | 1 | 2), `confirmBeforeSubmit` (historical; no longer read or written after the submit-confirmation flow was removed), `at`.
 - Conversation: `id`, `title`, `adapter`, `sessionRef?`, `courseId?`, `assessmentId?`, `preset?`, `createdAt`, `updatedAt`.
-- Message: `id`, `conversationId`, `seq`, `role` (`owner` | `agent`), `parts` (text, tool step, confirmation), `stopped`, `at`.
-- PendingConfirmation: `id`, `conversationId`, `assessmentId`, `summary`, `screenshotRef`, `state` (`pending` | `confirmed` | `cancelled` | `expired`), `createdAt`, `decidedAt?`.
+- Message: `id`, `conversationId`, `seq`, `role` (`owner` | `agent`), `parts` (text, tool step; confirmation parts are historical), `stopped`, `at`.
+- PendingConfirmation (historical; no longer written): `id`, `conversationId`, `assessmentId`, `summary`, `screenshotRef`, `state` (`pending` | `confirmed` | `cancelled` | `expired`), `createdAt`, `decidedAt?`.
 - PracticeAttempt: `questionId`, `revision`, `outcome` (`correct` | `incorrect` | `skipped`), `at` (no answer text).
 - Citation: `sourceItemId`, `quote`, `locator`.
 - Step: `title`, `estimateMinutes`, `done`, `citations` (array, may be empty only for manual tasks).

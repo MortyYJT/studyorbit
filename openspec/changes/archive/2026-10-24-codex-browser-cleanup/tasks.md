@@ -18,5 +18,5 @@
 
 - [x] 4.1 Docs: `docs/engineering/protocol.md` resident-browser section removed, `README.md` capture and managed-profile lines, `AGENTS.md` stack (Playwright), data-access red line (no managed Playwright profile or `coursework login`; Codex in the owner's Edge stops at sign-in) and autonomy red line (#121 audit/confirmation now historical), `docs/engineering/v1-technical-design.md` Playwright note; keep each edit short
 - [x] 4.2 `openspec validate codex-browser-cleanup --strict`, `bash .claude/check.sh` (exit code), `npm ci && npm run build`
-- [ ] 4.3 At archive, delete the emptied spec folders `openspec/specs/{resident-browser,agent-browser-tools,page-capture,ed-capture}`
-- [ ] 4.4 Owner morning acceptance with C-2's live run (decision #186)
+- [x] 4.3 At archive, delete the emptied spec folders `openspec/specs/{resident-browser,agent-browser-tools,page-capture,ed-capture}` — Done at archive.
+- [ ] 4.4 Owner morning acceptance with C-2's live run (decision #186) — Moved to the morning acceptance (#186).

@@ -11,19 +11,23 @@ Records accepted by `revision.write`, `practice.write` and `breakdown.write` SHA
 - **THEN** reading that note returns the same revision and content
 
 ### Requirement: Code fetches citable sources
-A `source.fetch` command SHALL take a Canvas or Ed URL on the validated provider origins, read it through the resident browser with a same-origin GET (JSON, HTML page text, or a PDF), extract text (PDF text per one-based page with the pre-approved `unpdf`), redact it, and store it as SourceItems of kind `material` (one per PDF page) with a content hash (#109). The agent SHALL NOT supply source text itself. Discussion threads and replies, off-origin URLs, external redirects, non-GET methods and responses over a size bound SHALL be refused. Raw downloads SHALL stay private under `<data dir>/materials/` with owner-only permissions. Image-only pages SHALL be stored with empty text and reported, not guessed.
+A `source.record` agent command SHALL take a course id, a Canvas or Ed page URL on the validated provider origins that belongs to that course (a Canvas URL under one of the course's Canvas course ids, an Ed URL under one of its Ed course ids, both from `course.sources`), its title, the text the agent read from that page in the owner's Edge, and for a PDF a one-based page number, redact the text with the deterministic redactor, and store it as a SourceItem of kind `material` (one per PDF page) marked as copied by the agent, with a content hash. This replaces the resident-browser `source.fetch` and partly overturns #109: the agent supplies the text, so a citation shows that a quote is in the recorded text, not that the page says it (#166, #187). Discussion-thread URLs, Canvas announcement URLs (they can carry replies), authentication URLs (an auth, login, token, password or credential path segment, or a credential word in the query or fragment), off-origin URLs, URLs of another course (matched on the undecoded path) and texts whose JSON encoding exceeds 60,000 UTF-8 bytes per page SHALL be refused with `LIMIT_EXCEEDED` and a message telling the agent to record the page in parts (`#part-2`, …), so that `sources.get` of the largest recorded page fits the 64 KiB envelope. An empty text SHALL be stored as empty and reported, not guessed. Recording the same URL and page again SHALL replace its text and content hash, so earlier quotes that are no longer in the text fail later citation checks. The redactor masks emails, phone numbers, student numbers and named-student patterns in agent text, but cannot find classmates' names without a structured author list; this weaker redaction is accepted (#168), and discussion threads stay refused. Agent text is plain text for the model: invisible format characters are dropped before redaction, `<`, `>` and prose such as "student learning outcomes" are kept, and text the check still cannot make safe (for example a credential-shaped value) SHALL be refused with a named, non-retryable `INVALID_INPUT` asking the agent to remove the identifier and record again. Study writes that quote it keep the strict model-output check.
 
 #### Scenario: Lecture PDF
-- **WHEN** the agent asks to fetch a synthetic three-page Canvas PDF
-- **THEN** three material SourceItems exist with page locators 1–3, and a note quoting page 2 passes the citation check
+- **WHEN** the agent records the text of pages 1–3 of a synthetic Canvas PDF
+- **THEN** three material SourceItems marked as copied by the agent exist with page locators 1–3, and a note quoting page 2 passes the citation check
 
 #### Scenario: Discussion thread
-- **WHEN** the agent asks `source.fetch` for an Ed or Canvas discussion thread
+- **WHEN** the agent calls `source.record` with an Ed or Canvas discussion-thread URL
 - **THEN** it is refused, because discussion content is not a revision source
 
+#### Scenario: Page of another course
+- **WHEN** the agent records an Ed lesson URL whose Ed course id belongs to another course
+- **THEN** nothing is stored and the refusal names the course mismatch
+
 #### Scenario: Off-origin link
-- **WHEN** the URL points outside the Canvas and Ed origins or redirects there
-- **THEN** nothing is fetched or stored and the refusal names the reason
+- **WHEN** the URL points outside the Canvas and Ed origins
+- **THEN** nothing is stored and the refusal names the reason
 
 ### Requirement: Exam scope is a cited record
 The agent SHALL be able to record, per course, the exam's scope as a revision record of type `exam-scope` whose topics each cite a stored source (#142). The exam's time SHALL come from the effective `due` of the course's final assessment. Reads SHALL return the scope with its citations, or report that none is recorded.
@@ -44,10 +48,10 @@ During tutoring, the agent SHALL record each of the owner's attempts at a stored
 - **THEN** the wrong-answer list contains q1 and not q2
 
 ### Requirement: Revision skill
-The repository SHALL ship an agent skill used by the "prepare revision", "tutor revision" and "wrong answers only" presets. Preparing SHALL check `browser.status` first and stop with a clear message if the needed site is signed out; find the exam scope and course content only through L0 reads and `source.fetch` (never reading discussion threads); and write the exam scope, revision notes and practice questions through the validated writes, each claim cited to a stored redacted source, reporting counts of accepted and rejected writes in the chat. Tutoring SHALL read the stored notes and questions, quiz the owner, explain answers with their stored citations, record attempts, and say plainly when stored material does not cover a question rather than inventing a source. The skill MUST NOT answer graded work. There is no scheduled stage in v1 (#127, #144).
+The repository SHALL ship an agent skill used by the "prepare revision", "tutor revision" and "wrong answers only" presets. Preparing SHALL stop with a clear message when the needed site shows a sign-in page; find the exam scope and course content through L0 reads and the owner's Edge, recording what it cites with `source.record` (never discussion threads); and write the exam scope, revision notes and practice questions through the validated writes, each claim cited to a stored redacted source, reporting counts of accepted and rejected writes in the chat. Tutoring SHALL read the stored notes and questions, quiz the owner, explain answers with their stored citations, record attempts, and say plainly when stored material does not cover a question rather than inventing a source. The skill MUST NOT answer graded work. There is no scheduled stage in v1 (#127, #144).
 
 #### Scenario: Signed out
-- **WHEN** preparation starts and Canvas is signed out
+- **WHEN** preparation starts and Canvas shows a sign-in page
 - **THEN** it reads nothing, writes nothing and asks the owner to sign in
 
 #### Scenario: Question outside stored material

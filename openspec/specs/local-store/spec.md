@@ -26,7 +26,7 @@ The store SHALL apply numbered migrations in order on open and record the applie
 - **THEN** opening fails with an error naming both versions and the file is unchanged
 
 ### Requirement: Data lives in .local only
-The data directory SHALL be the `COURSEWORK_HOME` environment variable when set, otherwise `.local/` inside the package root (the nearest ancestor of the running module that contains this package's `package.json`). The data directory holds `coursework.db`, `snapshots/`, `profiles/`, `browser.json` (the resident browser endpoint), `materials/` (private raw files from `source.fetch`), `screenshots/` (private screenshots of agent browser steps) and `agent-workspace/` (the chat agent's working directory); each is created when first needed, and `materials/` and `screenshots/` are owner-only. A `crawls/` directory left by the removed Canvas crawl SHALL be left in place, not deleted. The `.local/` directory MUST be ignored by git.
+The data directory SHALL be the `COURSEWORK_HOME` environment variable when set, otherwise `.local/` inside the package root (the nearest ancestor of the running module that contains this package's `package.json`). The data directory holds `coursework.db` and `agent-workspace/` (the Claude adapter's working directory; Codex uses a workspace outside the repository, see `agent-chat`); each is created when first needed. Directories left by removed features (`crawls/`, `snapshots/`, `profiles/`, `browser.json`, `materials/`, `screenshots/`) SHALL be left in place, not deleted, and are no longer written. The `.local/` directory MUST be ignored by git.
 
 #### Scenario: Default location
 - **WHEN** no override is set
@@ -34,7 +34,7 @@ The data directory SHALL be the `COURSEWORK_HOME` environment variable when set,
 
 #### Scenario: Override
 - **WHEN** `COURSEWORK_HOME` is set to a directory
-- **THEN** the database, snapshots, profiles, `browser.json`, materials, screenshots and the agent workspace all resolve inside that directory
+- **THEN** the database and the agent workspace resolve inside that directory
 
 #### Scenario: Git ignores local data
 - **WHEN** the check command runs

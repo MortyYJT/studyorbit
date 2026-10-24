@@ -30,8 +30,8 @@
 | V-L/M | 指标 + 验收 | 四项指标；你按 PRD 逐条验收后归档 | 已完成：L（PR #132、#142、#148）；M 17.1（PR #149）；`v1-delivery` 2026-10-24 未经真机验收先归档（#175），真机验收转到 Codex 子项目之后 | — | `v1-delivery`（已归档） |
 | C-1 | Codex 对话 | 前端对话改用 Codex（`codex exec` 子进程），Codex 用电脑操作功能在你的 Edge 里工作；工具走 `coursework mcp`；护栏写进工作区 `AGENTS.md`（#167、#168、#173、#176、#177） | 已完成（PR #153、#155；2026-10-24 你真机验收通过，归档） | — | `codex-agent`（已归档） |
 | C-2 | agent 读课程 | 你勾选课程 → Codex 填三层 JSON → 代码查格式、常识、必填 → 写库；删接口同步；每门课一个 `aiPolicy` 字段管能否用 AI（#165、#166、#169–#172、#180–#186） | 代码已完成（规格 PR #157，后端 #158，前端 #159），已归档；真机运行和你的验收转到早上统一做（#186） | 你早上解锁屏幕后真机验收 | `agent-course-reading`（已归档） |
-| C-3 | 浏览器清理 | 删常驻 Edge、我们的浏览器工具和提交确认；Codex 只填不交（#173） | 进行中 | — | `codex-browser-cleanup`（未写） |
-| C-4 | 长期记忆 | 事实由代码汇总、观察由 agent 记录；前端「记忆」页可看改删（#178） | 未开始 | C-1 | `long-term-memory`（未写） |
+| C-3 | 浏览器清理 | 删常驻 Edge、我们的浏览器工具、提交确认和 Playwright；引用来源改为 `source.record`（#173、#187） | 代码已完成（规格 PR #161，实现 #163），已归档；你的验收转到早上（#186） | 你确认 #187 | `codex-browser-cleanup`（已归档） |
+| C-4 | 长期记忆 | 事实由代码汇总、观察由 agent 记录；前端「记忆」页可看改删（#178） | 进行中（规格 PR #162） | — | `long-term-memory`（未写） |
 | 以后 | 邮件入口 | 邮件作为新的信息来源（#99） | 未开始 | — | 未写 |
 
 实现说明：M2 已实现的接口见 `docs/engineering/protocol.md`；Canvas 探针见 `docs/engineering/canvas-student-session-spike.md`。
