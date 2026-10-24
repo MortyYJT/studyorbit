@@ -40,7 +40,7 @@ Each Codex session SHALL reach our tools only through the `coursework mcp` stdio
 
 #### Scenario: Owner command through the shell
 - **WHEN** a Codex session is started
-- **THEN** the child runs with `-s workspace-write` rooted at the workspace and without approval or sandbox bypass flags, so an owner command started from its shell, with or without a pseudo-terminal, cannot write our data directory (checked live in the owner check)
+- **THEN** the child runs with `sandbox_mode="workspace-write"`, its working directory is the workspace, and it runs without approval or sandbox bypass flags, so an owner command started from its shell, with or without a pseudo-terminal, cannot write our data directory (checked live in the owner check)
 
 #### Scenario: Reading the owner session
 - **WHEN** the agent reads files in the data directory

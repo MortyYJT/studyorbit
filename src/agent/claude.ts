@@ -1,11 +1,11 @@
-import { mkdirSync, chmodSync, readFileSync } from 'node:fs';
+import { mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { query, createSdkMcpServer, type Query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { packageRoot } from '../config/data-dir.js';
 import { isOwnerCommand } from '../protocol/registry.js';
 import type { AgentAdapter, AgentEvent, AgentInput, AgentRun } from './adapter.js';
 import { deniedToolReason } from './policy.js';
+import { presetSkill as skills } from './presets.js';
 
 export interface ProtectedPorts { frontendOrigin?: string; debuggingPort?: number }
 /** `runtime` is read on every tool call: the UI and debugging ports are chosen after the adapter is built. */
@@ -13,11 +13,6 @@ export interface ClaudeOptions extends ProtectedPorts { dataDirectory: string; r
 const unavailable = (): Extract<AgentEvent, { type: 'error' }> => ({ type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Sign in to the installed agent and retry.' });
 const authFailure = (message: string): boolean => /not signed in|not logged in|authentication|login required|please (?:run )?\/login/i.test(message);
 const failed = (): Extract<AgentEvent, { type: 'error' }> => ({ type: 'error', code: 'INTERNAL', message: 'Agent reply failed.' });
-function skills(preset?: string): string {
-  const name = ['prepare-revision', 'tutor-revision', 'wrong-answers-only'].includes(preset ?? '') ? 'revision'
-    : ['complete-assessment', 'explain-assessment', 'estimate-work'].includes(preset ?? '') ? 'assessment' : undefined;
-  return name ? readFileSync(join(packageRoot(), 'skills', name, 'SKILL.md'), 'utf8') : '';
-}
 /** Only this module speaks SDK types. It starts the owner's signed-in agent, never a model client. */
 export class ClaudeAdapter implements AgentAdapter {
   readonly id = 'claude';

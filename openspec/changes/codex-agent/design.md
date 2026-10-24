@@ -36,21 +36,21 @@ Specs for 2–4 are written when each starts (roadmap rule). Conversation memory
 ### 1. Child process, not an SDK
 Spawn `codex` with `child_process.spawn` and parse JSONL. Alternatives: an npm Codex SDK (a new, unapproved dependency, and the CLI is what the owner already signed in to); the Codex app server protocol (more surface for no gain). Arguments are passed as an array, never through a shell, with a minimal environment (`HOME`, `PATH`, `TMPDIR`, `CODEX_HOME`), as the Claude adapter does. Because the MCP server is a separate process, its entry also carries `COURSEWORK_HOME` set to the host's resolved data directory, so it opens the same store.
 
-Invocation, new thread: `codex exec --json --skip-git-repo-check -C <workspace> -s workspace-write -c mcp_servers.coursework.command=<node> -c mcp_servers.coursework.args=[<cli.js>,"mcp"] -c mcp_servers.coursework.env.COURSEWORK_MCP_PROFILE="codex" -c mcp_servers.coursework.env.COURSEWORK_HOME=<data dir> -` with the prompt on stdin. Later messages: `codex exec resume <thread_id> --json ...` with the same options; task 2.1 checks which of these options `resume` accepts and that computer-use still works under `workspace-write` (the 2026-10-24 spikes ran with `-s read-only`). The prompt carries the preset's skill text when a preset applies, as today.
+Invocation, new thread: `codex exec --json --skip-git-repo-check -c sandbox_mode="workspace-write" -c mcp_servers.coursework.command=<node> -c mcp_servers.coursework.args=[<cli.js>,"mcp"] -c mcp_servers.coursework.env.COURSEWORK_MCP_PROFILE="codex" -c mcp_servers.coursework.env.COURSEWORK_HOME=<data dir> -c mcp_servers.coursework.default_tools_approval_mode="approve" -`, spawned with `cwd` = the workspace and the prompt on stdin. Later messages: `codex exec resume <thread_id> --json ...` with the same `-c` options. The task 2.1 spike (codex-cli 0.163.0-alpha.11) found: `resume` rejects `-C` and `-s`, so neither is used and the sandbox is set by `-c sandbox_mode`; `exec` refuses MCP calls unless the server is pre-approved (`default_tools_approval_mode`); the MCP server runs outside the sandbox and reaches the data directory; computer use works under `workspace-write` and appears as an MCP call on server `cua_repl`, stored as tool `computer`; a sandbox-refused shell command may emit no event, so steps come only from events, never from agent text. The prompt carries the preset's skill text when a preset applies, as today.
 
 ### 2. Event mapping
 | Codex JSONL | Agent event |
 | --- | --- |
 | `thread.started.thread_id` | kept as `sessionRef` |
 | `item.completed` with an agent message | `text` |
-| `item.completed` with an MCP tool call or command execution | `tool_step` (`ok`, or `error` on failure; tool name `server.tool` or `shell`) |
+| `item.completed` with an MCP tool call or command execution | `tool_step` (`ok`, or `error` on failure; tool name `coursework.<tool>`, `computer` for `cua_repl`, or `shell`; name and outcome only, no arguments or output) |
 | `turn.completed` | counts one turn; at process exit a `result` with turns, `sessionRef`, no `costUsd` |
 | non-zero exit with an auth message, or `spawn` ENOENT | `error AGENT_UNAVAILABLE` |
 | other failures | `error INTERNAL` with a fixed safe message |
 Unknown item types are ignored. Raw Codex output is never stored or logged (it can contain page text).
 
 ### 3. Tools through `coursework mcp` with a Codex profile
-Codex cannot take in-process tools, so the adapter points it at our existing stdio MCP server. A `COURSEWORK_MCP_PROFILE=codex` environment variable, set only in the child's MCP server entry, removes `browser.*` from the listed tools; owner commands are already absent from MCP. Alternative: a new CLI flag on `coursework mcp` (the CLI currently treats `mcp` with extra arguments as an error; an environment variable keeps that rule).
+Codex cannot take in-process tools, so the adapter points it at our existing stdio MCP server. A `COURSEWORK_MCP_PROFILE=codex` environment variable, set only in the child's MCP server entry, removes every `browser.*` command (including `browser.status`) from the listed tools and refuses calls to them by name; owner commands are already absent from MCP. Alternative: a new CLI flag on `coursework mcp` (the CLI currently treats `mcp` with extra arguments as an error; an environment variable keeps that rule).
 
 ### 4. Guardrails as workspace instructions, sandbox for the shell
 The Claude pre-tool hook (which also blocked pseudo-terminal wrappers such as `script`) cannot apply to Codex. The code-side protection is Codex's `workspace-write` sandbox: shell writes outside the workspace and shell network access are refused, so an owner command the agent starts through a pseudo-terminal cannot write our database. The adapter never passes `--dangerously-bypass-approvals-and-sandbox` or `--approve-for-me`. Owner protections that do not depend on the agent stay: the owner session exists only in memory; session-only commands (levels, overrides, submit confirmation) refuse anything but the frontend session. The adapter writes the workspace `AGENTS.md` at every session start (fixed English text in `src/agent/codex-instructions.md`): no final submit (#173), stop at sign-in pages and never type a password or code (the data-access red line), prohibited courses read-only (#124), granted levels only, no other sites or tabs (Claude's addition, #176). Accepted (#168): screen content is not redacted, and on-screen actions are not blocked or audited by code.
@@ -79,4 +79,4 @@ Merge with Codex as default. Rollback: set `COURSEWORK_AGENT=claude`, or revert 
 
 ## Open Questions
 
-None blocking. Task 2.1 checks against real output: the item shape of computer-use calls (if no reliable tool name, those steps are stored as `computer` steps), which options `codex exec resume` accepts, and that computer-use works under `workspace-write`.
+None. Task 2.1 answered the earlier questions (see Decision 1).

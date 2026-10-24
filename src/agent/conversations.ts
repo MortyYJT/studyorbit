@@ -86,7 +86,8 @@ export class ConversationService {
     if (!prompt.trim() || prompt.length > 65536) throw new CourseworkError('INVALID_INPUT', 'A bounded nonempty prompt is required.');
     if (this.active.has(id) || this.deleting.has(id)) throw new CourseworkError('LOCKED', 'A reply is already running.');
     const { conversation, messages } = this.open(id);
-    if (conversation.adapter !== this.adapter.id) throw new CourseworkError('CONFLICT', 'Conversation adapter unavailable.');
+    // The stored transcript is the memory (#177): another adapter's session reference is dropped, never passed on.
+    if (conversation.adapter !== this.adapter.id) { conversation.adapter = this.adapter.id; delete conversation.sessionRef; }
     const at = now(); const seq = (messages.at(-1)?.seq ?? -1) + 1;
     conversation.updatedAt = at;
     this.store.saveChat(conversation, { id: randomUUID(), conversationId: id, seq, role: 'owner', parts: [{ type: 'text', text: prompt }], stopped: false, at });

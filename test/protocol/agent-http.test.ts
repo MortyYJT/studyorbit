@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { SqliteRepository } from '../../src/store/sqlite.js';
 import { ConversationService } from '../../src/agent/conversations.js';
 import { SyntheticAdapter } from '../agent/synthetic.js';
+import { fakeCodex } from '../agent/fake-codex.js';
 import { startHttpTransport } from '../../src/protocol/http.js';
 import { createOwnerSession } from '../../src/protocol/owner-session.js';
 import { createFakeContext } from '../../src/protocol/fakes.js';
@@ -127,6 +128,8 @@ it('production composition exposes the durable chat service and passes it into t
   const c = await host.chat.create({ title: 'Production' }, { assertOwner: async () => {} });
   await host.chat.send(c.id, 'Hello', { assertOwner: async () => {} }); await host.chat.waitForIdle(c.id);
   expect(store.readMessages(c.id)).toHaveLength(2);
+  // The default Codex adapter meets a signed-out fake `codex` on a temporary PATH and HOME, never the real CLI.
+  const fake = fakeCodex([{ stderr: 'Error: Not logged in.\n', exit: 1 }]); cleanup.push(() => { vi.unstubAllEnvs(); fake.cleanup(); });
   const noAdapter = createProductionProtocol({ store, files: new ProtocolFiles(dir) });
   const unavailable = await noAdapter.chat.create({ title: 'Unavailable' }, { assertOwner: async () => {} });
   await noAdapter.chat.send(unavailable.id, 'Hello', { assertOwner: async () => {} }); await noAdapter.chat.waitForIdle(unavailable.id);

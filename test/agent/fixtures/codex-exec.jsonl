@@ -1,0 +1,10 @@
+{"type":"thread.started","thread_id":"t-1"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_1","type":"mcp_tool_call","server":"coursework","tool":"courses.list","arguments":{},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Synthetic reply."}}
+{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"coursework","tool":"courses.list","arguments":{"query":"SYNTHETIC-ARGUMENT"},"result":{"content":[{"type":"text","text":"{\"ok\":true,\"data\":{\"items\":[\"SYNTHETIC-RESULT\"]}}"}]},"error":null,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_2","type":"mcp_tool_call","server":"coursework","tool":"assessments.get","arguments":{"assessmentId":"synthetic"},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_2","type":"mcp_tool_call","server":"coursework","tool":"assessments.get","arguments":{"assessmentId":"synthetic"},"result":{"content":[{"type":"text","text":"{\"ok\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"SYNTHETIC-ENVELOPE\"}}"}]},"error":null,"status":"failed"}}
+{"type":"item.completed","item":{"id":"item_3","type":"reasoning","text":"SYNTHETIC-REASONING"}}
+{"type":"item.completed","item":{"id":"item_4","type":"todo_list","items":[{"text":"SYNTHETIC-TODO","completed":false}]}}
+{"type":"turn.completed","usage":{"input_tokens":120,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":30,"reasoning_output_tokens":0}}
