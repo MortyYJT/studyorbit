@@ -1,7 +1,7 @@
 ## 1. Tool exposure for Codex
 
-- [ ] 1.1 Failing test: with `COURSEWORK_MCP_PROFILE=codex`, the `coursework mcp` tool list has no `browser.*` and no owner command; without it the list is unchanged (scenario "No resident-browser tools")
-- [ ] 1.2 Implement the profile filter in the MCP server; keep the MCP tool-count assertion in `test/cli.test.ts` for the default profile
+- [x] 1.1 Failing test: with `COURSEWORK_MCP_PROFILE=codex`, the `coursework mcp` tool list has no `browser.*` and no owner command; without it the list is unchanged (scenario "No resident-browser tools")
+- [x] 1.2 Implement the profile filter in the MCP server; keep the MCP tool-count assertion in `test/cli.test.ts` for the default profile
 
 ## 2. Codex adapter
 

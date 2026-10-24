@@ -1,5 +1,5 @@
 import { PassThrough } from 'node:stream';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -169,4 +169,19 @@ it('audit.record is neither advertised nor callable over MCP and cannot attest a
   const { body } = envelope(await client.callTool({ name: 'audit.record', arguments: { assessmentId: 'd', action: 'submit', outcome: 'success', confirmation: 'owner-ui' } }));
   expect(body).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
   expect(context.events.some(event => event.action || event.confirmation)).toBe(false);
+});
+
+it('the codex profile lists no browser.* and no owner command; without it the list is unchanged (No resident-browser tools)', async () => {
+  const registry = createRegistry({ browser: { status: async () => ({}) as never } });
+  const names = async () => (await (await connect(registry, createFakeContext())).client.listTools()).tools.map(tool => tool.name);
+  const standard = await names();
+  expect(standard).toContain('browser.status');
+  vi.stubEnv('COURSEWORK_MCP_PROFILE', 'codex');
+  try {
+    const codex = await names();
+    expect(codex).toEqual(standard.filter(name => !name.startsWith('browser.')));
+    expect(codex.some(name => isOwnerCommand(name))).toBe(false);
+    const { client } = await connect(registry, createFakeContext());
+    expect(envelope(await client.callTool({ name: 'browser.status', arguments: {} })).body).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  } finally { vi.unstubAllEnvs(); }
 });
