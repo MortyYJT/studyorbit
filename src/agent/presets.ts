@@ -1,5 +1,15 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Repository } from '../store/repository.js';
 import { CourseworkError } from '../protocol/errors.js';
+import { packageRoot } from '../config/data-dir.js';
+
+/** The skill text a preset's agent prompt carries, or '' when none applies. */
+export function presetSkill(preset?: string): string {
+  const name = ['prepare-revision', 'tutor-revision', 'wrong-answers-only'].includes(preset ?? '') ? 'revision'
+    : ['complete-assessment', 'explain-assessment', 'estimate-work'].includes(preset ?? '') ? 'assessment' : undefined;
+  return name ? readFileSync(join(packageRoot(), 'skills', name, 'SKILL.md'), 'utf8') : '';
+}
 
 export const presets = Object.freeze([
   { id: 'complete-assessment', assessment: true, template: 'Complete the assessment' },
