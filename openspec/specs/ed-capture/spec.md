@@ -28,17 +28,19 @@ Ed capture SHALL call Ed's own JSON API using GET inside a logged-in Playwright 
 - **THEN** it does not follow the redirect or save external content and reports an Ed source gap
 
 ### Requirement: Capture bounded selected-course endpoint coverage
-Ed capture SHALL discover courses through `GET /api/user` and snapshot only its `courses` array and, for each selected Ed course, its lessons list, every assignment lesson with `kind: attempt`, every slide referenced by those assignments, the first discussion thread-list page with `limit=30&sort=new`, and resources. Observed endpoint paths are `/api/courses/{id}/lessons`, `/api/lessons/{id}`, `/api/lessons/slides/{id}`, `/api/courses/{id}/threads`, and `/api/courses/{id}/resources`; the verified course-list path is `/api/user`. It SHALL NOT fetch ordinary content lesson bodies, subsequent thread pages, thread details/replies, workspaces or linked external resource files. Missing tabs/endpoints returning 404/405 SHALL be recorded as skipped/unavailable, not failures; other endpoints SHALL still be attempted within the budget. Assignment/slide ids SHALL come only from selected-course responses.
+Ed reads SHALL discover courses through `GET /api/user`, keep only its `courses` array, and, for each Ed course in sync scope (active current-term courses, optionally narrowed by `--course`), read its lessons list, every assignment lesson with `kind: attempt`, every slide referenced by those assignments, the first discussion thread-list page with `limit=30&sort=new`, and resources. Observed endpoint paths are `/api/courses/{id}/lessons`, `/api/lessons/{id}`, `/api/lessons/slides/{id}`, `/api/courses/{id}/threads`, and `/api/courses/{id}/resources`; the verified course-list path is `/api/user`. Ed reads SHALL NOT fetch ordinary content lesson bodies, subsequent thread pages, thread details/replies, workspaces or linked external resource files. Missing tabs/endpoints returning 404/405 SHALL be recorded as skipped/unavailable, not failures; other endpoints SHALL still be attempted within the budget. Assignment/slide ids SHALL come only from responses for courses in sync scope.
 
 #### Scenario: Assignment with slides
-- **GIVEN** selected Ed ABCD10001 lists one attempt lesson with two slides and one content lesson
-- **WHEN** its capture completes within budget
-- **THEN** raw snapshots contain the course list, lessons list, attempt lesson, both slides, first thread-list page and resources, without fetching the content lesson body or thread page two
+- **WHEN** Ed course ABCD10001 in sync scope lists one attempt lesson with two slides and one content lesson
+- **THEN** the run reads the course list, lessons list, attempt lesson, both slides, first thread-list page and resources, without fetching the content lesson body or thread page two
 
 #### Scenario: No Lessons tab
-- **GIVEN** a selected course has discussions and resources but its lessons endpoint returns 404
-- **WHEN** capture runs
-- **THEN** lessons are recorded as skipped without increasing failed count, and threads/resources are still captured
+- **WHEN** a course in sync scope has discussions and resources but its lessons endpoint returns 404
+- **THEN** lessons are recorded as skipped without increasing the failed count, and threads/resources are still read
+
+#### Scenario: Course outside scope
+- **WHEN** sync runs with `--course ABCD10001` and `/api/user` also lists EFGH20002
+- **THEN** no course-specific endpoint for EFGH20002 is requested
 
 ### Requirement: Share capture rate limits and upper bound
 Ed reads SHALL use the same scheduler as Canvas, with at least one second between the completion of one capture attempt (including snapshot writing) and the next start. All capture-initiated discovery, bootstrap navigation and API GET attempts, including failures and skipped endpoints, SHALL count toward one shared 300-attempt maximum per run. There SHALL be no automatic retries. Cap, cancellation and rate-limit responses SHALL be reported without discarding existing snapshots.
