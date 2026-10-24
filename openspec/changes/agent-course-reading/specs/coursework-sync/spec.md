@@ -99,7 +99,7 @@ Every run SHALL ask the agent to re-read each selected course in full, including
 - **THEN** the other two items have weight 5 each with state `derived`
 
 ### Requirement: One AI policy field per course
-The document's `aiPolicy` (`allowed` | `prohibited` | `owner-attested` | unknown) SHALL be the course's agent-read AI policy, stored on the Course with its quote and effective at once (#180). Agents SHALL NOT record a course `aiPolicy` annotation; `annotation.record` SHALL refuse that field. An owner policy recorded from the frontend SHALL take precedence and SHALL never be overwritten by import; an owner value of `null` SHALL clear the owner's policy, so the agent-read value applies again. Reads (`courses.list`, `annotation.read`, `autonomy.read`) SHALL report the effective policy with its origin. When a run stores a value different from the previously stored agent-read value, "needs you" SHALL show the course, the new value and its quote until the next run; no confirmation is required.
+The document's `aiPolicy` (`allowed` | `prohibited` | `owner-attested` | unknown) SHALL be the course's agent-read AI policy, stored on the Course with its quote and effective at once (#180). Agents SHALL NOT record a course `aiPolicy` annotation; `annotation.record` SHALL refuse that field. An owner policy recorded from the frontend SHALL take precedence and SHALL never be overwritten by import; an owner value of `null` SHALL clear the owner's policy, so the agent-read value applies again. Reads (`courses.list`, `annotation.read`, `autonomy.read`) SHALL report the effective policy with its origin. A run that reads the policy as unknown SHALL keep the previously stored agent-read value and its quote and update its check time, so a missed read never uncaps a course. When a run stores a value different from the previously stored agent-read value, "needs you" SHALL show the course, the new value and its quote until the next run; no confirmation is required.
 
 #### Scenario: Policy read changes
 - **WHEN** the agent reads `prohibited` for a course previously read as unknown
@@ -108,6 +108,10 @@ The document's `aiPolicy` (`allowed` | `prohibited` | `owner-attested` | unknown
 #### Scenario: Owner policy kept
 - **WHEN** the owner set a course to `allowed` and the agent reads `prohibited`
 - **THEN** the effective policy stays `allowed`, and the agent-read value and quote are stored for display
+
+#### Scenario: Missed policy read keeps the last value
+- **WHEN** the agent read `prohibited` earlier and this run reads the policy as unknown
+- **THEN** the stored agent-read value stays `prohibited` and its check time is updated
 
 #### Scenario: Owner clears the policy
 - **WHEN** the owner records `null` for a course whose agent-read policy is `prohibited`

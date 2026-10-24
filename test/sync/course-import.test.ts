@@ -163,6 +163,15 @@ describe('store mapping and precedence (coursework-sync)', () => {
     expect(f.save(document(undefined, { aiPolicy: quoted('prohibited', 'Generative AI is not permitted.') })).policyChanged).toBe(false);
   });
 
+  it('Missed policy read keeps the last value: an unknown read keeps prohibited and updates its check time', () => {
+    const f = setup();
+    const { courseId } = f.save(document(undefined, { aiPolicy: quoted('prohibited', 'No AI.') }));
+    const later = '2026-10-25T02:00:00Z';
+    const result = f.save(document(undefined, { aiPolicy: unknown(later) }), false, later);
+    expect(result.policyChanged).toBe(false);
+    expect(f.store.loadCourse(courseId)).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { state: 'found', quote: 'No AI.', checkedAt: later } } });
+  });
+
   it('third-submission stand-in: a course without a name shows its code', () => {
     const f = setup();
     const result = f.save(document(undefined, { name: unknown() }), true);

@@ -62,7 +62,9 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
     const readPolicy = known(document.course.aiPolicy);
     const policyChanged = readPolicy !== undefined && readPolicy !== existing?.aiPolicy;
     const aiPolicy = readPolicy ?? existing?.aiPolicy;
-    const policyState = readPolicy === undefined && existing?.readState?.aiPolicy ? existing.readState.aiPolicy : entry(document.course.aiPolicy);
+    // A missed read keeps the last found value and its quote, with the new check time.
+    const policyState = readPolicy === undefined && aiPolicy !== undefined && existing?.readState?.aiPolicy
+      ? { ...existing.readState.aiPolicy, checkedAt: document.course.aiPolicy.checkedAt ?? at } : entry(document.course.aiPolicy);
     const course: Course = { id: courseId, moduleId: existing?.moduleId ?? SCHOOL.id, code, name: known(document.course.name) ?? code, term,
       assessmentsComplete: existing?.assessmentsComplete ?? false, sources, ...(aiPolicy ? { aiPolicy } : {}),
       readState: { code: entry(document.course.code), name: entry(document.course.name), term: entry(document.course.term), aiPolicy: policyState } };
