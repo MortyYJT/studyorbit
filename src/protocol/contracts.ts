@@ -98,7 +98,7 @@ export const contracts = {
   // The agent copies a page it read in the owner's Edge; one call per PDF page (#187).
   'source.record': { input: z.strictObject({ courseId: IdSchema, url: z.url().max(2048), title: z.string().trim().min(1).max(500),
     text: z.string().max(1_000_000), page: z.number().int().positive().max(2000).optional() }),
-    // The receipt omits the text so a full 100,000-character page still fits the 64 KiB envelope; `sources.get` reads it back.
+    // The receipt omits the text; `sources.get` reads it back. Pages are bounded to 60,000 encoded bytes (see source-record.ts).
     output: z.strictObject({ sourceItemId: IdSchema, empty: z.boolean(), locator: text, page: z.number().int().positive().safe().optional(),
       sourceHash: HashSchema, copiedBy: z.literal('agent'), sourceRevision: HashSchema }), level: 0 },
   'courses.list': courses,

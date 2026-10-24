@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createProductionProtocol } from '../../src/protocol/production.js';
 import { dispatch } from '../../src/protocol/registry.js';
+import { MAX_RECORDED_BYTES } from '../../src/revision/source-record.js';
 
 const roots: string[] = []; const hosts: ReturnType<typeof createProductionProtocol>[] = [];
 afterEach(async () => { for (const h of hosts.splice(0)) await h.close(); vi.unstubAllEnvs(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
@@ -81,14 +82,29 @@ it('Off-origin link: refuses with the reason and stores nothing', async () => {
   expect(stored()).toEqual([]);
 });
 
-it('refuses page text over 100,000 characters and missing courses', async () => {
+it('bounds a page by its encoded size so the largest recorded page reads back through sources.get', async () => {
   const { call, stored } = await setup();
-  expect(await call('source.record', { courseId: 'c', url: pdfURL, title: 'Big', text: 'x'.repeat(100_001), page: 1 }))
-    .toMatchObject({ ok: false, error: { code: 'LIMIT_EXCEEDED' } });
+  const encoded = (text: string) => Buffer.byteLength(JSON.stringify(text), 'utf8') - 2;
+  // Worst cases at the bound: escaped newlines, three-byte CJK text, and the longest accepted URL.
+  const longURL = `https://canvas.lms.unimelb.edu.au/courses/1/files/2/${'a'.repeat(2048 - 52)}`;
+  expect(longURL.length).toBe(2048);
+  const cases = [['x'.repeat(MAX_RECORDED_BYTES), pdfURL], ['a\n'.repeat(MAX_RECORDED_BYTES / 3), pdfURL],
+    ['课'.repeat(MAX_RECORDED_BYTES / 3), pdfURL], ['y'.repeat(MAX_RECORDED_BYTES), longURL]] as const;
+  for (const [index, [text, url]] of cases.entries()) {
+    expect(encoded(text)).toBe(MAX_RECORDED_BYTES);
+    const recorded = await call('source.record', { courseId: 'c', url, title: 'Max', text: `${text}`, page: index + 1 });
+    expect(recorded).toMatchObject({ ok: true, data: { empty: false } });
+    const read = await call('sources.get', { sourceItemId: recorded.data.sourceItemId });
+    expect(read, `case ${index}`).toMatchObject({ ok: true, data: { copiedBy: 'agent' } });
+    expect(read.data.text.trim().length).toBeGreaterThan(0);
+    expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThanOrEqual(64 * 1024);
+  }
+  const before = stored().length;
+  const over = await call('source.record', { courseId: 'c', url: pdfURL, title: 'Big', text: '课'.repeat(MAX_RECORDED_BYTES / 3 + 1), page: 9 });
+  expect(over).toMatchObject({ ok: false, error: { code: 'LIMIT_EXCEEDED', retryable: false, message: expect.stringMatching(/bytes.*parts/) } });
+  expect(stored()).toHaveLength(before);
   expect(await call('source.record', { courseId: 'missing', url: pdfURL, title: 'Lecture', text: 'Synthetic.' }))
     .toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
-  expect(stored()).toEqual([]);
-  expect(await call('source.record', { courseId: 'c', url: pdfURL, title: 'Max', text: 'x'.repeat(100_000), page: 1 })).toMatchObject({ ok: true });
 });
 
 it('redacts emails and student numbers in agent text before storing', async () => {
