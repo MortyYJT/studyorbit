@@ -1,7 +1,7 @@
 ## 1. Contract and domain
 
-- [ ] 1.1 Failing tests then `src/sync/course-json.ts`: schema with `term` format and `platforms`, required fields, sanity checks, path-listing errors, one-final and item-weight checks, third-submission degrade (scenarios "Valid document", "Wrong field shape", "Missing name triggers a retry", "Third submission accepted with unknowns", "Weights do not add up")
-- [ ] 1.2 Domain schema additions (Course `aiPolicy`, `readState`; Assessment `group`, `retired`, `readState`; CourseSelection; SyncJob; Run `turns` without conversation, `syncOutcome`, `courseCoverage`) with parse tests (scenario "Agent sync run"); migration `004` adds `course_selection` and `sync_jobs`
+- [x] 1.1 Failing tests then `src/sync/course-json.ts`: schema with `term` format and `platforms`, required fields, sanity checks, path-listing errors, one-final and item-weight checks, third-submission degrade (scenarios "Valid document", "Wrong field shape", "Missing name triggers a retry", "Third submission accepted with unknowns", "Weights do not add up")
+- [x] 1.2 Domain schema additions (Course `aiPolicy`, `readState`; Assessment `group`, `retired`, `readState`; CourseSelection; SyncJob; Run `turns` without conversation, `syncOutcome`, `courseCoverage`) with parse tests (scenario "Agent sync run"); migration `004` adds `course_selection` and `sync_jobs`
 
 ## 2. Store mapping
 

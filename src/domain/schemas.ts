@@ -4,6 +4,22 @@ const IdSchema = z.string().min(1);
 const TimeSchema = z.iso.datetime({ offset: true });
 const PercentSchema = z.number().min(0).max(100);
 
+const FieldReadStateSchema = z.object({
+  state: z.enum(['found', 'unknown', 'not_applicable', 'derived']),
+  via: z.enum(['ax', 'screenshot']).optional(),
+  checkedAt: TimeSchema.optional(),
+  quote: z.string().max(2000).optional(),
+  source: z.url().max(2048).optional(),
+});
+/** Per field: how the agent read it (#169); `derived` marks an evenly split weight (#171). */
+export const ReadStateSchema = z.record(z.string(), FieldReadStateSchema);
+export const AiPolicySchema = z.enum(['allowed', 'prohibited', 'owner-attested']);
+export const CourseTermSchema = z.string().regex(/^\d{4}:(?:S1|S2|SUMMER|WINTER)$/);
+const originUrl = (origin: string) => z.url().max(2048).refine(value => {
+  try { return new URL(value).origin === origin; } catch { return false; }
+}, `Must be a URL on ${origin}`);
+export const CoursePagesSchema = z.object({ canvas: originUrl('https://canvas.lms.unimelb.edu.au').optional(), ed: originUrl('https://edstem.org').optional() });
+
 export const ModuleSchema = z.object({
   id: IdSchema,
   name: z.string(),
@@ -19,6 +35,9 @@ export const CourseSchema = z.object({
   term: z.string(),
   assessmentsComplete: z.boolean(),
   sources: z.array(z.object({ platform: z.enum(['canvas', 'ed']), externalId: IdSchema })).default([]).optional(),
+  /** Agent-read AI policy; absent means unknown. The owner's recorded policy takes precedence (#180). */
+  aiPolicy: AiPolicySchema.optional(),
+  readState: ReadStateSchema.optional(),
 });
 
 export const AssessmentSchema = z.object({
@@ -33,6 +52,11 @@ export const AssessmentSchema = z.object({
   hurdleMin: PercentSchema.optional(),
   isFinal: z.boolean(),
   status: z.enum(['not_started', 'in_progress', 'submitted', 'graded']),
+  /** The grading component an item (or a component's remainder) belongs to. */
+  group: z.object({ key: IdSchema, name: z.string(), weight: PercentSchema.optional(), count: z.number().int().nonnegative().optional() }).optional(),
+  /** No longer listed or replaced by its items; reads, planning and the grade projection omit retired assessments. */
+  retired: z.boolean().optional(),
+  readState: ReadStateSchema.optional(),
 });
 
 export const SourceItemSchema = z.object({
@@ -139,10 +163,20 @@ const RunBaseSchema = z.object({
   costUsd: z.number().nonnegative().optional(),
 });
 
+export const SyncOutcomeSchema = z.enum(['OK', 'PARTIAL', 'NEEDS_SELECTION', 'AGENT_UNAVAILABLE', 'TIMEOUT', 'FAILED']);
+const PlatformRunStateSchema = z.enum(['read', 'blocked', 'absent', 'unread']);
+/** Counts and platform states only: no URLs, titles, names, quotes or free-form errors. */
+export const CourseCoverageSchema = z.strictObject({
+  courseRef: z.string().regex(/^[a-f0-9]{64}$/), stored: z.boolean(), submissions: CountSchema, unknownFields: CountSchema,
+  platforms: z.strictObject({ canvas: PlatformRunStateSchema, ed: PlatformRunStateSchema }), policyChanged: z.boolean(),
+});
 // Reads retain unmeasured historical sync runs; new finalization uses SyncRunSchema.
 export const RunSchema = RunBaseSchema.extend({
   conversationId: IdSchema.optional(),
   turns: CountSchema.optional(),
+  /** Agent sync jobs (agent-course-reading): turns without a conversation, the job outcome and per-course coverage. */
+  syncOutcome: SyncOutcomeSchema.optional(),
+  courseCoverage: z.array(CourseCoverageSchema).max(500).optional(),
   pages: measurements.pages.optional(),
   requests: measurements.requests.optional(),
   failures: measurements.failures.optional(),
@@ -153,7 +187,14 @@ export const RunSchema = RunBaseSchema.extend({
       if (run[field] === undefined) ctx.addIssue({ code: 'custom', path: [field], message: 'Agent replies require conversationId and turns' });
     }
   }
-  if ((run.conversationId === undefined) !== (run.turns === undefined)) {
+  const agentSync = run.syncOutcome !== undefined || run.courseCoverage !== undefined;
+  if (agentSync) {
+    for (const field of ['syncOutcome', 'courseCoverage', 'turns'] as const) {
+      if (run[field] === undefined) ctx.addIssue({ code: 'custom', path: [field], message: 'Agent sync runs require syncOutcome, courseCoverage and turns' });
+    }
+    if (run.command !== 'sync') ctx.addIssue({ code: 'custom', path: ['command'], message: 'Only sync runs have a sync outcome' });
+    if (run.conversationId !== undefined) ctx.addIssue({ code: 'custom', path: ['conversationId'], message: 'Agent sync runs have no conversation' });
+  } else if ((run.conversationId === undefined) !== (run.turns === undefined)) {
     ctx.addIssue({ code: 'custom', path: [run.conversationId === undefined ? 'conversationId' : 'turns'], message: 'Agent runs require conversationId and turns together' });
   }
   const fields = ['pages', 'requests', 'failures', 'coverage'] as const;
@@ -165,6 +206,27 @@ export const RunSchema = RunBaseSchema.extend({
 });
 export const SyncRunSchema = RunBaseSchema.extend({ command: z.literal('sync'), ...measurements });
 
+/** An offered course and the owner's decision; `selected` is absent while undecided. */
+export const CourseSelectionSchema = z.object({
+  key: IdSchema, code: z.string().regex(/^[A-Z]{4}\d{5}$/), name: z.string().max(300).optional(), term: CourseTermSchema,
+  pages: CoursePagesSchema, selected: z.boolean().optional(), offeredAt: TimeSchema, decidedAt: TimeSchema.optional(),
+});
+const SyncJobResultSchema = z.object({
+  courseId: IdSchema, storedAt: TimeSchema, components: CountSchema, items: CountSchema,
+  unknownFields: z.array(z.string().max(200)).max(500), dropped: z.array(z.string().max(200)).max(500),
+  warnings: z.array(z.enum(['WEIGHT_SUM', 'REMAINDER_SHORTFALL'])).max(10),
+  platforms: z.object({ canvas: z.enum(['read', 'blocked', 'absent']), ed: z.enum(['read', 'blocked', 'absent']) }), policyChanged: z.boolean(),
+});
+/** Shared run state for the starting process and the `coursework mcp` process that executes the agent's commands. */
+export const SyncJobSchema = z.object({
+  id: IdSchema, startedAt: TimeSchema, endedAt: TimeSchema.optional(), courses: z.array(IdSchema).max(100),
+  submissions: z.record(z.string(), CountSchema), outcome: SyncOutcomeSchema.optional(),
+  /** Platforms the agent reported behind a sign-in page during discovery. */
+  blocked: z.array(z.enum(['canvas', 'ed'])).max(2).optional(),
+  /** Per course key, what the last stored document of this job produced (paths are contract paths, never page text). */
+  results: z.record(z.string(), SyncJobResultSchema).optional(),
+});
+
 export type Module = z.infer<typeof ModuleSchema>;
 // Historical callers may omit delivery defaults; parsing supplies them without rewriting old rows.
 export type Course = z.input<typeof CourseSchema>;
@@ -174,6 +236,12 @@ export type Citation = z.infer<typeof CitationSchema>;
 export type Step = z.infer<typeof StepSchema>;
 export type Task = z.input<typeof TaskSchema>;
 export type Run = z.infer<typeof RunSchema>;
+export type SyncOutcome = z.infer<typeof SyncOutcomeSchema>;
+export type CourseCoverage = z.infer<typeof CourseCoverageSchema>;
+export type CourseSelection = z.infer<typeof CourseSelectionSchema>;
+export type SyncJob = z.infer<typeof SyncJobSchema>;
+export type SyncJobResult = z.infer<typeof SyncJobResultSchema>;
+export type ReadState = z.infer<typeof ReadStateSchema>;
 
 const OriginSchema = z.enum(['sync', 'agent', 'owner']);
 export const AssessmentLinkSchema = z.object({ assessmentId: IdSchema, sourceItemId: IdSchema, origin: OriginSchema, at: TimeSchema });
