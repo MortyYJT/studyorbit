@@ -76,10 +76,15 @@ export class AgentSync implements SyncCommands {
   }
 
   private finish(job: SyncJob, failure: SyncOutcome | undefined, turns: number, steps: number) {
-    const final = this.jobs.load(job.id) ?? job;
+    return this.jobs.close(job.id, final => this.outcome(job, final, failure, turns, steps))!;
+  }
+  /** Built from the job as read inside the closing transaction, so a late `course.import` is never missed. */
+  private outcome(job: SyncJob, final: SyncJob, failure: SyncOutcome | undefined, turns: number, steps: number) {
     const blocked = new Set(final.blocked ?? []);
     for (const result of Object.values(final.results ?? {})) for (const platform of platforms) if (result.platforms[platform] === 'blocked') blocked.add(platform);
-    const outcome: SyncOutcome = failure ?? (!final.courses.length ? 'NEEDS_SELECTION'
+    const nothingRead = !Object.keys(final.results ?? {}).length && platforms.every(platform => blocked.has(platform));
+    // Every platform behind a sign-in page or unreadable (for example a locked screen) and nothing stored: the agent could not work.
+    const outcome: SyncOutcome = failure ?? (nothingRead ? 'AGENT_UNAVAILABLE' : !final.courses.length ? 'NEEDS_SELECTION'
       : final.courses.every(key => final.results?.[key]) && blocked.size === 0 ? 'OK' : 'PARTIAL');
     const courseCoverage = final.courses.map(key => {
       const result = final.results?.[key];
@@ -90,8 +95,7 @@ export class AgentSync implements SyncCommands {
     const ok = outcome === 'OK' || outcome === 'NEEDS_SELECTION';
     const run = RunSchema.parse({ id: job.id, command: 'sync', startedAt: job.startedAt, endedAt: this.now().toISOString(), steps,
       outcome: ok ? 'ok' : 'error', ...(ok ? {} : { errorCode: outcome }), turns, syncOutcome: outcome, courseCoverage });
-    this.jobs.close(job.id, outcome, run);
-    return { run, outcome };
+    return { outcome, run, value: { run, outcome } };
   }
 
   status() {

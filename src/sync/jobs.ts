@@ -10,7 +10,7 @@ export const STALE_AFTER_MS = 25 * 60_000;
 export interface OfferInput { jobId: string; courses: { code: string; name?: string; term: string; pages: { canvas?: string; ed?: string } }[]; blocked: ('canvas' | 'ed')[] }
 export interface SelectInput { selections: { key: string; selected: boolean }[] }
 export interface ImportInput { jobId: string; document: unknown }
-export interface SyncJobsOptions { now?: () => Date; annotatedWeight?: ImportOptions['annotatedWeight'] }
+export interface SyncJobsOptions { now?: () => Date; annotatedWeight?: ImportOptions['annotatedWeight']; importer?: typeof importCourseDocument }
 
 const describeIssues = (issues: readonly DocumentIssue[]) => {
   const shown = issues.slice(0, 100).map(issue => `${issue.path || '(document)'} (${issue.reason})`).join('; ');
@@ -43,13 +43,15 @@ export class SyncJobs {
       return job;
     });
   }
-  /** Close the job and record its Run together. */
-  close(id: string, outcome: SyncOutcome, run: Run): void {
-    this.store.transaction(() => {
+  /** Close the job and record its Run together; the Run is built from the job as read inside the same transaction. */
+  close<T>(id: string, build: (job: SyncJob) => { outcome: SyncOutcome; run: Run; value?: T }): T | undefined {
+    return this.store.transaction(() => {
       const job = this.store.loadSyncJob(id);
       if (!job) throw new CourseworkError('NOT_FOUND', 'Sync job not found.');
+      const { outcome, run, value } = build(job);
       this.store.saveSyncJob({ ...job, endedAt: run.endedAt, outcome });
       this.store.recordRun(run);
+      return value;
     });
   }
   private requireActive(jobId: string): SyncJob {
@@ -61,6 +63,10 @@ export class SyncJobs {
   offer(input: OfferInput) {
     return this.store.transaction(() => {
       const job = this.requireActive(input.jobId);
+      // An empty offer without blocked platforms means the agent read nothing (for example a locked screen).
+      if (!input.courses.length && !input.blocked.length) {
+        throw new AgentFacingError('INVALID_INPUT', 'Offer the courses you see, or report the platforms you could not read in `blocked`.');
+      }
       const issues: DocumentIssue[] = [];
       const offered = input.courses.map((course, index) => {
         const code = normalizeCourseCode(course.code);
@@ -118,7 +124,15 @@ export class SyncJobs {
           ? `Submission ${submission} for ${key} refused; the course is reported as not read. ${describeIssues(checked.errors)}`
           : `Submission ${submission} of ${MAX_SUBMISSIONS} for ${key} refused; nothing was stored. Re-read these fields (take a screenshot for empty ones) and submit again: ${describeIssues(checked.errors)}` };
       }
-      const result = importCourseDocument(this.store, checked.document, { at: now, annotatedWeight: this.options.annotatedWeight });
+      let result: ReturnType<typeof importCourseDocument>;
+      try {
+        // A savepoint inside this transaction: a failed import leaves nothing partial, but the submission still counts.
+        const importer = this.options.importer ?? importCourseDocument;
+        result = this.store.transaction(() => importer(this.store, checked.document!, { at: now, annotatedWeight: this.options.annotatedWeight }));
+      } catch {
+        this.store.saveSyncJob(counted);
+        return { refused: `Submission ${submission} for ${key} could not be stored because of an internal error; nothing was stored. Submit the course again.` };
+      }
       const weightSum = checked.warnings.find(warning => warning.code === 'WEIGHT_SUM')?.sum;
       this.store.saveSyncJob({ ...counted, results: { ...counted.results, [key]: { courseId: result.courseId, storedAt: now,
         components: result.components, items: result.items, unknownFields: checked.unknown.slice(0, 500), dropped: checked.dropped.slice(0, 500),
