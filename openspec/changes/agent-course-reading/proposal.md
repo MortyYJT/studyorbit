@@ -27,6 +27,7 @@ None.
 - `web-ui`: "Real data only" allows labelled `derived` values; the week view's "needs you" and the course page gain the new items and grouping.
 - `metrics`: sync duration and success rate are per run (agent job), no longer per provider.
 - `protocol-reads`: courses report the effective AI policy and last stored document; candidates are readable; retired assessments are omitted.
+- `agent-annotations`: agents no longer annotate a course's `aiPolicy`; owner `null` clears it.
 - `command-registry`: `courses.select` joins the owner commands accepted from the frontend session or a TTY.
 
 ## Impact
