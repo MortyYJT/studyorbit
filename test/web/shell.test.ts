@@ -201,6 +201,13 @@ it('offers course selection after a NEEDS_SELECTION run even when nothing is und
   await store.refresh();
   expect(attention(store.getSnapshot())).toEqual([{ kind: 'select', count: 0 }]);
 });
+it('drops the selection entry once courses are selected, even before the next run', async () => {
+  const chosen = { key: 'SYNA10001:2026:S2', code: 'SYNA10001', term: '2026:S2' };
+  const store = new ShellStore(createClient(undefined, fixture({ 'sync.status': { running: false, lastRun: lastRun('NEEDS_SELECTION'), blocked: [], undecided: 0, courses: [chosen] },
+    'browser.status': { canvas: signedIn, ed: signedIn } })));
+  await store.refresh();
+  expect(attention(store.getSnapshot())).toEqual([]);
+});
 it('lists no per-course "not read" lines when the whole run was blocked', async () => {
   const unread = (code: string) => ({ key: `${code}:2026:S2`, code, term: '2026:S2', lastRun: { stored: false, unknownFields: [], dropped: [], warnings: [], policyChanged: false } });
   const read = async (outcome: string, blocked: string[]) => {

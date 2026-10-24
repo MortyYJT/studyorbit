@@ -61,8 +61,9 @@ export function attention(state: ShellState): Attention[] {
     if (!run.stored && !allBlocked) items.push({ kind: 'unread', course: course.code });
     return items;
   }) ?? [];
-  // A NEEDS_SELECTION run keeps the entry even after the owner decided against every course, so it is never a dead end.
-  const select = state.sync && (state.sync.undecided > 0 || outcome === 'NEEDS_SELECTION') ? [{ kind: 'select' as const, count: state.sync.undecided }] : [];
+  // A NEEDS_SELECTION run keeps the entry while no course is selected (even after declining all), so it is never a dead end.
+  const select = state.sync && (state.sync.undecided > 0 || outcome === 'NEEDS_SELECTION' && !state.sync.courses.length)
+    ? [{ kind: 'select' as const, count: state.sync.undecided }] : [];
   return [...select, ...sites, ...failed, ...courses];
 }
 /** Contract path such as `components[1].items[0].due` in the owner's words (1-based positions). */
