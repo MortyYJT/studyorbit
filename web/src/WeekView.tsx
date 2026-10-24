@@ -33,8 +33,8 @@ export function NeedsYou({ needs, t, onStatus, onAgent, onSelect, onCourse, clie
         case 'blocked': return [s.blockedHelp.join(site), [t.status, onStatus]];
         case 'failed': return [`${t.syncFailed} · ${s.outcomes[item.outcome]}${item.outcome === 'AGENT_UNAVAILABLE' ? ` · ${s.agentHelp}` : ''}`, [t.status, onStatus]];
         case 'select': return [`${item.count} ${s.select}`, [s.choose, onSelect]];
-        case 'unknown': return [<>{item.course} · {item.fields.length > 0 && <>{s.unknown}: {item.fields.map(path => fieldName(path, t)).join('; ')}</>}
-          {item.fields.length > 0 && item.dropped.length > 0 && ' · '}{item.dropped.length > 0 && <>{s.dropped}: {item.dropped.map(path => fieldName(path, t)).join('; ')}</>}</>, open];
+        case 'unknown': return [<>{item.course} · {item.fields.length > 0 && <>{s.unknown}{t.colon}{item.fields.map(path => fieldName(path, t)).join('; ')}</>}
+          {item.fields.length > 0 && item.dropped.length > 0 && ' · '}{item.dropped.length > 0 && <>{s.dropped}{t.colon}{item.dropped.map(path => fieldName(path, t)).join('; ')}</>}</>, open];
         case 'weights': return [`${item.course} · ${item.warning === 'WEIGHT_SUM' ? item.sum === undefined ? s.weightSumUnknown : s.weightSum.join(String(item.sum))
           : (s.warnings as Record<string, string>)[item.warning] ?? item.warning}`, open];
         case 'policy': return [<>{item.course} · {item.value ? <>{s.policy} {t.coursePage[item.value]}</> : s.policyUnknown}{item.quote && <> · <q>{item.quote}</q></>}</>, open];

@@ -26,7 +26,7 @@
 
 - [x] 6.1 `shell.ts` and the avatar status panel read the new `sync.status`; "needs you" items and the course selection dialog (scenario "Choose courses")
 - [x] 6.2 Course page grouping with computed earned share, remainder rows, derived and unknown-checked labels; the agent-policy confirm entry removed (scenarios "Component group", "Derived and unknown labels")
-- [ ] 6.3 Real-browser check on the synthetic harness at 390 and 1440 px, light and dark
+- [x] 6.3 Real-browser check on the synthetic harness at 390 and 1440 px, light and dark
 
 ## 7. Verification
 

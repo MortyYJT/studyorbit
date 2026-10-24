@@ -31,7 +31,7 @@ export const en = {
   invalidTask: 'Enter a title, a date for all-day tasks, and an estimate in whole minutes if any.', taskTitle: 'Title', module: 'Module', moduleHelp: 'The task is filed under this module (shown by its courses); it does not belong to a course.', examTimeUnknown: 'time unknown',
   dueDate: 'Due date (optional)', dueTime: 'Due time (optional; end of day if empty)', estimateMinutes: 'Estimate in minutes (optional)', create: 'Add',
   reviewWithAgent: 'Review with the agent',
-  course: 'Course',
+  course: 'Course', colon: ': ',
   // C-2 agent course reading
   syncNeeds: {
     component: ['component ', ''], item: ['item ', ''],
@@ -131,7 +131,7 @@ export const zh: typeof en = {
   invalidTask: '请填写标题；全天任务需填日期；预估需为整数分钟。', taskTitle: '标题', module: '模块', moduleHelp: '任务归入此模块（按其课程代码显示），并不属于某门课程。', examTimeUnknown: '时间未知',
   dueDate: '截止日期（可选）', dueTime: '截止时间（可选，留空为当天结束）', estimateMinutes: '预估分钟（可选）', create: '添加',
   reviewWithAgent: '让 agent 查看',
-  course: '课程',
+  course: '课程', colon: '：',
   // C-2 agent course reading
   syncNeeds: {
     component: ['第 ', ' 个分数构成'], item: ['第 ', ' 项'],

@@ -126,13 +126,32 @@ const courses: Course[] = [
       source: 'https://canvas.lms.unimelb.edu.au/courses/900002/assignments/syllabus' } } },
 ];
 const assessment = (value: Omit<Assessment, 'origin' | 'isFinal'> & { isFinal?: boolean }): Assessment => ({ origin: 'sync', isFinal: false, ...value });
+// Course A as course.import stores it: grading components as group tags, per-field read states, an even split (#171)
+// and a remainder row for the unpublished share. Item rows carry a `status` read state; component and remainder rows do not.
+const found = { state: 'found' as const, via: 'ax' as const, checkedAt: new Date(Date.now() - 3600_000).toISOString() };
+const derived = { state: 'derived' as const };
+const itemRead = (extra: Assessment['readState'] = {}) => ({ name: found, status: found, due: found, weight: found, kind: found, ...extra });
+const quizzes = { key: 'syna10001-quizzes', name: 'Quizzes', weight: 10, count: 2 };
+const assignments = { key: 'syna10001-assignments', name: 'Assignments', weight: 45, count: 2 };
+const written = { key: 'syna10001-written-assignments', name: 'Written assignments', weight: 15, count: 4 };
+const examGroup = { key: 'syna10001-final-exam', name: 'Final exam', weight: 30, count: 1 };
 const assessments: Assessment[] = [
-  assessment({ id: 'syn-a-quiz-1', courseId: 'syn-course-a', name: 'Synthetic Quiz 1', kind: 'quiz', weight: 5, score: 80, due: due(-14), status: 'graded' }),
-  // Weight unknown from sync; an agent annotation below proposes 5% with a citation.
-  assessment({ id: 'syn-a-quiz-2', courseId: 'syn-course-a', name: 'Synthetic Quiz 2', kind: 'quiz', due: soon(1), status: 'not_started' }),
-  assessment({ id: 'syn-a-assign-1', courseId: 'syn-course-a', name: 'Synthetic Assignment 1', kind: 'assignment', weight: 20, score: 72, due: due(-7), status: 'graded' }),
-  assessment({ id: 'syn-a-assign-2', courseId: 'syn-course-a', name: 'Synthetic Assignment 2', kind: 'assignment', weight: 25, due: soon(3), status: 'in_progress' }),
-  assessment({ id: 'syn-a-exam', courseId: 'syn-course-a', name: 'Synthetic Systems final exam', kind: 'exam', weight: 45, hurdleMin: 40, isFinal: true, due: soon(5, '00:00:00Z'), status: 'not_started' }),
+  assessment({ id: 'syn-a-quiz-1', courseId: 'syn-course-a', name: 'Synthetic Quiz 1', kind: 'quiz', weight: 5, score: 80, due: due(-14), status: 'graded', group: quizzes, readState: itemRead() }),
+  // Weight unknown after retries; an agent annotation below proposes 5% with a citation.
+  assessment({ id: 'syn-a-quiz-2', courseId: 'syn-course-a', name: 'Synthetic Quiz 2', kind: 'quiz', due: soon(1), status: 'not_started', group: quizzes,
+    readState: itemRead({ weight: { state: 'unknown', via: 'screenshot', checkedAt: found.checkedAt } }) }),
+  assessment({ id: 'syn-a-assign-1', courseId: 'syn-course-a', name: 'Synthetic Assignment 1', kind: 'assignment', weight: 20, score: 72, due: due(-7), status: 'graded', group: assignments, readState: itemRead() }),
+  assessment({ id: 'syn-a-assign-2', courseId: 'syn-course-a', name: 'Synthetic Assignment 2', kind: 'assignment', weight: 25, due: soon(3), status: 'in_progress', group: assignments, readState: itemRead() }),
+  // Scenario "Component group": 15% over four items, two published and graded (80% and 100%), each an even split of 3.75.
+  assessment({ id: 'syn-a-written-1', courseId: 'syn-course-a', name: 'Synthetic Written Task 1', kind: 'assignment', weight: 3.75, score: 80, due: due(-10), status: 'graded',
+    group: written, readState: itemRead({ weight: derived }) }),
+  // Scenario "Derived and unknown labels": due date unknown after retries, with its check time.
+  assessment({ id: 'syn-a-written-2', courseId: 'syn-course-a', name: 'Synthetic Written Task 2', kind: 'assignment', weight: 3.75, score: 100, status: 'graded',
+    group: written, readState: itemRead({ weight: derived, due: { state: 'unknown', via: 'screenshot', checkedAt: found.checkedAt } }) }),
+  assessment({ id: 'syn-a-written-rest', courseId: 'syn-course-a', name: 'Written assignments', kind: 'assignment', weight: 7.5, status: 'not_started',
+    group: written, readState: { name: found, kind: found, weight: derived } }),
+  assessment({ id: 'syn-a-exam', courseId: 'syn-course-a', name: 'Synthetic Systems final exam', kind: 'exam', weight: 30, hurdleMin: 40, isFinal: true, due: soon(5, '00:00:00Z'), status: 'not_started',
+    group: examGroup, readState: { name: found, kind: found, weight: found, isFinal: found, hurdleMin: found, due: derived } }),
   assessment({ id: 'syn-b-lab', courseId: 'syn-course-b', name: 'Synthetic Lab Quiz', kind: 'quiz', weight: 15, score: 90, due: due(0, '05:00:00Z'), status: 'graded' }),
   // Weight unknown and never annotated.
   assessment({ id: 'syn-b-reflection', courseId: 'syn-course-b', name: 'Synthetic Weekly Reflection', kind: 'ongoing', due: soon(2), status: 'not_started' }),
@@ -149,7 +168,7 @@ const source = (id: string, courseId: string, platform: SourceItem['platform'], 
 // Materials only count as evidence with fetched page metadata, carried in the external id as source.fetch stores it.
 const materialPage = (name: string, page: number) => JSON.stringify({ version: 1, kind: 'fetched-material', urlHash: hash(name), page, locator: `page:${page}` });
 const texts = {
-  outline: 'Synthetic Systems assessment outline. Quiz 2 is worth 5% of the final mark. Assignment 2 is worth 25% of the final mark and is due later this week. The final exam is worth 45% and has a 40% hurdle.',
+  outline: 'Synthetic Systems assessment outline. Quiz 2 is worth 5% of the final mark. Assignment 2 is worth 25% of the final mark and is due later this week. The final exam is worth 30% and has a 40% hurdle.',
   brief: 'Assignment 2 brief. Design a fictional scheduler for imaginary queues. Submit a short report and the source code. Reports longer than four pages lose marks.',
   week: 'Week notes. A synthetic scheduler allocates fictional work across imaginary queues. A round-robin scheduler gives each queue an equal time slice. Starvation happens when one queue never receives a slice.',
   policy: 'Synthetic Ethics Seminar policy. Generative AI tools are not permitted for any assessment in this subject.',
@@ -172,19 +191,26 @@ const run = (id: string, startedAt: string, durationMs: number, edFailed: boolea
   ],
 });
 const linkedAt = fetchedAt;
-// One finished agent sync job: course A stored, Ed behind a sign-in page.
+// One finished agent sync job: both courses stored from Canvas, Ed behind a sign-in page; course A left two fields unknown,
+// course B's weights add up to 90 and its AI policy was newly read as prohibited. Three offered courses await the owner's choice.
 const keys = courses.map(course => `${course.code}:${term}`);
 const jobEnd = new Date(Date.parse(fetchedAt) + 95_000).toISOString();
 store.saveCourseSelections([
   ...courses.map((course, index) => ({ key: keys[index]!, code: course.code, term, name: course.name, pages: {}, offeredAt: fetchedAt, selected: true, decidedAt: fetchedAt })),
   { key: `SYNC30003:${term}`, code: 'SYNC30003', term, name: 'Synthetic Undecided Elective', pages: {}, offeredAt: fetchedAt },
+  { key: `SYND40004:${term}`, code: 'SYND40004', term, name: 'Synthetic Data Workshop', pages: {}, offeredAt: fetchedAt },
+  { key: `SYNE50005:${term}`, code: 'SYNE50005', term, name: 'Synthetic Breadth Subject With A Rather Long Name For Wrapping', pages: {}, offeredAt: fetchedAt },
 ]);
 const agentRun: Run = { id: 'syn-agent-sync', command: 'sync', startedAt: fetchedAt, endedAt: jobEnd, steps: 14, outcome: 'error', errorCode: 'PARTIAL', turns: 9,
-  syncOutcome: 'PARTIAL', courseCoverage: keys.map((key, index) => ({ courseRef: hash(key), stored: index === 0, submissions: index === 0 ? 2 : 0,
-    unknownFields: index === 0 ? 1 : 0, platforms: { canvas: index === 0 ? 'read' : 'unread', ed: 'blocked' }, policyChanged: false })) };
-store.saveSyncJob({ id: 'syn-agent-sync', startedAt: fetchedAt, endedAt: jobEnd, courses: keys, submissions: { [keys[0]!]: 2 }, outcome: 'PARTIAL', blocked: ['ed'],
-  results: { [keys[0]!]: { courseId: 'syn-course-a', storedAt: jobEnd, components: 4, items: 4, unknownFields: ['components[1].items[0].due'], dropped: [],
-    warnings: [], platforms: { canvas: 'read', ed: 'blocked' }, policyChanged: false } } });
+  syncOutcome: 'PARTIAL', courseCoverage: keys.map((key, index) => ({ courseRef: hash(key), stored: true, submissions: index === 0 ? 3 : 1,
+    unknownFields: index === 0 ? 2 : 0, platforms: { canvas: 'read', ed: 'blocked' }, policyChanged: index === 1 })) };
+store.saveSyncJob({ id: 'syn-agent-sync', startedAt: fetchedAt, endedAt: jobEnd, courses: keys, submissions: { [keys[0]!]: 3, [keys[1]!]: 1 }, outcome: 'PARTIAL', blocked: ['ed'],
+  results: {
+    [keys[0]!]: { courseId: 'syn-course-a', storedAt: jobEnd, components: 4, items: 6, unknownFields: ['components[0].items[1].weight', 'components[2].items[1].due'], dropped: [],
+      warnings: [], platforms: { canvas: 'read', ed: 'blocked' }, policyChanged: false },
+    [keys[1]!]: { courseId: 'syn-course-b', storedAt: new Date(Date.parse(jobEnd) - 30_000).toISOString(), components: 4, items: 4, unknownFields: [], dropped: [],
+      warnings: ['WEIGHT_SUM'], weightSum: 90, platforms: { canvas: 'read', ed: 'blocked' }, policyChanged: true },
+  } });
 store.saveBatch({
   modules, courses, assessments, sourceItems,
   runs: [run('syn-sync-failed', new Date(Date.now() - 2 * 86400_000).toISOString(), 41_000, true), run('syn-sync-ok', fetchedAt, 37_000, false), agentRun],
@@ -199,7 +225,7 @@ await call('planning.settings.set', { timeZone, weekdayMinutes: [180, 120, 120, 
 await call('autonomy.policy.set', { courseId: 'syn-course-a', status: 'allowed' });
 await call('autonomy.default.set', { courseId: 'syn-course-a', level: 1 });
 await call('autonomy.override.set', { assessmentId: 'syn-a-assign-2', level: 2 });
-await call('autonomy.policy.set', { courseId: 'syn-course-b', status: 'prohibited' });
+// Course B keeps no owner policy: its effective policy is the agent-read one with its quote (#180).
 await call('autonomy.default.set', { courseId: 'syn-course-b', level: 1 });
 await call('autonomy.confirmation.set', { courseId: 'syn-course-b', confirmBeforeSubmit: true });
 

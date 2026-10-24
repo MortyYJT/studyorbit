@@ -50,10 +50,10 @@ export function CoursePage({ courseId, client, t, language, timeZone, openAgent,
         : !state.assessments.length ? <p className="muted">{c.noAssessments}</p>
         : <div className="assessment-list">
           <div className="arow head" aria-hidden="true"><span>{c.name}</span><span>{c.due}</span><span className="num">{c.weight}</span><span className="num">{c.scoreCol}</span><span>{c.status}</span><span>{c.level}</span></div>
-          {assessmentGroups(state.assessments).map(group => <div className="agroup" role="group" key={group.key ?? ''} aria-label={group.name ?? c.otherGroup}>
-            <div className="ghead"><b>{group.name ?? c.otherGroup}</b>
+          {assessmentGroups(state.assessments).map((group, _, all) => <div className="agroup" role="group" key={group.key ?? ''} aria-label={group.name ?? c.otherGroup}>
+            {(group.key !== undefined || all.length > 1) && <div className="ghead"><b>{group.name ?? c.otherGroup}</b>
               {group.key !== undefined && <span className="muted">{group.weight === undefined ? <span className="unknown">{t.unknown}</span> : `${number(group.weight)}%`}
-                {' · '}{number(group.earned)} {c.groupEarned}</span>}</div>
+                {' · '}{number(group.earned)} {c.groupEarned}</span>}</div>}
             {group.items.map(item => isRemainder(item) ? <div key={item.id} className="arow remainder" title={c.remainderHelp}>
               <span className="aname">{item.name}{item.kind && <span className={`kind ${item.kind}`}>{c.kinds[item.kind]}</span>}</span>
               <span className="muted">{c.notPublished}</span>
@@ -131,7 +131,7 @@ function Header({ store, state, policy, t }: { store: CourseStore; state: Course
       <select value={policy ?? ''} disabled={busy} onChange={event => void store.setPolicy(event.target.value ? event.target.value as Policy : null)}>
         <option value="">{c.policyNone}</option>{(['allowed', 'prohibited', 'owner-attested'] as const).map(value => <option key={value} value={value}>{c[value]}</option>)}
       </select>{view.origin && <span className="srcm">· {c.policyOrigins[view.origin]}</span>}</label>
-    {view.read && (view.origin !== 'agent' || view.quote) && <span className="policy-read">{c.policyRead}: {c[view.read]}{view.quote && <> · <q>{view.quote}</q></>}</span>}
+    {view.read && (view.origin !== 'agent' || view.quote) && <span className="policy-read">{c.policyRead}{t.colon}{c[view.read]}{view.quote && <> · <q>{view.quote}</q></>}</span>}
     {policy === 'prohibited' ? <span className="pill lock" title={c.lockedHelp}>{c.locked}</span> : <>
       <label className="inline">{c.defaultLevel}
         <select value={state.autonomy?.defaultLevel ?? ''} disabled={busy || !state.autonomy} onChange={event => void store.setDefault(Number(event.target.value) as WorkLevel)}>
