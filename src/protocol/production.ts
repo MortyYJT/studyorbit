@@ -26,6 +26,8 @@ import { StudyWriteService, type StudyRecordStore } from './study-writes.js';
 import { StudyCitationService, type StudyEvidenceProvider } from './citations.js';
 import type { TrustedContext } from './context.js';
 import { CourseworkError } from './errors.js';
+import { MemoryService } from '../memory/service.js';
+import { protectRead } from './read-privacy.js';
 export interface ProductionOptions {
   store?: SqliteRepository; files?: ProtocolFiles; metadata?: readonly EvidenceMetadata[]; privacyScope?: unknown;
   reads?: AuxiliaryReadPorts; study?: { provider: StudyEvidenceProvider; store: StudyRecordStore };
@@ -100,7 +102,9 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       'breakdown.write': study, 'revision.write': study, 'practice.write': study, 'source.record': revision, 'practice.attempt.record': revision }),
     evidence: new ComposedEvidence({ 'breakdown.write': studyEvidence, 'revision.write': studyEvidence, 'practice.write': studyEvidence }),
     // Autonomy outputs are closed enums validated by their schemas; free-text filtering would only corrupt reason codes.
-    privacy: { protect: async (command, value) => command.startsWith('autonomy.') ? value : evidence.protect(value) },
+    // Memory text is stored redacted in the agent-copy mode (it is plain prose such as "the student prefers"), so it is read back in that mode.
+    privacy: { protect: async (command, value) => command.startsWith('autonomy.') ? value
+      : command.startsWith('memory.') ? protectRead(value, options.privacyScope ?? {}, { agentCopy: true }) : evidence.protect(value) },
     owner: options.owner ?? { assertOwner: async name => {
       if (sessionOnlyCommand(name)) throw new CourseworkError('INVALID_INPUT', 'Open coursework ui to perform this owner action.');
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
@@ -108,16 +112,18 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   };
   // A sync run is an agent job over the chat adapter; adapter and tools are composed below and resolved per run.
   const sync = options.sync ?? new AgentSync({ store, jobs, adapter: () => adapter, tools: () => agentTools });
-  const registry = createRegistry({ autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync, courseReading: jobs });
+  const memory = new MemoryService(store, options.privacyScope);
+  const registry = createRegistry({ memory, autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync, courseReading: jobs });
   // The chat agent gets the same owner-free tool set as MCP; every call still goes through dispatch().
   const agent = registry.agentTools(context);
   const agentTools = options.agentTools ?? agent.registry.list().map(entry => ({ name: entry.name, description: describe(entry),
-    inputSchema: inputSchema(entry), execute: (input: unknown) => dispatch(agent.registry, entry.name, input, agent.context) }));
+    inputSchema: inputSchema(entry), execute: (input: unknown, scope?: Parameters<AgentTool['execute']>[1]) => dispatch(agent.registry, entry.name, input,
+      scope ? { ...agent.context, conversationId: scope.conversationId } : agent.context) }));
   // The UI host records its origin here once it listens.
   const agentRuntime: Pick<ProtectedPorts, 'frontendOrigin'> = {};
   // Codex is the default chat agent (#167); the Claude adapter is selected only with COURSEWORK_AGENT=claude.
   const adapter = options.agentAdapter ?? (process.env.COURSEWORK_AGENT !== 'claude' ? new CodexAdapter({ dataDirectory: resolveDataDir() }) : new ClaudeAdapter({ dataDirectory: resolveDataDir(), runtime: () => ({ ...agentRuntime }) }));
-  const chat = new ConversationService(store, adapter, agentTools);
+  const chat = new ConversationService(store, adapter, agentTools, options.privacyScope);
   let closing: Promise<void> | undefined;
   return { chat, agentRuntime, registry, context, audit, store, close: () => closing ??= (async () => {
     await Promise.all(chat.list().map(c => chat.waitForIdle(c.id)));

@@ -1,3 +1,4 @@
+import { collectBrief } from '../memory/brief.js';
 import { randomUUID } from 'node:crypto';
 import type { Conversation, Message, Run } from '../domain/schemas.js';
 import type { SqliteRepository } from '../store/sqlite.js';
@@ -6,7 +7,7 @@ import { CourseworkError } from '../protocol/errors.js';
 import { AgentEventSchema, type AgentEvent, type AgentAdapter, type AgentRun, type AgentTool, type StoredEvent, type StreamEvent } from './adapter.js';
 import { presets, renderPreset, type ConversationInput } from './presets.js';
 
-type ChatStore = Pick<SqliteRepository, 'readConversations' | 'readMessages' | 'saveChat' | 'deleteConversation' | 'readChatEvents' | 'loadCourse' | 'loadAssessment'>;
+type ChatStore = SqliteRepository;
 interface ActiveReply { run?: AgentRun; message: Message; conversation: Conversation; events: StoredEvent[]; done: Promise<void>; finish(): void; terminal: boolean }
 const now = () => new Date().toISOString();
 const terminal = (event: StreamEvent) => ['result', 'error', 'stopped'].includes(event.type);
@@ -15,7 +16,7 @@ export class ConversationService {
   private readonly active = new Map<string, ActiveReply>();
   private readonly listeners = new Map<string, Set<(event: StoredEvent) => void>>();
   private readonly deleting = new Set<string>();
-  constructor(private readonly store: ChatStore, private readonly adapter: AgentAdapter, private readonly tools: readonly AgentTool[] = []) {}
+  constructor(private readonly store: ChatStore, private readonly adapter: AgentAdapter, private readonly tools: readonly AgentTool[] = [], private readonly privacyScope: unknown = {}) {}
   /** Mark partial replies of a previous host process stopped. Only the owner UI host, which alone runs replies, calls this at startup. */
   recoverInterrupted(): void {
     for (const conversation of this.store.readConversations()) {
@@ -91,7 +92,11 @@ export class ConversationService {
     try {
       if (reply.terminal) return;
       const c = reply.conversation;
-      reply.run = this.adapter.start({ prompt, transcript, tools: this.tools, sessionRef: c.sessionRef, courseId: c.courseId, assessmentId: c.assessmentId, preset: c.preset });
+      const tools = this.tools.map(tool => ({ ...tool, execute: (input: unknown) => tool.execute(input, {
+        conversationId: c.id, emit: event => { if (!reply.terminal) this.commit(reply, event); },
+        isActive: () => !reply.terminal && this.active.get(c.id) === reply,
+      }) }));
+      reply.run = this.adapter.start({ conversationId: c.id, brief: collectBrief(this.store, c, { privacyScope: this.privacyScope }), prompt, transcript, tools, sessionRef: c.sessionRef, courseId: c.courseId, assessmentId: c.assessmentId, preset: c.preset });
       for await (const raw of reply.run) {
         if (reply.terminal) break;
         const event = AgentEventSchema.parse(raw);

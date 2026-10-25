@@ -19,8 +19,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import {
-  ModuleSchema, CourseSchema, AssessmentSchema, SourceItemSchema, TaskSchema, RunSchema, CourseSelectionSchema, SyncJobSchema,
-  type Module, type Course, type Assessment, type SourceItem, type Task, type Run, type CourseSelection, type SyncJob,
+  ModuleSchema, CourseSchema, AssessmentSchema, SourceItemSchema, TaskSchema, RunSchema, CourseSelectionSchema, SyncJobSchema, MemorySchema,
+  type Memory, type Module, type Course, type Assessment, type SourceItem, type Task, type Run, type CourseSelection, type SyncJob,
 } from '../domain/schemas.js';
 import { migrate } from './migrations/index.js';
 import type { Repository, SaveBatch } from './repository.js';
@@ -282,6 +282,15 @@ export class SqliteRepository implements Repository, CurrentStateReader {
       this.db.prepare(`INSERT INTO sync_jobs (id, startedAt, endedAt, json) VALUES (?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET endedAt = excluded.endedAt, json = excluded.json`).run(value.id, value.startedAt, value.endedAt ?? null, JSON.stringify(value));
     });
+  }
+
+  /** Insert or replace one memory; deletion is a soft delete written through here (`deletedAt`). */
+  saveMemory(memory: Memory): void { this.write('memories', MemorySchema, memory, ['courseId']); }
+  loadMemory(id: string): Memory | undefined { return this.load('memories', 'id', id, MemorySchema); }
+  /** Every memory, deleted ones included, newest first. */
+  listMemories(): Memory[] {
+    return this.db.prepare("SELECT json FROM memories ORDER BY json_extract(json, '$.createdAt') DESC, id DESC").all()
+      .map(row => MemorySchema.parse(JSON.parse(row.json as string)));
   }
 
   saveBatch(batch: SaveBatch, validate?: () => void): void {

@@ -55,6 +55,7 @@ export class CodexAdapter implements AgentAdapter {
       `mcp_servers.coursework.command=${JSON.stringify(process.execPath)}`,
       `mcp_servers.coursework.args=${JSON.stringify([join(packageRoot(), 'dist', 'cli.js'), 'mcp'])}`,
       `mcp_servers.coursework.env.COURSEWORK_HOME=${JSON.stringify(resolve(dataDirectory))}`,
+      ...(input.conversationId ? [`mcp_servers.coursework.env.COURSEWORK_CONVERSATION_ID=${JSON.stringify(input.conversationId)}`] : []),
       // Without pre-approval `codex exec` refuses every MCP call.
       'mcp_servers.coursework.default_tools_approval_mode="approve"',
     ].flatMap(value => ['-c', value])];
@@ -92,8 +93,9 @@ export class CodexAdapter implements AgentAdapter {
           if (input.sessionRef) outcome = yield* attempt(['exec', 'resume', input.sessionRef, ...common, '-'], withSkill(input.prompt));
           // The stored transcript is the memory (#177): a resume that fails before any output continues in a new thread.
           if (!outcome || !outcome.missing && !outcome.auth && (outcome.code !== 0 || outcome.turnFailed) && !outcome.emitted) {
-            outcome = yield* attempt(['exec', ...common, '-'], withSkill(input.transcript.length
-              ? `Stored conversation (context only):\n${JSON.stringify(input.transcript)}\nCurrent owner message:\n${input.prompt}` : input.prompt));
+            const text = input.transcript.length
+              ? `Stored conversation (context only):\n${JSON.stringify(input.transcript)}\nCurrent owner message:\n${input.prompt}` : input.prompt;
+            outcome = yield* attempt(['exec', ...common, '-'], withSkill(input.brief ? `${input.brief}\n\n${text}` : text));
           }
           if (stopped) return;
           if (outcome.missing || outcome.auth) yield unavailable();

@@ -7,6 +7,8 @@ import { syncContracts, type SyncCommands, type CourseReadingCommands, type Sync
 import { autonomyContracts, type AssessmentAutonomy } from './autonomy.js';
 import { randomUUID } from 'node:crypto';
 import { sourceRecordRefusals } from '../revision/source-record.js';
+import { memoryContracts, memoryOwnerCommands, type MemoryCommand } from '../memory/contracts.js';
+import { memoryRefusals, type MemoryService } from '../memory/service.js';
 import { z } from 'zod';
 import { contracts, ownerCommands, FailureEnvelopeSchema, type Level, type CommandName } from './contracts.js';
 import type { TrustedContext, ReadCommand, WriteCommand, AuditEvent } from './context.js';
@@ -63,6 +65,7 @@ export function safeError(error: unknown, command?: string): CourseworkError {
   // Course reading refusals list contract paths so the agent can re-read and resubmit (#170).
   if (error instanceof AgentFacingError && ['courses.offer', 'course.import'].includes(command ?? '')) return new CourseworkError(error.code, error.message);
   if (command === 'source.record' && error instanceof CourseworkError && sourceRecordRefusals.includes(error.message)) return new CourseworkError(error.code, error.message);
+  if (command?.startsWith('memory.') && error instanceof CourseworkError && memoryRefusals.includes(error.message)) return new CourseworkError(error.code, error.message);
   const code = error instanceof CourseworkError && Object.hasOwn(retryable, error.code) ? error.code : 'INTERNAL';
   return new CourseworkError(code, error instanceof CourseworkError && error.message === 'Open coursework ui to perform this owner action.' ? error.message : safeMessages[code]);
 }
@@ -133,12 +136,12 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
   }
   return result;
 }
-const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'sync.status', 'courses.candidates', 'plan.read', 'planning.settings.read', 'annotation.read', 'metrics.read', 'autonomy.read']));
+const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'sync.status', 'courses.candidates', 'plan.read', 'planning.settings.read', 'annotation.read', 'metrics.read', 'autonomy.read', 'memory.list']));
 /** Contract commands that change state; transports require credentials for these whatever their autonomy level. */
-export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationContracts), ...Object.keys(syncContracts)].filter(n => !readNames.has(n)));
+export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationContracts), ...Object.keys(syncContracts), ...Object.keys(memoryContracts)].filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
 /** Bind the settled contract surface to injected ports; no production service is selected here. */
-export function createRegistry(options: { autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; courseReading?: CourseReadingCommands; annotations?: AnnotationService; metrics?: MetricsService } = {}): Registry {
+export function createRegistry(options: { autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; courseReading?: CourseReadingCommands; annotations?: AnnotationService; metrics?: MetricsService; memory?: MemoryService } = {}): Registry {
   const registry = new Registry();
   const handlers = new Map<string, Handler>();
   for (const name of Object.keys(contracts) as CommandName[]) {
@@ -230,6 +233,17 @@ export function createRegistry(options: { autonomy?: AssessmentAutonomy; plannin
   registry.register({ name: 'metrics.read', ...metricsContracts['metrics.read'], handler: input => {
     if (!options.metrics) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
     return options.metrics.read(input);
+  } });
+  for (const name of Object.keys(memoryContracts) as MemoryCommand[]) registry.register<z.ZodType, z.ZodType>({ name, ...memoryContracts[name],
+    // The owner adds, edits and deletes (frontend session or TTY); agents only record and list.
+    ...(memoryOwnerCommands.has(name) ? { authority: 'owner' as const } : {}), handler: (input, context) => {
+    const memory = options.memory;
+    if (!memory) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
+    if (name === 'memory.record') return memory.record(input as never, context.conversationId);
+    if (name === 'memory.list') return memory.list(input as never);
+    if (name === 'memory.add') return memory.add(input as never);
+    if (name === 'memory.edit') return memory.edit(input as never);
+    return memory.delete(input as never);
   } });
   return registry;
 }

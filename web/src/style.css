@@ -246,3 +246,13 @@ button.primary:hover:enabled { background:var(--ink); opacity:.9; }
 .arow .derived { display:block; font-size:11px; color:var(--muted); font-style:italic; }
 .arow.remainder { color:var(--muted); cursor:default; }
 .row-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
+
+.memory-list { display: grid; gap: 1rem; margin-block: 1rem; }
+.memory-list article { min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 1rem; }
+.memory-meta, .memory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.memory-meta { font-size: .85rem; color: var(--muted); }
+.memory-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.memory-form { display: grid; gap: .6rem; margin-block: 1rem; }
+.memory-form textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 8px; width: 100%; min-width: 0; resize: vertical; }
+.memory-confirm { border-top: 1px solid var(--line); margin-top: .8rem; padding-top: .5rem; }
+.memory-confirm button + button { margin-inline-start: .5rem; }

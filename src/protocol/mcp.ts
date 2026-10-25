@@ -5,7 +5,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, type Tool } from '@modelcontextprotocol/sdk/types.js';
 import { dispatch, type Registry, type RegistryEntry } from './registry.js';
 import type { TrustedContext } from './context.js';
-import { ownerCommands } from './contracts.js';
+import { IdSchema, ownerCommands } from './contracts.js';
 import { fail, type Envelope } from './envelope.js';
 import { MAX_INPUT_BYTES } from './cli.js';
 
@@ -61,6 +61,14 @@ export function createMcpServer(options: McpOptions): McpServer {
   return server;
 }
 
+/**
+ * The Codex adapter starts `coursework mcp` per session with `COURSEWORK_CONVERSATION_ID` (long-term-memory), so
+ * `memory.record` knows its source conversation. A malformed or absent value leaves the context without one.
+ */
+export function sessionContext(context: TrustedContext, env: NodeJS.ProcessEnv = process.env): TrustedContext {
+  const id = IdSchema.safeParse(env.COURSEWORK_CONVERSATION_ID);
+  return id.success && id.data === env.COURSEWORK_CONVERSATION_ID ? { ...context, conversationId: id.data } : context;
+}
 /** Serve over stdio until the client disconnects (input ends) and the server has closed. */
 export async function runMcpStdio(options: McpStdioOptions): Promise<void> {
   const stdin = options.stdin ?? process.stdin; const stdout = options.stdout ?? process.stdout;

@@ -44,4 +44,9 @@ export interface TrustedContext {
   setAuditReferences?: (references: Pick<AuditEvent, 'courseId' | 'assessmentId' | 'level' | 'policyRef' | 'grantRef'>) => void;
   /** Dispatch identity passed only by the trusted host. */
   runId?: string;
+  /**
+   * The calling agent session's conversation, set only by the host: the chat tool scope or `COURSEWORK_CONVERSATION_ID`
+   * of the `coursework mcp` server the Codex adapter configures. Best effort, because Codex keeps a shell (#150, #154).
+   */
+  conversationId?: string;
 }

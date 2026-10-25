@@ -125,7 +125,7 @@ it('forwards tool sets and transcript when no resumable session was reported; sa
   const reopened = new ConversationService(store, adapter);
   expect(reopened.open(c.id).events[0].event).toEqual({ type: 'text', text: 'Synthetic partial reply.' });
   await service.send(c.id, 'Retry', owner); await service.waitForIdle(c.id);
-  expect(adapter.inputs[1]).toMatchObject({ tools, transcript: expect.arrayContaining([expect.objectContaining({ role: 'owner' }), expect.objectContaining({ role: 'agent' })]) });
+  expect(adapter.inputs[1]).toMatchObject({ tools: tools.map(tool => ({ ...tool, execute: expect.any(Function) })), transcript: expect.arrayContaining([expect.objectContaining({ role: 'owner' }), expect.objectContaining({ role: 'agent' })]) });
   expect(adapter.inputs[1].sessionRef).toBeUndefined();
 });
 it('historical confirmation parts stay readable and reach the transcript without a resumable session', async () => {
@@ -175,4 +175,20 @@ it('delete excludes a racing send so a deleted conversation never reappears', as
     await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve));
     expect(service.list().some(row => row.id === c.id)).toBe(false);
   }
+});
+
+it('passes a fresh brief separately from stored messages and a conversation scope to every tool', async () => {
+  const { store, adapter } = setup();
+  const execute = vi.fn(async () => ({ ok: true }));
+  const service = new ConversationService(store, adapter, [{ name: 'memory.record', description: '', inputSchema: {}, execute }]);
+  const c = await service.create({ courseId: 'c-1' }, owner);
+  await service.send(c.id, 'Owner text', owner); await service.waitForIdle(c.id);
+  expect(adapter.inputs[0]).toMatchObject({ conversationId: c.id, prompt: 'Owner text', brief: expect.stringContaining('TEST10001') });
+  await adapter.inputs[0].tools[0].execute({ text: 'Synthetic' });
+  expect(execute.mock.calls[0]).toEqual([{ text: 'Synthetic' }, expect.objectContaining({ conversationId: c.id, isActive: expect.any(Function), emit: expect.any(Function) })]);
+  store.saveMemory({ id: 'mem', courseId: 'c-1', text: 'New observation', kind: 'habit', origin: 'owner', createdAt: '2026-10-25T00:00:00.000Z' });
+  await service.send(c.id, 'Again', owner); await service.waitForIdle(c.id);
+  expect(adapter.inputs[1].brief).toContain('New observation');
+  expect(JSON.stringify(service.open(c.id).messages)).not.toMatch(/Background from|New observation/);
+  expect(JSON.stringify(adapter.inputs[1].transcript)).not.toContain('Background from');
 });

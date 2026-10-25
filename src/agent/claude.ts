@@ -43,8 +43,9 @@ export class ClaudeAdapter implements AgentAdapter {
               ...(output && typeof output === 'object' && 'ok' in output && output.ok === false ? { isError: true } : {}) };
           } catch { return { isError: true, content: [{ type: 'text' as const, text: 'Tool failed.' }] }; }
         });
-        session = query({ prompt: input.sessionRef || !input.transcript.length ? input.prompt
-          : `Stored conversation (context only):\n${JSON.stringify(input.transcript)}\nCurrent owner message:\n${input.prompt}`,
+        const text = input.sessionRef || !input.transcript.length ? input.prompt
+          : `Stored conversation (context only):\n${JSON.stringify(input.transcript)}\nCurrent owner message:\n${input.prompt}`;
+        session = query({ prompt: !input.sessionRef && input.brief ? `${input.brief}\n\n${text}` : text,
           options: { cwd: workspace, resume: input.sessionRef, settingSources: [],
             tools: { type: 'preset', preset: 'claude_code' }, includePartialMessages: true,
             systemPrompt: { type: 'preset', preset: 'claude_code', append: skills(input.preset) },

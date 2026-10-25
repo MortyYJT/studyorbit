@@ -20,10 +20,11 @@ function Item({ item, t }: { item: ChatItem; t: Copy }) {
   </div>;
 }
 /** Agent page: conversation list newest first, open conversation with a resumable event stream. */
-export function AgentPage({ client, t, language, preset, onPresetDone }: { client: Client; t: Copy; language: Language; preset?: AgentPreset; onPresetDone?: (conversationId: string) => void }) {
+export function AgentPage({ client, t, language, preset, conversationId, onPresetDone }: { client: Client; t: Copy; language: Language; preset?: AgentPreset; conversationId?: string; onPresetDone?: (conversationId: string) => void }) {
   const agent = useMemo(() => createAgentClient(client), [client]);
   const [conversations, setConversations] = useState<Conversation[]>();
-  const [selected, setSelected] = useState<string>();
+  const [selected, setSelected] = useState<string | undefined>(conversationId);
+  useEffect(() => { if (conversationId) setSelected(conversationId); }, [conversationId]);
   const [chat, setChat] = useState<ChatState>();
   const [streamError, setStreamError] = useState<string>();
   const [draft, setDraft] = useState('');
