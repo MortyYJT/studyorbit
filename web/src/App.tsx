@@ -6,13 +6,14 @@ import { needsYou, weekModel } from './week.js';
 import { NeedsYou, WeekView } from './WeekView.js';
 import { AgentPage } from './Agent.js';
 import type { AgentPreset } from './chat.js';
+import { MemoryPanel } from './MemoryPanel.js';
 import { MetricsPanel } from './MetricsPanel.js';
 import { CoursePage } from './CoursePage.js';
 import { CourseSelect } from './CourseSelect.js';
 
-type Panel = 'status' | 'audit' | 'settings' | 'metrics';
+type Panel = 'memory' | 'status' | 'audit' | 'settings' | 'metrics';
 /** Navigation state; a preset is cleared once its conversation exists, so it is never sent twice. */
-export type View = { page: 'week' } | { page: 'agent'; preset?: AgentPreset } | { page: 'course'; courseId: string };
+export type View = { page: 'week' } | { page: 'agent'; preset?: AgentPreset; conversationId?: string; navigation?: number } | { page: 'course'; courseId: string };
 function preference(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
 function remember(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Preferences remain usable in memory. */ } }
 function errorText(code: string, t: Copy): string {
@@ -22,13 +23,14 @@ export function App({ store }: { store: ShellStore }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const [language, setLanguage] = useState<Language>(() => preference('coursework.language') === 'zh' ? 'zh' : 'en');
   const [theme, setTheme] = useState<Theme>(() => { const value = preference('coursework.theme'); return value === 'light' || value === 'dark' ? value : 'system'; });
-  const [view, setView] = useState<View>({ page: 'week' });
+  const [view, setView] = useState<View>(() => { const conversationId = new URLSearchParams(window.location.search).get('conversation'); return conversationId ? { page: 'agent', conversationId } : { page: 'week' }; });
   const [week] = useState(() => new WeekStore(store.client));
   const weekState = useSyncExternalStore(week.subscribe, week.getSnapshot);
   const openAgent = (preset?: AgentPreset) => setView({ page: 'agent', preset });
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState<Panel>();
   const [selecting, setSelecting] = useState(false);
+  const conversationNavigation = useRef(0);
   const dialog = useRef<HTMLDialogElement>(null);
   const avatar = useRef<HTMLButtonElement>(null);
   const menuRoot = useRef<HTMLDivElement>(null);
@@ -65,7 +67,7 @@ export function App({ store }: { store: ShellStore }) {
         <div className="avatar-wrap" ref={menuRoot} onKeyDown={event => { if (event.key === 'Escape') { setMenu(false); avatar.current?.focus(); } }}>
           <button className="avatar" ref={avatar} aria-label={t.menu} aria-expanded={menu} aria-controls="owner-menu" onClick={() => setMenu(!menu)}>Y</button>
           {!!needs.length && <span className="badge" />}
-          {menu && <div id="owner-menu" className="menu">{(['status', 'metrics', 'audit', 'settings'] as const).map(item => <button key={item} onClick={() => open(item)}>{t[item]}</button>)}</div>}
+          {menu && <div id="owner-menu" className="menu">{(['status', 'metrics', 'memory', 'audit', 'settings'] as const).map(item => <button key={item} onClick={() => open(item)}>{t[item]}</button>)}</div>}
         </div>
       </div>
     </header>
@@ -75,7 +77,7 @@ export function App({ store }: { store: ShellStore }) {
       <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onSelect={() => setSelecting(true)}
         onCourse={courseId => setView({ page: 'course', courseId })} />
       {view.page !== 'course' && <div className="page-heading"><h1>{t[view.page]}</h1><button onClick={() => void refreshAll()}>{t.refresh}</button></div>}
-      {view.page === 'agent' ? <AgentPage client={store.client} t={t} language={language} preset={view.preset} onPresetDone={() => setView({ page: 'agent' })} />
+      {view.page === 'agent' ? <AgentPage key={view.navigation} client={store.client} t={t} language={language} preset={view.preset} conversationId={view.conversationId} onPresetDone={() => setView({ page: 'agent' })} />
         : view.page === 'course' ? <CoursePage key={view.courseId} courseId={view.courseId} client={store.client} t={t} language={language}
           timeZone={state.planning?.settings?.timeZone} openAgent={openAgent} onBack={() => setView({ page: 'week' })} /> : <>
         {state.errors.courses || state.errors.tasks ? <section className="card"><p>{t.error}</p></section>
@@ -110,6 +112,8 @@ export function App({ store }: { store: ShellStore }) {
         </section>}
         {state.errors.sync && <p role="status">{t.error}</p>}
       </>}
+      {panel === 'memory' && <MemoryPanel client={store.client} t={t} language={language} courses={state.courses?.items ?? []} timeZone={state.planning?.settings?.timeZone}
+        onConversation={conversationId => { close(); setView({ page: 'agent', conversationId, navigation: ++conversationNavigation.current }); }} />}
       {panel === 'metrics' && <MetricsPanel client={store.client} t={t} language={language} timeZone={state.planning?.settings?.timeZone} />}
       {panel === 'audit' && <><button disabled={state.auditLoading} onClick={() => void store.loadAudit()}>{t.refresh}</button>
         {state.errors.audit && <p role="status">{errorText(state.errors.audit, t)}</p>}

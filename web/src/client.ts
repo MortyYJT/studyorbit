@@ -3,6 +3,7 @@ import { contracts, FailureEnvelopeSchema } from '../../src/protocol/contracts.j
 import { syncContracts } from '../../src/protocol/sync.js';
 import { planningContracts, planningInputs, settingsInput } from '../../src/planning/contracts.js';
 import { annotationCommands, autonomyCommands, autonomyReads, workCommands } from './course-contracts.js';
+import { memoryContracts } from '../../src/memory/contracts.js';
 import { metricsContracts } from '../../src/metrics/contracts.js';
 
 const commands = {
@@ -18,6 +19,7 @@ const commands = {
   ...recorded('plan.start.set'), ...recorded('plan.start.clear'), ...recorded('time.record'),
   ...recorded('manual.create'), ...recorded('manual.edit'), ...recorded('manual.complete'), ...recorded('manual.delete'),
   ...metricsContracts,
+  ...memoryContracts,
   // K3 course page
   'sources.get': contracts['sources.get'], 'revision.read': contracts['revision.read'],
   'revision.list': contracts['revision.list'], 'practice.stats': contracts['practice.stats'],
@@ -41,7 +43,7 @@ export function takeOwnerSession(location: Pick<Location, 'hash' | 'pathname' | 
 }
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });
 // Commands that need the owner session.
-const writes = new Set<Command>(['sync.run', 'courses.select', 'planning.settings.set',
+const writes = new Set<Command>(['memory.add', 'memory.edit', 'memory.delete', 'sync.run', 'courses.select', 'planning.settings.set',
   'plan.start.set', 'plan.start.clear', 'time.record', 'manual.create', 'manual.edit', 'manual.complete', 'manual.delete',
   'annotation.confirm', 'annotation.replace', ...Object.keys(autonomyCommands) as Command[], ...Object.keys(workCommands) as Command[]]);
 export function createClient(initialSecret?: string, fetcher: typeof fetch = fetch) {

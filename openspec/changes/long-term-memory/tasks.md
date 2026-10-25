@@ -5,12 +5,12 @@
 
 ## 2. Facts brief
 
-- [ ] 2.1 Failing tests then `src/memory/brief.ts`: priority order, drop rule, all selected courses, no page text (scenarios "All selected courses", "Bounded brief")
-- [ ] 2.2 `AgentInput` gains `brief?` and `conversationId`; `ConversationService` passes the brief without storing it and gives every tool a scope with the conversation id; the Codex adapter adds the brief on new-thread and fallback attempts only and passes `COURSEWORK_CONVERSATION_ID` to the MCP entry; the Claude adapter adds it without `sessionRef` (scenarios "New conversation for a course", "Resumed session", "Resume falls back")
+- [x] 2.1 Failing tests then `src/memory/brief.ts`: priority order, drop rule, all selected courses, no page text (scenarios "All selected courses", "Bounded brief")
+- [x] 2.2 `AgentInput` gains `brief?` and `conversationId`; `ConversationService` passes the brief without storing it and gives every tool a scope with the conversation id; the Codex adapter adds the brief on new-thread and fallback attempts only and passes `COURSEWORK_CONVERSATION_ID` to the MCP entry; the Claude adapter adds it without `sessionRef` (scenarios "New conversation for a course", "Resumed session", "Resume falls back")
 
 ## 3. Frontend
 
-- [ ] 3.1 Memory panel in the avatar menu (scenario "Edit and delete"), en and zh
+- [x] 3.1 Memory panel in the avatar menu (scenario "Edit and delete"), en and zh
 - [ ] 3.2 Real-browser check on the synthetic harness at 390 and 1440 px, light and dark (if Playwright was removed by C-3, use the coordinator's browser pane; otherwise system Chrome)
 
 ## 4. Verification
