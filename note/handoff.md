@@ -1,26 +1,20 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 的改法见 #165–#197，PRD 待更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/`（进行中：`canvas-check-item-policy`，只在它自己的分支上）；决定看 `note/decisions.md`（#1–#197）；进度看 `note/product/roadmap.md`。
+> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 的改法见 #165–#197，PRD 待更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/`（进行中：`canvas-check-item-policy`，规格已合并，实现未开始）；决定看 `note/decisions.md`（#1–#198）；进度看 `note/product/roadmap.md`。
 
 - **最后更新：** 2026-10-26 凌晨 3 点，Claude。
-- **模式：** OpenSpec 变更 `canvas-check-item-policy`（路线图 C-5）进行中，只写了 proposal。真机验收（#186）也在进行中：第一次逐门读课已完成，4 门课都已存入，周视图能正常显示。
-- **本轮合并（10-26 凌晨）：** #175、#176 重写 README（项目说明、为什么读页面不用 token、功能、计划、进度），同时把决策 #193–#197 和路线图 C-5 带进了 main；GitHub 仓库的 About 说明也已更新。
+- **模式：** OpenSpec 变更 `canvas-check-item-policy`（路线图 C-5）规格已合并，实现未开始。真机验收（#186）也在进行中：第一次逐门读课已完成，4 门课都已存入，周视图能正常显示。
+- **本轮合并（10-26 凌晨）：** #175、#176 重写 README（项目说明、为什么读页面不用 token、功能、计划、进度），同时把决策 #193–#197 和路线图 C-5 带进了 main；GitHub 仓库的 About 说明也已更新；#178 合并了 C-5 规格。
 - **#191 删除隐私检查（沿用）：** 姓名、邮箱、学号、凭证样式的文字、本地路径都会原样存储、原样发给模型。保留引用完整性检查和 `source.record` 的网址规则。仓库和测试数据里仍然不能放真实课程数据、密钥和浏览器配置。
 - **分工（#189）：** 实现和审查优先交给 Codex；Claude 派活、提交、在本机重跑检查、浏览器验证、合并。Codex 额度用完时由 Claude 接手，审查改用只读的 Claude 子代理（#175、#176 就是这样审的）。
 
 ## 进行中：`canvas-check-item-policy`（C-5）
 
-- **分支：** `claude/canvas-check-item-policy`，一个本地提交（`f5faa58`），**还没推送**。里面只有 `proposal.md` 和决策 #193–#197（这两条决策已经通过 #176 进了 main，内容相同，以后合并不会冲突）。
-- **还要写：** `specs/`（新的 `canvas-check`，以及修改 `coursework-sync`、`assessment-autonomy`、`domain-model`、`web-ui` 的增量规格）、`design.md`、`tasks.md`。改要求时整段复制原要求再改（MODIFIED），不要只写改动部分。
-- **你已批准的设计（#193–#197）：**
-  1. 读完一门课、`course.import` 存入后，Codex 在同一个 Edge 标签页里打开两个固定地址：`/api/v1/courses/{id}/assignments?include[]=submission&per_page=100` 和 `/api/v1/courses/{id}/assignment_groups?per_page=100`，把整页 JSON 原样交给一个新工具（不手抄）。代码只接受这两个路径，去掉 `while(1);` 前缀后解析。一页满 100 条时标"可能没读全"（这条是 Claude 加的实现细节，决策里没有，写规格时确认）。
-  2. 按作业条目 key 里的 Canvas id（`CODE:canvas:assignment:<id>`）比对截止时间、分值、状态、得分；作业组权重通过"作业属于哪个 `assignment_group_id`"把分数构成和作业组对上，不靠名字猜。
-  3. 对不上的存成冲突，在「需要你」里同时显示两边的值，你选定后存成你的批注；选之前排期和视图用 agent 的值并标"待确认"（#194）。
-  4. 作业条目新增可选的 `aiPolicy`（读到时带原话和网址），读不到时保留上次的值（同 #184）；生效顺序：你在该作业上设的值 > 任何一层读到 `prohibited` > 离作业最近的已知值 > 未知（未知时按 #125 不设上限，#196）。`autonomy.policy.set` 扩展为也能传 `assessmentId`，作业抽屉里加政策选择。
-  5. 改 `course-reading.md`（作业页写了 AI 条款的要读出来）和 `codex-instructions.md` 第 3 条（按作业查政策）。
-  6. 数据模型：作业加 `aiPolicy` 及读取状态，新增核对冲突表，只加不删（`local-store` 规格「Additive migrations」）；#195 就是这次改模型的许可。
-- **理由待补：** #193 的取数方式、#194、#196。
+- **规格已合并（#178）**：`openspec/changes/canvas-check-item-policy/`（proposal、design、tasks，新能力 `canvas-check`，以及 coursework-sync、assessment-autonomy、agent-annotations、agent-chat、protocol-reads、domain-model、web-ui 的增量）。设计依据 #193–#198，#198 已由你确认。
+- **要点**：读完一门 Canvas 课后，Codex 打开一个固定地址 `/api/v1/courses/{id}/assignment_groups?include[]=assignments&include[]=submission&per_page=100`，全选复制，调 `canvas.check`，代码从剪贴板读原文；比对 SourceItem facts（agent 的原始读数）和 Canvas 的截止时间、分值、得分、是否提交、作业组权重；冲突由你在「需要你」里选，Canvas 值按字段落地（见 design D4）。AI 政策按作业生效（design D6）。
+- **下一步**：任务 1.1，你在场、屏幕解锁时实测这个地址（学生会话是否支持这些 include、Edge 全选复制出来是什么）。结果不进仓库，只把不含内容的结论写进 design 的 Open Questions。实测不通就按 #193 改回两个地址，再开始 3.x。
+- **理由待补**：#193 的取数方式、#194、#196。
 
 ## 本轮的调研结论（10-26）
 
