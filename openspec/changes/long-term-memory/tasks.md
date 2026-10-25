@@ -11,10 +11,10 @@
 ## 3. Frontend
 
 - [x] 3.1 Memory panel in the avatar menu (scenario "Edit and delete"), en and zh
-- [ ] 3.2 Real-browser check on the synthetic harness at 390 and 1440 px, light and dark (if Playwright was removed by C-3, use the coordinator's browser pane; otherwise system Chrome)
+- [x] 3.2 Real-browser check on the synthetic harness at 390 and 1440 px, light and dark (if Playwright was removed by C-3, use the coordinator's browser pane; otherwise system Chrome)
 
 ## 4. Verification
 
-- [ ] 4.1 `openspec validate long-term-memory --strict`, `bash .claude/check.sh` (exit code), `npm run build`
+- [x] 4.1 `openspec validate long-term-memory --strict`, `bash .claude/check.sh` (exit code), `npm run build`
 - [ ] 4.2 At archive, if C-3 has archived first, add "Memory" to the avatar-menu list in the `web-ui` "Top bar and avatar menu" requirement
 - [ ] 4.3 Owner morning acceptance
