@@ -32,6 +32,7 @@
 | C-2 | agent 读课程 | 你勾选课程 → Codex 填三层 JSON → 代码查格式、常识、必填 → 写库；删接口同步；每门课一个 `aiPolicy` 字段管能否用 AI（#165、#166、#169–#172、#180–#186） | 代码已完成（规格 PR #157，后端 #158，前端 #159），已归档；真机运行和你的验收转到早上统一做（#186） | 你早上解锁屏幕后真机验收 | `agent-course-reading`（已归档） |
 | C-3 | 浏览器清理 | 删常驻 Edge、我们的浏览器工具、提交确认和 Playwright；引用来源改为 `source.record`（#173、#187） | 代码已完成（规格 PR #161，实现 #163），已归档；你的验收转到早上（#186） | 你确认 #187 | `codex-browser-cleanup`（已归档） |
 | C-4 | 长期记忆 | 事实由代码汇总、观察由 agent 记录；前端「记忆」页可看改删（#178） | 代码已完成（规格 PR #162，实现 #165），已归档；你的验收转到早上（#186） | 你真机验收 | `long-term-memory`（已归档） |
+| C-5 | Canvas 核对 + 作业层 AI 政策 | 读课后用固定的窄脚本核对 Canvas `/api/v1` 的截止时间、分值、状态、得分、作业组权重，冲突由你选定；AI 政策挂到作业层，课程层作默认（#193–#197） | 进行中（proposal 已写，规格未完成） | 写完规格 | `canvas-check-item-policy` |
 | 以后 | 邮件入口 | 邮件作为新的信息来源（#99） | 未开始 | — | 未写 |
 
 实现说明：M2 已实现的接口见 `docs/engineering/protocol.md`；Canvas 探针见 `docs/engineering/canvas-student-session-spike.md`。
