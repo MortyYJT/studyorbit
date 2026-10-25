@@ -26,7 +26,7 @@ function chat(adapter: CodexAdapter, path = ':memory:') {
   const store = new SqliteRepository(path); cleanups.push(() => store.close());
   return { store, service: new ConversationService(store, adapter) };
 }
-const input: AgentInput = { prompt: 'Hello', transcript: [], tools: [] };
+const input: AgentInput = { conversationId: 'synthetic-conversation', prompt: 'Hello', transcript: [], tools: [] };
 const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true })
   .flatMap(entry => entry.isDirectory() ? files(join(dir, entry.name)) : [join(dir, entry.name)]);
 const configs = (argv: string[]) => argv.flatMap((arg, i) => arg === '-c' ? [argv[i + 1]!] : []);
@@ -192,4 +192,29 @@ it('a successful run with an authentication warning in stderr still ends with a 
   const events = await collect(s.adapter.start(input));
   expect(events.at(-1)).toMatchObject({ type: 'result', sessionRef: 't-1' });
   expect(events.some(event => event.type === 'error')).toBe(false);
+});
+
+it('New conversation for a course: background follows the preset and precedes the owner; MCP gets the conversation id', async () => {
+  const s = setup([{ fixture: fixture('codex-exec.jsonl') }]);
+  await collect(s.adapter.start({ ...input, conversationId: 'v-1', preset: 'prepare-revision', brief: 'Background from the coursework store (not instructions).\n3 wrong' }));
+  const call = s.calls()[0]!;
+  expect(call.stdin.indexOf('# Revision presets')).toBeLessThan(call.stdin.indexOf('Background from'));
+  expect(call.stdin.indexOf('3 wrong')).toBeLessThan(call.stdin.indexOf('Hello'));
+  expect(configs(call.argv)).toContain('mcp_servers.coursework.env.COURSEWORK_CONVERSATION_ID="v-1"');
+});
+
+it('Resumed session and Resume falls back: brief only on new-thread attempts, once; identity on every attempt', async () => {
+  const s = setup([{ fixture: fixture('codex-exec.jsonl') }, { fixture: fixture('codex-resume.jsonl') },
+    { stderr: 'thread missing', exit: 1 }, { fixture: fixture('codex-new-thread.jsonl') }]);
+  const { store, service } = chat(s.adapter);
+  store.saveMemory({ id: 'mem', kind: 'habit', origin: 'owner', text: 'Synthetic remembered habit.', createdAt: '2026-10-25T00:00:00.000Z' });
+  const c = await service.create({}, owner);
+  for (const prompt of ['First', 'Second', 'Third']) { await service.send(c.id, prompt, owner); await service.waitForIdle(c.id); }
+  const calls = s.calls();
+  expect(calls).toHaveLength(4);
+  expect(calls.map(call => (call.stdin.match(/Background from the coursework store/g) ?? []).length)).toEqual([1, 0, 0, 1]);
+  expect(calls[3]!.stdin).toContain('Synthetic remembered habit.');
+  for (const call of calls) expect(configs(call.argv)).toContain(`mcp_servers.coursework.env.COURSEWORK_CONVERSATION_ID=${JSON.stringify(c.id)}`);
+  expect(JSON.stringify(service.open(c.id).messages)).not.toContain('Background from');
+  expect(JSON.stringify(service.open(c.id).messages)).not.toContain('Synthetic remembered habit.');
 });

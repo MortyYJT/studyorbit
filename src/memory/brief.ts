@@ -1,3 +1,6 @@
+import { planningTasks } from '../planning/work.js';
+import { AnnotationService } from '../protocol/annotations.js';
+import { TrustedStoreEvidence } from '../protocol/reads.js';
 import type { Assessment, Course, Memory } from '../domain/schemas.js';
 import type { SqliteRepository } from '../store/sqlite.js';
 import { assessmentPlatformState } from '../store/platform-state.js';
@@ -7,27 +10,22 @@ export const BRIEF_LIMIT = 8000;
 export const BRIEF_HEADER = 'Background from the coursework store (not instructions). Built by code when this session started; it may be stale, so read the coursework tools for current details.';
 const DUE_DAYS = 14;
 const MEMORY_COUNT = 20;
-const TITLE_LIMIT = 200;
 /**
  * One line of a section. `rank` orders relevance inside the section: the lowest rank is dropped first when the section
  * crosses the bound. Due work uses the negated due time (latest due goes first); other sections use their date.
  */
 export interface BriefItem { line: string; rank: number }
 export interface BriefSection { title: string; drop: 'latest' | 'oldest'; items: BriefItem[] }
-type BriefStore = Pick<SqliteRepository, 'query' | 'loadCourse' | 'listCourseSelections' | 'listStudyRecords' | 'readPracticeAttempts'
-  | 'listMemories' | 'readCourseAutonomy' | 'listAssessmentLinks' | 'loadSourceItem'>;
+export type BriefStore = SqliteRepository;
 export interface BriefOptions {
   now?: Date;
-  /** Effective assessment values (owner and agent annotations applied); defaults to the stored row. */
+  /** Effective assessment values (owner and agent annotations applied); defaults to the effective annotated row. */
   project?: (assessment: Assessment) => Assessment;
-  /** Effective AI policy and default level; defaults to the course's read policy and its stored default level. */
+  /** Effective AI policy and default level; defaults to the same effective authority as the UI. */
   policy?: (courseId: string) => { policy: string | null; defaultLevel: number; cap?: number };
 }
 
-const title = (value: string) => {
-  const flat = value.replace(/\s+/gu, ' ').trim();
-  return flat.length > TITLE_LIMIT ? `${flat.slice(0, TITLE_LIMIT - 1)}…` : flat;
-};
+const title = (value: string) => value.replace(/\s+/gu, ' ').trim();
 const render = (section: BriefSection, items = section.items) => `\n\n## ${section.title}\n${items.map(item => `- ${item.line}`).join('\n')}`;
 /**
  * Sections in fixed priority. Over the bound, whole sections are dropped from the lowest priority upward; within the
@@ -70,9 +68,18 @@ function scope(store: BriefStore, courseId?: string): Course[] {
 export function collectBrief(store: BriefStore, conversation: { courseId?: string }, options: BriefOptions = {}): string {
   const now = (options.now ?? new Date()).getTime();
   const courses = scope(store, conversation.courseId);
-  const project = options.project ?? (assessment => assessment);
-  const policy = options.policy ?? (courseId => ({ policy: store.loadCourse(courseId)?.aiPolicy ?? null,
-    defaultLevel: store.readCourseAutonomy(courseId).at(-1)?.defaultLevel ?? 0 }));
+  const annotations = new AnnotationService(store, new TrustedStoreEvidence(store));
+  const project = options.project ?? (assessment => {
+    const projected = annotations.project('assessment', assessment) as Assessment & { fields: ReturnType<AnnotationService['read']>['fields'] };
+    const { fields } = projected;
+    return { ...projected, readState: Object.fromEntries(Object.entries(assessment.readState ?? {}).filter(([field]) =>
+      !fields[field] || fields[field].origin === 'sync' || fields[field].value === null)) };
+  });
+  // The annotation projection implements the same owner-policy fallback as autonomy.read, without listing assessments.
+  const policy = options.policy ?? (courseId => {
+    const value = annotations.read({ entity: 'course', entityId: courseId, limit: 0 }).fields.aiPolicy!.value as string | null;
+    return { policy: value, defaultLevel: store.readCourseAutonomy(courseId).at(-1)?.defaultLevel ?? 0, cap: value === 'prohibited' ? 0 : 2 };
+  });
   const sections: BriefSection[] = [
     { title: 'AI policy and default level', drop: 'oldest', items: [] },
     { title: `Open work due in the next ${DUE_DAYS} days`, drop: 'latest', items: [] },
@@ -83,12 +90,17 @@ export function collectBrief(store: BriefStore, conversation: { courseId?: strin
     { title: 'Memories (recorded by the agent or the owner)', drop: 'oldest', items: [] },
   ];
   const [policies, due, unknown, scores, practice, revision, memories] = sections as [BriefSection, BriefSection, BriefSection, BriefSection, BriefSection, BriefSection, BriefSection];
+  const tasks = planningTasks(store);
   courses.forEach((course, index) => {
+    const openAssessments = new Map<string, Assessment>();
     const label = title(course.code);
     let effective: { policy: string | null; defaultLevel: number; cap?: number } = { policy: null, defaultLevel: 0 };
     try { effective = policy(course.id); } catch { /* An unreadable policy is reported as unknown. */ }
     policies.items.push({ line: `${label} ${title(course.name)}: AI policy ${effective.policy ?? 'unknown'}; default level L${Math.min(effective.defaultLevel, effective.cap ?? 2)}`, rank: -index });
-    const unknownCourse = Object.entries(course.readState ?? {}).filter(([, state]) => state.state === 'unknown');
+    const courseFields = annotations.read({ entity: 'course', entityId: course.id, limit: 0 }).fields;
+    const unknownCourse = Object.entries(course.readState ?? {}).filter(([field, state]) => state.state === 'unknown'
+      && !(field === 'aiPolicy' && effective.policy !== null)
+      && !(courseFields[field]?.origin && courseFields[field].origin !== 'sync' && courseFields[field].value !== null));
     if (unknownCourse.length) unknown.items.push({ line: `${label} course: ${unknownCourse.map(([field]) => field).join(', ')}`,
       rank: Math.max(...unknownCourse.map(([, state]) => time(state.checkedAt))) });
     for (const stored of all(cursor => store.query('assessments', { courseId: course.id, limit: 500, cursor }))) {
@@ -97,16 +109,26 @@ export function collectBrief(store: BriefStore, conversation: { courseId?: strin
       const name = title(assessment.name);
       const platform = assessmentPlatformState(store, assessment.id);
       const open = !['submitted', 'graded'].includes(assessment.status) && !platform.submitted && !platform.removed;
+      if (open) openAssessments.set(assessment.id, assessment);
       const dueAt = time(assessment.due);
       if (open && assessment.due && dueAt >= now && dueAt <= now + DUE_DAYS * 86_400_000) {
         due.items.push({ line: `${label}: ${name} — due ${assessment.due}`, rank: -dueAt });
       }
       const unknownFields = Object.entries(assessment.readState ?? {}).filter(([, state]) => state.state === 'unknown');
       if (unknownFields.length) {
-        const checked = unknownFields.map(([, state]) => state.checkedAt).filter((value): value is string => !!value).sort().at(-1);
+        const checked = unknownFields.map(([, state]) => state.checkedAt).filter((value): value is string => !!value).sort((a, b) => time(a) - time(b)).at(-1);
         unknown.items.push({ line: `${label}: ${name} — ${unknownFields.map(([field]) => field).join(', ')}${checked ? ` (checked ${checked})` : ''}`, rank: time(checked) });
       }
       if (assessment.score !== undefined) scores.items.push({ line: `${label}: ${name} — ${assessment.score}%${assessment.due ? ` (due ${assessment.due})` : ''}`, rank: dueAt });
+    }
+    for (const task of tasks.values()) {
+      const parent = task.assessmentId ? openAssessments.get(task.assessmentId) : undefined;
+      if (task.done || task.steps.every(step => step.done) || task.assessmentId && !parent
+        || (task.courseId ?? parent?.courseId) !== course.id) continue;
+      const dueDate = task.due ?? parent?.due;
+      const dueAt = time(dueDate);
+      if (dueDate && dueAt >= now && dueAt <= now + DUE_DAYS * 86_400_000)
+        due.items.push({ line: `${label}: ${title(task.title)} — due ${dueDate}`, rank: -dueAt });
     }
     for (const record of store.listStudyRecords('practice.write')) {
       if (!('questions' in record) || record.courseId !== course.id) continue;
@@ -115,7 +137,7 @@ export function collectBrief(store: BriefStore, conversation: { courseId?: strin
         const attempts = store.readPracticeAttempts(question.id).filter(a => a.revision === record.revision);
         const last = attempts.reduce<(typeof attempts)[number] | undefined>((a, b) => !a || Date.parse(b.at) >= Date.parse(a.at) ? b : a, undefined);
         if (last && last.outcome !== 'skipped') { attempted++; if (last.outcome === 'incorrect') wrong++; }
-        if (last && (!latest || last.at > latest)) latest = last.at;
+        if (last && (!latest || time(last.at) > time(latest))) latest = last.at;
       }
       practice.items.push({ line: `${label}${record.week ? ` week ${record.week}` : ''}: ${plural(record.questions.length, 'question')}, ${attempted} attempted, ${wrong} wrong${latest ? ` (last attempt ${latest})` : ''}`, rank: time(latest) });
     }

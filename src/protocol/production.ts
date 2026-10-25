@@ -117,7 +117,8 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   // The chat agent gets the same owner-free tool set as MCP; every call still goes through dispatch().
   const agent = registry.agentTools(context);
   const agentTools = options.agentTools ?? agent.registry.list().map(entry => ({ name: entry.name, description: describe(entry),
-    inputSchema: inputSchema(entry), execute: (input: unknown) => dispatch(agent.registry, entry.name, input, agent.context) }));
+    inputSchema: inputSchema(entry), execute: (input: unknown, scope?: Parameters<AgentTool['execute']>[1]) => dispatch(agent.registry, entry.name, input,
+      scope ? { ...agent.context, conversationId: scope.conversationId } : agent.context) }));
   // The UI host records its origin here once it listens.
   const agentRuntime: Pick<ProtectedPorts, 'frontendOrigin'> = {};
   // Codex is the default chat agent (#167); the Claude adapter is selected only with COURSEWORK_AGENT=claude.

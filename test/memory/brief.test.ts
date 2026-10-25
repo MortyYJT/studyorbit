@@ -126,3 +126,72 @@ it('bounded through the store: more than 8,000 characters of facts still yields 
   expect(brief.length).toBeLessThanOrEqual(BRIEF_LIMIT);
   expect(brief).toContain('number 0 '); expect(brief).not.toContain('## Memories');
 });
+
+it('uses the effective policy and annotated due date, and does not call a resolved field unknown', () => {
+  const s = store();
+  s.appendCourseAutonomy({ courseId: 'c-1', defaultLevel: 2, at: now.toISOString(), confirmBeforeSubmit: true });
+  s.appendAnnotation({ id: 'policy', entity: 'course', entityId: 'c-1', field: 'aiPolicy', value: 'prohibited', origin: 'owner', citations: [], at: now.toISOString() });
+  s.saveAssessment({ id: 'a', courseId: 'c-1', name: 'Annotated task', isFinal: false, status: 'not_started',
+    readState: { due: { state: 'unknown', checkedAt: now.toISOString() } } });
+  s.appendAnnotation({ id: 'due', entity: 'assessment', entityId: 'a', field: 'due', value: '2026-10-28T00:00:00.000Z', origin: 'owner', citations: [], at: now.toISOString() });
+  const brief = collectBrief(s, { courseId: 'c-1' }, { now });
+  expect(brief).toContain('AI policy prohibited; default level L0');
+  expect(brief).toContain('Annotated task — due 2026-10-28');
+  expect(brief).not.toContain('## Required fields still unknown');
+});
+
+it('selects at most twenty newest live memories, course-specific before general', () => {
+  const s = store();
+  for (let i = 1; i <= 23; i++) s.saveMemory({ id: `mem-${i}`, kind: 'habit', origin: 'agent', text: `Observation ${i}.`,
+    createdAt: new Date(now.getTime() - i * 86400000).toISOString() });
+  s.saveMemory({ id: 'course-memory', courseId: 'c-1', kind: 'other', origin: 'owner', text: 'Course first.', createdAt: '2020-01-01T00:00:00.000Z' });
+  const brief = collectBrief(s, { courseId: 'c-1' }, { now });
+  expect(brief.indexOf('Course first.')).toBeLessThan(brief.indexOf('Observation 1.'));
+  expect(brief).toContain('Observation 19.'); expect(brief).not.toContain('Observation 20.');
+});
+
+it('includes unfinished course tasks with inherited effective due dates, excluding completed or unrelated tasks', () => {
+  const s = store();
+  s.saveAssessment({ id: 'a', courseId: 'c-1', name: 'Project', isFinal: false, status: 'in_progress', due: '2026-10-28T00:00:00.000Z' });
+  const task = { id: 't', moduleId: 'm', assessmentId: 'a', title: 'Project outline', source: 'coursework' as const, done: false,
+    steps: [{ title: 'Outline', estimateMinutes: 10, done: false, citations: [{ sourceItemId: 'src-c-1', quote: 'Synthetic', locator: 'text' }] }] };
+  s.saveTask(task);
+  s.saveTask({ ...task, id: 'done', title: 'Finished task', done: true });
+  s.saveTask({ ...task, id: 'done-steps', title: 'Finished steps', steps: task.steps.map(step => ({ ...step, done: true })) });
+  s.saveTask({ ...task, id: 'other', assessmentId: undefined, courseId: 'c-2', title: 'Other course task', due: '2026-10-29T00:00:00.000Z' });
+  const brief = collectBrief(s, { courseId: 'c-1' }, { now });
+  expect(brief).toContain('Project outline — due 2026-10-28T00:00:00.000Z');
+  expect(brief).not.toMatch(/Finished task|Finished steps|Other course task/);
+});
+
+it('Bounded brief retains whole titles and drops entire oversized items rather than truncating titles', () => {
+  const s = store();
+  s.saveAssessment({ id: 'a', courseId: 'c-1', name: `Whole title ${'x'.repeat(220)} END`, isFinal: false, status: 'in_progress', due: '2026-10-28T00:00:00.000Z' });
+  expect(collectBrief(s, { courseId: 'c-1' }, { now })).toContain(`Whole title ${'x'.repeat(220)} END`);
+});
+
+it('omits course unknown fields resolved by owner annotations', () => {
+  const s = store();
+  s.saveCourse({ ...s.loadCourse('c-1')!, readState: { aiPolicy: { state: 'unknown', checkedAt: now.toISOString() }, assessmentsComplete: { state: 'unknown', checkedAt: now.toISOString() } } });
+  s.appendAnnotation({ id: 'policy', entity: 'course', entityId: 'c-1', field: 'aiPolicy', value: 'prohibited', origin: 'owner', citations: [], at: now.toISOString() });
+  s.appendAnnotation({ id: 'complete', entity: 'course', entityId: 'c-1', field: 'assessmentsComplete', value: true, origin: 'owner', citations: [], at: now.toISOString() });
+  const brief = collectBrief(s, { courseId: 'c-1' }, { now });
+  expect(brief).not.toContain('## Required fields still unknown');
+});
+
+it('All selected courses retains the effective policy even when a course exceeds the autonomy read page bound', () => {
+  const s = store(); select(s, ['SYNA10001', 'SYNB20002']);
+  for (let i = 0; i < 501; i++) s.saveAssessment({ id: `large-${i}`, courseId: 'c-1', name: `Item ${i}`, isFinal: false, status: 'graded' });
+  s.appendAnnotation({ id: 'policy', entity: 'course', entityId: 'c-1', field: 'aiPolicy', value: 'prohibited', origin: 'owner', citations: [], at: now.toISOString() });
+  expect(collectBrief(s, {}, { now })).toContain('AI policy prohibited; default level L0');
+});
+
+it('uses the latest current-revision attempts by instant, including different UTC offsets', async () => {
+  const s = store(); await practice(s, 'c-1', 3);
+  const record = s.listStudyRecords('practice.write')[0]!;
+  s.appendPracticeAttempt({ questionId: 'c-1-q0-0', revision: record.revision, outcome: 'correct', at: '2026-10-26T00:30:00+11:00' });
+  s.appendPracticeAttempt({ questionId: 'c-1-q0-1', revision: record.revision, outcome: 'incorrect', at: '2026-10-25T20:00:00Z' });
+  s.appendPracticeAttempt({ questionId: 'c-1-q0-2', revision: randomUUID(), outcome: 'correct', at: '2026-10-26T00:00:00Z' });
+  const brief = collectBrief(s, { courseId: 'c-1' }, { now });
+  expect(brief).toContain('2 wrong (last attempt 2026-10-25T20:00:00Z)');
+});

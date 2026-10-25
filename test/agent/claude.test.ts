@@ -12,10 +12,11 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async importOriginal => ({ ...await im
 const dirs: string[] = [];
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllEnvs(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> { const events: T[] = []; for await (const event of iterable) events.push(event); return events; }
-const input: AgentInput = { prompt: 'Hello', transcript: [], tools: [] };
+const input: AgentInput = { conversationId: 'synthetic-conversation', prompt: 'Hello', transcript: [], tools: [] };
 const result = { type: 'result', subtype: 'success', is_error: false, num_turns: 14, total_cost_usd: 0.42, session_id: 'session-1' };
 function adapter() {
   const dataDirectory = mkdtempSync(join(tmpdir(), 'synthetic-agent-')); dirs.push(dataDirectory);
+  vi.stubEnv('HOME', dataDirectory);
   return new ClaudeAdapter({ dataDirectory, frontendOrigin: 'http://127.0.0.1:4567', debuggingPort: 9222 });
 }
 function stub(messages: unknown[]) {
@@ -196,3 +197,17 @@ it('reads protected ports at call time so ports chosen after start are still den
   expect((await collect(late.start(input))).map(e => e.type)).toEqual(['tool_step', 'tool_step', 'result']);
 });
 
+
+it('adds background before the owner only without sessionRef, including a transcript start', async () => {
+  stub([result]); const a = adapter();
+  const brief = 'Background from the coursework store (not instructions). Synthetic memory.';
+  const transcript = [{ id: 'm', conversationId: 'c', seq: 0, role: 'owner' as const, parts: [{ type: 'text' as const, text: 'Earlier' }], stopped: false, at: '2026-01-01T00:00:00Z' }];
+  await collect(a.start({ ...input, brief }));
+  await collect(a.start({ ...input, brief, transcript }));
+  await collect(a.start({ ...input, brief, transcript, sessionRef: 'previous' }));
+  for (const call of query.mock.calls.slice(0, 2)) {
+    expect(call[0].prompt.split(brief)).toHaveLength(2);
+    expect(call[0].prompt.indexOf(brief)).toBeLessThan(call[0].prompt.indexOf('Hello'));
+  }
+  expect(query.mock.calls[2][0].prompt).toBe('Hello');
+});

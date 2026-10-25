@@ -103,7 +103,7 @@ it('Claude on request: COURSEWORK_AGENT=claude uses the Claude SDK, never starts
   const { messageId } = await host.chat.send(conversation.id, 'Synthetic prompt', owner);
   await host.chat.waitForIdle(conversation.id);
   expect(query).toHaveBeenCalledOnce();
-  expect(query.mock.calls[0]![0]).toMatchObject({ prompt: 'Synthetic prompt', options: { cwd: join(process.env.COURSEWORK_HOME!, 'agent-workspace') } });
+  expect(query.mock.calls[0]![0]).toMatchObject({ prompt: expect.stringMatching(/Background from the coursework store[\s\S]*Synthetic prompt$/), options: { cwd: join(process.env.COURSEWORK_HOME!, 'agent-workspace') } });
   expect(host.chat.open(conversation.id).messages[1]!.parts).toEqual([{ type: 'text', text: 'Synthetic reply' }]);
   expect(host.store.loadRun(messageId)).toMatchObject({ turns: 1, costUsd: 0.01, outcome: 'ok' });
   const { unavailableAdapter } = await import('../../src/agent/adapter.js');

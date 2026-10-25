@@ -19,6 +19,8 @@ export interface StoredEvent { id: string; messageId: string; event: StreamEvent
 /** recordsSteps delegates journaling to the tool service, including waiting and safe error steps. */
 export interface AgentTool { recordsSteps?: boolean; name: string; description: string; inputSchema: unknown; execute(input: unknown, scope?: { conversationId: string; emit(event: AgentEvent): void; isActive(): boolean }): Promise<unknown> }
 export interface AgentInput {
+  /** Absent for background jobs that have no stored conversation. */
+  conversationId?: string; brief?: string;
   prompt: string; sessionRef?: string; transcript: readonly Message[]; tools: readonly AgentTool[];
   courseId?: string; assessmentId?: string; preset?: string;
 }

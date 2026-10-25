@@ -8,6 +8,7 @@ import { createProductionProtocol } from '../../src/protocol/production.js';
 import { dispatch } from '../../src/protocol/registry.js';
 import { ownerCommands } from '../../src/protocol/contracts.js';
 import { createMcpServer } from '../../src/protocol/mcp.js';
+import { collectBrief } from '../../src/memory/brief.js';
 import { MEMORY_UNSAFE } from '../../src/memory/service.js';
 
 type Result = { ok: boolean; data?: any; error?: { code: string; message: string; retryable: boolean } };
@@ -19,7 +20,7 @@ afterEach(async () => {
 });
 const owner = { assertOwner: async () => {} };
 async function setup() {
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'memory-'))); roots.push(root); vi.stubEnv('COURSEWORK_HOME', root);
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'memory-'))); roots.push(root); vi.stubEnv('COURSEWORK_HOME', root); vi.stubEnv('HOME', root);
   const host = createProductionProtocol(); hosts.push(host);
   host.store.saveCourse({ id: 'c-1', moduleId: 'm', code: 'SYNA10001', name: 'Synthetic algebra', term: '2026:S2', assessmentsComplete: true });
   host.store.saveChat({ id: 'v-1', title: 'Tutoring', adapter: 'codex', courseId: 'c-1', createdAt: '2026-10-24T00:00:00.000Z', updatedAt: '2026-10-24T00:00:00.000Z' });
@@ -93,6 +94,7 @@ it('Owner text is redacted: a classmate\'s email is masked before it is stored',
   expect(await asOwner('memory.add', { kind: 'other', text: 'Study group with someone@student.unimelb.edu.au on Fridays' })).toMatchObject({ ok: true });
   const [stored] = host.store.listMemories();
   expect(stored!.text).toBe('Study group with [redacted] on Fridays');
+  expect(collectBrief(host.store, {})).not.toContain('someone@student.unimelb.edu.au');
   expect(await asOwner('memory.add', { kind: 'other', text: 'password: hunter2' })).toMatchObject({ ok: false, error: { message: MEMORY_UNSAFE } });
 });
 
@@ -101,6 +103,7 @@ it('Owner deletes a wrong observation: gone from memory.list, the row remains ma
   const { data } = await asAgent('memory.record', { kind: 'habit', text: 'Skips lectures' }, 'v-1');
   expect(await asOwner('memory.delete', { id: data.id })).toMatchObject({ ok: true });
   expect(await list()).toEqual([]);
+  expect(collectBrief(host.store, {})).not.toContain('Skips lectures');
   expect(host.store.loadMemory(data.id)!.deletedAt).toBeDefined();
   expect(await asOwner('memory.edit', { id: data.id, text: 'Back again' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
   expect(await asOwner('memory.delete', { id: data.id })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
@@ -148,4 +151,19 @@ it('Agent cannot delete: memory.delete, memory.edit and memory.add through MCP a
     expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toMatchObject({ ok: false });
   }
   expect(host.store.listMemories()).toEqual(before);
+});
+
+it('chat backend attributes memory.record through the scope of every supplied tool', async () => {
+  const { host, list } = await setup();
+  const adapter = { id: 'synthetic', start: (input: import('../../src/agent/adapter.js').AgentInput) => ({
+    async *[Symbol.asyncIterator]() {
+      const tool = input.tools.find(tool => tool.name === 'memory.record')!;
+      expect(await tool.execute({ kind: 'habit', text: 'Scoped observation' })).toMatchObject({ ok: true });
+      yield { type: 'result' as const, turns: 1 };
+    }, interrupt() {},
+  }) };
+  const composed = createProductionProtocol({ store: host.store, agentAdapter: adapter }); closers.push(() => composed.close());
+  const c = await composed.chat.create({}, owner);
+  await composed.chat.send(c.id, 'Synthetic request', owner); await composed.chat.waitForIdle(c.id);
+  expect((await list())[0]).toMatchObject({ conversationId: c.id, text: 'Scoped observation' });
 });
