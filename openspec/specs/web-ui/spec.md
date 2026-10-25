@@ -26,7 +26,7 @@ Every view SHALL load data only through the registry's commands over HTTP and SH
 - **THEN** the first shows its weight marked as an even split, and the second shows its due date as unknown, checked 24 October
 
 ### Requirement: Top bar and avatar menu
-The top bar SHALL have two entries, "This week" and "Agent", the sync button with its running state, and an avatar menu with: sync and sign-in status (the platforms Codex could not read, the last sync run with its outcome, the platforms it found blocked, per selected course the time of its last stored document), metrics, audit records, and settings (available hours per weekday, time zone, theme, language) (#142, #160). The interface SHALL support Chinese and English and light, dark and system themes; only "needs you" items use the alert colour (#140).
+The top bar SHALL have two entries, "This week" and "Agent", the sync button with its running state, and an avatar menu with: sync and sign-in status (the platforms Codex could not read, the last sync run with its outcome, the platforms it found blocked, per selected course the time of its last stored document), metrics, memory (long-term-memory), audit records, and settings (available hours per weekday, time zone, theme, language) (#142, #160). The interface SHALL support Chinese and English and light, dark and system themes; only "needs you" items use the alert colour (#140).
 
 #### Scenario: Sign-in expired
 - **WHEN** the last sync run reports Ed blocked by a sign-in page
@@ -86,4 +86,11 @@ Each page SHALL be checked in a real browser against a synthetic data directory 
 #### Scenario: Narrow width
 - **WHEN** the week view is opened at 390 px
 - **THEN** there is no horizontal page scroll and every day is reachable
+
+### Requirement: Memory panel
+The avatar menu SHALL include a "Memory" panel listing live memories newest first with kind, course (or "general"), date, origin (agent or owner) and, for agent memories, a link that opens the source conversation, or "conversation deleted" when it no longer exists. The owner SHALL be able to edit a memory's text and kind, delete it after a confirmation, and add one, through the owner session. Empty state SHALL say that nothing is remembered yet.
+
+#### Scenario: Edit and delete
+- **WHEN** the owner edits an agent memory's text and deletes another
+- **THEN** the panel shows the new text and no longer shows the deleted memory, and both changes went through the owner session
 
