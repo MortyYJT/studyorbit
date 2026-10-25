@@ -16,5 +16,5 @@
 ## 4. Verification
 
 - [x] 4.1 `openspec validate long-term-memory --strict`, `bash .claude/check.sh` (exit code), `npm run build`
-- [ ] 4.2 At archive, if C-3 has archived first, add "Memory" to the avatar-menu list in the `web-ui` "Top bar and avatar menu" requirement
+- [x] 4.2 At archive, if C-3 has archived first, add "Memory" to the avatar-menu list in the `web-ui` "Top bar and avatar menu" requirement
 - [ ] 4.3 Owner morning acceptance
