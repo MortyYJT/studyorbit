@@ -120,14 +120,11 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
     handlerSucceeded = true;
     const validated = entry.output.safeParse(raw);
     if (!validated.success) throw new CourseworkError('INTERNAL', safeMessages.INTERNAL);
-    const protectedOutput = await context.privacy.protect(name, validated.data);
-    const finalOutput = entry.output.safeParse(protectedOutput);
-    if (!finalOutput.success) throw new CourseworkError('INTERNAL', safeMessages.INTERNAL);
-    result = withMetadata(ok(safeName, finalOutput.data), { runId, durationMs: performance.now() - started });
+    result = withMetadata(ok(safeName, validated.data), { runId, durationMs: performance.now() - started });
     completionRecording = true;
     await record('outcome', result.ok ? 'OK' : result.error.code);
   } catch (error) {
-    // After a contract write/action returned, any later validation, privacy or recording failure is uncertainty.
+    // After a contract write/action returned, any later validation or recording failure is uncertainty.
     let failure = handlerSucceeded && !readNames.has(name) && (completionRecording || writeNames.has(name) || isOwnerCommand(registry.get(name) ?? name))
       ? new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN) : safeError(error, name);
     try { await record(executed ? 'outcome' : 'denial', failure.code); }
@@ -199,7 +196,7 @@ export function createRegistry(options: { autonomy?: AssessmentAutonomy; plannin
       ...(planningOwnerCommands.has(name) ? { authority: planningSessionCommands.has(name) ? 'owner-session' as const : 'owner' as const } : {}),
       handler: async (input, context) => {
         if (!options.planning) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
-        if (name === 'plan.read') return options.planning.read(input, async text => String(await context.privacy.protect(name, text)));
+        if (name === 'plan.read') return options.planning.read(input);
         if (name === 'planning.settings.read') return { settings: options.planning.settings() };
         return options.planning.execute(name, input, context.owner);
       },

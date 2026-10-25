@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { hash } from '../../src/citations/exact.js';
 import { StudyCitationService, type StudyEvidenceProvider } from '../../src/protocol/citations.js';
-const source = { sourceItemId: 'synthetic-source', courseId: 'synthetic-course', text: 'A synthetic statement.', sourceHash: hash('A synthetic statement.'), locator: 'page:2', page: 2, provenance: 'manual' as const, redacted: true as const };
+const source = { sourceItemId: 'synthetic-source', courseId: 'synthetic-course', text: 'A synthetic statement.', sourceHash: hash('A synthetic statement.'), locator: 'page:2', page: 2, provenance: 'manual' as const };
 const citation = { sourceItemId: source.sourceItemId, quote: source.text, locator: source.locator };
 const claim = { text: 'A derived claim.', citations: [citation] };
 const revision = hash('synthetic-revision');

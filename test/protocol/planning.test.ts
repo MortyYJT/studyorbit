@@ -120,10 +120,9 @@ it('pages all legal long-title work within the envelope bound without changing g
   expect(days).toEqual(expected.days.map(day => ({ ...day, items: day.items.map(({ workId, minutes, startTime }) => ({ workId, minutes, ...(startTime ? { startTime } : {}) })) })));
   expect(await call('plan.read', { ...input, startDate: '2026-10-20', cursor: [...seen][0] })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
 });
-it('redacts long text before splitting it into continuations', async () => {
+it('preserves personal text across continuations', async () => {
   const { call, store } = setup();
   await call('planning.settings.set', settings);
-  // A stored legacy task copy bypasses write-time privacy checks; the read must still redact whole strings.
   store.saveBatch({ tasks: [{ ...synthetic.task, assessmentId: 'd', steps: [{ ...synthetic.task.steps[0]!, done: false, title: `${'x'.repeat(16377)} alice@example.invalid` }] }] });
   let text = ''; let cursor: string | undefined;
   do {
@@ -135,5 +134,5 @@ it('redacts long text before splitting it into continuations', async () => {
     cursor = data.nextCursor;
   } while (cursor);
   expect(text.length).toBeGreaterThan(16000);
-  expect(text).not.toContain('example.invalid');
+  expect(text).toBe(`${'x'.repeat(16377)} alice@example.invalid`);
 });

@@ -129,12 +129,11 @@ it('bounds a page by its encoded size so the largest recorded page reads back th
     .toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
 });
 
-it('redacts emails and student numbers in agent text before storing', async () => {
+it('retains emails and student numbers in agent text', async () => {
   const { call, stored } = await setup();
   const result = await call('source.record', { courseId: 'c', url: pdfURL, title: 'Lecture', text: 'Contact synthetic@example.org. student id: 1234567', page: 1 });
   expect(result).toMatchObject({ ok: true });
-  expect(stored()[0]!.text).toContain('[redacted]');
-  expect(JSON.stringify(stored())).not.toMatch(/synthetic@example.org|1234567/);
+  expect(stored()[0]!.text).toBe('Contact synthetic@example.org. student id: 1234567');
 });
 
 it.each([
@@ -147,18 +146,18 @@ it.each([
   const recorded = await call('source.record', { courseId: 'c', url: pdfURL, title: 'Lecture', text, page: 1 });
   expect(recorded).toMatchObject({ ok: true, data: { empty: false } });
   expect(await call('sources.get', { sourceItemId: recorded.data.sourceItemId })).toMatchObject({ ok: true, data: { text: expected, copiedBy: 'agent' } });
-  // Study writes keep the strict model-output check, so only quotes it accepts can cite (here: the cleaned text).
-  if (!/[<>]|student|user/.test(expected)) expect(await call('revision.write', { courseId: 'c', sourceRevision: recorded.data.sourceRevision,
+  expect(await call('revision.write', { courseId: 'c', sourceRevision: recorded.data.sourceRevision,
     claims: [{ text: 'Synthetic claim.', citations: [{ sourceItemId: recorded.data.sourceItemId, quote: expected, locator: 'page:1' }] }] })).toMatchObject({ ok: true });
 });
 
-it('masks a classmate email and refuses what the privacy check cannot make safe, without a retry hint', async () => {
+it('stores classmate emails and credential-shaped source text unchanged', async () => {
   const { call, stored } = await setup();
   expect(await call('source.record', { courseId: 'c', url: pdfURL, title: 'Lecture', text: 'Ask your classmate fictional.peer@example.org for notes.', page: 1 })).toMatchObject({ ok: true });
-  expect(stored()[0]!.text).toBe('Ask your classmate [redacted] for notes.');
-  const refused = await call('source.record', { courseId: 'c', url: pdfURL, title: 'Lecture', text: 'Use Authorization: Bearer abc123 for the API.', page: 2 });
-  expect(refused).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', retryable: false, message: expect.stringContaining('privacy check cannot make safe') } });
-  expect(stored()).toHaveLength(1);
+  expect(stored()[0]!.text).toBe('Ask your classmate fictional.peer@example.org for notes.');
+  const recorded = await call('source.record', { courseId: 'c', url: pdfURL, title: 'Lecture', text: 'Use Authorization: Bearer abc123 for the API.', page: 2 });
+  expect(recorded).toMatchObject({ ok: true });
+  expect(stored()).toHaveLength(2);
+  expect(await call('sources.get', { sourceItemId: recorded.data.sourceItemId })).toMatchObject({ ok: true, data: { text: 'Use Authorization: Bearer abc123 for the API.' } });
 });
 
 it('stores an empty page as empty and reports it without evidence', async () => {

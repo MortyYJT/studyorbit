@@ -11,7 +11,7 @@ Private, single-user, local-first: course data and the agent workspace stay in `
 
 Version 1 is in progress; see [the roadmap](note/product/roadmap.md) for milestone status and what each one is
 waiting on. Implemented today: agent course reading (Codex in the owner's Edge), the domain model and SQLite
-store, Ed normalization and redaction, change detection, Q1 quiz read/propose/review, and the M2 protocol
+store, Ed normalization, change detection, Q1 quiz read/propose/review, and the M2 protocol
 (registry, reads, citations, authorization, CLI/HTTP/MCP transports). Production wiring of the protocol, the
 Canvas adapter, PDF materials and the UI are not done yet.
 
@@ -41,7 +41,7 @@ npm run build
 | --- | --- |
 | `src/domain/` | zod domain schemas, progress and grade projection |
 | `src/store/` | repository interface, `node:sqlite` implementation, migrations (only place that opens SQLite) |
-| `src/sync/` | normalization, redaction, field diff and change events |
+| `src/sync/` | normalization, field diff and change events |
 | `src/protocol/` | command registry, contracts, reads, writes, authorization, CLI/HTTP/MCP transports |
 | `src/citations/` | exact citation validation shared by protocol and quiz |
 | `src/quiz/` | Q1 Ed quiz assist (read, propose, review, policy and grants) |

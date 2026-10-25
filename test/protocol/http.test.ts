@@ -1,3 +1,5 @@
+import { SqliteRepository } from '../../src/store/sqlite.js';
+import { StoreProtocolReads, TrustedStoreEvidence } from '../../src/protocol/reads.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { request } from 'node:http';
 import { connect } from 'node:net';
@@ -243,4 +245,17 @@ describe('HTTP security and dispatcher parity', () => {
       expect(response.text).not.toContain('private-secret'); expect(handler).toHaveBeenCalledTimes(1);
     }
   });
+});
+
+
+it('HTTP returns stored classmate details unchanged (#191)', async () => {
+  const { server, registry, context } = await setup();
+  const store = new SqliteRepository(':memory:'); cleanup.push(async () => store.close());
+  const text = 'Synthetic Person synthetic@example.invalid';
+  store.saveCourse({ ...examples['courses.list'].output.items[0], name: text });
+  context.repository = new StoreProtocolReads(store, new TrustedStoreEvidence(store));
+  registry.register(createFakeRegistry().get('courses.list')!);
+  const response = await send(server, '{}', {}, '/api/courses.list');
+  expect(response.status).toBe(200);
+  expect(response.body).toMatchObject({ ok: true, data: { items: [expect.objectContaining({ name: text })] } });
 });

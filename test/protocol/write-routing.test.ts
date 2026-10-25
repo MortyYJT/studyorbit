@@ -7,7 +7,6 @@ import { hash } from '../../src/citations/exact.js';
 import { SharedAuthorization, Q1AuthorizationStore, IdentityMap } from '../../src/protocol/authorization.js';
 import { DurableAudit } from '../../src/protocol/audit.js';
 import { createRegistry, dispatch } from '../../src/protocol/registry.js';
-import { protectRead } from '../../src/protocol/read-privacy.js';
 import { createFakeContext, examples } from '../../src/protocol/fakes.js';
 import { ComposedEvidence } from '../../src/protocol/writes.js';
 
@@ -34,17 +33,11 @@ describe('deferred dispatcher P3 fixes', () => {
     expect(context.runEvents).toEqual(context.events);
   });
 
-  it('reports UNCERTAIN, not INTERNAL, when output or privacy validation fails after a successful write', async () => {
+  it('reports UNCERTAIN, not INTERNAL, when output validation fails after a successful write', async () => {
     const context = createFakeContext(); const write = vi.spyOn(context.services, 'write').mockResolvedValue({ invalid: true } as never);
     expect(await dispatch(createRegistry(), 'revision.write', examples['revision.write'].input, context)).toMatchObject({ ok: false, error: { code: 'UNCERTAIN', retryable: false } });
     expect(write).toHaveBeenCalledOnce();
-    const other = createFakeContext(); const calls = vi.spyOn(other.services, 'write');
-    other.privacy.protect = async () => { throw new Error('privacy sentinel'); };
-    const result = await dispatch(createRegistry(), 'practice.write', examples['practice.write'].input, other);
-    expect(result).toMatchObject({ ok: false, error: { code: 'UNCERTAIN' } });
-    expect(JSON.stringify(result)).not.toContain('sentinel');
-    expect(calls).toHaveBeenCalledOnce();
-    expect(other.events.at(-1)).toMatchObject({ phase: 'outcome', code: 'UNCERTAIN' });
+
   });
 
   it('keeps INTERNAL for reads whose output fails validation', async () => {
