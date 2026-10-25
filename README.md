@@ -71,7 +71,7 @@ Other entry points after a build:
 - `node dist/cli.js http`: local HTTP host.
 - `node dist/cli.js <group> <command> --json`: generated protocol commands (for example `courses list`).
 
-To sync, unlock the screen, open Edge signed in to Canvas and Ed, run `coursework ui` and press "Sync now".
+To sync, unlock the screen, open Edge signed in to Canvas and Ed, run `node dist/cli.js ui` and press "Sync now".
 
 ## Layout
 
