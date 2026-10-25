@@ -112,7 +112,7 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   };
   // A sync run is an agent job over the chat adapter; adapter and tools are composed below and resolved per run.
   const sync = options.sync ?? new AgentSync({ store, jobs, adapter: () => adapter, tools: () => agentTools });
-  const memory = new MemoryService(store);
+  const memory = new MemoryService(store, options.privacyScope);
   const registry = createRegistry({ memory, autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync, courseReading: jobs });
   // The chat agent gets the same owner-free tool set as MCP; every call still goes through dispatch().
   const agent = registry.agentTools(context);
@@ -123,7 +123,7 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   const agentRuntime: Pick<ProtectedPorts, 'frontendOrigin'> = {};
   // Codex is the default chat agent (#167); the Claude adapter is selected only with COURSEWORK_AGENT=claude.
   const adapter = options.agentAdapter ?? (process.env.COURSEWORK_AGENT !== 'claude' ? new CodexAdapter({ dataDirectory: resolveDataDir() }) : new ClaudeAdapter({ dataDirectory: resolveDataDir(), runtime: () => ({ ...agentRuntime }) }));
-  const chat = new ConversationService(store, adapter, agentTools);
+  const chat = new ConversationService(store, adapter, agentTools, options.privacyScope);
   let closing: Promise<void> | undefined;
   return { chat, agentRuntime, registry, context, audit, store, close: () => closing ??= (async () => {
     await Promise.all(chat.list().map(c => chat.waitForIdle(c.id)));

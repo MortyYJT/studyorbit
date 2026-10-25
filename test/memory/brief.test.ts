@@ -195,3 +195,24 @@ it('uses the latest current-revision attempts by instant, including different UT
   const brief = collectBrief(s, { courseId: 'c-1' }, { now });
   expect(brief).toContain('2 wrong (last attempt 2026-10-25T20:00:00Z)');
 });
+
+it('redacts every brief entry and omits unsafe entries before applying the length bound', () => {
+  const s = store();
+  const email = 'someone@student.example.edu';
+  s.saveCourse({ ...s.loadCourse('c-1')!, name: `Course ${email}` });
+  s.saveAssessment({ id: 'private', courseId: 'c-1', name: `Assessment ${email}`, isFinal: false, status: 'not_started',
+    due: '2026-10-28T00:00:00.000Z', score: 70, readState: { weight: { state: 'unknown' } } });
+  s.saveTask({ id: 'manual', moduleId: 'm', courseId: 'c-1', title: `Manual ${email}`, source: 'manual', done: false,
+    due: '2026-10-28T00:00:00.000Z', steps: [{ title: 'Study', estimateMinutes: 10, done: false, citations: [] }] });
+  s.saveMemory({ id: 'legacy', kind: 'other', origin: 'owner', text: `Legacy Jane Example ${email}`, createdAt: now.toISOString() });
+  s.saveAssessment({ id: 'unsafe', courseId: 'c-1', name: 'Unsafe api_key=synthetic', isFinal: false, status: 'not_started', due: '2026-10-28T00:00:00.000Z' });
+  s.saveMemory({ id: 'unsafe-memory', kind: 'other', origin: 'owner', text: 'Unsafe password=synthetic', createdAt: now.toISOString() });
+  const brief = collectBrief(s, { courseId: 'c-1' }, { now, project: assessment => assessment, privacyScope: { classmates: [{ name: 'Jane Example' }] } });
+  expect(brief).not.toContain(email); expect(brief).not.toContain('Jane Example'); expect(brief).not.toContain('Unsafe');
+  for (const prefix of ['Course', 'Assessment', 'Manual', 'Legacy']) expect(brief).toContain(`${prefix} [redacted]`);
+  expect(brief).toContain('70%'); expect(brief).toContain('weight');
+  const sections = [section('Facts', [[`Contact ${email.repeat(300)}`, 1], ['Unsafe api_key=synthetic', 2], ['Safe fact', 3]])];
+  const rendered = renderBrief(sections, BRIEF_HEADER.length + 100);
+  expect(rendered).toContain('Contact [redacted]'); expect(rendered).toContain('Safe fact');
+  expect(rendered).not.toContain('Unsafe'); expect(rendered.length).toBeLessThanOrEqual(BRIEF_HEADER.length + 100);
+});

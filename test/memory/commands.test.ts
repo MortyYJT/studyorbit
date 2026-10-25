@@ -19,9 +19,9 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 const owner = { assertOwner: async () => {} };
-async function setup() {
+async function setup(options: Parameters<typeof createProductionProtocol>[0] = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'memory-'))); roots.push(root); vi.stubEnv('COURSEWORK_HOME', root); vi.stubEnv('HOME', root);
-  const host = createProductionProtocol(); hosts.push(host);
+  const host = createProductionProtocol(options); hosts.push(host);
   host.store.saveCourse({ id: 'c-1', moduleId: 'm', code: 'SYNA10001', name: 'Synthetic algebra', term: '2026:S2', assessmentsComplete: true });
   host.store.saveChat({ id: 'v-1', title: 'Tutoring', adapter: 'codex', courseId: 'c-1', createdAt: '2026-10-24T00:00:00.000Z', updatedAt: '2026-10-24T00:00:00.000Z' });
   const agent = host.registry.agentTools(host.context);
@@ -166,4 +166,41 @@ it('chat backend attributes memory.record through the scope of every supplied to
   const c = await composed.chat.create({}, owner);
   await composed.chat.send(c.id, 'Synthetic request', owner); await composed.chat.waitForIdle(c.id);
   expect((await list())[0]).toMatchObject({ conversationId: c.id, text: 'Scoped observation' });
+});
+
+it('redacts trusted known identities before record, add and edit are persisted', async () => {
+  const { asAgent, asOwner, host } = await setup({ privacyScope: { classmates: [{ name: 'Jane Example' }] } });
+  const recorded = await asAgent('memory.record', { kind: 'habit', text: 'Studies with Jane Example' });
+  expect(recorded).toMatchObject({ ok: true });
+  expect(host.store.loadMemory(recorded.data.id)!.text).toBe('Studies with [redacted]');
+  const added = await asOwner('memory.add', { kind: 'other', text: 'Reviews with Jane Example' });
+  expect(added).toMatchObject({ ok: true });
+  expect(host.store.loadMemory(added.data.id)!.text).toBe('Reviews with [redacted]');
+  expect(await asOwner('memory.edit', { id: added.data.id, text: 'Practises with Jane Example' })).toMatchObject({ ok: true });
+  expect(host.store.loadMemory(added.data.id)!.text).toBe('Practises with [redacted]');
+  const before = host.store.listMemories();
+  for (const [command, input] of [
+    ['memory.record', { kind: 'other', text: 'api_key=synthetic' }],
+    ['memory.add', { kind: 'other', text: 'api_key=synthetic' }],
+    ['memory.edit', { id: added.data.id, text: 'api_key=synthetic' }],
+  ] as const) {
+    const result = command === 'memory.record' ? await asAgent(command, input) : await asOwner(command, input);
+    expect(result).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: MEMORY_UNSAFE, retryable: false } });
+  }
+  expect(host.store.listMemories()).toEqual(before);
+});
+
+it('passes the trusted identity scope to the brief delivered to the chat adapter', async () => {
+  const briefs: string[] = [];
+  const { host } = await setup({ privacyScope: { classmates: [{ name: 'Jane Example' }] },
+    agentAdapter: { id: 'synthetic', start(input) {
+      briefs.push(input.brief!);
+      return { async *[Symbol.asyncIterator]() { yield { type: 'result' as const, turns: 1 }; }, interrupt() {} };
+    } } });
+  host.store.saveAssessment({ id: 'private-title', courseId: 'c-1', name: 'Review with Jane Example', isFinal: false, status: 'graded', score: 80 });
+  const c = await host.chat.create({ courseId: 'c-1' }, owner);
+  await host.chat.send(c.id, 'Synthetic request', owner); await host.chat.waitForIdle(c.id);
+  expect(briefs).toHaveLength(1);
+  expect(briefs[0]).toContain('Review with [redacted]');
+  expect(briefs[0]).not.toContain('Jane Example');
 });

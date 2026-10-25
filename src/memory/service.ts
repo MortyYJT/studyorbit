@@ -18,9 +18,9 @@ export const memoryRefusals: readonly string[] = [MEMORY_UNSAFE, TOO_LONG];
  * Redact memory text the same way for agent and owner: the agent-copy text mode masks contact details and long numbers,
  * keeps ordinary prose (such as "the student prefers"), and refuses credential-shaped values.
  */
-export function redactMemoryText(text: string): string {
+export function redactMemoryText(text: string, privacyScope: unknown = {}): string {
   let safe: string;
-  try { safe = (protectRead(text.replace(/[^\P{C}\t\n]/gu, ''), {}, { agentCopy: true }) as string).trim(); }
+  try { safe = (protectRead(text.replace(/[^\P{C}\t\n]/gu, ''), privacyScope, { agentCopy: true }) as string).trim(); }
   catch (error) {
     if (error instanceof CourseworkError && error.code === 'SOURCE_UNAVAILABLE') throw new CourseworkError('INVALID_INPUT', MEMORY_UNSAFE);
     throw error;
@@ -31,7 +31,7 @@ export function redactMemoryText(text: string): string {
 }
 /** Long-term memory (C-4): agent observations and owner memories, soft-deleted, never edited by an agent. */
 export class MemoryService {
-  constructor(private readonly store: MemoryStore, private readonly now = () => new Date()) {}
+  constructor(private readonly store: MemoryStore, private readonly privacyScope: unknown = {}, private readonly now = () => new Date()) {}
   private course(courseId: string | undefined) {
     if (courseId !== undefined && !this.store.loadCourse(courseId)) throw new CourseworkError('NOT_FOUND', 'Course not found.');
   }
@@ -43,7 +43,7 @@ export class MemoryService {
   private create(input: Input<'memory.record'>, origin: Memory['origin'], conversationId?: string) {
     this.course(input.courseId);
     const memory = MemorySchema.parse({ id: randomUUID(), ...(input.courseId ? { courseId: input.courseId } : {}), kind: input.kind,
-      text: redactMemoryText(input.text), origin, ...(conversationId ? { conversationId } : {}), createdAt: this.now().toISOString() });
+      text: redactMemoryText(input.text, this.privacyScope), origin, ...(conversationId ? { conversationId } : {}), createdAt: this.now().toISOString() });
     this.store.saveMemory(memory);
     return { recorded: true as const, id: memory.id };
   }
@@ -53,7 +53,7 @@ export class MemoryService {
   edit(input: Input<'memory.edit'>) {
     const memory = this.live(input.id);
     this.store.saveMemory(MemorySchema.parse({ ...memory, ...(input.kind ? { kind: input.kind } : {}),
-      ...(input.text !== undefined ? { text: redactMemoryText(input.text) } : {}), editedAt: this.now().toISOString() }));
+      ...(input.text !== undefined ? { text: redactMemoryText(input.text, this.privacyScope) } : {}), editedAt: this.now().toISOString() }));
     return { recorded: true as const, id: memory.id };
   }
   delete(input: Input<'memory.delete'>) {

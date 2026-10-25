@@ -1,3 +1,5 @@
+import { protectRead } from '../protocol/read-privacy.js';
+import { CourseworkError } from '../protocol/errors.js';
 import { planningTasks } from '../planning/work.js';
 import { AnnotationService } from '../protocol/annotations.js';
 import { TrustedStoreEvidence } from '../protocol/reads.js';
@@ -19,6 +21,8 @@ export interface BriefSection { title: string; drop: 'latest' | 'oldest'; items:
 export type BriefStore = SqliteRepository;
 export interface BriefOptions {
   now?: Date;
+  /** Host-supplied known identities, shared with other protected reads and writes. */
+  privacyScope?: unknown;
   /** Effective assessment values (owner and agent annotations applied); defaults to the effective annotated row. */
   project?: (assessment: Assessment) => Assessment;
   /** Effective AI policy and default level; defaults to the same effective authority as the UI. */
@@ -31,9 +35,19 @@ const render = (section: BriefSection, items = section.items) => `\n\n## ${secti
  * Sections in fixed priority. Over the bound, whole sections are dropped from the lowest priority upward; within the
  * section that crosses the bound, the least relevant items (lowest rank) are dropped until it fits.
  */
-export function renderBrief(sections: readonly BriefSection[], limit = BRIEF_LIMIT): string {
+export function renderBrief(sections: readonly BriefSection[], limit = BRIEF_LIMIT, privacyScope: unknown = {}): string {
+  // Protect each whole entry before measuring it; an unsafe entry must not suppress other safe facts.
+  const safeSections = sections.map(section => ({ ...section, items: section.items.flatMap(item => {
+    try {
+      const line = (protectRead(item.line, privacyScope, { agentCopy: true }) as string).trim();
+      return line ? [{ ...item, line }] : [];
+    } catch (error) {
+      if (error instanceof CourseworkError && error.code === 'SOURCE_UNAVAILABLE') return [];
+      throw error;
+    }
+  }) }));
   let text = BRIEF_HEADER;
-  for (const section of sections.filter(s => s.items.length)) {
+  for (const section of safeSections.filter(s => s.items.length)) {
     const full = render(section);
     if (text.length + full.length <= limit) { text += full; continue; }
     const kept = new Set(section.items);
@@ -63,7 +77,7 @@ function scope(store: BriefStore, courseId?: string): Course[] {
 }
 /**
  * Build the facts brief for an agent session from store reads. Only titles, dates, numbers and memory texts are
- * included, never page text or quotes; memory texts were redacted before they were stored.
+ * included, never page text or quotes; every entry is redacted again before rendering.
  */
 export function collectBrief(store: BriefStore, conversation: { courseId?: string }, options: BriefOptions = {}): string {
   const now = (options.now ?? new Date()).getTime();
@@ -159,5 +173,5 @@ export function collectBrief(store: BriefStore, conversation: { courseId?: strin
   for (const memory of chosen) {
     memories.items.push({ line: `[${memory.kind}, ${memory.courseId ? code.get(memory.courseId) : 'general'}, ${memory.createdAt.slice(0, 10)}] ${memory.text.replace(/\s+/gu, ' ')}`, rank: time(memory.createdAt) });
   }
-  return renderBrief(sections);
+  return renderBrief(sections, BRIEF_LIMIT, options.privacyScope);
 }
