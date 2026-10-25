@@ -3,9 +3,10 @@
 A local tool layer and web UI for University of Melbourne coursework. An agent (Codex, through its computer use
 in the owner's own signed-in Microsoft Edge) reads Canvas and Ed pages; fixed code validates what it reads, stores
 it in one model, reports changes, plans the week, keeps revision material and long-term memory, and limits what the
-agent may do under graded autonomy (L0 read, L1 quizzes, L2 assignments and essays). Our code never calls a model
-API or holds an API key or Canvas token; it talks to the agent through one command registry exposed as CLI, MCP
-and HTTP.
+agent may do under graded autonomy (L0 read, L1 quizzes, L2 assignments and essays). Our code calls no model API
+directly and holds no API key or Canvas token: it starts the owner's signed-in agent (Codex by default, or Claude
+through the Agent SDK with `COURSEWORK_AGENT=claude`, #123) and talks to it through one command registry exposed
+as CLI, MCP and HTTP.
 
 Private, single-user, local-first: course data and the agent workspace stay in `.local/` and never enter git.
 
@@ -15,8 +16,7 @@ Version 1 is in owner acceptance on real data; see [the roadmap](note/product/ro
 what each one is waiting on. Implemented: the domain model and SQLite store; agent course reading with format,
 sanity and completeness checks; the command registry with reads, cited writes and autonomy checks over CLI, HTTP
 and MCP; week planning with estimates and actual time; revision records; long-term memory; metrics; and the web UI
-(week view, course pages, agent chat, memory panel). In design: a narrow Canvas API check of exact numbers and
-per-assessment AI policy. Later: email as a source.
+(week view, course pages, agent chat, memory panel). Later: email as a source.
 
 ## Commands
 
