@@ -26,7 +26,7 @@ contract seam for M3 and subsequent M2 issues; it does not select production sto
   retryability reuse `errors.ts`; no new wire error codes were introduced.
 - `src/protocol/registry.ts`: `Registry`, `RegistryEntry`, `createRegistry`, `dispatch`, and
   explicit `adaptLegacyHandler`. Entries contain exactly name/input/output/handler/level.
-- `src/protocol/context.ts`: host-injected repository, service, evidence, authorization, privacy,
+- `src/protocol/context.ts`: host-injected repository, service, evidence, authorization,
   owner interaction and audit/run ports. Repository access never opens SQLite
   from a handler. Only trusted host code creates this context; request fields cannot create it.
 - `src/protocol/fakes.ts`: independent synthetic `examples`, `FakeRepository`, `FakeServices`,
@@ -79,7 +79,6 @@ checks; registry levels and schema success do not grant authorization or verify 
 Fake contexts are fixture hosts only: their authorization/evidence services are permissive test
 stubs and `owner: true` selects a host-side fake capability, never a wire field. Fake services log
 cloned inputs and return fixed schema-valid receipts; they do not claim durable publication.
-Fake privacy uses the existing default-on redactor. Inject the actual trusted scope in production.
 Audit and run sinks receive only safe command/run/phase/code metadata from the dispatcher; their
 ports also allow optional target/revision/policy/grant references resolved by trusted D/H services.
 Unknown requested command text is withheld from envelopes and journals.
@@ -87,7 +86,7 @@ Unknown requested command text is withheld from envelopes and journals.
 Dispatcher failures preserve existing error codes/retryability while replacing raw messages with
 safe diagnostics (`AUTH_EXPIRED` still directs the user to sign in). Final metadata is applied
 before serialization is checked against the existing 64 KiB bound, including multibyte text.
-Invalid output is withheld, and output is validated again after the injected privacy boundary.
+Invalid output is withheld. There is no privacy boundary: output is not redacted (#191).
 
 ## 2. Reads and trusted evidence (B)
 
@@ -98,9 +97,8 @@ write path, authorization/citation service, dependency, domain field, table or m
 ### Mounting and continuation
 
 A trusted host assigns `new StoreProtocolReads(store, evidence, ports)` to `context.repository`.
-Use `TrustedStoreEvidence(store, { privacyScope, metadata })` for evidence. Inject the harvested
-identity scope from ingestion; do not feed request data into that configuration. The read boundary
-uses M1 `createRedactor` without an owner bypass or staff allow-list. The existing dispatcher still
+Use `TrustedStoreEvidence(store, { metadata })` for evidence; do not feed request data into that
+configuration. Reads return stored text without redaction (#191). The existing dispatcher still
 validates contracts, invokes authorization/audit/run ports and constructs the final envelope.
 Those services are independent and are not supplied by this read adapter.
 
@@ -132,8 +130,7 @@ cross-provider merging exists. The canonical M1 course/source identities remain 
 Only metadata-proven `page:N` or `page N` becomes `page N`. A material without verified metadata reports unsupported
 coverage, rather than guessing a PDF page from a title or URL. Non-material normalized M1 sources
 can use their canonical id as locator. Hashes cover the exact returned text, including whitespace;
-M1 `contentHash` covers other fields and is deliberately not used as a citation text hash. Persisted
-source text requiring further redaction is withheld so existing offsets/hashes cannot silently drift.
+M1 `contentHash` covers other fields and is deliberately not used as a citation text hash.
 Source lookup never opens a raw capture or private material file.
 
 Tasks resolve their recorded citation source ids in their course. Course/assessment schemas lack
@@ -143,8 +140,7 @@ The adapter reports provenance/coverage, not citation membership or answer corre
 
 `src/store/accepted-records.ts` supplies the read-only accepted-record port for D's eventual
 backend. Hosts may inject synthetic A/D adapters now. B revalidates accepted output schemas,
-course/week/revision filters, requested page bounds and supplied source evidence, and
-withholds accepted prose that would change under redaction. Accepted adapters own their opaque
+course/week/revision filters, requested page bounds and supplied source evidence. Accepted adapters own their opaque
 filter-bound continuation. Missing revision/practice adapters return `UNSUPPORTED` coverage;
 B does not create file/SQLite accepted persistence or manufacture accepted records. D audit reads
 have an explicit optional port; absent audit reports unsupported. Authentication expiry
@@ -152,8 +148,7 @@ retains `AUTH_EXPIRED` through Issue A, with no password prompt or token fallbac
 
 ### Integrated and pending paths
 
-- Integrated: M1 current courses/assessments/tasks/source items and run tables in SQLite; existing
-  M1 deterministic redactor; A contracts/ReadCommand/registry dispatch.
+- Integrated: M1 current courses/assessments/tasks/source items and run tables in SQLite; A contracts/ReadCommand/registry dispatch.
 - Integrated through injected trusted seams: canonical/legacy source identity and PDF page metadata,
   explicit entity-source links, accepted revision/practice reads and audit ports.
 - Pending: real M1 PDF extraction/private page metadata producer (absent in this checkout), Canvas
@@ -196,7 +191,7 @@ records. `check(command, input)` implements issue A's EvidenceService seam for t
 writes only; unsupported commands fail with `SOURCE_UNAVAILABLE`. Compose with other evidence
 adapters rather than installing it as a permissive all-command service.
 
-H (section 8) composes authorization, privacy, durable audit/run recording and publication-time
+H (section 8) composes authorization, durable audit/run recording and publication-time
 revision rechecks. This service alone neither publishes nor proves the correctness of a claim.
 Real M1 evidence adapters remain issue B; persistence/transport/layout changes are out of scope.
 
@@ -309,7 +304,7 @@ stdout })` in `src/protocol/mcp.ts` generate one tool per registry entry with th
 name. Each `inputSchema` is `z.toJSONSchema(entry.input, { io: 'input' })`; union roots are
 wrapped as `type: object`. The advertised schema is a hint only: the SDK does not validate
 arguments, and every `tools/call` runs `dispatch()` exactly once, so zod refinements,
-authorization, evidence, privacy and the 64 KiB envelope bound stay authoritative. The result
+authorization, evidence and the 64 KiB envelope bound stay authoritative. The result
 is one text content item holding the `coursework.agent/v1` envelope, with `isError` set on
 failure. Unknown tools return `NOT_FOUND` for command `unknown`; raw errors and input are not
 echoed.

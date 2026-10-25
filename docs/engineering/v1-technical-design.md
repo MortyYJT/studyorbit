@@ -161,6 +161,7 @@ Rejected: computer use (screenshot-driven clicking): slow, costly, non-determini
   `changes --since <cursor>`. Current-state tables remain the source of truth.
 - **Redaction** (#60): deterministic. Names harvested from author and people fields in the data, plus regexes for
   emails, student numbers and phone numbers, plus owner rules and an allow-list (staff names). On by default (#19).
+  (Removed by #191: there is no runtime redaction any more; see section 6, Q1.)
 - **Run ledger**: start, end, pages/requests, failures, per-source coverage; this is where resume metrics come from.
 
 ### M2 protocol

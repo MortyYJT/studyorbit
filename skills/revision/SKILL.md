@@ -32,7 +32,7 @@ There is no scheduled revision stage in v1.
 4. After recording, call `revision.read` again for the current `sourceRevision`.
    Record scope with `revision.write` using `type: "exam-scope"` and `topics`:
    each topic is `{ text, citations: [{ sourceItemId, quote, locator }] }`.
-   Scope is per course, so omit `week`. Copy quotes and locators from stored redacted
+   Scope is per course, so omit `week`. Copy quotes and locators from stored
    evidence exactly; one invalid quote rejects the entire write.
 5. Write notes through `revision.write` with `claims` (optional `type: "note"`,
    optional teaching `week`). Write questions through `practice.write` with
