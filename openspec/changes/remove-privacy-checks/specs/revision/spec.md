@@ -19,3 +19,13 @@ A `source.record` agent command SHALL take a course id, a Canvas or Ed page URL 
 - **WHEN** the URL points outside the Canvas and Ed origins
 - **THEN** nothing is stored and the refusal names the reason
 
+### Requirement: Revision skill
+The repository SHALL ship an agent skill used by the "prepare revision", "tutor revision" and "wrong answers only" presets. Preparing SHALL stop with a clear message when the needed site shows a sign-in page; find the exam scope and course content through L0 reads and the owner's Edge, recording what it cites with `source.record` (never discussion threads); and write the exam scope, revision notes and practice questions through the validated writes, each claim cited to a stored source, reporting counts of accepted and rejected writes in the chat. Tutoring SHALL read the stored notes and questions, quiz the owner, explain answers with their stored citations, record attempts, and say plainly when stored material does not cover a question rather than inventing a source. The skill MUST NOT answer graded work. There is no scheduled stage in v1 (#127, #144).
+
+#### Scenario: Signed out
+- **WHEN** preparation starts and Canvas shows a sign-in page
+- **THEN** it reads nothing, writes nothing and asks the owner to sign in
+
+#### Scenario: Question outside stored material
+- **WHEN** the owner asks about a topic with no stored note
+- **THEN** the agent says the material does not cover it and offers to prepare it, without fabricating a citation

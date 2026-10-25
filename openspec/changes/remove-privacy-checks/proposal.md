@@ -5,6 +5,7 @@ The first real per-course sync stored COMP20003 with a grading group named `Lect
 ## What Changes
 
 - **BREAKING (policy):** Remove deterministic redaction and privacy refusals everywhere: classmate names, emails, student numbers, phone numbers, credential-like text, local file paths, markup characters (`<` `>`), control characters and personal-data keys. Text is stored and returned as given (NFKC normalization and size bounds stay).
+- Source evidence returned by reads loses its `redacted: true` marker, which no longer holds.
 - Remove the redactor (`src/sync/redaction.ts`) and the read-privacy layer (`src/protocol/read-privacy.ts`), the `privacyScope` option, and the dispatch-time `privacy.protect` step.
 - Memory text (agent and owner), the facts brief and `source.record` material are no longer redacted.
 - Keep citation integrity: source id, course binding, provider origin, content hash and locator checks, and exact normalized substring citations, still refuse mismatches.
