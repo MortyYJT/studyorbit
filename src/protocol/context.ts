@@ -35,7 +35,6 @@ export interface TrustedContext {
   services: ProtocolServices;
   evidence: EvidenceService;
   authorization: AuthorizationService;
-  privacy: { protect(command: string, data: unknown): Promise<unknown> };
   audit: { record(event: AuditEvent): Promise<void> };
   /** Audit and operational runs are distinct; neither receives request prose or raw errors. */
   runs: { record(event: AuditEvent): Promise<void> };

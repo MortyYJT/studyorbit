@@ -39,7 +39,7 @@ Canvas / Ed
    │  capture: Playwright on the managed profile (replaced in C-2/C-3 by Codex reading in the owner's Edge)
    ▼
 raw snapshots (.local/, never in git)
-   │  normalize → redact → diff
+   │  normalize → diff (#191: no redaction)
    ▼
 SQLite current-state tables  +  change_event (append-only, cursor)  +  run ledger  +  audit log
    │
@@ -105,7 +105,7 @@ Order is by dependency. No target dates (#67). Each milestone ends with an accep
 | --- | --- | --- | --- |
 | S0 | Finish `capture-selection-ed` | Issue C review and merge, tasks 3.7–3.10, archive `v1-foundation` then this change | — |
 | Q1 | `ed-quiz-assist` | First real scenario: an Ed quiz due 2026-10-25 (section 6) | S0 issue C |
-| M1 | `v1-sync` | Canvas JSON + Ed JSON + course materials (PDF text), normalize, redact, diff, change events, run ledger | S0 |
+| M1 | `v1-sync` | Canvas JSON + Ed JSON + course materials (PDF text), normalize, diff, change events (#191 removes redaction), run ledger | S0 |
 | M2 | `v1-protocol` | Command registry; CLI, MCP and HTTP transports; read commands; validated writes (breakdown, revision notes, practice questions, quiz answers); course AI policy and grants; audit log | M1 schemas |
 | M3 | `v1-ui` | Calendar, tasks, modules, grade projection, EDF plan, study page, answer review and submit confirmation, chat panel | M2 contracts |
 | M4 | `v1-loop` | Hermes MCP mount and skill, scheduled sync, push, automatic revision before exams, L4 submit through the Ed endpoint learned in Q1 | M2, M3 |
@@ -118,7 +118,7 @@ up to three Codex lines in separate clones, coordinated by one Claude session (#
 Decision #75. Goal: use the system on a real graded Ed quiz before 2026-10-25, without risking the grade on untested code.
 
 1. Read the quiz questions from Ed's lesson JSON through the existing Ed transport (no `view=1`).
-2. Expose them to the agent as a read command, after the redaction pass below; the agent proposes answers.
+2. Expose them to the agent as a read command, without redaction (#191); the agent proposes answers.
    Each proposal cites the question it answers, and any statement drawn from course material cites that
    material; the citation check (#63) runs on every proposal and rejects it on failure.
 3. The owner reviews the answers in the terminal (UI comes in M3).
@@ -126,8 +126,14 @@ Decision #75. Goal: use the system on a real graded Ed quiz before 2026-10-25, w
 5. During that submission, record the request Ed sends (method, path, body shape; tokens stripped) to `.local/`,
    so M4 can implement L4 through the endpoint instead of the page.
 
-Q1 carries the minimum of M1 and M2 it needs, so no red line is skipped: a deterministic redaction pass over quiz
-text before it reaches the agent (emails, student numbers, phone numbers, names from author fields); the citation
+Q1 originally included deterministic redaction of quiz text. Decision #191 removes all runtime redaction and
+privacy refusals: the owner accepts that names, emails, identifiers, credential-shaped text and local paths can
+reach the model and local database unchanged. This applies to reads, source recording, agent and owner memories,
+and facts briefs. NFKC normalization, text size limits and control/format-character stripping on copied text stay.
+Previously redacted data is not restored. Citation integrity (source identity, course binding, provider provenance,
+content hash, exact normalized substring matching and page locators) and `source.record` URL restrictions
+(discussion, announcement, authentication and off-origin URLs) stay. Browser profiles, keys, secrets and
+unredacted real course data remain forbidden in the repository and fixtures. Q1 also included the citation
 check; a per-assessment L3 grant read from a local file under `.local/`; and an append-only local audit log of
 read, propose, fill and recorded-submission events. M1 and M2 later replace these with the full versions.
 

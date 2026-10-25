@@ -5,7 +5,6 @@ import { contracts, RevisionRecordSchema, PracticeRecordSchema, VerifiedCitation
 import type { ProtocolServices, ServiceInput, TrustedContext, WriteCommand } from './context.js';
 import { StudyCitationService, type StudyCommand, type StudyEvidenceProvider } from './citations.js';
 import { CourseworkError } from './errors.js';
-import { protectRead } from './read-privacy.js';
 
 /** Accepted breakdown operational record; the Task copy is unchanged M1-compatible structure. */
 export const BreakdownRecordSchema = z.strictObject({ id: IdSchema, revision: z.uuid(), previousRevision: z.uuid().optional(),
@@ -59,10 +58,8 @@ const study = new Set<string>(['breakdown.write', 'revision.write', 'practice.wr
 /** Validated study writes at their registered levels. No model call, direct SQL or request-supplied evidence is accepted. */
 export class StudyWriteService implements ProtocolServices {
   private readonly citations: StudyCitationService;
-  private readonly privacy: (value: unknown) => unknown;
-  constructor(private readonly options: { provider: StudyEvidenceProvider; store: StudyRecordStore; privacy?: (value: unknown) => unknown }) {
+  constructor(private readonly options: { provider: StudyEvidenceProvider; store: StudyRecordStore }) {
     this.citations = new StudyCitationService(options.provider);
-    this.privacy = options.privacy ?? (value => protectRead(value));
   }
   async write<N extends WriteCommand>(name: N, input: ServiceInput<N>, context: TrustedContext): Promise<CommandOutput<N>> {
     if (!study.has(name)) throw new CourseworkError('SOURCE_UNAVAILABLE', 'The requested write service is unavailable.');
@@ -70,11 +67,8 @@ export class StudyWriteService implements ProtocolServices {
     const parsed = contracts[command].input.safeParse(input);
     if (!parsed.success) throw new CourseworkError('INVALID_INPUT', 'Invalid study write.');
     const data = parsed.data;
-    // Rechecked here so a direct service call cannot skip the registered authorization gate or privacy boundary.
+    // Rechecked here so a direct service call cannot skip the registered authorization gate.
     await context.authorization.check(command, contracts[command].level, data);
-    let safe: unknown;
-    try { safe = this.privacy(data); } catch { safe = undefined; }
-    if (JSON.stringify(safe) !== JSON.stringify(data)) throw new CourseworkError('INVALID_INPUT', 'Study write contains unsafe personal or private text.');
     const target = 'task' in data ? { courseId: data.task.courseId!, assessmentId: data.assessmentId } : { courseId: data.courseId };
     const id = 'task' in data ? data.task.id : `${command.split('.')[0]}-${hash([data.courseId, data.week ?? null, ...('topics' in data ? ['exam-scope'] : [])]).slice(0, 32)}`;
     return this.options.store.exclusive(`${command}:${id}`, async () => {

@@ -10,11 +10,11 @@ const snapshotSchema = z.strictObject({ target: targetSchema, sourceRevision: Ha
   sources: z.array(SourceEvidenceSchema).max(500) });
 export interface StudyEvidenceProvider {
   /** Host-injected adapter must independently resolve assessment/course binding and current revision.
-   * Return redacted evidence in that target scope, never copied request evidence.
+   * Return stored evidence in that target scope, never copied request evidence.
    */
   resolve(target: StudyTarget): Promise<z.infer<typeof snapshotSchema>>;
 }
-/** Citation-only service. H still owns authorization, privacy, auditing and publication rechecks. */
+/** Citation-only service. H still owns authorization, auditing and publication rechecks. */
 export class StudyCitationService implements EvidenceService {
   constructor(private readonly provider: StudyEvidenceProvider) {}
   async check(command: CommandName, input: unknown): Promise<void> {

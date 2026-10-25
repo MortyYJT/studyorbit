@@ -4,13 +4,12 @@ import { hash } from '../../src/citations/exact.js';
 import { StudyCitationService, type StudyEvidenceProvider, type StudyTarget } from '../../src/protocol/citations.js';
 import { StudyWriteService, InMemoryStudyRecordStore } from '../../src/protocol/study-writes.js';
 import { createRegistry, dispatch } from '../../src/protocol/registry.js';
-import { protectRead } from '../../src/protocol/read-privacy.js';
 import { createFakeContext } from '../../src/protocol/fakes.js';
 import { CourseworkError } from '../../src/protocol/errors.js';
 
 const text = 'Synthetic lecture text. Recursion needs a base case.';
 const source = { sourceItemId: 'synthetic-source', courseId: 'course-a', text, sourceHash: hash(text), locator: 'page:3', page: 3,
-  provenance: 'manual' as const, redacted: true as const };
+  provenance: 'manual' as const };
 const citation = { sourceItemId: source.sourceItemId, quote: 'Recursion needs a base case.', locator: 'page:3' };
 const claim = { text: 'Recursive functions need a stopping case.', citations: [citation] };
 const revision = hash('synthetic-source-revision');
@@ -39,7 +38,6 @@ function setup(state?: { revision: string; delay?: number; calls?: number }) {
   const evidence = provider(state); const store = new InMemoryStudyRecordStore();
   const service = new StudyWriteService({ provider: evidence, store });
   const context = createFakeContext(); context.services = service; context.evidence = new StudyCitationService(evidence);
-  context.privacy = { protect: async (_command, value) => protectRead(value) };
   return { evidence, store, service, context, registry: createRegistry() };
 }
 
@@ -107,19 +105,16 @@ describe('8.1 validated study writes', () => {
     expect(await store.current('revision.write', id)).toEqual(before);
   });
 
-  it.each(commands)('%s rejects unsafe personal text without storing or echoing it', async command => {
+  it.each(commands)('%s retains personal text while preserving citation checks', async command => {
     const { store, context, registry } = setup();
     const input = structuredClone(inputs[command]) as Record<string, unknown>;
-    const unsafe = 'Ask alice.sentinel@student.example for help.';
-    if (command === 'revision.write') (input.claims as { text: string }[])[0]!.text = unsafe;
-    else if (command === 'practice.write') (input.questions as { answer: string }[])[0]!.answer = unsafe;
-    else (input.task as { title: string }).title = unsafe;
-    // The write service rechecks privacy itself, even when called outside the dispatcher.
-    await expect(new StudyWriteService({ provider: provider(), store }).write(command, input as never, context)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    const text = 'Ask alice.sentinel@student.example for help.';
+    if (command === 'revision.write') (input.claims as { text: string }[])[0]!.text = text;
+    else if (command === 'practice.write') (input.questions as { answer: string }[])[0]!.answer = text;
+    else (input.task as { title: string }).title = text;
     const result = await dispatch(registry, command, input, context);
-    expect(result).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
-    expect(store.size()).toBe(0);
-    expect(JSON.stringify([result, context.events, context.runEvents])).not.toContain('alice.sentinel');
+    expect(result).toMatchObject({ ok: true });
+    expect(store.size()).toBe(1);
   });
 
   it('rejects a breakdown whose task.courseId differs from the assessment course resolved by the evidence provider', async () => {

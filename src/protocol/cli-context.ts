@@ -7,7 +7,6 @@ export function unavailableCLIContext(): TrustedContext {
   return {
     repository: { read: unavailable }, services: { write: unavailable },
     authorization: { check: unavailable }, evidence: { check: unavailable },
-    privacy: { protect: async (_command, data) => data },
     // No operational backend is selected by the transport. Q1 owns its existing journals.
     audit: { record: async () => {} }, runs: { record: async () => {} },
   };

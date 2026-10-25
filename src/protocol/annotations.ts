@@ -38,7 +38,7 @@ const courseFields = ['assessmentsComplete', 'aiPolicy'] as const;
 const invalid = () => new CourseworkError('INVALID_INPUT', 'Invalid annotation or course binding.');
 const conflict = () => new CourseworkError('CONFLICT', 'Annotation target changed; refresh before retrying.');
 
-/** Append-only annotations share trusted source, privacy and dispatch ledger boundaries with study writes. */
+/** Append-only annotations share trusted source and dispatch ledger boundaries with study writes. */
 export class AnnotationService {
   constructor(private readonly store: SqliteRepository, private readonly evidence: TrustedStoreEvidence) {}
   private target(entity: 'assessment' | 'course', id: string) {
@@ -69,7 +69,6 @@ export class AnnotationService {
     });
   }
   private safe(value: unknown) {
-    if (JSON.stringify(this.evidence.protect(value)) !== JSON.stringify(value)) throw invalid();
   }
   read(input: unknown) {
     const data = annotationContracts['annotation.read'].input.parse(input);

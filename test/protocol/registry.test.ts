@@ -77,15 +77,13 @@ describe('transport-independent dispatcher', () => {
       expect(JSON.stringify([result, context.events, context.runEvents])).not.toContain(name);
     }
   });
-  it('checks auth and privacy, validates defaults and executes once', async () => {
+  it('checks authorization, validates defaults and executes once', async () => {
     const { registry, context, handler } = setup();
     const authorize = vi.spyOn(context.authorization, 'check');
-    const privacy = vi.spyOn(context.privacy, 'protect');
     const result = await dispatch(registry, 'synthetic', {}, context);
     expect(result).toMatchObject({ ok: true, data: { value: 'safe' }, protocol: 'coursework.agent/v1' });
     expect(handler).toHaveBeenCalledTimes(1);
     expect(authorize).toHaveBeenCalledTimes(1);
-    expect(privacy).toHaveBeenCalledTimes(1);
     expect(context.events.every(e => e.runId === result.meta.runId)).toBe(true);
   });
   it('denies malformed inputs and authorization before handler invocation', async () => {
@@ -133,14 +131,12 @@ describe('transport-independent dispatcher', () => {
     expect(JSON.stringify(context.events)).not.toContain('raw answer');
     expect(context.events.at(-1)).toMatchObject({ phase: 'denial', code: 'CITATION_MISMATCH' });
   });
-  it('validates again after privacy and fails closed when audit or privacy is unavailable', async () => {
+  it('fails closed when audit is unavailable', async () => {
     const { registry, context, handler } = setup();
     context.audit.record = async () => { throw new Error('private path'); };
     expect(await dispatch(registry, 'synthetic', {}, context)).toMatchObject({ ok: false, error: { code: 'INTERNAL' } });
     expect(handler).not.toHaveBeenCalled();
-    const other = setup();
-    other.context.privacy.protect = async () => ({ value: 1 });
-    expect(await dispatch(other.registry, 'synthetic', {}, other.context)).toMatchObject({ ok: false });
+
   });
   it('adapts legacy success and every failure code without double wrapping or unsafe messages', async () => {
     const legacy = vi.fn(async () => ok('old', { value: 'safe' }));

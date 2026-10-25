@@ -59,7 +59,7 @@ Study writes use cited claim units; breakdown uses a strict, bounded copy of M1 
 existing refinements.
 
 Source evidence text is validated without trimming or other normalization. Its hash and citation
-UTF-16 offsets refer to the exact redacted text returned by the trusted evidence service. The same
+UTF-16 offsets refer to the exact stored text returned by the trusted evidence service. The same
 rule applies to `sources.get`, material items and evidence embedded in paginated reads.
 
 `policy.record` returns `{ recorded: 'policy', policyRef, courseId, status, cap, recordedAt }`;
@@ -169,7 +169,7 @@ retains `AUTH_EXPIRED` through Issue A, with no password prompt or token fallbac
 `src/citations/exact.ts` provides `validateCitation(input, trusted)` and the unchanged Q1
 `hash` / `normalizeCitation` helpers. The input is the existing strict Citation shape:
 `sourceItemId`, `quote`, `locator`. Trusted evidence contains those source identifiers,
-the original redacted `text`, its SHA-256 `sourceHash`, and optional verified `page`.
+the original stored `text`, its SHA-256 `sourceHash`, and optional verified `page`.
 Do not obtain that evidence from request fields. Invalid quotes, identifiers, locators,
 metadata or stale text hashes throw the safe `CITATION_MISMATCH` error.
 
@@ -178,7 +178,7 @@ whitespace, with a nonempty, case-sensitive exact substring. It chooses the firs
 Offsets are zero-based UTF-16 indices into the original trusted text, with exclusive `end`.
 Grapheme mapping retains combining characters, surrogate pairs and compatibility expansions;
 a match inside an expanded grapheme maps to that entire original grapheme. Hashes cover the
-original redacted text, not its normalized projection. A supplied trusted PDF page must agree
+original stored text, not its normalized projection. A supplied trusted PDF page must agree
 with `page:N`; the study adapter also rejects page locators without a verified page number.
 
 `StudyCitationService` in `src/protocol/citations.ts` accepts a host-injected

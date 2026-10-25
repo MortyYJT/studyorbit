@@ -44,7 +44,7 @@ function fixture(overrides: Record<string, (input: Record<string, unknown>) => u
         history: [], coverage: { complete: true, gaps: [] }, links: value.entity === 'course' ? [] : [{ assessmentId: 'quiz', sourceItemId: 'src-outline', origin: 'sync', at: '2026-10-01T00:00:00Z' }] }),
       'tasks.list': () => page(),
       'sources.get': () => ({ sourceItemId: 'src-outline', courseId: 'c1', text: 'Quiz 2 is worth 5%.', sourceHash: hash, locator: 'src-outline',
-        provenance: 'canvas', url: 'https://canvas.example.test/courses/1/pages/outline', redacted: true }),
+        provenance: 'canvas', url: 'https://canvas.example.test/courses/1/pages/outline' }),
       ...overrides,
     };
     const handler = handlers[command] ?? (() => ({ recorded: true }));
@@ -136,7 +136,7 @@ it('records estimates and actual time, including for graded work outside the pla
 
 it('Agent-copied source: concurrent source reads all land, and the copied marker reaches the drawer state', async () => {
   const fetcher = fixture({ 'sources.get': input => ({ sourceItemId: input.sourceItemId, courseId: 'c1', text: 'Synthetic text.', sourceHash: hash,
-    locator: 'page:1', page: 1, provenance: 'canvas', redacted: true, ...(input.sourceItemId === 'copied' ? { copiedBy: 'agent' } : {}) }) });
+    locator: 'page:1', page: 1, provenance: 'canvas', ...(input.sourceItemId === 'copied' ? { copiedBy: 'agent' } : {}) }) });
   const store = new CourseStore(createClient(undefined, fetcher), 'c1');
   await Promise.all([store.source('platform'), store.source('copied')]);
   expect(Object.keys(store.getSnapshot().sources).sort()).toEqual(['copied', 'platform']);

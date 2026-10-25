@@ -4,7 +4,6 @@ import { contracts, type CommandName, type CommandInput, type CommandOutput, typ
 import { createRegistry } from './registry.js';
 import type { TrustedContext, AuditEvent, ReadCommand, WriteCommand, ProtocolRepository, ProtocolServices, ServiceInput } from './context.js';
 import { CourseworkError } from './errors.js';
-import { protectRead } from './read-privacy.js';
 
 const revision = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const digest = 'a'.repeat(64);
@@ -13,7 +12,7 @@ const binding = { assessmentId: 'synthetic-assessment', course: '7', lesson: '11
 const citation = { sourceItemId: 'synthetic-source', quote: 'Read the synthetic guide.', locator: 'page:1' };
 const verified = { ...citation, offset: 0, end: 25, sourceHash: digest, page: 1 };
 const source = { sourceItemId: citation.sourceItemId, courseId: 'synthetic-course', text: citation.quote,
-  sourceHash: digest, locator: citation.locator, page: 1, provenance: 'manual' as const, redacted: true as const };
+  sourceHash: digest, locator: citation.locator, page: 1, provenance: 'manual' as const };
 const course = { id: 'synthetic-course', moduleId: 'synthetic-module', code: 'SYN10001', name: 'Synthetic course', term: 'Synthetic term', assessmentsComplete: false };
 const assessment = { id: binding.assessmentId, courseId: course.id, name: 'Synthetic assessment', kind: 'assignment' as const,
   weight: 10, isFinal: false, status: 'not_started' as const };
@@ -84,13 +83,10 @@ export class FakeServices implements ProtocolServices {
 export function createFakeRegistry() { return createRegistry(); }
 export function createFakeContext(options: { owner?: boolean } = {}) {
   const events: AuditEvent[] = []; const runEvents: AuditEvent[] = []; const actionCalls: string[] = [];
-  // Same privacy boundary as production reads: free text is redacted, structural ids are validated, not rewritten.
-  const clean = (value: unknown): unknown => protectRead(value);
   const context: TrustedContext & { events: AuditEvent[]; runEvents: AuditEvent[]; actionCalls: string[] } = {
     repository: new FakeRepository(), services: new FakeServices(),
     // Contract fixtures deliberately do not claim production evidence/authorization verification.
     evidence: { check: async () => {} }, authorization: { check: async () => {} },
-    privacy: { protect: async (_command, data) => clean(data) },
     audit: { record: async event => { events.push({ ...event }); } },
     events, runEvents, actionCalls,
     runs: { record: async event => { runEvents.push({ ...event }); } },

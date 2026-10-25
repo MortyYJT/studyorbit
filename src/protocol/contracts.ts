@@ -15,11 +15,11 @@ export const CitationInputSchema = CitationSchema.strict().extend({ sourceItemId
 export const VerifiedCitationSchema = CitationInputSchema.extend({ offset: count, end: count, sourceHash: HashSchema,
   page: z.number().int().positive().safe().optional() }).refine(c => c.end > c.offset);
 export const ClaimSchema = z.strictObject({ text, citations: z.array(CitationInputSchema).min(1).max(100) });
-// Hashes and citation offsets refer to this exact redacted text; validation must not transform it.
+// Hashes and citation offsets refer to this exact stored text; validation must not transform it.
 const sourceText = z.string().min(1).max(100000).refine(value => value.trim().length > 0);
 export const SourceEvidenceSchema = z.strictObject({ sourceItemId: IdSchema, courseId: IdSchema, text: sourceText,
   sourceHash: HashSchema, locator: text, page: z.number().int().positive().safe().optional(),
-  provenance: z.enum(['canvas', 'ed', 'manual']), url: z.url().max(2048).optional(), redacted: z.literal(true),
+  provenance: z.enum(['canvas', 'ed', 'manual']), url: z.url().max(2048).optional(),
   // Set when the agent supplied the text (`source.record`): a citation shows the quote is in the recorded text, not that the page says it.
   copiedBy: z.literal('agent').optional() });
 export const CoverageSchema = z.strictObject({ complete: z.boolean(), gaps: z.array(z.strictObject({

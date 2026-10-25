@@ -242,7 +242,7 @@ export type Run = z.infer<typeof RunSchema>;
 export type SyncOutcome = z.infer<typeof SyncOutcomeSchema>;
 export type CourseCoverage = z.infer<typeof CourseCoverageSchema>;
 /**
- * Long-term memory (C-4): an agent observation or an owner note. Text is redacted before it is stored; `deletedAt` marks a
+ * Long-term memory (C-4): an agent observation or an owner note. Text is stored without redaction (#191); `deletedAt` marks a
  * soft delete, after which the memory is never listed or sent to an agent again.
  */
 export const MemoryKindSchema = z.enum(['habit', 'weakness', 'preference', 'other']);

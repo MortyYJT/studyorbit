@@ -104,14 +104,13 @@ it('6.4 use my value atomically records owner value and incorrect verdict; agent
   expect(await f.read()).toMatchObject({ data: { fields: { weight: { value: 25, origin: 'owner' } }, history: [{ verdicts: [{ verdict: 'incorrect' }] }, { origin: 'owner' }] } });
   expect(await f.call('annotation.confirm', { entity: input.entity, entityId: input.entityId, field: input.field, annotationId: input.annotationId }, true)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
 });
-it('rejects unsafe, malformed and wrong-course annotation claims without publication', async () => {
+it('rejects malformed and wrong-course annotation claims without publication', async () => {
   const f = await fixture();
   for (const extra of [{ value: 101 }, { value: 'person@example.test' }, { field: 'status', value: 'graded' }, { citations: [] },
     { citations: [{ sourceItemId: 'foreign', locator: 'foreign', quote: 'Other' }] }, { origin: 'owner' }]) {
     expect(await f.annotate('weight', 40, extra)).toMatchObject({ ok: false });
     expect(f.store.readAnnotations('assessment', 'a')).toHaveLength(0);
   }
-  expect(await f.annotate('name', 'person@example.test')).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
   expect(await f.call('assessment.create', { courseId: 'c', sourceRevision: f.revision(), name: { value: 'Workshops', citations: f.cite('Workshops') }, weight: { value: 10, citations: f.cite('Invented') } })).toMatchObject({ ok: false });
   expect(f.store.query('assessments', { courseId: 'c', limit: 100 }).items).toHaveLength(2);
 });

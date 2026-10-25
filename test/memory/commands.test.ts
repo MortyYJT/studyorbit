@@ -6,10 +6,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createProductionProtocol } from '../../src/protocol/production.js';
 import { dispatch } from '../../src/protocol/registry.js';
+import { parseProtocolCLI } from '../../src/protocol/cli.js';
 import { ownerCommands } from '../../src/protocol/contracts.js';
 import { createMcpServer } from '../../src/protocol/mcp.js';
 import { collectBrief } from '../../src/memory/brief.js';
-import { MEMORY_UNSAFE } from '../../src/memory/service.js';
 
 type Result = { ok: boolean; data?: any; error?: { code: string; message: string; retryable: boolean } };
 const roots: string[] = []; const hosts: ReturnType<typeof createProductionProtocol>[] = []; const closers: (() => Promise<void>)[] = [];
@@ -61,13 +61,6 @@ it('Too long or unknown course: refused and nothing is stored', async () => {
   expect(host.store.listMemories()).toEqual([]);
 });
 
-it('text the redactor cannot make safe is refused with a fixed, non-retryable message', async () => {
-  const { asAgent, host } = await setup();
-  const refused = await asAgent('memory.record', { kind: 'other', text: 'Their api_key=abc123 works' }, 'v-1');
-  expect(refused).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: MEMORY_UNSAFE, retryable: false } });
-  expect(host.store.listMemories()).toEqual([]);
-});
-
 it('Owner adds a memory: origin owner and no source conversation', async () => {
   const { asOwner, list } = await setup();
   expect(await asOwner('memory.add', { kind: 'preference', text: 'Explain with an example first' })).toMatchObject({ ok: true, data: { recorded: true } });
@@ -87,15 +80,6 @@ it('Owner edits an observation: text changes, creation time and source stay, edi
   expect((await list())[0]).toMatchObject({ text: 'Confuses eigenvalues with eigenvectors', editedAt: after.editedAt });
   expect(await asOwner('memory.edit', { id: data.id })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
   expect(await asOwner('memory.edit', { id: 'missing', text: 'x' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
-});
-
-it('Owner text is redacted: a classmate\'s email is masked before it is stored', async () => {
-  const { asOwner, host } = await setup();
-  expect(await asOwner('memory.add', { kind: 'other', text: 'Study group with someone@student.unimelb.edu.au on Fridays' })).toMatchObject({ ok: true });
-  const [stored] = host.store.listMemories();
-  expect(stored!.text).toBe('Study group with [redacted] on Fridays');
-  expect(collectBrief(host.store, {})).not.toContain('someone@student.unimelb.edu.au');
-  expect(await asOwner('memory.add', { kind: 'other', text: 'password: hunter2' })).toMatchObject({ ok: false, error: { message: MEMORY_UNSAFE } });
 });
 
 it('Owner deletes a wrong observation: gone from memory.list, the row remains marked deleted, later edits refused', async () => {
@@ -168,32 +152,22 @@ it('chat backend attributes memory.record through the scope of every supplied to
   expect((await list())[0]).toMatchObject({ conversationId: c.id, text: 'Scoped observation' });
 });
 
-it('redacts trusted known identities before record, add and edit are persisted', async () => {
-  const { asAgent, asOwner, host } = await setup({ privacyScope: { classmates: [{ name: 'Jane Example' }] } });
+it('retains personal details in agent record, owner add and edit', async () => {
+  const { asAgent, asOwner, host } = await setup();
   const recorded = await asAgent('memory.record', { kind: 'habit', text: 'Studies with Jane Example' });
   expect(recorded).toMatchObject({ ok: true });
-  expect(host.store.loadMemory(recorded.data.id)!.text).toBe('Studies with [redacted]');
+  expect(host.store.loadMemory(recorded.data.id)!.text).toBe('Studies with Jane Example');
   const added = await asOwner('memory.add', { kind: 'other', text: 'Reviews with Jane Example' });
   expect(added).toMatchObject({ ok: true });
-  expect(host.store.loadMemory(added.data.id)!.text).toBe('Reviews with [redacted]');
+  expect(host.store.loadMemory(added.data.id)!.text).toBe('Reviews with Jane Example');
   expect(await asOwner('memory.edit', { id: added.data.id, text: 'Practises with Jane Example' })).toMatchObject({ ok: true });
-  expect(host.store.loadMemory(added.data.id)!.text).toBe('Practises with [redacted]');
-  const before = host.store.listMemories();
-  for (const [command, input] of [
-    ['memory.record', { kind: 'other', text: 'api_key=synthetic' }],
-    ['memory.add', { kind: 'other', text: 'api_key=synthetic' }],
-    ['memory.edit', { id: added.data.id, text: 'api_key=synthetic' }],
-  ] as const) {
-    const result = command === 'memory.record' ? await asAgent(command, input) : await asOwner(command, input);
-    expect(result).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: MEMORY_UNSAFE, retryable: false } });
-  }
-  expect(host.store.listMemories()).toEqual(before);
+  expect(host.store.loadMemory(added.data.id)!.text).toBe('Practises with Jane Example');
+
 });
 
-it('passes the trusted identity scope to the brief delivered to the chat adapter', async () => {
+it('passes stored personal details to the brief delivered to the chat adapter', async () => {
   const briefs: string[] = [];
-  const { host } = await setup({ privacyScope: { classmates: [{ name: 'Jane Example' }] },
-    agentAdapter: { id: 'synthetic', start(input) {
+  const { host } = await setup({ agentAdapter: { id: 'synthetic', start(input) {
       briefs.push(input.brief!);
       return { async *[Symbol.asyncIterator]() { yield { type: 'result' as const, turns: 1 }; }, interrupt() {} };
     } } });
@@ -201,6 +175,37 @@ it('passes the trusted identity scope to the brief delivered to the chat adapter
   const c = await host.chat.create({ courseId: 'c-1' }, owner);
   await host.chat.send(c.id, 'Synthetic request', owner); await host.chat.waitForIdle(c.id);
   expect(briefs).toHaveLength(1);
-  expect(briefs[0]).toContain('Review with [redacted]');
-  expect(briefs[0]).not.toContain('Jane Example');
+  expect(briefs[0]).toContain('Review with Jane Example');
+});
+
+
+it('#191 returns stored classmate details and owner memory unchanged', async () => {
+  const { host, asAgent, asOwner, list } = await setup();
+  const text = 'Synthetic Person synthetic@example.invalid';
+  host.store.saveCourse({ ...host.store.loadCourse('c-1')!, name: text });
+  const memory = await asOwner('memory.add', { kind: 'other', text });
+  expect(await asAgent('courses.list', {})).toMatchObject({ ok: true, data: { items: [expect.objectContaining({ name: text })] } });
+  expect(memory).toMatchObject({ ok: true });
+  expect(host.store.loadMemory(memory.data.id)!.text).toBe(text);
+  expect(await list()).toEqual([expect.objectContaining({ text })]);
+  expect(collectBrief(host.store, {})).toContain(text);
+});
+
+
+it('CLI and MCP return stored classmate details unchanged (#191)', async () => {
+  const { host } = await setup();
+  const text = 'Synthetic Person synthetic@example.invalid';
+  host.store.saveCourse({ ...host.store.loadCourse('c-1')!, name: text });
+  const output: string[] = [];
+  await parseProtocolCLI(['courses', 'list', '--json'], { registry: host.registry, context: host.context,
+    stdout: line => output.push(line), stderr: () => {} });
+  expect(JSON.parse(output[0]!)).toMatchObject({ ok: true, data: { items: [expect.objectContaining({ name: text })] } });
+  const server = createMcpServer({ registry: host.registry, context: host.context, stderr: () => {} });
+  const client = new Client({ name: 'synthetic-client', version: '0.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  closers.push(async () => { await client.close(); await server.close(); });
+  await server.connect(serverTransport); await client.connect(clientTransport);
+  const result = await client.callTool({ name: 'courses.list', arguments: {} });
+  expect(JSON.parse((result.content as { text: string }[])[0]!.text))
+    .toMatchObject({ ok: true, data: { items: [expect.objectContaining({ name: text })] } });
 });
