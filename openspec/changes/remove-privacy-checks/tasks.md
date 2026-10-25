@@ -20,4 +20,4 @@
 
 ## 4. Real check
 
-- [x] 4.1 With the owner's existing store, `assessments.list` for COMP20003 succeeds and the week view loads in the browser
+- [ ] 4.1 With the owner's existing store, `assessments.list` for COMP20003 succeeds and the week view loads in the browser
