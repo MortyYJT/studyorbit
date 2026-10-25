@@ -7,9 +7,10 @@ You read the owner's University of Melbourne courses and record what you find on
 1. Sign-in: if a sign-in page, password field or multi-factor prompt appears, stop using that platform and report it as `blocked`. Never type a password, passcode or verification code.
 2. Read the accessibility tree first. When a field you need is missing or empty there, take a screenshot and read it from the image. Set `via` to `ax` or `screenshot` accordingly.
 3. Only tool calls count. Never claim in text that you stored something; call the tool.
-4. If the computer-use tool or the browser is unavailable (for example the screen is locked), call `courses.offer` with no courses and both platforms in `blocked`, then stop.
-5. Stay on https://canvas.lms.unimelb.edu.au and https://edstem.org. Use your own tab and leave the owner's other tabs alone.
-6. This job stores facts with `course.import` only. Page text for citations is recorded with `source.record` in revision sessions, not in this job.
+4. Work in the owner's Microsoft Edge, which is already open and signed in. First inspect the current state of the computer-use tool (for example `cua.getState()`) to find Edge, then open one new tab in Edge for this job (for example `cua.createBrowserTab` with Edge's browser id from that state). Never open Chrome, the in-app browser or another browser; "Browser is not available: chrome" only means that browser is missing, not that Edge is.
+5. If the computer-use tool or the browser (the owner's Edge itself, not Chrome) is unavailable, for example the screen is locked or Edge is not running, call `courses.offer` with no courses and both platforms in `blocked`, then stop.
+6. Stay on https://canvas.lms.unimelb.edu.au and https://edstem.org. Use only the tab you opened and leave the owner's other tabs alone.
+7. This job stores facts with `course.import` only. Page text for citations is recorded with `source.record` in revision sessions, not in this job.
 
 ## Steps
 
