@@ -24,7 +24,7 @@ For each selected course the agent SHALL submit one document with the agent comm
 ## ADDED Requirements
 
 ### Requirement: AI policy per assessment with a course default
-The document's course `aiPolicy` SHALL be the course's agent-read default policy, stored on the Course with its quote. Each item's `aiPolicy` SHALL be stored as the agent-read policy of that item's Assessment with its quote in the Assessment's read state (#195). A component Assessment (final or hurdle) SHALL store `prohibited` when any of its items reads `prohibited`, else the value its items agree on, else none; a remainder Assessment SHALL store none. A run that reads a course or item policy as unknown SHALL keep the previously stored agent-read value and its quote and update its check time (#184). Agents SHALL NOT record an `aiPolicy` annotation on a course or an assessment; `annotation.record` SHALL refuse that field. Owner policies SHALL be recorded only from the frontend's owner session, per course or per assessment, SHALL never be overwritten by import, and an owner value of `null` SHALL clear the owner's policy at that level. When a run stores a course or item value different from the previously stored agent-read value, "needs you" SHALL show the course or assessment, the new value and its quote until the next run; no confirmation is required. How the stored values combine into the effective policy is defined in `assessment-autonomy`.
+The document's course `aiPolicy` SHALL be the course's agent-read default policy, stored on the Course with its quote. Each item's `aiPolicy` SHALL be stored as the agent-read policy of that item's Assessment with its quote in the Assessment's read state (#195). A component Assessment (final or hurdle) SHALL store `prohibited` when any of its items reads `prohibited`, else the value its items agree on, else none; a remainder Assessment SHALL store none. A run that reads a course or item policy as unknown SHALL keep the previously stored agent-read value and its quote and update its check time (#184). Agents SHALL NOT record an `aiPolicy` annotation on a course or an assessment; `annotation.record` SHALL refuse that field. Owner policies SHALL be recorded only from the frontend's owner session, per course or per assessment, SHALL never be overwritten by import, and an owner value of `null` SHALL clear the owner's policy at that level. Reads (`courses.list`, `annotation.read`, `autonomy.read`, `assessments.list`) SHALL report the effective policy with its origin, and for assessments the level it came from. When a run stores a course or item value different from the previously stored agent-read value, "needs you" SHALL show the course or assessment, the new value and its quote until the next run; no confirmation is required. How the stored values combine into the effective policy is defined in `assessment-autonomy`.
 
 #### Scenario: Item policy read
 - **WHEN** the agent reads `prohibited` for the item "Report" quoting "You must not use generative AI to write this report" and the course default as `allowed`
@@ -37,6 +37,10 @@ The document's course `aiPolicy` SHALL be the course's agent-read default policy
 #### Scenario: Owner item policy kept
 - **WHEN** the owner set an assessment to `allowed` and the agent reads `prohibited` for its item
 - **THEN** the owner value stays, and the agent-read value and quote are stored for display
+
+#### Scenario: Owner clears the course policy
+- **WHEN** the owner records `null` for a course whose agent-read policy is `prohibited`
+- **THEN** the course-level effective policy is `prohibited` with origin `agent`
 
 #### Scenario: Agent item policy annotation refused
 - **WHEN** an agent records an `aiPolicy` annotation on an assessment

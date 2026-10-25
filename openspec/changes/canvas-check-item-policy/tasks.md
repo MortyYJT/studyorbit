@@ -10,17 +10,17 @@
 ## 3. Canvas check
 
 - [ ] 3.1 `src/sync/canvas-check.ts`: clipboard reader behind an injectable function; prefix strip, 5 MB cap, zod schema of the needed keys, `course_id` check, `partial` at 100 groups; tests for the accepted-input scenarios (wrong course, prefix, unknown keys, sign-in page).
-- [ ] 3.2 Comparison: item due, outOf, score, status mapping; component weight via `assignment_group_id`; unweighted courses; missing assignments; tests for each compared-fields scenario.
+- [ ] 3.2 Comparison of SourceItem facts (due, pointsPossible, pointsEarned, submitted) with Canvas; component weight via `assignment_group_id`; unweighted courses; missing assignments; tests for each compared-fields scenario.
 - [ ] 3.3 Conflict lifecycle: open, update, close as `agreed`, suppression after an `agent` choice; tests.
-- [ ] 3.4 Agent command `canvas.check {jobId, courseKey}` in the registry (job and selection checks, run course coverage `checked` / `partial` / `unavailable` / `not_run`); update the MCP tool count in `test/cli.test.ts`.
-- [ ] 3.5 Owner command `check.resolve {conflictId, choice}`: owner session only; `canvas` writes an owner annotation for due and item weight, updates platform status / score / outOf with `via: "api"`, records component weight for the next import; importer keeps resolved Canvas values while unchanged and applies resolved component weights; tests for the resolution scenarios and the agent refusal.
+- [ ] 3.4 Agent command `canvas.check {jobId, courseKey}` in the registry (job and selection checks; course coverage `checked`, `partial`, `unavailable` after only refused inputs, `not_run` when ineligible or never called); update the MCP tool count in `test/cli.test.ts`.
+- [ ] 3.5 Owner command `check.resolve {conflictId, choice}`: owner session only; `canvas` writes an owner annotation for due on an item with its own Assessment, recomputes that Assessment's score and status for outOf / score / submitted with `via: "api"`, and leaves folded items and component weights to the importer; importer applies resolved values while their Canvas value is unchanged and never overwrites facts; tests for the resolution scenarios and the agent refusal.
 - [ ] 3.6 Reads: `assessments.list` and `annotation.read` mark unconfirmed fields with the Canvas value; a conflicts read for the UI; tests.
 
 ## 4. Per-assessment AI policy
 
 - [ ] 4.1 Course JSON contract: optional quoted item `aiPolicy`; reading-prompt JSON Schema regenerated; tests for the contract scenarios.
 - [ ] 4.2 Import: store item policy with quote, keep the last value on an unknown read, component and remainder rules, "needs you" on change; tests.
-- [ ] 4.3 `AssessmentAutonomy`: per-assessment resolution (#197), cap per assessment, `autonomy.read` reports value, origin and level, `autonomy.policy.set` accepts an assessment id (owner only, `null` clears); `annotation.record` refuses agent `aiPolicy` on assessments; tests for every assessment-autonomy scenario.
+- [ ] 4.3 `AssessmentAutonomy`: per-assessment resolution (#197), cap per assessment, `assessment-prohibited` reason code, `autonomy.read` reports value, origin and level, `autonomy.policy.set` accepts an assessment id (owner only, `null` clears); `annotation.record` refuses agent `aiPolicy` on assessments; tests for every assessment-autonomy scenario.
 
 ## 5. Agent instructions
 

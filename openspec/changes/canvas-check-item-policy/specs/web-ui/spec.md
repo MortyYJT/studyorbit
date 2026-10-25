@@ -16,6 +16,10 @@ The home page SHALL show seven columns, Monday to Sunday, for the selected week 
 - **THEN** "needs you" offers a dialog listing them with checkboxes, and saving it records the selection through the owner session
 
 
+#### Scenario: Check conflict in needs you
+- **WHEN** an item has an open `due` conflict between 30 October (agent) and 31 October (Canvas)
+- **THEN** "needs you" shows both dates with "keep agent" and "use Canvas", and choosing "use Canvas" records it through the owner session and moves the deadline
+
 ### Requirement: Course page
 A course page SHALL show the course's AI policy and its default level, the score ring (#141: one segment per assessment sized by weight, earned / lost / ungraded / unknown-weight styles, earned total in the centre, with legend, current average, progress and the final score needed), and two tabs. The Assessments tab SHALL group assessments by their grading component, showing each component's name, weight and the earned share computed by code, and SHALL list name, due, weight, score, status and effective level per assessment; retired assessments SHALL NOT be shown; exams SHALL show "—" for level and no agent entry (#146). Prohibited courses SHALL show the level locked at L0 (#124); an assessment whose own effective policy is `prohibited` SHALL show its level locked at L0 with the policy's origin, even when the course is not locked. The Revision tab SHALL show the exam time, the cited exam scope, notes, practice statistics, and the "tutor me" and "wrong answers only" buttons (#142).
 
@@ -32,6 +36,10 @@ A course page SHALL show the course's AI policy and its default level, the score
 - **THEN** the tab shows the group with 15% and 6.75 earned, and each item's weight marked as an even split
 
 
+#### Scenario: Assessment locked by its own policy
+- **WHEN** a course reads `allowed` and one of its assessments reads `prohibited`
+- **THEN** the course page shows that assessment's level locked at L0 and the course level unlocked
+
 ### Requirement: Assessment drawer with origins
 Clicking an assessment SHALL open a side drawer with its fields, each marked with its origin (platform, agent, or owner) (#138). Clicking an agent marker SHALL show the cited quote, a link to the original page, a note when the cited source text was copied by the agent (`source.record`), and "confirm" and "use my value" (see `agent-annotations`). A field with an open Canvas check conflict SHALL show an "unconfirmed" marker with the Canvas value beside it. The drawer SHALL show the assessment's effective AI policy with its origin and level (assessment or course) and the agent-read quote, and a selector (`allowed`, `prohibited`, `owner-attested`, or clear) that records the owner's assessment policy through the owner session. The drawer SHALL show the effective estimate with its origin and reason, the actual time, the linked platform items, and buttons that open the Agent page with the "complete" or "explain" preset, except for exams.
 
@@ -42,14 +50,6 @@ Clicking an assessment SHALL open a side drawer with its fields, each marked wit
 #### Scenario: Agent-copied source
 - **WHEN** an agent value cites a source recorded with `source.record`
 - **THEN** the quote shows that its source text was copied by the agent
-
-#### Scenario: Check conflict in needs you
-- **WHEN** an item has an open `due` conflict between 30 October (agent) and 31 October (Canvas)
-- **THEN** "needs you" shows both dates with "keep agent" and "use Canvas", and choosing "use Canvas" records it through the owner session and moves the deadline
-
-#### Scenario: Assessment locked by its own policy
-- **WHEN** a course reads `allowed` and one of its assessments reads `prohibited`
-- **THEN** the course page shows that assessment's level locked at L0 and the course level unlocked
 
 #### Scenario: Owner sets an assessment policy
 - **WHEN** the owner picks `allowed` in the drawer of an assessment whose agent-read policy is `prohibited`
