@@ -1,7 +1,7 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 的改法见 #165–#191，PRD 待更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/`（进行中，目前为空）；决定看 `note/decisions.md`（#1–#191）；进度看 `note/product/roadmap.md`。
+> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 的改法见 #165–#191，PRD 待更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/`（进行中，目前为空）；决定看 `note/decisions.md`（#1–#192）；进度看 `note/product/roadmap.md`。
 
 - **最后更新：** 2026-10-26 凌晨，Claude。
 - **模式：** 没有进行中的 OpenSpec 变更。真机验收（#186）进行中：第一次逐门读课已完成，4 门课都已存入，周视图能正常显示。
@@ -28,6 +28,9 @@
 
 ## 待开的小 PR
 
+- **等 Codex 额度恢复（10-26 03:41 后）再派：**
+  - [#172](https://github.com/MortyYJT/unimelb-coursework-agent/issues/172) 课程页排序、`得分/满分 · 百分比`、两色圆环（你的选择记在 #192）。界面工作，要在真浏览器里验证并截图。
+  - [#173](https://github.com/MortyYJT/unimelb-coursework-agent/issues/173) 读课指令：页面写了单项分值时要读出来（例如 MUSI20163 的「17.5 points」、participation 的 10% / 40%），不要留给平均推算。合并后要重新同步才能看到效果。
 - **保存课程选择后不知道下一步：** `courses.select` 只记录选择，读课要再点一次「立即同步」；弹窗上方还显示上次同步留下的「等你选择课程」。改法：保存后在弹窗里给「开始读取这 N 门课」按钮（或保存后自动开始），并把旧提示换成「已选 N 门，点同步开始读取」。属于界面工作，自动开始与否会改变行为，开工前先问你选哪种。
 - **「需要你」面板太挤：** COMP20003 的 12 个「截止时间未知」挤在一行。可以和上一项一起改。
 
