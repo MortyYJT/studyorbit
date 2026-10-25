@@ -4,7 +4,7 @@ The first live course read (#186) showed that the agent can drop or miss exact C
 
 ## What Changes
 
-- New narrow Canvas check: after a course is imported, Codex opens two fixed Canvas API URLs for that course in the owner's Edge and hands the raw page text to a new tool; fixed code parses it and compares due date, points possible, status, score and assignment-group weight with the stored values (#193). No cookie is read and no dependency is added.
+- New narrow Canvas check: after a course is imported, Codex opens one fixed Canvas API URL for that course (assignment groups with their assignments and the owner's submissions) in the owner's Edge, copies the whole page, and calls a new tool that reads the copied text from the clipboard; fixed code parses it and compares due date, points possible, status, score and assignment-group weight with the stored values (#193). No cookie is read, the agent does not transcribe the JSON, and no dependency is added.
 - Mismatches become check conflicts shown in "needs you" with both values; the owner picks one, stored as an owner annotation; until then planning and views keep the agent value marked as unconfirmed (#194).
 - **BREAKING (data contract):** the course JSON item gains an optional quoted `aiPolicy`; assessments store an agent-read `aiPolicy` with its read state; the course value becomes the default (#195).
 - Effective policy per assessment follows #197: the owner's value on that assessment wins; otherwise `prohibited` at any level wins; otherwise the nearest known value; otherwise unknown, which stays uncapped (#196, #125).
@@ -17,10 +17,13 @@ The first live course read (#186) showed that the agent can drop or miss exact C
 - `canvas-check`: the narrow Canvas API check, its accepted URLs and parsing, the compared fields, conflict records and their resolution.
 
 ### Modified Capabilities
-- `coursework-sync`: course JSON contract gains the item `aiPolicy`; the course-only AI policy requirement becomes per-assessment with a course default; the job runs the check step after each Canvas course import.
+- `coursework-sync`: course JSON contract gains the item `aiPolicy`; the course-only AI policy requirement is replaced by a per-assessment one with a course default.
 - `assessment-autonomy`: effective policy and cap are resolved per assessment with the #197 order.
 - `domain-model`: Assessment gains `aiPolicy` and its read state; a check conflict entity is added.
 - `web-ui`: "needs you" lists check conflicts with both values; the drawer marks unconfirmed fields and offers a per-assessment policy selector; the course page shows per-assessment locks.
+- `agent-annotations`: agents may not annotate `aiPolicy` on assessments either; an owner `null` clears an assessment policy; values the owner took from a check count as sync values.
+- `agent-chat`: the workspace rule becomes read-only per assessment whose effective policy prohibits AI.
+- `protocol-reads`: assessment reads carry the effective policy with its level, unconfirmed fields and check conflicts.
 
 ## Impact
 
