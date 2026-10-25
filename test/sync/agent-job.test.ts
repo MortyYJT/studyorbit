@@ -167,7 +167,7 @@ describe('agent sync job (coursework-sync)', () => {
     const result = await f.sync.run({});
     expect(result).toMatchObject({ outcome: 'AGENT_UNAVAILABLE', run: { syncOutcome: 'AGENT_UNAVAILABLE' } });
     expect(f.sync.status()).toMatchObject({ blocked: ['canvas', 'ed'], lastRun: { outcome: 'AGENT_UNAVAILABLE' } });
-    expect(f.adapter.inputs[0]!.prompt).toMatch(/Edge itself cannot be reached[^\n]*locked[^\n]*both platforms in `blocked`/);
+    expect(f.adapter.inputs[0]!.prompt).toMatch(/computer-use tool or the browser[^\n]*unavailable[^\n]*locked[^\n]*both platforms in `blocked`/);
     // A missing Chrome or in-app browser is not a reason to give up: the job runs in the owner's open Edge.
     expect(f.adapter.inputs[0]!.prompt).toMatch(/owner's Microsoft Edge[^\n]*Never open Chrome/);
   });
