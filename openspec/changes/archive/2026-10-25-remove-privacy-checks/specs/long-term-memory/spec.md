@@ -11,7 +11,15 @@ The agent command `memory.record { courseId?, kind, text }` SHALL store an obser
 - **WHEN** the text is over 500 characters or the course does not exist
 - **THEN** the call is refused and nothing is stored
 
+## REMOVED Requirements
+
 ### Requirement: The owner controls memory
+**Reason**: Its scenario "Owner text is redacted" no longer holds after #191; it is replaced by "The owner controls memory as written", where owner text is stored as given.
+**Migration**: None; the replacement keeps every other scenario unchanged.
+
+## ADDED Requirements
+
+### Requirement: The owner controls memory as written
 Owner commands from the frontend session or a TTY SHALL add (`memory.add`, origin `owner`), edit (`memory.edit`, text and kind, keeping the original time and source and recording the edit time) and delete (`memory.delete`) memories; owner text is stored as given. A deleted memory SHALL stay in the store marked deleted, and SHALL never be listed or sent to an agent again. Agents calling these commands SHALL be refused.
 
 #### Scenario: Owner adds a memory
@@ -33,4 +41,3 @@ Owner commands from the frontend session or a TTY SHALL add (`memory.add`, origi
 #### Scenario: Agent cannot delete
 - **WHEN** an agent calls `memory.delete`, `memory.edit` or `memory.add` through MCP
 - **THEN** it is refused and memories are unchanged
-

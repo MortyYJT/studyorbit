@@ -1,8 +1,3 @@
-## RENAMED Requirements
-
-- FROM: `### Requirement: Every read respects the model privacy boundary`
-- TO: `### Requirement: Reads stay local and credential-free`
-
 ## MODIFIED Requirements
 
 ### Requirement: Read commands expose current state and accepted records
@@ -20,6 +15,14 @@ L0 commands SHALL provide bounded reads of courses (with provider sources, the e
 - **WHEN** a synthetic assessment and a cited PDF page are requested
 - **THEN** output contains the recorded fields, trusted source evidence and the verified one-based page, without requiring a remote read
 
+## REMOVED Requirements
+
+### Requirement: Every read respects the model privacy boundary
+**Reason**: Decision #191 removes privacy redaction and withholding from reads.
+**Migration**: Replaced by "Reads stay local and credential-free", which keeps the no-token, no-password and no-browser rules.
+
+## ADDED Requirements
+
 ### Requirement: Reads stay local and credential-free
 Reads SHALL NOT redact or withhold stored text for privacy (#191): classmates' details, markup characters such as `<` and `>`, credential-like text and file paths are returned as stored. No self-issued Canvas token or model password input SHALL be accepted. Reads SHALL NOT start or attach to a browser; page access belongs to the agent in the owner's own Edge (#167).
 
@@ -34,4 +37,3 @@ Reads SHALL NOT redact or withhold stored text for privacy (#191): classmates' d
 #### Scenario: Live quiz session expires
 - **WHEN** the agent meets an expired Canvas or Ed session while reading for a sync run
 - **THEN** the run reports the platform blocked so "needs you" asks the owner to sign in, with no credential prompt, model password handling or token fallback
-
