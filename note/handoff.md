@@ -14,12 +14,12 @@
 - **分支：** `claude/canvas-check-item-policy`，一个本地提交（`f5faa58`），**还没推送**。里面只有 `proposal.md` 和决策 #193–#197（这两条决策已经通过 #176 进了 main，内容相同，以后合并不会冲突）。
 - **还要写：** `specs/`（新的 `canvas-check`，以及修改 `coursework-sync`、`assessment-autonomy`、`domain-model`、`web-ui` 的增量规格）、`design.md`、`tasks.md`。改要求时整段复制原要求再改（MODIFIED），不要只写改动部分。
 - **你已批准的设计（#193–#197）：**
-  1. 读完一门课、`course.import` 存入后，Codex 在同一个 Edge 标签页里打开两个固定地址：`/api/v1/courses/{id}/assignments?include[]=submission&per_page=100` 和 `/api/v1/courses/{id}/assignment_groups?per_page=100`，把整页 JSON 原样交给一个新工具（不手抄）。代码只接受这两个路径，去掉 `while(1);` 前缀后解析。一页满 100 条时标"可能没读全"。
+  1. 读完一门课、`course.import` 存入后，Codex 在同一个 Edge 标签页里打开两个固定地址：`/api/v1/courses/{id}/assignments?include[]=submission&per_page=100` 和 `/api/v1/courses/{id}/assignment_groups?per_page=100`，把整页 JSON 原样交给一个新工具（不手抄）。代码只接受这两个路径，去掉 `while(1);` 前缀后解析。一页满 100 条时标"可能没读全"（这条是 Claude 加的实现细节，决策里没有，写规格时确认）。
   2. 按作业条目 key 里的 Canvas id（`CODE:canvas:assignment:<id>`）比对截止时间、分值、状态、得分；作业组权重通过"作业属于哪个 `assignment_group_id`"把分数构成和作业组对上，不靠名字猜。
   3. 对不上的存成冲突，在「需要你」里同时显示两边的值，你选定后存成你的批注；选之前排期和视图用 agent 的值并标"待确认"（#194）。
   4. 作业条目新增可选的 `aiPolicy`（读到时带原话和网址），读不到时保留上次的值（同 #184）；生效顺序：你在该作业上设的值 > 任何一层读到 `prohibited` > 离作业最近的已知值 > 未知（未知时按 #125 不设上限，#196）。`autonomy.policy.set` 扩展为也能传 `assessmentId`，作业抽屉里加政策选择。
   5. 改 `course-reading.md`（作业页写了 AI 条款的要读出来）和 `codex-instructions.md` 第 3 条（按作业查政策）。
-  6. 数据模型：作业加 `aiPolicy` 及读取状态，新增核对冲突表，只加不删（#107）；#195 就是这次改模型的许可。
+  6. 数据模型：作业加 `aiPolicy` 及读取状态，新增核对冲突表，只加不删（`local-store` 规格「Additive migrations」）；#195 就是这次改模型的许可。
 - **理由待补：** #193 的取数方式、#194、#196。
 
 ## 本轮的调研结论（10-26）
@@ -86,4 +86,4 @@
 - 对外分享前用 `gh repo view --json visibility` 现查仓库是否公开，不要只信交接里的说法。
 - 测试默认超时 20 秒；合并后也要看 main 的 CI；提交身份用 noreply（见 CONTRIBUTING）。
 - 规格被全部删除的目录要在归档时手动删。
-- 其余同前：HTTP 写命令要凭证；多分支改 `test/cli.test.ts` 的 MCP 工具数；只加表不删表（#107）；理由要标来源。
+- 其余同前：HTTP 写命令要凭证；多分支改 `test/cli.test.ts` 的 MCP 工具数；只加表不删表（`local-store` 规格「Additive migrations」）；理由要标来源。
