@@ -27,7 +27,7 @@ When an agent session starts (a new conversation, or a resume that falls back to
 - **THEN** the brief is at most 8,000 characters, memories are dropped before practice statistics, and within the cut section the least relevant items go first
 
 ### Requirement: Agent observations
-The agent command `memory.record { courseId?, kind, text }` SHALL store an observation with `kind` (`habit` | `weakness` | `preference` | `other`), text of at most 500 characters redacted by the deterministic redactor, the course if given (which must exist), the creation time and the conversation that recorded it, taken from the calling session and never from the command input; a call without a session id (for example from a shell) is stored without a source. Text the redactor cannot make safe SHALL be refused with a fixed message rather than stored. In the chat backend the session passes the conversation id to its tools; for Codex the adapter passes it to the `coursework mcp` server it configures for that session. Because Codex keeps a shell (#150, #154), this attribution is best effort: an agent that starts its own MCP server could set another id. Memories SHALL be returned by the L0 read `memory.list` (newest first, filter by course, deleted ones omitted), each with its source conversation when it still exists.
+The agent command `memory.record { courseId?, kind, text }` SHALL store an observation with `kind` (`habit` | `weakness` | `preference` | `other`), text of at most 500 characters stored as given (not redacted; #191), the course if given (which must exist), the creation time and the conversation that recorded it, taken from the calling session and never from the command input; a call without a session id (for example from a shell) is stored without a source. In the chat backend the session passes the conversation id to its tools; for Codex the adapter passes it to the `coursework mcp` server it configures for that session. Because Codex keeps a shell (#150, #154), this attribution is best effort: an agent that starts its own MCP server could set another id. Memories SHALL be returned by the L0 read `memory.list` (newest first, filter by course, deleted ones omitted), each with its source conversation when it still exists.
 
 #### Scenario: Weakness noticed while tutoring
 - **WHEN** the agent records `{ courseId: c-1, kind: weakness, text: "Mixes up eigenvalues and eigenvectors" }` during conversation `v-1`
@@ -37,8 +37,8 @@ The agent command `memory.record { courseId?, kind, text }` SHALL store an obser
 - **WHEN** the text is over 500 characters or the course does not exist
 - **THEN** the call is refused and nothing is stored
 
-### Requirement: The owner controls memory
-Owner commands from the frontend session or a TTY SHALL add (`memory.add`, origin `owner`), edit (`memory.edit`, text and kind, keeping the original time and source and recording the edit time) and delete (`memory.delete`) memories; owner text SHALL be redacted the same way as agent text before it is stored. A deleted memory SHALL stay in the store marked deleted, and SHALL never be listed or sent to an agent again. Agents calling these commands SHALL be refused.
+### Requirement: The owner controls memory as written
+Owner commands from the frontend session or a TTY SHALL add (`memory.add`, origin `owner`), edit (`memory.edit`, text and kind, keeping the original time and source and recording the edit time) and delete (`memory.delete`) memories; owner text is stored as given. A deleted memory SHALL stay in the store marked deleted, and SHALL never be listed or sent to an agent again. Agents calling these commands SHALL be refused.
 
 #### Scenario: Owner adds a memory
 - **WHEN** the owner adds `{ kind: preference, text: "Explain with an example first" }`
@@ -48,9 +48,9 @@ Owner commands from the frontend session or a TTY SHALL add (`memory.add`, origi
 - **WHEN** the owner edits an agent memory's text
 - **THEN** the text changes, the creation time and source conversation stay, and the edit time is recorded
 
-#### Scenario: Owner text is redacted
-- **WHEN** the owner adds a memory containing a classmate's email address
-- **THEN** the stored text has the email masked, and no brief contains it
+#### Scenario: Owner text is stored as given
+- **WHEN** the owner adds a memory containing a synthetic classmate's email address
+- **THEN** the stored text and later briefs contain it unchanged
 
 #### Scenario: Owner deletes a wrong observation
 - **WHEN** the owner deletes a memory

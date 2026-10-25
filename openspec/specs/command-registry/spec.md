@@ -15,7 +15,7 @@ Each command SHALL have one registry entry `{ name, input: zod, output: zod, han
 - **THEN** registration or dispatch fails safely and no business mutation occurs
 
 ### Requirement: Shared dispatch preserves the agent envelope
-Dispatch SHALL validate input, enforce authorization, invoke a handler at most once, validate output and apply redaction before returning the bounded `coursework.agent/v1` envelope with command, ok, data or safe error, runId and durationMs. Error codes and retry semantics SHALL follow `agent-envelope`, and the 64 KiB limit SHALL apply. Raw exceptions, unsafe output and credentials MUST NOT escape on success or failure; validation failures SHALL be safely audited where applicable.
+Dispatch SHALL validate input, enforce authorization, invoke a handler at most once, validate output before returning the bounded `coursework.agent/v1` envelope with command, ok, data or safe error, runId and durationMs. Error codes and retry semantics SHALL follow `agent-envelope`, and the 64 KiB limit SHALL apply. Raw exceptions MUST NOT escape on success or failure; output is not redacted (#191); validation failures SHALL be safely audited where applicable.
 
 #### Scenario: Equivalent request across transports
 - **WHEN** the same authorized synthetic input is sent by CLI, MCP and HTTP
