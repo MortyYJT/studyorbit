@@ -51,6 +51,7 @@ export function NeedsYou({ needs, t, onStatus, onSelect, onCourse, onResolve, on
             : (s.warnings as Record<string, string>)[item.warning] ?? item.warning}`, open];
           case 'policy': return [<>{item.course} · {item.value ? <>{s.policy} {t.coursePage[item.value]}</> : s.policyUnknown}{item.quote && <> · <q>{item.quote}</q></>}</>, open];
           case 'unread': return [`${item.course} · ${s.unread}`, <button onClick={onStatus}>{t.status}</button>];
+          case 'missing': return [`${item.course} · ${s.missingFiles.join(String(item.count))}`, open];
           case 'weight': return [`${item.componentName ?? t.unknown} · ${s.handbook}${t.colon}${conflictValue(item.handbook)} · ${s.canvas}${t.colon}${conflictValue(item.canvas)}`,
             <span className="need-actions"><button onClick={() => onResolve(item.id, 'skeleton')}>{s.useHandbook}</button>
               <button onClick={() => onResolve(item.id, 'canvas')}>{s.useCanvas}</button></span>];
