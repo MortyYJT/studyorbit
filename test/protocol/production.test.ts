@@ -163,3 +163,118 @@ it('keeps the UI origin denial when a leftover browser.json is unreadable', asyn
   await host.chat.waitForIdle(conversation.id);
   expect(host.store.loadRun(messageId)).toMatchObject({ outcome: 'ok', steps: 1 });
 });
+
+it('runs one selected course through the layered pipeline, merges dated Ed lessons and archives its reported files', async () => {
+  const { mkdir, utimes, writeFile } = await import('node:fs/promises');
+  const { assessmentId } = await import('../../src/sync/course-import.js');
+  type EdCommandResult = { code: number; stdout: string };
+  type EdRunner = (args: string[]) => Promise<EdCommandResult>;
+  type AgentAdapter = import('../../src/agent/adapter.js').AgentAdapter;
+  type AgentInput = import('../../src/agent/adapter.js').AgentInput;
+  type AgentRun = import('../../src/agent/adapter.js').AgentRun;
+  type AgentEvent = import('../../src/agent/adapter.js').AgentEvent;
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'production-pipeline-')));
+  roots.push(root);
+  const home = join(root, 'home');
+  const downloads = join(home, 'Downloads');
+  await mkdir(downloads, { recursive: true });
+  vi.stubEnv('COURSEWORK_HOME', home);
+  vi.stubEnv('HOME', home);
+  vi.stubEnv('COURSEWORK_FILES', join(root, 'Desktop'));
+  const key = 'SYNA10001:2026:S2';
+  const canvasPage = 'https://canvas.lms.unimelb.edu.au/courses/1';
+  const edPage = 'https://edstem.org/au/courses/8001';
+  const clipboard = { text: '', read(): string { return clipboard.text; } };
+  const ok = (stdout: string): EdCommandResult => ({ code: 0, stdout });
+  const edRunner: EdRunner = async args => {
+    if (args[0] === '--version') return ok('0.8.2');
+    if (args[0] === 'auth') return ok('{"authenticated":true}');
+    if (args[0] === 'units') return ok(JSON.stringify([{ id: 4101, code: 'SYNA10001 S2 2026', year: '2026', session: 'Semester 2' }]));
+    if (args[0] === 'lessons') return ok(JSON.stringify([
+      { id: 7001, courseId: 8001, title: 'Synthetic Ed lesson', moduleName: 'Synthetic module', dueAt: '2026-10-30T12:59:00Z' },
+      { id: 7002, courseId: 8001, title: 'Synthetic undated lesson', moduleName: 'Synthetic module', dueAt: null },
+    ]));
+    if (args[0] === 'files') return ok('[]');
+    return { code: 1, stdout: '' };
+  };
+  const adapter: AgentAdapter = {
+    id: 'synthetic',
+    start(input: AgentInput): AgentRun {
+      const jobId = /Job id: (\S+)/.exec(input.prompt)![1]!;
+      const courseKey = /Course key: (\S+)/.exec(input.prompt)?.[1];
+      const tool = (name: string) => input.tools.find(entry => entry.name === name);
+      const call = async (name: string, args: unknown) => {
+        const found = tool(name);
+        if (!found) throw new Error(`missing synthetic tool ${name}`);
+        const envelope = await found.execute(args) as { ok: boolean; error?: { message: string } };
+        if (!envelope.ok) throw new Error(envelope.error?.message ?? name);
+        return envelope;
+      };
+      const events = (async function* (): AsyncGenerator<AgentEvent, void> {
+        if (tool('courses.offer')) {
+          clipboard.text = JSON.stringify([{ id: 1, name: 'Synthetic Systems', course_code: 'SYNA10001_2026_SM2', term: { name: 'Semester 2 2026' } }]);
+          await call('canvas.capture', { jobId, page: 'courses' });
+        } else if (tool('handbook.capture')) {
+          clipboard.text = ['The University of Melbourne Handbook', 'SYNA10001 Synthetic Systems', 'Assessment',
+            'Description\tTiming\tPercentage', 'Assignments\tWeeks 3-10\t30%', 'Exam\tExam period\t70%'].join('\n');
+          await call('handbook.capture', { jobId, courseKey });
+        } else if (tool('course.map')) {
+          await call('course.map', { jobId, courseKey, lms: { text: 'Synthetic LMS', quote: 'Synthetic LMS quote' },
+            ed: { text: 'Synthetic Ed', quote: 'Synthetic Ed quote' }, syllabus: { where: 'unknown' }, links: [] });
+        } else if (tool('quizzes.read')) {
+          await call('quizzes.read', { jobId, courseKey, quizzes: [] });
+        } else if (tool('assignment.saved')) {
+          await call('assignment.saved', { jobId, courseKey, assignmentId: /Assignment id: (\S+)/.exec(input.prompt)![1]!,
+            policy: { value: 'allowed', quote: 'Synthetic AI statement' }, files: ['synthetic-brief.mhtml'] });
+        } else if (tool('materials.saved')) {
+          await call('materials.saved', { jobId, courseKey, files: ['synthetic-week1.pdf'], links: [] });
+        } else if (tool('ed.read')) {
+          await call('ed.read', { jobId, courseKey, lessons: [] });
+        } else if (tool('items.classify')) {
+          await call('items.classify', { jobId, courseKey, items: [{ id: '1', category: 'assignment', component: 'Assignments', evidence: 'Synthetic group name' }] });
+        } else if (tool('canvas.capture')) {
+          const page = input.prompt.includes('page `tabs`') ? 'tabs' : 'groups';
+          clipboard.text = page === 'tabs' ? JSON.stringify([
+            { id: 'home', label: 'Home', type: 'internal', html_url: canvasPage },
+            { id: 'assignments', label: 'Assignments', type: 'internal', html_url: `${canvasPage}/assignments` },
+            { id: 'quizzes', label: 'Quizzes', type: 'internal', html_url: `${canvasPage}/quizzes` },
+            { id: 'grades', label: 'Grades', type: 'internal', html_url: `${canvasPage}/grades` },
+            { id: 'modules', label: 'Modules', type: 'internal', html_url: `${canvasPage}/modules` },
+          ]) : JSON.stringify([{ id: 501, name: 'Assignments', group_weight: 40, assignments: [{
+            id: 1, name: 'Synthetic Assignment 1', course_id: 1, due_at: '2026-10-31T12:59:00Z', unlock_at: '2026-10-01T00:00:00Z',
+            points_possible: 20, assignment_group_id: 501, html_url: `${canvasPage}/assignments/1`,
+            updated_at: '2026-10-20T08:00:00Z', submission: null,
+          }] }]);
+          await call('canvas.capture', { jobId, courseKey, page });
+        }
+        yield { type: 'tool_step', tool: 'coursework.synthetic', outcome: 'ok' };
+        yield { type: 'result', turns: 1 };
+      })();
+      return { [Symbol.asyncIterator]: () => events, interrupt() {} };
+    },
+  };
+  const host = createProductionProtocol({ agentAdapter: adapter, clipboard, edRunner, owner: { assertOwner: async () => {} } });
+  closes.push(host.close);
+  host.store.saveCourseSelections([{ key, code: 'SYNA10001', name: 'Synthetic Systems', term: '2026:S2',
+    pages: { canvas: canvasPage, ed: edPage }, offeredAt: '2026-10-24T00:00:00Z', selected: true }]);
+  const future = new Date(Date.now() + 60_000);
+  await writeFile(join(downloads, 'synthetic-brief.mhtml'), 'Synthetic assignment page');
+  await writeFile(join(downloads, 'synthetic-week1.pdf'), 'Synthetic slides');
+  await utimes(join(downloads, 'synthetic-brief.mhtml'), future, future);
+  await utimes(join(downloads, 'synthetic-week1.pdf'), future, future);
+
+  const result = await dispatch(host.registry, 'sync.run', {}, host.context);
+  expect(result).toMatchObject({ ok: true, data: { outcome: 'OK', run: { syncOutcome: 'OK' } } });
+  const run = (result as unknown as { data: { run: { id: string } } }).data.run;
+  const course = host.store.query('courses', { limit: 10 }).items[0] as { id: string };
+  expect(host.store.loadCourse(course.id)).toMatchObject({ code: 'SYNA10001', name: 'Synthetic Systems' });
+  expect(host.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1'))).toMatchObject({ name: 'Synthetic Assignment 1', weight: 40 });
+  expect(host.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:ed:lesson:7001'))).toMatchObject({ name: 'Synthetic Ed lesson', due: '2026-10-30T12:59:00Z' });
+  expect(host.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:ed:lesson:7002'))).toBeUndefined();
+  expect(host.store.listSyncConflicts(course.id)).toEqual([expect.objectContaining({ field: 'weight', state: 'open', skeletonValue: 30, canvasValue: 40 })]);
+  const folder = join(root, 'Desktop', 'UniMelb 26S2', 'Synthetic Systems');
+  expect(await readFile(join(folder, 'assessments', 'Synthetic Assignment 1', 'synthetic-brief.mhtml'), 'utf8')).toContain('Synthetic assignment page');
+  expect(await readFile(join(folder, 'materials', 'synthetic-week1.pdf'), 'utf8')).toContain('Synthetic slides');
+  expect(host.store.listSyncJobs().find(job => job.id === run.id)?.stages?.[key]?.archive)
+    .toEqual({ moved: 2, updated: 0, missing: 0, unresolved: 0 });
+});

@@ -66,7 +66,7 @@ const urlsIn = (text: string): string[] => [...text.matchAll(/https?:\/\/[^\s<>(
   .map(match => match[0].replace(/[.,;:]+$/, ''));
 
 const allTools: readonly AgentTool[] = ['canvas.capture', 'courses.offer', 'handbook.capture', 'course.map',
-  'quizzes.read', 'assignment.saved', 'materials.saved', 'ed.read', 'items.classify', 'course.import', 'source.record']
+  'quizzes.read', 'assignment.saved', 'materials.saved', 'ed.read', 'items.classify', 'source.record']
   .map(name => ({ name, description: name, inputSchema: {}, execute: async () => undefined }));
 const toolNames = (kind: JobKind): string[] => tools(specFor(kind), allTools).map(tool => tool.name).sort();
 
@@ -248,7 +248,7 @@ describe('pipeline job prompts (layered-sync task 5.2)', () => {
       tools: () => [],
       build: () => undefined,
     };
-    const sync = new AgentSync({ store, jobs, adapter: () => adapter, tools: () => [], pipeline });
+    const sync = new AgentSync({ store, jobs, adapter: () => adapter, pipeline });
     await sync.run({});
     expect(seen[0]).toBeUndefined();
     const courseContexts = seen.slice(1);

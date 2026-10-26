@@ -63,7 +63,7 @@ const safeMessages: Record<ErrorCode, string> = {
 };
 /** The job-scoped stage writes list the failing contract paths so the agent can re-read and resubmit (#204). */
 const stageCommands = new Set(['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'ed.read', 'items.classify']);
-const agentFacingCommands = new Set(['courses.offer', 'course.import', 'canvas.capture', 'handbook.capture', ...stageCommands]);
+const agentFacingCommands = new Set(['courses.offer', 'canvas.capture', 'handbook.capture', ...stageCommands]);
 function describeInputIssues(issues: readonly { path: readonly PropertyKey[]; message: string }[]): string {
   const shown = issues.slice(0, 50).map(issue => `${issue.path.map(String).join('.') || '(input)'} (${issue.message})`).join('; ');
   return issues.length > 50 ? `${shown}; and ${issues.length - 50} more` : shown;
@@ -239,7 +239,7 @@ export function createRegistry(options: { autonomy?: AssessmentAutonomy; plannin
     if (name === 'courses.candidates') return { items: reading.candidates() };
     if (name === 'courses.select') return reading.select(input as never);
     if (name === 'check.resolve') return reading.resolve(input as never);
-    return reading.import(input as never);
+    throw new CourseworkError('NOT_FOUND', safeMessages.NOT_FOUND);
   } });
   for (const name of Object.keys(annotationCommandContracts) as (keyof typeof annotationCommandContracts)[]) {
     const owner = ['annotation.owner.record', 'annotation.confirm', 'annotation.replace'].includes(name);
