@@ -120,7 +120,9 @@ export const SyncStatusSchema = z.strictObject({
   /** Per selected course: the time of its last stored document, and what the last run reported for it. */
   courses: z.array(z.strictObject({ key: id, code: z.string(), term: z.string(), name: z.string().optional(), courseId: id.optional(),
     storedAt: time.optional(), lastRun: z.strictObject({ stored: z.boolean(), unknownFields: paths, dropped: paths,
-      warnings: z.array(warningCode).max(10), weightSum: z.number().optional(), policyChanged: z.boolean() }).optional() })).max(500),
+      warnings: z.array(warningCode).max(10), weightSum: z.number().optional(), policyChanged: z.boolean(),
+      /** Files the course's jobs reported as downloaded but the archive hook could not move: counts only. */
+      missingFiles: count.optional() }).optional() })).max(500),
 });
 /** The owner's settled choices, as `check.resolve` returns them for `gradeItems`. */
 export const ResolvedChoicesSchema = z.strictObject({

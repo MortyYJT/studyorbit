@@ -162,3 +162,15 @@ it('lists no per-course "not read" lines when the whole run was blocked', async 
   expect(await read('PARTIAL', ['canvas', 'ed'])).toEqual(['blocked', 'blocked']);
   expect(await read('PARTIAL', ['ed'])).toEqual(['blocked', 'unread', 'unread']);
 });
+it('reports a course whose last run could not download files, but keeps clean and older runs quiet', async () => {
+  const read = async (missingFiles?: number) => {
+    const status = { running: false, blocked: [], undecided: 0, courses: [{ key: 'SYNA10001:2026:S2', code: 'SYNA10001', term: '2026:S2', courseId: 'c-a',
+      lastRun: { stored: true, unknownFields: [], dropped: [], warnings: [], policyChanged: false, ...(missingFiles === undefined ? {} : { missingFiles }) } }] };
+    const store = new ShellStore(createClient(undefined, fixture({ 'sync.status': status })));
+    await store.refresh();
+    return attention(store.getSnapshot());
+  };
+  expect(await read(3)).toEqual([{ kind: 'missing', course: 'SYNA10001', courseId: 'c-a', count: 3 }]);
+  expect(await read(0)).toEqual([]);
+  expect(await read()).toEqual([]);
+});
