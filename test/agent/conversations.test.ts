@@ -79,9 +79,9 @@ it('stop interrupts a blocked adapter and commits partial text and one stopped r
 });
 it('renders every preset from stored identities only; reload never sends twice and exams have no entry', async () => {
   const { service, adapter } = setup();
-  expect(presets).toHaveLength(8);
+  expect(presets).toHaveLength(9);
   expect(service.availablePresets({ courseId: 'c-1', assessmentId: 'exam-1' })).toEqual([]);
-  expect(service.availablePresets({ courseId: 'c-1', assessmentId: 'a-1' })).toHaveLength(8);
+  expect(service.availablePresets({ courseId: 'c-1', assessmentId: 'a-1' })).toHaveLength(9);
   expect(service.availablePresets({ courseId: 'c-1' })).toHaveLength(5);
   for (const preset of presets) {
     const c = await service.create({ preset: preset.id, courseId: 'c-1', ...(preset.assessment ? { assessmentId: 'a-1' } : {}) }, owner);

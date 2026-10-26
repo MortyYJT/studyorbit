@@ -109,6 +109,40 @@ export function fingerprintFile(path: string): string {
 /** Alias that reads naturally in callers. */
 export const fileFingerprint = fingerprintFile;
 
+/** Decoded, normalized HTML body of an MHTML/Blink save (scripts and per-save values removed). */
+export function decodeMhtmlHtml(bytes: Buffer): string {
+  return normalizeMhtml(bytes);
+}
+
+/** Visible text of an HTML document: scripts/styles removed, tags stripped, entities decoded, whitespace collapsed. */
+export function htmlToText(html: string): string {
+  return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript\s*>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<\s*br\s*\/?\s*>/gi, ' ')
+    .replace(/<\/(?:p|div|li|tr|h[1-6]|section|article|table|ul|ol|blockquote|pre|header|footer|main)\s*>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (_match, entity: string) => decodeHtmlEntity(entity))
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+const htmlEntities: Record<string, string> = {
+  amp: '&', apos: "'", gt: '>', lt: '<', nbsp: ' ', quot: '"',
+  hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“',
+};
+
+function decodeHtmlEntity(entity: string): string {
+  if (entity.startsWith('#')) {
+    const code = entity[1]?.toLowerCase() === 'x' ? Number.parseInt(entity.slice(2), 16) : Number.parseInt(entity.slice(1), 10);
+    if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return '\ufffd';
+    try { return String.fromCodePoint(code); } catch { return '\ufffd'; }
+  }
+  return htmlEntities[entity.toLowerCase()] ?? `&${entity};`;
+}
+
 /** Set `openedAt` so the update notice for a superseded file disappears. */
 export function markOpened(store: MarkOpenedStore, savedFileId: string, now: Date | string): SavedFile {
   const saved = store.loadSavedFile(savedFileId);

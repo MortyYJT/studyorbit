@@ -4,6 +4,7 @@ import { annotationCommandContracts, annotationRefusals, type AnnotationService 
 import { planningContracts, planningOwnerCommands, planningSessionCommands } from '../planning/contracts.js';
 import type { PlanningService } from '../planning/service.js';
 import { syncContracts, type SyncCommands, type CourseReadingCommands, type SyncCommandName } from './sync.js';
+import type { AssessmentFiles } from '../sync/assessment-files.js';
 import { autonomyCommandContracts, type AssessmentAutonomy } from './autonomy.js';
 import { randomUUID } from 'node:crypto';
 import { sourceRecordRefusals } from '../revision/source-record.js';
@@ -63,7 +64,7 @@ const safeMessages: Record<ErrorCode, string> = {
 };
 /** The job-scoped stage writes list the failing contract paths so the agent can re-read and resubmit (#204). */
 const stageCommands = new Set(['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'ed.read', 'items.classify']);
-const agentFacingCommands = new Set(['courses.offer', 'course.import', 'canvas.capture', 'handbook.capture', ...stageCommands]);
+const agentFacingCommands = new Set(['courses.offer', 'course.import', 'canvas.capture', 'handbook.capture', 'assessment.files', ...stageCommands]);
 function describeInputIssues(issues: readonly { path: readonly PropertyKey[]; message: string }[]): string {
   const shown = issues.slice(0, 50).map(issue => `${issue.path.map(String).join('.') || '(input)'} (${issue.message})`).join('; ');
   return issues.length > 50 ? `${shown}; and ${issues.length - 50} more` : shown;
@@ -149,11 +150,19 @@ const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith(
 export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationCommandContracts), ...Object.keys(syncContracts), ...Object.keys(memoryContracts)].filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
 /** Bind the settled contract surface to injected ports; no production service is selected here. */
-export function createRegistry(options: { autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; courseReading?: CourseReadingCommands; annotations?: AnnotationService; metrics?: MetricsService; memory?: MemoryService } = {}): Registry {
+export function createRegistry(options: { autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; courseReading?: CourseReadingCommands; annotations?: AnnotationService; metrics?: MetricsService; memory?: MemoryService; assessmentFiles?: AssessmentFiles } = {}): Registry {
   const registry = new Registry();
   const handlers = new Map<string, Handler>();
   for (const name of Object.keys(contracts) as CommandName[]) {
     const canonical = name;
+    if (canonical === 'assessment.files') {
+      // Deep-layer reading is a local, L0 write: it extracts saved files and records their SourceItems.
+      registry.register<z.ZodType, z.ZodType>({ name, ...contracts[name], handler: (input, context) => {
+        if (!options.assessmentFiles) return context.services.write(canonical as WriteCommand, input as never, context);
+        return options.assessmentFiles.files(input, context);
+      } });
+      continue;
+    }
     let handler = handlers.get(canonical);
     if (!handler) {
       handler = async (input, context) => {
