@@ -62,7 +62,7 @@ const safeMessages: Record<ErrorCode, string> = {
   LIMIT_EXCEEDED: 'The response exceeds 64 KiB.', INTERNAL: 'The command could not complete safely.',
 };
 /** The job-scoped stage writes list the failing contract paths so the agent can re-read and resubmit (#204). */
-const stageCommands = new Set(['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'items.classify']);
+const stageCommands = new Set(['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'ed.read', 'items.classify']);
 const agentFacingCommands = new Set(['courses.offer', 'course.import', 'canvas.capture', 'handbook.capture', ...stageCommands]);
 function describeInputIssues(issues: readonly { path: readonly PropertyKey[]; message: string }[]): string {
   const shown = issues.slice(0, 50).map(issue => `${issue.path.map(String).join('.') || '(input)'} (${issue.message})`).join('; ');
@@ -234,6 +234,7 @@ export function createRegistry(options: { autonomy?: AssessmentAutonomy; plannin
     if (name === 'quizzes.read') return reading.quizzes(input as never);
     if (name === 'assignment.saved') return reading.assignmentSaved(input as never);
     if (name === 'materials.saved') return reading.materialsSaved(input as never);
+    if (name === 'ed.read') return reading.edRead(input as never);
     if (name === 'items.classify') return reading.classify(input as never);
     if (name === 'courses.candidates') return { items: reading.candidates() };
     if (name === 'courses.select') return reading.select(input as never);

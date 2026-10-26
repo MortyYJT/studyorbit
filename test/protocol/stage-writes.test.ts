@@ -262,10 +262,10 @@ describe('job-scoped stage write commands (layered-sync task 5.3)', () => {
     expect(f.store.loadSyncJob(job.id)?.stages?.[otherKey]).toBeUndefined();
   });
 
-  it('lists all five commands as agent tools, keeps course.import, and adds no owner-only command', () => {
+  it('lists the six job-scoped stage writes as agent tools, keeps course.import, and adds no owner-only command', () => {
     const f = setup();
     const names = f.host.registry.agentTools(f.host.context).registry.list().map(entry => entry.name);
-    for (const name of ['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'items.classify', 'course.import']) {
+    for (const name of ['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'ed.read', 'items.classify', 'course.import']) {
       expect(names).toContain(name);
       expect(f.host.registry.get(name)).toMatchObject({ level: 0 });
     }

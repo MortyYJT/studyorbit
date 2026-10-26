@@ -78,6 +78,14 @@ export const MaterialsSavedInputSchema = z.strictObject({
   links: z.array(z.strictObject({ label: stageLabel, url: stageUrlText })).max(500),
 });
 
+/** The Ed fallback job's lesson list: the due date is an ISO time with an offset when the page states one. */
+export const EdReadInputSchema = z.strictObject({
+  jobId: id, courseKey: id,
+  lessons: z.array(z.strictObject({
+    title: stageName, dueAt: time.optional(), quote: stageQuote,
+  })).max(500),
+});
+
 const classificationCategory = z.enum(['exam', 'quiz', 'assignment', 'presentation', 'participation', 'ungraded']);
 export const ItemsClassifyInputSchema = z.strictObject({
   jobId: id, courseKey: id,
@@ -97,6 +105,7 @@ export type CourseMapInput = z.output<typeof CourseMapInputSchema>;
 export type QuizzesReadInput = z.output<typeof QuizzesReadInputSchema>;
 export type AssignmentSavedInput = z.output<typeof AssignmentSavedInputSchema>;
 export type MaterialsSavedInput = z.output<typeof MaterialsSavedInputSchema>;
+export type EdReadInput = z.output<typeof EdReadInputSchema>;
 export type ItemsClassifyInput = z.output<typeof ItemsClassifyInputSchema>;
 
 export const SyncStatusSchema = z.strictObject({
@@ -149,6 +158,8 @@ export const syncContracts = {
   'assignment.saved': { input: AssignmentSavedInputSchema, output: z.strictObject({ files: count }), level: 0 as const },
   /** Agent write, job-scoped: downloaded file names and link-only targets, kept apart. */
   'materials.saved': { input: MaterialsSavedInputSchema, output: z.strictObject({ files: count, links: count }), level: 0 as const },
+  /** Agent write, job-scoped: the Ed fallback's lesson titles and due dates, stored as the `ed` stage. */
+  'ed.read': { input: EdReadInputSchema, output: z.strictObject({ lessons: count }), level: 0 as const },
   /** Agent write, job-scoped: one category and evidence per item, ids unique within the call. */
   'items.classify': { input: ItemsClassifyInputSchema, output: z.strictObject({ items: count }), level: 0 as const },
   /** Owner only (frontend session or TTY). */
@@ -173,6 +184,7 @@ export interface CourseReadingCommands {
   quizzes(input: QuizzesReadInput): Output<'quizzes.read'>;
   assignmentSaved(input: AssignmentSavedInput): Output<'assignment.saved'>;
   materialsSaved(input: MaterialsSavedInput): Output<'materials.saved'>;
+  edRead(input: EdReadInput): Output<'ed.read'>;
   classify(input: ItemsClassifyInput): Output<'items.classify'>;
   candidates(): CourseSelection[];
   select(input: Input<'courses.select'>): Output<'courses.select'>;
