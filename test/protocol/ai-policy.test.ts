@@ -73,14 +73,27 @@ describe('one AI policy field per course (coursework-sync, assessment-autonomy, 
       .toMatchObject({ ok: true, data: { decision: 'denied', reason: 'course-prohibited' } });
   });
 
-  it('Owner policy kept: an owner allowed stays effective while the agent-read prohibited and its quote are stored', async () => {
+  it('Owner course allowed does not lift an agent-read prohibited: the agent-read value and quote are stored and the effective policy is prohibited', async () => {
     const f = setup();
     const { courseId } = await f.read(document([quiz]));
     expect(await f.ownerCall('autonomy.policy.set', { courseId, status: 'allowed' })).toMatchObject({ ok: true });
     await f.read(document([quiz], { aiPolicy: prohibited }));
-    expect(await f.autonomy(courseId)).toMatchObject({ policy: 'allowed', policyOrigin: 'owner', cap: 2 });
+    expect(await f.autonomy(courseId)).toMatchObject({ policy: 'prohibited', policyOrigin: 'agent', policyLevel: 'course', cap: 0 });
+    // The owner's course field is still recorded, but it is not the effective policy (#197).
     expect(await f.coursePolicy(courseId)).toMatchObject({ value: 'allowed', origin: 'owner' });
     expect(f.store.loadCourse(courseId)).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { quote: 'Generative AI tools are not permitted in this subject.' } } });
+  });
+
+  it('Assessment read keeps the agent-read course prohibited: an owner course allowed and a per-assessment allowed do not lift it', async () => {
+    const f = setup();
+    const itemAllowed = quoted('allowed', 'AI tools are allowed for this task.');
+    const { courseId } = await f.read(document([component('quizzes', 100, [item(1, { aiPolicy: itemAllowed })], { kind: found('quiz') })], { aiPolicy: prohibited }));
+    expect(await f.ownerCall('autonomy.policy.set', { courseId, status: 'allowed' })).toMatchObject({ ok: true });
+    const read = await f.autonomy(courseId);
+    expect(read).toMatchObject({ policy: 'prohibited', policyOrigin: 'agent', policyLevel: 'course', cap: 0 });
+    expect(read.assessments[0]).toMatchObject({ policy: 'prohibited', policyOrigin: 'agent', policyLevel: 'course', effectiveLevel: 0 });
+    expect(await f.agentCall('autonomy.check', { assessmentId: read.assessments[0].assessmentId, action: 'fill' }))
+      .toMatchObject({ ok: true, data: { decision: 'denied', reason: 'course-prohibited' } });
   });
 
   it('Owner clears the policy: an owner null lets the agent-read prohibited apply with origin agent', async () => {

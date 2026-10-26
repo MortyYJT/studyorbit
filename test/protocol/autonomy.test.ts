@@ -23,6 +23,7 @@ function setup() {
 const courseId = synthetic.course.id;
 const writes = [
   ['autonomy.policy.set', { courseId, status: 'allowed' }],
+  ['autonomy.policy.set', { courseId, assessmentId: 'd', value: 'allowed' }],
   ['autonomy.default.set', { courseId, level: 1 }],
   ['autonomy.override.set', { assessmentId: 'd', level: 2 }],
   ['autonomy.override.clear', { assessmentId: 'd' }],
@@ -186,7 +187,8 @@ it('autonomy.read locks a prohibited course at L0 even under an L2 default and o
   await call('autonomy.policy.set', { courseId, status: 'prohibited' });
   const data = await readData(call);
   expect(data).toMatchObject({ courseId, policy: 'prohibited', cap: 0, defaultLevel: 2 });
-  expect(row(data, 'd')).toEqual({ assessmentId: 'd', kind: 'assignment', applicable: true, requiredLevel: 2, override: 2, effectiveLevel: 0 });
+  expect(row(data, 'd')).toEqual({ assessmentId: 'd', kind: 'assignment', applicable: true, requiredLevel: 2, override: 2, effectiveLevel: 0,
+    policy: 'prohibited', policyOrigin: 'owner', policyLevel: 'course', effectivePolicy: { value: 'prohibited', origin: 'owner', level: 'course' } });
 });
 it('autonomy.read leaves a course with no recorded policy uncapped', async () => {
   const { call } = setup();
@@ -208,7 +210,8 @@ it('autonomy.read gives exams no level and follows the effective kind for the re
   await call('autonomy.default.set', { courseId, level: 2 });
   store.saveAssessment({ ...synthetic.assessments[0]!, kind: 'quiz' });
   const data = await readData(call);
-  expect(row(data, 'final')).toEqual({ assessmentId: 'final', kind: 'exam', applicable: false, requiredLevel: null, override: null, effectiveLevel: null });
+  expect(row(data, 'final')).toEqual({ assessmentId: 'final', kind: 'exam', applicable: false, requiredLevel: null, override: null, effectiveLevel: null,
+    policy: null, policyOrigin: null, policyLevel: null, effectivePolicy: { value: 'unknown', origin: 'none', level: 'none' } });
   expect(row(data, 'a')).toMatchObject({ kind: 'quiz', applicable: true, requiredLevel: 1, effectiveLevel: 2 });
   expect(data.assessments.map(item => item.assessmentId)).toEqual(['a', 'b', 'c', 'd', 'final']);
 });
