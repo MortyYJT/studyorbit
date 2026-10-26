@@ -93,6 +93,23 @@ describe('agent sync job (coursework-sync)', () => {
     expect(f.adapter.inputs[0]!.transcript).toEqual([]);
   });
 
+  it('the prompt reads stated item weights with evidence and restricts points-to-percentage conversion', async () => {
+    const f = setup(offerOnly);
+    await f.sync.run({});
+    const prompt = f.adapter.inputs[0]!.prompt;
+    for (const rule of [
+      'Read item-level weights from points in the item name or points column',
+      'percentages in the syllabus or assignment-group header',
+      'a breakdown inside a component',
+      "(a) when a component's stated item points sum to its stated weight, or the course's stated item points sum to 100",
+      "(b) otherwise, when a component's stated item points sum to 100, scale each item by the stated component weight",
+      '(c) otherwise do not treat points as percentages and leave the weight unknown',
+      'Record stated item weights as `found` with the exact page text as `quote` and the page URL as `source`',
+      "Leave an item's `weight` unknown only when no page states it",
+      'the tool splits the component weight evenly',
+    ]) expect(prompt).toContain(rule);
+  });
+
   it('Sync from the frontend: the run is visible as running and its outcome and coverage are recorded when it ends', async () => {
     let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
     const f = setup(async function* (call, jobId) {
