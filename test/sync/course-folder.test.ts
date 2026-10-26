@@ -547,6 +547,50 @@ describe('course folder (layered-sync 7.1)', () => {
     expect(store.listSavedFilesForAssessment('assessment-2')[0]!.path).toBe(join('assessments', 'Same _ Assignment (2)', 'two.pdf'));
   });
 
+  it('keeps each same-name assessment in its own folder across runs, even when one is skipped', () => {
+    const { root, downloads, store } = setup();
+    store.saveAssessment({ id: 'assessment-1', courseId: course.id, name: 'Quiz', isFinal: false, status: 'not_started' });
+    store.saveAssessment({ id: 'assessment-2', courseId: course.id, name: 'Quiz', isFinal: false, status: 'not_started' });
+    const ids = (target: string) => target === '900001' ? 'assessment-1' : target === '900002' ? 'assessment-2' : undefined;
+    const courseRoot = join(root, 'UniMelb 26S2', 'Synthetic Systems');
+    write(join(downloads, 'spec.pdf'), 'first quiz v1', new Date('2026-10-01T01:00:00.000Z'));
+    archive(store, root, downloads, '2026-10-01T00:00:00.000Z', { 'assignments.900001': { files: ['spec.pdf'] } }, new Date('2026-10-01T02:00:00.000Z'), ids);
+    write(join(downloads, 'spec.pdf'), 'second quiz v1', new Date('2026-10-08T01:00:00.000Z'));
+    archive(store, root, downloads, '2026-10-08T00:00:00.000Z', { 'assignments.900002': { files: ['spec.pdf'] } }, new Date('2026-10-08T02:00:00.000Z'), ids);
+    write(join(downloads, 'spec.pdf'), 'second quiz v2', new Date('2026-10-15T01:00:00.000Z'));
+    const third = archive(store, root, downloads, '2026-10-15T00:00:00.000Z', { 'assignments.900002': { files: ['spec.pdf'] } }, new Date('2026-10-15T02:00:00.000Z'), ids);
+
+    const first = store.listSavedFilesForAssessment('assessment-1').filter(record => !record.supersededAt);
+    expect(first).toHaveLength(1);
+    expect(readFileSync(join(courseRoot, first[0]!.path), 'utf8')).toBe('first quiz v1');
+    const second = store.listSavedFilesForAssessment('assessment-2').filter(record => !record.supersededAt);
+    expect(second).toHaveLength(1);
+    expect(readFileSync(join(courseRoot, second[0]!.path), 'utf8')).toBe('second quiz v2');
+    expect(dirname(second[0]!.path)).not.toBe(dirname(first[0]!.path));
+    expect(third.updated).toHaveLength(1);
+  });
+
+  it('a failed record write puts the folder and Downloads back as they were', () => {
+    const { root, downloads, store } = setup();
+    const courseRoot = join(root, 'UniMelb 26S2', 'Synthetic Systems');
+    write(join(downloads, 'n.pdf'), 'v1', new Date('2026-10-01T01:00:00.000Z'));
+    archive(store, root, downloads, '2026-10-01T00:00:00.000Z', { materials: { files: ['n.pdf'], links: [] } }, new Date('2026-10-01T02:00:00.000Z'));
+    write(join(downloads, 'n.pdf'), 'v2', new Date('2026-10-08T01:00:00.000Z'));
+    const failing: CourseFolderStore = { ...store, listSavedFiles: id => store.listSavedFiles(id),
+      saveSavedFile: () => { throw new Error('SQLITE_BUSY'); }, transaction: op => op() };
+    const result = archive(failing, root, downloads, '2026-10-08T00:00:00.000Z', { materials: { files: ['n.pdf'], links: [] } }, new Date('2026-10-08T02:00:00.000Z'));
+    expect(result.missing).toEqual(['n.pdf']);
+    expect(readFileSync(join(courseRoot, 'materials', 'n.pdf'), 'utf8')).toBe('v1');
+    expect(readFileSync(join(downloads, 'n.pdf'), 'utf8')).toBe('v2');
+    expect(listing(join(courseRoot, 'materials'))).toEqual(['n.pdf']);
+
+    const fresh = join(downloads, 'fresh.pdf');
+    write(fresh, 'new', new Date('2026-10-08T01:00:00.000Z'));
+    archive(failing, root, downloads, '2026-10-08T00:00:00.000Z', { materials: { files: ['fresh.pdf'], links: [] } }, new Date('2026-10-08T02:00:00.000Z'));
+    expect(existsSync(fresh)).toBe(true);
+    expect(existsSync(join(courseRoot, 'materials', 'fresh.pdf'))).toBe(false);
+  });
+
   it('an assignment whose assessment is not stored yet goes to assessments/<target>/ and is reported as unresolved', () => {
     const { root, downloads, store } = setup();
     write(join(downloads, 'spec.pdf'), 'synthetic pdf bytes', new Date('2026-10-25T01:00:00.000Z'));

@@ -165,7 +165,8 @@ export function archiveCourse(input: ArchiveCourseInput): ArchiveResult {
     return { moved, missing, unresolved, updated };
   }
 
-  const usedFolders = new Set<string>();
+  const usedFolders = new Map<string, string>();
+  const courseRecords = store.listSavedFiles(course.id);
   const targets: { assessmentId?: string; folder: string; stage: unknown; unresolved: boolean }[] = [];
   for (const [key, stage] of Object.entries(input.stages)) {
     if (!key.startsWith('assignments.')) continue;
@@ -176,13 +177,13 @@ export function archiveCourse(input: ArchiveCourseInput): ArchiveResult {
       const base = sanitizePathSegment(assessment.name?.trim() || target);
       targets.push({
         assessmentId: assessment.id,
-        folder: join('assessments', uniqueFolderName(base, assessment.id, usedFolders)),
+        folder: join('assessments', assessmentFolder(courseRecords, assessment.id, assessment.id, base, usedFolders)),
         stage,
         unresolved: false,
       });
     } else {
       const base = sanitizePathSegment(target);
-      targets.push({ folder: join('assessments', uniqueFolderName(base, target, usedFolders)), stage, unresolved: true });
+      targets.push({ folder: join('assessments', assessmentFolder(courseRecords, undefined, target, base, usedFolders)), stage, unresolved: true });
     }
   }
   if ('materials' in input.stages) {
@@ -252,10 +253,16 @@ export function archiveCourse(input: ArchiveCourseInput): ArchiveResult {
             throw error;
           }
           const nextRecord = savedFileRecord(course.id, target.assessmentId, relativePath, fingerprint, savedAt);
-          inTransaction(store, () => {
-            store.saveSavedFile(supersededRecord!);
-            store.saveSavedFile(nextRecord);
-          });
+          try {
+            inTransaction(store, () => {
+              store.saveSavedFile(supersededRecord!);
+              store.saveSavedFile(nextRecord);
+            });
+          } catch (error) {
+            // The records did not change: put the download back and restore the old file under its recorded name.
+            rollbackMove(destination, source, renames);
+            throw error;
+          }
           updated.push(destination);
           moved.push(destination);
           if (target.unresolved) unresolved.push(destination);
@@ -271,7 +278,12 @@ export function archiveCourse(input: ArchiveCourseInput): ArchiveResult {
           undoRenames(renames);
           throw error;
         }
-        store.saveSavedFile(savedFileRecord(course.id, target.assessmentId, relativePath, fingerprint, savedAt));
+        try {
+          store.saveSavedFile(savedFileRecord(course.id, target.assessmentId, relativePath, fingerprint, savedAt));
+        } catch (error) {
+          rollbackMove(destination, source, renames);
+          throw error;
+        }
         moved.push(destination);
         if (target.unresolved) unresolved.push(destination);
       } catch {
@@ -295,19 +307,52 @@ function savedFileRecord(courseId: string, assessmentId: string | undefined, pat
   };
 }
 
+/** Undo a move whose record write failed: the download goes back to Downloads, renamed files to their names. */
+function rollbackMove(destination: string, source: string, renames: RenamedFile[]): void {
+  replaceFile(destination, source);
+  undoRenames(renames);
+}
+
 function inTransaction<T>(store: CourseFolderStore, operation: () => T): T {
   return store.transaction ? store.transaction(operation) : operation();
 }
 
-/** Keep the first folder name and give later collisions a short assessment-id suffix so their files never mix. */
-function uniqueFolderName(base: string, id: string, used: Set<string>): string {
+/** The folder segment under `assessments/` that a stored record lives in. */
+function assessmentSegment(path: string): string | undefined {
+  const parts = path.split(/[\\/]/);
+  const index = parts.indexOf('assessments');
+  return index >= 0 && parts.length > index + 2 ? parts[index + 1] : undefined;
+}
+
+/**
+ * The folder is decided by what is stored, not by this run's order (unchanged assessments are skipped in later runs):
+ * an assessment keeps the folder its records already use; a new one takes its sanitized name unless another
+ * assessment's records (or another target of this run) already use it, then a short id suffix.
+ */
+function assessmentFolder(records: readonly SavedFile[], assessmentId: string | undefined, id: string, base: string,
+  used: Map<string, string>): string {
+  const owner = (record: SavedFile) => record.assessmentId ?? '';
+  const own = assessmentId === undefined ? undefined
+    : records.find(record => record.assessmentId === assessmentId && assessmentSegment(record.path) !== undefined);
+  if (own) {
+    const folder = assessmentSegment(own.path)!;
+    used.set(folder.toLowerCase(), id);
+    return folder;
+  }
+  const claimed = (folder: string) => {
+    const key = folder.toLowerCase();
+    const taken = used.get(key);
+    if (taken !== undefined && taken !== id) return true;
+    return records.some(record => assessmentSegment(record.path)?.toLowerCase() === key
+      && owner(record) !== (assessmentId ?? '') && record.assessmentId !== undefined);
+  };
   let candidate = base;
-  if (used.has(candidate.toLowerCase())) {
+  if (claimed(candidate)) {
     const suffix = shortIdSuffix(id);
     candidate = `${base} (${suffix})`;
-    for (let index = 2; used.has(candidate.toLowerCase()); index++) candidate = `${base} (${suffix} ${index})`;
+    for (let index = 2; claimed(candidate); index++) candidate = `${base} (${suffix} ${index})`;
   }
-  used.add(candidate.toLowerCase());
+  used.set(candidate.toLowerCase(), id);
   return candidate;
 }
 
