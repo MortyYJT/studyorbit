@@ -236,27 +236,50 @@ describe('grading rule (layered-sync task 6.1)', () => {
   it('falls back to the unique skeleton component whose name is a word-boundary prefix of the classified name', () => {
     const result = gradeItems({
       courseCode,
-      groups: groupsStage(0, [{ id: '700013', name: 'Synthetic Assignment Extension' }], 'Synthetic Assignments'),
+      groups: groupsStage(0, [{ id: '700013', name: 'Synthetic Assignment 2' }], 'Synthetic Assignments'),
       skeleton: assignments,
       classification: classificationStage([{ id: '700013', category: 'assignment',
-        component: '- Assignments Extension (weight 30)', evidence: 'Synthetic group name' }]),
+        component: '- Assignments 2 (weight 30)', evidence: 'Synthetic group name' }]),
     });
     expect(result.items[0]).toMatchObject({ componentKey: assignmentsKey, category: 'assignment', graded: true,
       effectiveComponentWeight: 30 });
     expect(result.conflicts).toEqual([{ field: 'weight', componentKey: assignmentsKey, skeletonValue: 30, canvasValue: 0 }]);
   });
 
+  it('matches a skeleton name that itself ends in a percentage when the classifier copies it exactly', () => {
+    const result = gradeItems({
+      courseCode,
+      groups: groupsStage(0, [{ id: '700015', name: 'Synthetic Lab 1' }], 'Synthetic Labs'),
+      skeleton: skeletonStage([{ name: 'Lab 5%', weight: 5, quote: 'Lab 5%\tWeekly\t5%' }]),
+      classification: classificationStage([{ id: '700015', category: 'assignment', component: 'Lab 5%', evidence: 'Synthetic group name' }]),
+    });
+    expect(result.items[0]).toMatchObject({ componentKey: `${courseCode}:lab-5`, graded: true, effectiveComponentWeight: 5 });
+  });
+
+  it('does not fall back to a prefix when the rest of the name is a word, not a number', () => {
+    const result = gradeItems({
+      courseCode,
+      groups: groupsStage(0, [{ id: '700016', name: 'Synthetic Tutorial Attendance' }], 'Synthetic Tutorials'),
+      skeleton: skeletonStage([
+        { name: 'Tutorial', weight: 10, quote: 'Tutorial\tWeekly\t10%' },
+        { name: 'Attendance', weight: 0, hurdle: '80% attendance', quote: 'Attendance\tWeekly\t0%' },
+      ]),
+      classification: classificationStage([{ id: '700016', category: 'participation', component: 'Tutorial attendance', evidence: 'Synthetic group name' }]),
+    });
+    expect(result.items[0]).not.toHaveProperty('componentKey');
+  });
+
   it('does not fall back when more than one skeleton component is a prefix of the classified name', () => {
     const skeleton = skeletonStage([
-      { name: 'Assignments', weight: 30, quote: 'Assignments\tWeeks 3-10\t30%' },
-      { name: 'Assignments Part', weight: 20, quote: 'Assignments Part\tWeek 11\t20%' },
+      { name: 'Assignment', weight: 30, quote: 'Assignment\tWeeks 3-10\t30%' },
+      { name: 'Assignment 1', weight: 20, quote: 'Assignment 1\tWeek 11\t20%' },
     ]);
     const result = gradeItems({
       courseCode,
-      groups: groupsStage(0, [{ id: '700014', name: 'Synthetic Assignment Part A' }], 'Synthetic Assignments'),
+      groups: groupsStage(0, [{ id: '700014', name: 'Synthetic Assignment 1 2' }], 'Synthetic Assignments'),
       skeleton,
       classification: classificationStage([{ id: '700014', category: 'assignment',
-        component: '- Assignments Part A (weight 20)', evidence: 'Synthetic group name' }]),
+        component: '- Assignment 1 2 (weight 20)', evidence: 'Synthetic group name' }]),
     });
     expect(result.items[0]).toMatchObject({ category: 'ungraded', graded: false });
     expect(result.items[0]).not.toHaveProperty('componentKey');

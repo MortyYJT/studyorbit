@@ -93,14 +93,24 @@ interface Component {
   hurdle?: string;
 }
 
-/** Exact normalized name first; otherwise the one skeleton name that is a word-boundary prefix. */
+/** What may follow a component name in a classifier's longer name: item numbers or letters such as `2` or `1a`. */
+const ITEM_SUFFIX = /^(?:\d+[a-z]?|[a-z])(?: (?:\d+[a-z]?|[a-z]))*$/;
+
+/**
+ * The name as copied first (a skeleton name may itself end in a percentage), then without a copied weight suffix,
+ * then the one skeleton name that prefixes it with only item numbers after it. Anything looser is no match, so the
+ * owner sees an `unmatched` conflict instead of a silent mis-assignment.
+ */
 function matchComponent(name: string | undefined, byName: ReadonlyMap<string, Component>): Component | undefined {
   if (!name) return undefined;
+  const copied = byName.get(normalizeName(name));
+  if (copied) return copied;
   const normalized = normalizeComponentName(name);
   if (!normalized) return undefined;
   const exact = byName.get(normalized);
   if (exact) return exact;
-  const candidates = [...byName.entries()].filter(([candidate]) => normalized.startsWith(`${candidate} `));
+  const candidates = [...byName.entries()].filter(([candidate]) => normalized.startsWith(`${candidate} `)
+    && ITEM_SUFFIX.test(normalized.slice(candidate.length + 1)));
   return candidates.length === 1 ? candidates[0]![1] : undefined;
 }
 

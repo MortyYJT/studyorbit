@@ -106,6 +106,15 @@ describe('check.resolve owner command (layered-sync task 6.1)', () => {
       .toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
   });
 
+  it('refuses a component key when the conflict\'s course is not stored, instead of skipping the course check', async () => {
+    const f = setup();
+    const orphan = reconcileConflicts(f.store, 'course:synthetic-missing', [{ field: 'unmatched', canvasAssignmentId: '700002',
+      canvasValue: { id: '700002', name: 'Synthetic Assignment 2', due: null } }], at, true).conflicts[0]!;
+    expect(await f.ownerCall('check.resolve', { conflictId: orphan.id, choice: `${courseCode}:assignments` }))
+      .toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await f.ownerCall('check.resolve', { conflictId: orphan.id, choice: 'dismissed' })).toMatchObject({ ok: true });
+  });
+
   it('is owner-only: absent from the agent tool set and refused from the agent context', async () => {
     const f = setup();
     expect(ownerCommands.has('check.resolve')).toBe(true);

@@ -288,8 +288,9 @@ export class SyncJobs {
           throw new CourseworkError('INVALID_INPUT', 'An unmatched conflict choice is a component key or dismissed.');
         }
         const course = this.store.loadCourse(conflict.courseId);
-        if (course && !input.choice.startsWith(`${course.code}:`)) {
-          throw new CourseworkError('INVALID_INPUT', `The component key must belong to ${course.code}.`);
+        // Without the course row the component key cannot be checked, so it is refused rather than trusted.
+        if (!course || !input.choice.startsWith(`${course.code}:`)) {
+          throw new CourseworkError('INVALID_INPUT', course ? `The component key must belong to ${course.code}.` : 'The conflict\'s course is not stored yet; dismiss it or resolve it after the next sync.');
         }
       }
       const resolved = { ...conflict, state: 'resolved' as const, choice: input.choice, resolvedAt: this.now().toISOString() };
