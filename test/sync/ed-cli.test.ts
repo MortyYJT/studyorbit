@@ -104,6 +104,20 @@ describe('edstem CLI reader (layered-sync task 7.2)', () => {
     expect(matchUnit([unit({ session: 'Semester 2' })], { code, term: '2026:SUMMER' })).toBeUndefined();
   });
 
+  it('a summer or winter session with a number is not a semester', () => {
+    const s1 = { code, term: '2026:S1' };
+    expect(matchUnit([unit({ session: 'Summer Term 1' })], s1)).toBeUndefined();
+    expect(matchUnit([unit({ session: 'Semester 1' }), unit({ id: 4102, session: 'Summer Term 1' })], s1)).toMatchObject({ id: 4101 });
+    expect(matchUnit([unit({ session: 'Winter Term 2' })], { code, term })).toBeUndefined();
+  });
+
+  it('a lesson without a dueAt key is undated, not malformed', async () => {
+    const { dueAt: _omitted, ...keyless } = undated;
+    const { runner } = workingRunner({ lessons: [lesson(), keyless] });
+    const stage = await readEdCourse(runner, { code, term });
+    expect(stage?.lessons.map(item => item.dueAt)).toEqual([dueAt, null]);
+  });
+
   it('reads the matched unit lessons and files, keeps dueAt (null for undated) and builds the Ed lesson URL', async () => {
     const { runner, calls } = workingRunner();
     const stage = await readEdCourse(runner, { code, term });

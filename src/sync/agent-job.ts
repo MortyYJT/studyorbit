@@ -304,8 +304,9 @@ export class AgentSync implements SyncCommands {
       ...(resolved ? { resolved } : {}), ...(blocked?.length ? { blocked } : {}) });
     const build = (): BuildDocumentResult | undefined => {
       // No stage at all means every job of this course failed: keep the course's previously stored data untouched.
+      // The "CLI not used" note is run bookkeeping, not data, so it does not count.
       const builtFrom = this.stageContext(job, course).stages;
-      if (!Object.keys(builtFrom).length) return undefined;
+      if (!Object.keys(builtFrom).some(key => key !== ED_CLI_NOTE_STAGE)) return undefined;
       try { return pipeline.build(courseKey, builtFrom, buildContext()); } catch { meta.sawError = true; return undefined; }
     };
     let built = build();

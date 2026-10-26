@@ -43,7 +43,8 @@ export const ED_CLI_NOT_USED = { cli: 'not-used' } as const;
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 const identifier = z.union([z.number().int().positive(), text(64)]).transform(String);
-const time = z.iso.datetime({ offset: true }).nullable();
+// An undated lesson may omit the key or send null; both mean undated.
+const time = z.iso.datetime({ offset: true }).nullish().transform(value => value ?? null);
 const UnitsSchema = z.array(z.object({
   id: z.number().int().positive(),
   code: z.string().max(300),
@@ -90,7 +91,7 @@ export function matchUnit(units: readonly EdUnit[], course: Pick<CourseSelection
   const matches = units.filter(unit => code.test(unit.code.trim()) && unit.year.trim() === year
     && (season === 'SUMMER' ? /summer/i.test(unit.session)
       : season === 'WINTER' ? /winter/i.test(unit.session)
-        : sessionHas(unit.session, season === 'S1' ? '1' : '2')));
+        : !/summer|winter/i.test(unit.session) && sessionHas(unit.session, season === 'S1' ? '1' : '2')));
   return matches.length === 1 ? matches[0] : undefined;
 }
 

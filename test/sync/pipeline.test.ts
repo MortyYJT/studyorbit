@@ -578,6 +578,20 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     }
   });
 
+  it('Ed: the "CLI not used" note alone does not count as a stage, so a course whose jobs all failed keeps its stored data', async () => {
+    let builds = 0;
+    const runner: EdRunner = async () => { throw new Error('ENOENT edstem'); };
+    let f!: ReturnType<typeof setup>;
+    f = setup({ ed: (key, ctx) => edHook(runner, f.jobs)(key, ctx),
+      behaviour: spec => spec.kind === 'courses' ? 'ok' : 'error',
+      build: key => { builds++; return { document: docFor(key), conflicts: [], complete: true, unknown: [], synthetic: {} }; } });
+    f.store.saveCourseSelections([selection(keyA, { canvas: canvasA, ed: edA })]);
+    const result = await f.sync.run({});
+    expect(f.jobs.load(result.run.id)?.stages?.[keyA]?.edCli).toEqual({ cli: 'not-used' });
+    expect(builds).toBe(0);
+    expect(result.run.courseCoverage?.[0]?.stored).toBe(false);
+  });
+
   it('Ed: CLI available stores the unit lessons as the ed stage and runs no Ed job', async () => {
     const calls: string[][] = [];
     const runner: EdRunner = async args => {
