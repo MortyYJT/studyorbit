@@ -46,7 +46,12 @@ export interface ProductionOptions {
   owner?: TrustedContext['owner'];
 }
 
-/** Merge dated Ed lessons into the built document as their own component, never duplicating an item key. */
+/**
+ * Merge dated Ed lessons into the built document as ungraded items (weight 0) in the course's `<code>:ungraded`
+ * component, never duplicating an item key. Ed lessons are not classified, so they carry no marks until the owner
+ * says otherwise: an unknown weight would hide the weight-sum check, block the grade projection and make every
+ * lesson plannable work.
+ */
 function mergeEdItems(document: CourseDocument, items: ReturnType<typeof edItems>, now: string): void {
   const existing = new Set(document.components.flatMap(component => component.items.map(item => item.key)));
   const fresh = items.filter(item => {
@@ -55,18 +60,19 @@ function mergeEdItems(document: CourseDocument, items: ReturnType<typeof edItems
     return true;
   });
   if (!fresh.length) return;
-  const code = document.course.code.value;
-  const base = `${code ?? 'ed'}:ed`;
-  let key = base;
-  for (let suffix = 2; document.components.some(component => component.key === key); suffix++) key = `${base}-${suffix}`;
-  document.components.push({ key, name: { value: 'Ed lessons', state: 'derived' },
-    kind: { value: null, state: 'unknown', checkedAt: now }, count: { value: fresh.length, state: 'derived' },
-    weight: { value: null, state: 'unknown', checkedAt: now }, isFinal: { value: false, state: 'derived' },
-    hurdleMin: { value: null, state: 'not_applicable' },
-    items: fresh.map(item => ({ ...item, unlockAt: { value: null, state: 'unknown' as const, checkedAt: now },
-      status: { value: 'not_started' as const, state: 'derived' as const },
-      score: { value: null, state: 'unknown' as const, checkedAt: now }, outOf: { value: null, state: 'unknown' as const, checkedAt: now },
-      weight: { value: null, state: 'unknown' as const, checkedAt: now } })) });
+  const key = `${document.course.code.value ?? 'ed'}:ungraded`;
+  let component = document.components.find(candidate => candidate.key === key);
+  if (!component) {
+    component = { key, name: { value: 'Ungraded', state: 'derived' }, kind: { value: 'ungraded', state: 'derived' },
+      count: { value: 0, state: 'derived' }, weight: { value: 0, state: 'derived' }, isFinal: { value: false, state: 'derived' },
+      hurdleMin: { value: null, state: 'not_applicable' }, items: [] };
+    document.components.push(component);
+  }
+  component.items.push(...fresh.map(item => ({ ...item, unlockAt: { value: null, state: 'unknown' as const, checkedAt: now },
+    status: { value: 'not_started' as const, state: 'derived' as const },
+    score: { value: null, state: 'not_applicable' as const }, outOf: { value: null, state: 'not_applicable' as const },
+    weight: { value: 0, state: 'derived' as const } })));
+  component.count = { value: component.items.length, state: 'derived' };
 }
 /** Compose durable storage and validated revision services once for all transports. */
 export function createProductionProtocol(options: ProductionOptions = {}) {

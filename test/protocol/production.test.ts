@@ -269,7 +269,11 @@ it('runs one selected course through the layered pipeline, merges dated Ed lesso
   const course = host.store.query('courses', { limit: 10 }).items[0] as { id: string };
   expect(host.store.loadCourse(course.id)).toMatchObject({ code: 'SYNA10001', name: 'Synthetic Systems' });
   expect(host.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1'))).toMatchObject({ name: 'Synthetic Assignment 1', weight: 40 });
-  expect(host.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:ed:lesson:7001'))).toMatchObject({ name: 'Synthetic Ed lesson', due: '2026-10-30T12:59:00Z' });
+  expect(host.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:ed:lesson:7001'))).toMatchObject({ name: 'Synthetic Ed lesson', due: '2026-10-30T12:59:00Z',
+    // Unclassified Ed lessons carry no marks: they must not hide the weight-sum check, block the grade projection or become plannable work.
+    kind: 'ungraded', weight: 0 });
+  expect((host.store.query('assessments', { limit: 50 }).items as { courseId: string; weight?: number; kind: string }[])
+    .filter(item => item.kind !== 'ungraded' && item.weight === undefined)).toEqual([]);
   expect(host.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:ed:lesson:7002'))).toBeUndefined();
   expect(host.store.listSyncConflicts(course.id)).toEqual([expect.objectContaining({ field: 'weight', state: 'open', skeletonValue: 30, canvasValue: 40 })]);
   const folder = join(root, 'Desktop', 'UniMelb 26S2', 'Synthetic Systems');
