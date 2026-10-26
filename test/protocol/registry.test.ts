@@ -6,7 +6,7 @@ import { createFakeContext, createFakeRegistry, examples } from '../../src/proto
 import { ok, fail } from '../../src/protocol/envelope.js';
 import { CourseworkError, retryable } from '../../src/protocol/errors.js';
 
-const names = ['courses.list', 'assessments.list', 'tasks.list', 'sources.get', 'materials.list', 'runs.list',
+const names = ['courses.list', 'assessments.list', 'tasks.list', 'sources.get', 'assessment.files', 'materials.list', 'runs.list',
   'revision.read', 'practice.stats', 'practice.attempt.record', 'source.record', 'revision.list', 'practice.list', 'breakdown.write', 'revision.write', 'practice.write', 'policy.record', 'grant.record', 'audit.list'];
 
 describe('issue A contracts for M3', () => {

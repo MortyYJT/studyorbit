@@ -39,6 +39,7 @@ export const examples = {
   'assessments.list': { input: { courseId: course.id, limit: 10 }, output: page(assessment) },
   'tasks.list': { input: { courseId: course.id, limit: 10 }, output: page(task) },
   'sources.get': { input: { sourceItemId: source.sourceItemId }, output: source },
+  'assessment.files': { input: { assessmentId: assessment.id }, output: { files: [] } },
   'materials.list': { input: { courseId: course.id, limit: 10 }, output: page(source) },
   'runs.list': { input: { limit: 10 }, output: page({ id: revision, command: 'synthetic', startedAt: at, endedAt: at, steps: 0, outcome: 'ok' as const }) },
   'revision.list': { input: { courseId: study.courseId, week: study.week, limit: 10 }, output: page(note) },
