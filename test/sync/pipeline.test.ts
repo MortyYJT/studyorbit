@@ -357,6 +357,39 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
       .toEqual([`${canvasA}/assignments/1`]);
   });
 
+  it('An assignment job never gets a link-only tab URL such as Lecture Capture', async () => {
+    const lectures = `${canvasA}/external_tools/77`;
+    const f = setup({
+      tabs: spec => tabsFor(spec.courseKey!, [tab('context_external_tool_77', 'Lecture Capture', lectures)]),
+      groups: spec => {
+        const stage = groupsFor(spec.courseKey!);
+        const group = stage.groups[0]!;
+        return { ...stage, groups: [{ ...group, assignments: [group.assignments[0]!, { ...group.assignments[0]!, id: '2', htmlUrl: lectures }] }] };
+      },
+    });
+    seed(f.store, keyA);
+    await f.sync.run({});
+    expect(f.adapter.specs.filter(spec => spec.kind === 'assignment').map(spec => spec.urls[0])).toEqual([`${canvasA}/assignments/1`]);
+  });
+
+  it('A run with more than 500 job attempts still closes, keeping at most 500 job records', async () => {
+    const f = setup({
+      behaviour: spec => spec.kind === 'assignment' ? 'error' : 'ok',
+      groups: spec => {
+        const stage = groupsFor(spec.courseKey!);
+        const group = stage.groups[0]!;
+        const assignments = Array.from({ length: 260 }, (_, index) => ({ ...group.assignments[0]!, id: String(index + 1),
+          htmlUrl: `${canvasA}/assignments/${index + 1}` }));
+        return { ...stage, groups: [{ ...group, assignments }] };
+      },
+    });
+    seed(f.store, keyA);
+    const result = await f.sync.run({});
+    expect(result.run.jobs).toHaveLength(500);
+    expect(f.sync.status().running).toBe(false);
+    expect(f.store.loadRun(result.run.id)?.jobs).toHaveLength(500);
+  });
+
   it('Without a Canvas course id, an assignment URL from another course is refused', async () => {
     const otherCourse = `${canvasB}/assignments/9`;
     const base = scripted();

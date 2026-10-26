@@ -17,6 +17,8 @@ export { runBoundMs } from './jobs.js';
 
 /** One agent job ends within 10 minutes or is interrupted and retried once. */
 export const JOB_BOUND_MS = 10 * 60_000;
+/** The most job records one Run keeps (`RunSchema.jobs`). */
+const MAX_RUN_JOBS = 500;
 
 /** The small jobs the code orchestrator runs in the layered pipeline. */
 export type JobKind = 'courses' | 'handbook' | 'tabs' | 'groups' | 'main' | 'quizzes' | 'assignment' | 'saver' | 'ed' | 'classify';
@@ -296,9 +298,12 @@ export class AgentSync implements SyncCommands {
     });
   }
 
-  /** An assignment page is allowed through the route table or because it is in this course's assignments area. */
+  /**
+   * An assignment page is allowed as a `read` URL of the route table or because it is in this course's assignments
+   * area. `save` and `link` URLs are never opened by an assignment job (a `link` target is recorded, not read).
+   */
   private assignmentUrlAllowed(url: string, allowed: AllowedUrls, canvasId: string | undefined): boolean {
-    if (isAllowed(url, allowed)) return true;
+    if (allowed.read.includes(url)) return true;
     try {
       const parsed = new URL(url);
       if (parsed.origin !== CANVAS_ORIGIN || parsed.username || parsed.password || /%2f|%5c/i.test(parsed.pathname)) return false;
@@ -358,7 +363,8 @@ export class AgentSync implements SyncCommands {
     const ok = outcome === 'OK' || outcome === 'NEEDS_SELECTION';
     const run = RunSchema.parse({ id: job.id, command: 'sync', startedAt: job.startedAt, endedAt: this.now().toISOString(), steps,
       outcome: ok ? 'ok' : 'error', ...(ok ? {} : { errorCode: outcome }), turns, syncOutcome: outcome, courseCoverage,
-      ...(pipeline ? { jobs: pipeline.jobs } : {}) });
+      // `Run.jobs` holds at most 500 records; a run with more attempts keeps the first 500 so it can still close.
+      ...(pipeline ? { jobs: pipeline.jobs.slice(0, MAX_RUN_JOBS) } : {}) });
     return { outcome, run, value: { run, outcome } };
   }
 
