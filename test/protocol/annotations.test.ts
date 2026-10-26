@@ -120,6 +120,16 @@ it('lists and filters the effective annotated kind, including clearing to unknow
   await f.call('annotation.owner.record', { entity: 'assessment', entityId: 'a', field: 'kind', value: null }, true);
   expect(await f.call('assessments.list', { courseId: 'c', kind: 'quiz' })).toMatchObject({ data: { items: [] } });
 });
+it('reads an ongoing kind annotation as participation and filters it by participation', async () => {
+  const f = await fixture();
+  expect(await f.annotate('kind', 'ongoing', { citations: f.cite('quiz') })).toMatchObject({ ok: true });
+  // The annotation row keeps the legacy value; every read normalises it.
+  expect(f.store.readAnnotations('assessment', 'a')[0]!.value).toBe('ongoing');
+  expect(await f.read()).toMatchObject({ data: { fields: { kind: { value: 'participation', origin: 'agent' } },
+    history: [expect.objectContaining({ value: 'participation' })] } });
+  expect(await f.call('assessments.list', { courseId: 'c', kind: 'participation' }))
+    .toMatchObject({ data: { items: [expect.objectContaining({ id: 'a', kind: 'participation' })] } });
+});
 it('course policy text never changes the owner-only autonomy grant or its prohibited cap', async () => {
   const f = await fixture();
   await f.call('autonomy.policy.set', { courseId: 'c', status: 'prohibited' }, true);

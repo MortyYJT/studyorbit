@@ -52,7 +52,8 @@ export function costText(cost: Cost, t: Copy, language: Language): string {
   return cost.available ? `${new Intl.NumberFormat(language, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(cost.totalUsd)} (${cost.count})` : t.mNoCosts;
 }
 export function kindLabel(kind: string, t: Copy): string {
-  return ({ quiz: t.mQuiz, ongoing: t.mOngoing, assignment: t.mAssignment, exam: t.mExam } as Record<string, string>)[kind] ?? t.unknown;
+  return ({ quiz: t.mQuiz, ongoing: t.mOngoing, participation: t.mOngoing, assignment: t.mAssignment,
+    presentation: t.mPresentation, exam: t.mExam, ungraded: t.mUngraded } as Record<string, string>)[kind] ?? t.unknown;
 }
 const reasons = (t: Copy): Record<string, string> => ({ no_runs: t.mNoRuns, no_labels: t.mNoLabels, no_items: t.mNoItems, no_conversations: t.mNoConversations });
 /** One card per metric; an unavailable metric carries its reason and no value or facts. */

@@ -42,9 +42,13 @@ export const CourseSchema = z.object({
 
 type AssessmentKind = 'exam' | 'quiz' | 'assignment' | 'presentation' | 'participation' | 'ungraded';
 type StoredAssessmentKind = AssessmentKind | 'ongoing';
+/** Old rows and annotations store `ongoing`; every read presents `participation` (#184). */
+export function normalizeAssessmentKind(value: unknown): unknown {
+  return value === 'ongoing' ? 'participation' : value;
+}
 // Old rows store `ongoing`; parse it as `participation` while keeping the input type useful to callers.
 const AssessmentKindSchema = z.preprocess(
-  value => value === 'ongoing' ? 'participation' : value,
+  normalizeAssessmentKind,
   z.enum(['exam', 'quiz', 'assignment', 'presentation', 'participation', 'ungraded']),
 ) as unknown as z.ZodType<AssessmentKind, StoredAssessmentKind>;
 
@@ -298,6 +302,9 @@ export const SyncConflictSchema = z.object({
   }
   if (conflict.target[unexpected] !== undefined) {
     ctx.addIssue({ code: 'custom', path: ['target', unexpected], message: `A ${conflict.field} conflict has no target.${unexpected}` });
+  }
+  if (conflict.field === 'unmatched' && conflict.skeletonValue !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['skeletonValue'], message: 'An unmatched conflict has no skeleton value' });
   }
   if (conflict.choice !== undefined) {
     const valid = conflict.field === 'weight'

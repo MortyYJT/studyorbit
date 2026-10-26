@@ -67,6 +67,31 @@ it('round-trips a stored ongoing assessment as participation', () => {
   } finally { store.close(); }
 });
 
+it('filters a raw version 5 ongoing row by participation', () => {
+  const file = path();
+  const current = new SqliteRepository(file);
+  current.close();
+  const raw = { id: 'raw-assessment', courseId: 'course-1', name: 'Synthetic ongoing work', kind: 'ongoing',
+    weight: 10, isFinal: false, status: 'not_started' };
+  // Bypass the schema: the v5 row's JSON column still holds `ongoing`.
+  execFileSync(process.execPath, ['--input-type=module', '-e', `
+    import { DatabaseSync } from 'node:sqlite';
+    const [file, raw] = JSON.parse(process.argv[1]);
+    const db = new DatabaseSync(file);
+    try {
+      db.prepare('INSERT INTO assessments (id, courseId, kind, weight, json) VALUES (?, ?, ?, ?, ?)')
+        .run(raw.id, raw.courseId, raw.kind, raw.weight, JSON.stringify(raw));
+    } finally { db.close(); }
+  `, JSON.stringify([file, raw])], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+  const store = new SqliteRepository(file);
+  try {
+    expect(store.query('assessments', { kind: 'participation', limit: 10 }).items)
+      .toEqual([expect.objectContaining({ id: raw.id, kind: 'participation' })]);
+    expect(store.queryEffectiveAssessments({ kind: 'participation', limit: 10 }).items)
+      .toEqual([expect.objectContaining({ id: raw.id, kind: 'participation' })]);
+  } finally { store.close(); }
+});
+
 it('migrates a version 5 database with old kind and sync job rows to version 6', () => {
   const file = path();
   const oldAssessment = { id: 'old-assessment', courseId: 'course-1', name: 'Synthetic ongoing work', kind: 'ongoing',

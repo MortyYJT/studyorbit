@@ -20,7 +20,7 @@ export interface CurrentStateReader {
   query<K extends Collection>(collection: K, input: QueryInput<K>): QueryPage<QueryItem<K>>;
 }
 const invalid = () => new CourseworkError('INVALID_INPUT', 'Invalid list filters or continuation.');
-export function queryPlan<K extends Collection>(collection: K, input: QueryInput<K>) {
+export function queryPlan<K extends Collection>(collection: K, input: QueryInput<K>, kindExpression = "json_extract(json, '$.kind')") {
   const definition = queryDefinitions[collection];
   if (!definition) throw invalid();
   const parsed = definition.filters.safeParse(input);
@@ -37,9 +37,19 @@ export function queryPlan<K extends Collection>(collection: K, input: QueryInput
     } catch { throw invalid(); }
   }
   // Keys are accepted only by the strict, collection-specific schema above; values are always bound.
-  const sqlEntries = entries.filter(([key]) => key !== 'continuationScope' && key !== 'includeRetired');
-  const clauses = sqlEntries.map(([key]) => `json_extract(json, '$.${key}') = ?`);
-  const params: (string | number)[] = sqlEntries.map(([, value]) => value as string);
+  const clauses: string[] = [];
+  const params: (string | number)[] = [];
+  for (const [key, value] of entries) {
+    if (key === 'continuationScope' || key === 'includeRetired') continue;
+    if (collection === 'assessments' && key === 'kind') {
+      // v5 rows and annotations can still hold `ongoing`; the participation filter accepts both names (#184).
+      if (value === 'participation') { clauses.push(`(${kindExpression} IN (?, ?))`); params.push('participation', 'ongoing'); }
+      else { clauses.push(`${kindExpression} = ?`); params.push(value as string); }
+      continue;
+    }
+    clauses.push(`json_extract(json, '$.${key}') = ?`);
+    params.push(value as string);
+  }
   if (collection === 'assessments' && (filters as { includeRetired?: boolean }).includeRetired !== true) clauses.push("COALESCE(json_extract(json, '$.retired'), 0) = 0");
   if (after !== undefined) { clauses.push('id > ?'); params.push(after); }
   params.push(limit + 1);

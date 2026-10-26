@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AiPolicySchema, AssessmentSchema, AnnotationSchema, AnnotationVerdictSchema, AssessmentLinkSchema, type Annotation } from '../domain/schemas.js';
+import { AiPolicySchema, AssessmentSchema, AnnotationSchema, AnnotationVerdictSchema, AssessmentLinkSchema, normalizeAssessmentKind, type Annotation } from '../domain/schemas.js';
 import { hash, citationMismatch, validateCitation } from '../citations/exact.js';
 import type { SqliteRepository } from '../store/sqlite.js';
 import { courseEvidenceSnapshot } from '../revision/sources.js';
@@ -97,7 +97,8 @@ export class AnnotationService {
           return [];
         }
       });
-      return { ...row, citations, coverage: { complete: gaps.length === 0, gaps }, verdicts: this.store.readAnnotationVerdicts(row.id) };
+      return { ...(row.field === 'kind' ? { ...row, value: normalizeAssessmentKind(row.value) } : row), citations,
+        coverage: { complete: gaps.length === 0, gaps }, verdicts: this.store.readAnnotationVerdicts(row.id) };
     });
     const fields = Object.fromEntries((data.entity === 'assessment' ? assessmentFields : courseFields).map(field => {
       const candidates = history.filter(row => row.field === field);
@@ -112,8 +113,9 @@ export class AnnotationService {
       // Agent-created facts are materialized for identity, not an independent sync fallback.
       const materializedAgentFact = 'origin' in value && value.origin === 'agent' && candidates.some(row => row.origin === 'agent');
       const fallback = materializedAgentFact ? undefined : (value as unknown as Record<string, unknown>)[field];
-      return [field, effective ? { value: effective.value, origin: effective.origin, annotationId: effective.id,
-        citations: effective.citations, verdicts: effective.verdicts } : { value: fallback ?? null,
+      const fieldValue = (candidate: unknown) => field === 'kind' ? normalizeAssessmentKind(candidate) : candidate;
+      return [field, effective ? { value: fieldValue(effective.value), origin: effective.origin, annotationId: effective.id,
+        citations: effective.citations, verdicts: effective.verdicts } : { value: fieldValue(fallback ?? null),
         origin: fallback === undefined ? null : 'sync', citations: [], verdicts: [] }];
     }));
     const gaps = [...new Map(history.flatMap(row => row.coverage.gaps).map(gap => [gap.reference, gap])).values()];

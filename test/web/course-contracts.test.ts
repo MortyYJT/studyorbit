@@ -23,6 +23,13 @@ it.each(['exam', 'quiz', 'assignment', 'presentation', 'participation', 'ungrade
     expect(output.assessments[0]!.kind).toBe(kind);
   });
 
+it('reads a stored ongoing kind through the browser contract as participation', () => {
+  const output = autonomyReads['autonomy.read'].output.parse({ courseId: 'course-1', policy: null, policyOrigin: null,
+    cap: 2, defaultLevel: 0, assessments: [{ assessmentId: 'assessment-1', kind: 'ongoing', applicable: true,
+      requiredLevel: 1, override: null, effectiveLevel: 1 }] });
+  expect(output.assessments[0]!.kind).toBe('participation');
+});
+
 it('labels the six kinds in both languages, with participation reusing the old ongoing label', () => {
   expect(en.coursePage.kinds).toMatchObject({ participation: 'Ongoing', presentation: 'Presentation', ungraded: 'Ungraded' });
   expect(zh.coursePage.kinds).toMatchObject({ participation: '持续', presentation: '展示', ungraded: '不计分' });

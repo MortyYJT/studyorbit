@@ -83,6 +83,15 @@ describe('layered-sync conflicts', () => {
     if (!result.success) expect(result.error.issues.map(issue => issue.path)).toContainEqual(['choice']);
   });
 
+  it('rejects a skeleton value on an unmatched conflict on the skeletonValue path', () => {
+    const unmatched = { ...weightConflict, target: { canvasAssignmentId: '500001' }, field: 'unmatched',
+      canvasValue: { id: '500001', name: 'Synthetic item', due: null } };
+    expect(unmatched.skeletonValue).toBeDefined();
+    const result = SyncConflictSchema.safeParse(unmatched);
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues.map(issue => issue.path)).toContainEqual(['skeletonValue']);
+  });
+
   it('rejects a component choice for a weight conflict on the choice path', () => {
     const result = SyncConflictSchema.safeParse({ ...weightConflict, choice: 'COMP90099:assignments' });
     expect(result.success).toBe(false);
