@@ -40,7 +40,7 @@ export function CoursePage({ courseId, client, t, language, timeZone, openAgent,
     <span className="aname">{item.name}{item.kind && <span className={`kind ${item.kind}`}>{c.kinds[item.kind]}</span>}</span>
     <span className="muted">{value(item, 'due')}</span>
     <span className="num">{value(item, 'weight')}</span>
-    <span className="num">{item.score === undefined ? c.none : `${item.platform?.pointsEarned !== undefined && item.platform.pointsPossible !== undefined
+    <span className="num points">{item.score === undefined ? c.none : `${item.platform?.pointsEarned !== undefined && item.platform.pointsPossible !== undefined
       ? `${number(item.platform.pointsEarned)}/${number(item.platform.pointsPossible)} · ` : ''}${number(item.score)}%`}</span>
     <span>{c.statuses[displayStatus(item)]}</span>
     <span><Level view={levelView(item, state.autonomy)} t={t} /></span>
