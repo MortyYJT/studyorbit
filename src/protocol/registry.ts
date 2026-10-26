@@ -213,8 +213,9 @@ export function createRegistry(options: { autonomy?: AssessmentAutonomy; plannin
     });
   }
   for (const name of Object.keys(syncContracts) as SyncCommandName[]) registry.register<z.ZodType, z.ZodType>({ name, ...syncContracts[name],
-    // Course selection is the owner's (frontend session or TTY); agents have no command that changes it.
-    ...(name === 'courses.select' ? { authority: 'owner' as const } : {}), handler: async (input, context) => {
+    // Course selection and conflict resolution are the owner's (frontend session or TTY); agents have no
+    // command that changes either.
+    ...(name === 'courses.select' || name === 'check.resolve' ? { authority: 'owner' as const } : {}), handler: async (input, context) => {
     if (name === 'sync.run' || name === 'sync.status') {
       if (name === 'sync.run') {
         if (!context.owner) throw new CourseworkError('INVALID_INPUT', safeMessages.INVALID_INPUT);
@@ -235,6 +236,7 @@ export function createRegistry(options: { autonomy?: AssessmentAutonomy; plannin
     if (name === 'items.classify') return reading.classify(input as never);
     if (name === 'courses.candidates') return { items: reading.candidates() };
     if (name === 'courses.select') return reading.select(input as never);
+    if (name === 'check.resolve') return reading.resolve(input as never);
     return reading.import(input as never);
   } });
   for (const name of Object.keys(annotationContracts) as (keyof typeof annotationContracts)[]) {
