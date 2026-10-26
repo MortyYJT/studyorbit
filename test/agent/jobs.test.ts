@@ -99,6 +99,17 @@ describe('pipeline job prompts (layered-sync task 5.2)', () => {
     expect(text).toContain('`assignmentId`');
   });
 
+  it('output prompts name the stage argument fields; main reports no link route', () => {
+    const main = prompt(specFor('main'), context);
+    for (const field of ['`lms`', '`ed`', '`syllabus`', '`links[]`', '{ label, url, quote }', 'Code decides']) expect(main).toContain(field);
+    expect(main).not.toContain('`route`');
+    expect(prompt(specFor('quizzes'), context)).toContain('`quizzes[]`');
+    expect(prompt(specFor('saver'), context)).toContain('`files[]`');
+    expect(prompt(specFor('saver'), context)).toContain('`links[]`');
+    expect(prompt(specFor('classify'), context)).toContain('`items[]`');
+    expect(prompt(specFor('classify'), context)).toContain('`id`');
+  });
+
   it('Handbook: lists only the one Handbook assessment URL', () => {
     const spec = specFor('handbook');
     const found = urlsIn(prompt(spec, context));

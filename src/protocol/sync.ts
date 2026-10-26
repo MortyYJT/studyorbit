@@ -8,6 +8,96 @@ const time = z.iso.datetime({ offset: true });
 const platform = z.enum(['canvas', 'ed']);
 const warningCode = z.enum(['WEIGHT_SUM', 'REMAINDER_SHORTFALL', 'COUNT_MISMATCH']);
 const paths = z.array(z.string().max(200)).max(500);
+
+// Job-scoped stage writes (layered-sync 5.3). Bounds keep one agent call small; the refinements below
+// carry the domain rules the agent must follow, with contract paths it can re-read and resubmit.
+const stageText = z.string().trim().min(1).max(4000);
+const stageQuote = z.string().trim().min(1).max(4000);
+const stageLabel = z.string().trim().min(1).max(300);
+const stageUrlText = z.string().trim().min(1).max(2048);
+const stageFileName = z.string().trim().min(1).max(300);
+const stageName = z.string().trim().min(1).max(500);
+const canvasId = z.string().trim().regex(/^\d+$/, 'Use the Canvas numeric id, digits only.').max(64);
+const courseMapOrigins = new Set(['https://canvas.lms.unimelb.edu.au', 'https://edstem.org']);
+const webOrigin = (value: string): string | undefined => {
+  try { const url = new URL(value); return url.protocol === 'https:' ? url.origin : undefined; } catch { return undefined; }
+};
+
+/** The home page map: quotes for what the LMS and Ed hold, the syllabus location and same-origin links. */
+export const CourseMapInputSchema = z.strictObject({
+  jobId: id, courseKey: id,
+  lms: z.strictObject({ text: stageText, quote: stageQuote }),
+  ed: z.strictObject({ text: stageText, quote: stageQuote }),
+  syllabus: z.strictObject({ where: z.enum(['canvas', 'ed', 'handbook', 'unknown']), quote: stageQuote.optional() }),
+  /** No `route`: code routes each link by its URL. */
+  links: z.array(z.strictObject({ label: stageLabel, url: stageUrlText, quote: stageQuote })).max(200),
+}).superRefine((input, ctx) => {
+  if (input.syllabus.where !== 'unknown' && input.syllabus.quote === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['syllabus', 'quote'], message: 'a home-page quote is required unless the syllabus location is unknown' });
+  }
+  input.links.forEach((link, index) => {
+    if (!courseMapOrigins.has(webOrigin(link.url) ?? '')) {
+      ctx.addIssue({ code: 'custom', path: ['links', index, 'url'],
+        message: `link ${JSON.stringify(link.label)} (${link.url}) must be on https://canvas.lms.unimelb.edu.au or https://edstem.org` });
+    }
+  });
+});
+
+export const QuizzesReadInputSchema = z.strictObject({
+  jobId: id, courseKey: id,
+  quizzes: z.array(z.strictObject({
+    id: canvasId, name: stageName, survey: z.boolean(), practice: z.boolean(),
+    availability: z.strictObject({ text: stageText, quote: stageQuote }).optional(),
+    description: z.strictObject({ text: stageText, quote: stageQuote }).optional(),
+  })).max(500),
+});
+
+/** The AI policy with its quote and the saved file names; instructions and rubrics are never accepted. */
+export const AssignmentSavedInputSchema = z.strictObject({
+  jobId: id, courseKey: id, assignmentId: canvasId,
+  policy: z.strictObject({ value: z.enum(['allowed', 'prohibited', 'unknown']), quote: stageQuote.optional() }),
+  files: z.array(stageFileName).max(500),
+}).superRefine((input, ctx) => {
+  if (input.policy.value !== 'unknown' && input.policy.quote === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['policy', 'quote'], message: 'the quoted AI statement is required unless the policy is unknown' });
+  }
+  input.files.forEach((file, index) => {
+    if (/[\\/]/.test(file)) ctx.addIssue({ code: 'custom', path: ['files', index], message: `use the file name only, without a path: ${file}` });
+  });
+});
+
+export const MaterialsSavedInputSchema = z.strictObject({
+  jobId: id, courseKey: id,
+  files: z.array(stageFileName).max(500),
+  /** Link-only targets such as Lecture Capture recordings; recordings are never saved as files. */
+  links: z.array(z.strictObject({ label: stageLabel, url: stageUrlText })).max(500),
+}).superRefine((input, ctx) => {
+  input.files.forEach((file, index) => {
+    if (/[\\/]/.test(file)) ctx.addIssue({ code: 'custom', path: ['files', index], message: `use the file name only, without a path: ${file}` });
+  });
+});
+
+const classificationCategory = z.enum(['exam', 'quiz', 'assignment', 'presentation', 'participation', 'ungraded']);
+export const ItemsClassifyInputSchema = z.strictObject({
+  jobId: id, courseKey: id,
+  items: z.array(z.strictObject({
+    id: z.string().trim().min(1).max(256), category: classificationCategory,
+    component: stageLabel.optional(), evidence: stageText,
+  })).max(1000),
+}).superRefine((input, ctx) => {
+  const seen = new Set<string>();
+  input.items.forEach((item, index) => {
+    if (seen.has(item.id)) ctx.addIssue({ code: 'custom', path: ['items', index, 'id'], message: `duplicate id ${JSON.stringify(item.id)}; each item appears once` });
+    seen.add(item.id);
+  });
+});
+
+export type CourseMapInput = z.output<typeof CourseMapInputSchema>;
+export type QuizzesReadInput = z.output<typeof QuizzesReadInputSchema>;
+export type AssignmentSavedInput = z.output<typeof AssignmentSavedInputSchema>;
+export type MaterialsSavedInput = z.output<typeof MaterialsSavedInputSchema>;
+export type ItemsClassifyInput = z.output<typeof ItemsClassifyInputSchema>;
+
 export const SyncStatusSchema = z.strictObject({
   /** A sync job is active (its lock is held in the store). */
   running: z.boolean(),
@@ -45,6 +135,16 @@ export const syncContracts = {
   /** Agent write, job-scoped: parse the copied Handbook assessment page; page text is never an argument. */
   'handbook.capture': { input: z.strictObject({ jobId: id, courseKey: id }),
     output: z.strictObject({ components: count }), level: 0 as const },
+  /** Agent write, job-scoped: the home page's statements, syllabus location and links; code routes the links. */
+  'course.map': { input: CourseMapInputSchema, output: z.strictObject({ links: count }), level: 0 as const },
+  /** Agent write, job-scoped: the quiz list description and availability text the API does not hold. */
+  'quizzes.read': { input: QuizzesReadInputSchema, output: z.strictObject({ quizzes: count }), level: 0 as const },
+  /** Agent write, job-scoped: one assignment's quoted AI policy and saved file names, under `assignments.<id>`. */
+  'assignment.saved': { input: AssignmentSavedInputSchema, output: z.strictObject({ files: count }), level: 0 as const },
+  /** Agent write, job-scoped: downloaded file names and link-only targets, kept apart. */
+  'materials.saved': { input: MaterialsSavedInputSchema, output: z.strictObject({ files: count, links: count }), level: 0 as const },
+  /** Agent write, job-scoped: one category and evidence per item, ids unique within the call. */
+  'items.classify': { input: ItemsClassifyInputSchema, output: z.strictObject({ items: count }), level: 0 as const },
   /** Owner only (frontend session or TTY). */
   'courses.select': { input: z.strictObject({ selections: z.array(z.strictObject({ key: id, selected: z.boolean() })).min(1).max(100) }),
     output: z.strictObject({ recorded: count }), level: 0 as const },
@@ -60,6 +160,11 @@ export interface CourseReadingCommands {
   offer(input: Input<'courses.offer'>): Output<'courses.offer'>;
   capture(input: Input<'canvas.capture'>): Output<'canvas.capture'>;
   handbook(input: Input<'handbook.capture'>): Output<'handbook.capture'>;
+  map(input: CourseMapInput): Output<'course.map'>;
+  quizzes(input: QuizzesReadInput): Output<'quizzes.read'>;
+  assignmentSaved(input: AssignmentSavedInput): Output<'assignment.saved'>;
+  materialsSaved(input: MaterialsSavedInput): Output<'materials.saved'>;
+  classify(input: ItemsClassifyInput): Output<'items.classify'>;
   candidates(): CourseSelection[];
   select(input: Input<'courses.select'>): Output<'courses.select'>;
   import(input: Input<'course.import'>): Output<'course.import'>;

@@ -61,9 +61,16 @@ const safeMessages: Record<ErrorCode, string> = {
   LOCKED: 'The target is locked.', CITATION_MISMATCH: 'Citation provenance could not be verified.',
   LIMIT_EXCEEDED: 'The response exceeds 64 KiB.', INTERNAL: 'The command could not complete safely.',
 };
+/** The job-scoped stage writes list the failing contract paths so the agent can re-read and resubmit (#204). */
+const stageCommands = new Set(['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'items.classify']);
+const agentFacingCommands = new Set(['courses.offer', 'course.import', 'canvas.capture', 'handbook.capture', ...stageCommands]);
+function describeInputIssues(issues: readonly { path: readonly PropertyKey[]; message: string }[]): string {
+  const shown = issues.slice(0, 50).map(issue => `${issue.path.map(String).join('.') || '(input)'} (${issue.message})`).join('; ');
+  return issues.length > 50 ? `${shown}; and ${issues.length - 50} more` : shown;
+}
 export function safeError(error: unknown, command?: string): CourseworkError {
-  // Course reading and clipboard capture refusals list contract paths so the agent can re-read and resubmit (#170).
-  if (error instanceof AgentFacingError && ['courses.offer', 'course.import', 'canvas.capture', 'handbook.capture'].includes(command ?? '')) return new CourseworkError(error.code, error.message);
+  // Course reading, clipboard capture and stage-write refusals list contract paths so the agent can resubmit (#170, #204).
+  if (error instanceof AgentFacingError && agentFacingCommands.has(command ?? '')) return new CourseworkError(error.code, error.message);
   if (command === 'source.record' && error instanceof CourseworkError && sourceRecordRefusals.includes(error.message)) return new CourseworkError(error.code, error.message);
   if (command?.startsWith('memory.') && error instanceof CourseworkError && memoryRefusals.includes(error.message)) return new CourseworkError(error.code, error.message);
   const code = error instanceof CourseworkError && Object.hasOwn(retryable, error.code) ? error.code : 'INTERNAL';
@@ -106,7 +113,10 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
     const entry = registry.get(name);
     if (!entry) throw new CourseworkError('NOT_FOUND', safeMessages.NOT_FOUND);
     const parsed = entry.input.safeParse(input);
-    if (!parsed.success) throw new CourseworkError('INVALID_INPUT', safeMessages.INVALID_INPUT);
+    if (!parsed.success) {
+      if (stageCommands.has(name)) throw new AgentFacingError('INVALID_INPUT', `${name} refused; nothing was stored. Fix: ${describeInputIssues(parsed.error.issues)}`);
+      throw new CourseworkError('INVALID_INPUT', safeMessages.INVALID_INPUT);
+    }
     if (isOwnerCommand(entry)) {
       if (!context.owner) throw new CourseworkError('INVALID_INPUT', safeMessages.INVALID_INPUT);
       await context.owner.assertOwner(name);
@@ -218,6 +228,11 @@ export function createRegistry(options: { autonomy?: AssessmentAutonomy; plannin
     if (name === 'courses.offer') return reading.offer(input as never);
     if (name === 'canvas.capture') return reading.capture(input as never);
     if (name === 'handbook.capture') return reading.handbook(input as never);
+    if (name === 'course.map') return reading.map(input as never);
+    if (name === 'quizzes.read') return reading.quizzes(input as never);
+    if (name === 'assignment.saved') return reading.assignmentSaved(input as never);
+    if (name === 'materials.saved') return reading.materialsSaved(input as never);
+    if (name === 'items.classify') return reading.classify(input as never);
     if (name === 'courses.candidates') return { items: reading.candidates() };
     if (name === 'courses.select') return reading.select(input as never);
     return reading.import(input as never);

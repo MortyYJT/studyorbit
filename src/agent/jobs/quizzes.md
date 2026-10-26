@@ -8,4 +8,4 @@ Read the quiz list descriptions and availability text that the API does not hold
 
 ## Output
 
-Call `quizzes.read` once with the job id, the course key and each quiz's flags.
+Call `quizzes.read` once with the job id, the course key and `quizzes[]`; each entry has `id`, `name`, `survey`, `practice` and, when the page states them, `availability` and `description` as `{ text, quote }`.
