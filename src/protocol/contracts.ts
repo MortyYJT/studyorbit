@@ -104,7 +104,8 @@ export const contracts = {
   'courses.list': courses,
   'assessments.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }), output: page(AssessmentSchema.strict().extend({ fields: AnnotationFieldsSchema.optional(),
     // Derived from currently linked platform items; `linked: false` means submission state is unknown.
-    platform: z.strictObject({ linked: z.boolean(), submitted: z.boolean(), removed: z.boolean() }).optional() })), level: 0 },
+    platform: z.strictObject({ linked: z.boolean(), submitted: z.boolean(), removed: z.boolean(),
+      pointsEarned: z.number().nonnegative().optional(), pointsPossible: z.number().nonnegative().optional() }).optional() })), level: 0 },
   'tasks.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), assessmentId: IdSchema.optional(), moduleId: IdSchema.optional() }), output: page(task), level: 0 },
   'sources.get': { input: z.strictObject({ sourceItemId: IdSchema }), output: SourceEvidenceSchema, level: 0 },
   'materials.list': { input: z.strictObject({ ...paging, courseId: IdSchema, sourceItemId: IdSchema.optional(), page: z.number().int().positive().safe().optional() }), output: page(SourceEvidenceSchema), level: 0 },

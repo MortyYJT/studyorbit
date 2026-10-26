@@ -19,7 +19,7 @@ import { StoreProtocolReads, TrustedStoreEvidence, type AuxiliaryReadPorts, type
 import { SharedAuthorization } from './authorization.js';
 import { CanonicalAuthorizationStore } from './canonical-authorization.js';
 import { AssessmentAutonomy } from './autonomy.js';
-import { assessmentPlatformState } from '../store/platform-state.js';
+import { currentLinks, linkedSources, platformState } from '../store/platform-state.js';
 import { DurableAudit, DurableRuns } from './audit.js';
 import { ComposedServices, ComposedEvidence } from './writes.js';
 import { StudyWriteService, type StudyRecordStore } from './study-writes.js';
@@ -65,7 +65,12 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       const storedAt = entity === 'course' ? jobs.storedAt(value.id) : undefined;
       return storedAt ? { ...projected, storedAt } : projected;
     },
-    platform: id => assessmentPlatformState(store, id),
+    platform: id => {
+      const sources = linkedSources(store, currentLinks(store.listAssessmentLinks()), id);
+      const candidates = sources.filter(source => source?.facts?.pointsEarned !== undefined && source.facts.pointsPossible !== undefined);
+      const points = candidates.length === 1 ? candidates[0]!.facts : undefined;
+      return { ...platformState(sources), ...(points ? { pointsEarned: points.pointsEarned, pointsPossible: points.pointsPossible } : {}) };
+    },
     accepted: options.reads?.accepted ?? accepted,
     revision: { read: (name, input) => revision.read(name, input) },
     audit: options.reads?.audit ?? { read: async input => {
