@@ -59,7 +59,7 @@ export interface PipelineJobContext {
  * The production host does not pass this yet, so the legacy single reading job remains the production path.
  */
 export interface SyncPipeline {
-  prompt(spec: JobSpec): string;
+  prompt(spec: JobSpec, ctx?: PipelineJobContext): string;
   tools(spec: JobSpec): readonly AgentTool[];
   build(courseKey: string, stages: PipelineStages): unknown | undefined;
   ed?(courseKey: string, ctx: PipelineJobContext): void | Promise<void>;
@@ -182,7 +182,8 @@ export class AgentSync implements SyncCommands {
     const pipeline = this.options.pipeline!;
     let steps = 0; let turns = 0; let hadOk = false; let hadUnavailable = false; let hadError = false;
     const run = async (spec: JobSpec, produced?: (job: SyncJob) => boolean) => {
-      const result = await this.runStage(runner, spec, signal, attempts, meta, produced);
+      // Read the stages just before this job starts, so the classifier sees what the course has produced so far.
+      const result = await this.runStage(runner, spec, signal, attempts, meta, produced, this.stageContext(job, course));
       if (!result) return undefined;
       steps += result.steps; turns += result.turns;
       if (result.outcome === 'ok') hadOk = true;
@@ -314,11 +315,11 @@ export class AgentSync implements SyncCommands {
 
   /** One pipeline job through the Step 1 runner; the attempts are appended to the run's job record. */
   private async runStage(runner: AgentJobRunner, spec: JobSpec, signal: AbortSignal, attempts: RunJob[],
-    meta: PipelineMeta, produced?: (job: SyncJob) => boolean): Promise<StageRun | undefined> {
+    meta: PipelineMeta, produced?: (job: SyncJob) => boolean, ctx?: PipelineJobContext): Promise<StageRun | undefined> {
     if (signal.aborted) return undefined;
     let prompt: string; let tools: readonly AgentTool[];
     try {
-      prompt = this.options.pipeline!.prompt(spec);
+      prompt = this.options.pipeline!.prompt(spec, ctx);
       tools = this.options.pipeline!.tools(spec);
     } catch {
       // A bad injected prompt/tools fails this job like any adapter failure (one retry, two records).
