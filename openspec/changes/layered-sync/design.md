@@ -23,7 +23,7 @@ Constraints that stay: Codex works only in the owner's signed-in Edge and stops 
 
 ## Decisions
 
-**D1. A pipeline of small jobs, orchestrated by code.** `AgentSync.run` becomes: list → per selected course, in order: skeleton → Canvas API pages → main job → routed jobs → classification job → build document → import → folder archive. Each agent job is one `adapter.start()` with a short prompt (role, task, output) and only the tools it needs; it ends after its single output tool call. Jobs share state through the store (the existing SyncJob row gains per-course stage results), because tool calls run in the `coursework mcp` process. A course finishes completely before the next starts, so a quota stop loses at most one course.
+**D1. A pipeline of small jobs, orchestrated by code.** `AgentSync.run` becomes: list → per selected course, in order: skeleton (capture job) → Canvas API pages → main job → routed jobs → classification job → build document → import → folder archive. Each agent job is one `adapter.start()` with a short prompt (role, task, output) and only the tools it needs; it ends after its single output tool call. Jobs share state through the store (the existing SyncJob row gains per-course stage results), because tool calls run in the `coursework mcp` process. A course finishes completely before the next starts, so a quota stop loses at most one course.
 - Why code orchestration, not a main agent that spawns subagents: code knows each job's steps and turns, can retry exactly one job, and enforces routing; an agent spawning agents would hide all three.
 
 **D2. Canvas API pages through the clipboard (from C-5 D1/D2).** For each Canvas page Codex opens one fixed URL in its own window, selects all, copies and calls `canvas.capture {jobId, courseKey, page}` with `page` one of `courses`, `tabs`, `groups`; the command reads the clipboard itself (`pbpaste`, behind an injectable reader). Parsing strips text before the first `[` or `{`, validates only needed keys with zod, checks `course_id`, caps at 5 MB, never stores raw text. URLs:
@@ -33,7 +33,7 @@ Constraints that stay: Codex works only in the owner's signed-in Edge and stops 
 The `groups` page sets each Canvas item's due (`due_at`), unlock time (`unlock_at`), points (`points_possible`), score and submission state, and each group's weight. These values are stored with `via: "api"` and are not read by any agent.
 - Alternative kept as fallback: if the probe (task 1.1) shows the includes are refused, the two URLs of #193.
 
-**D3. Handbook skeleton by code, tentative.** Code fetches `https://handbook.unimelb.edu.au/<year>/subjects/<code>/assessment` with `fetch` (public, no login), extracts the assessment table (description, timing, percentage, hurdle text) with a small parser over the HTML, and stores components as the course's tentative skeleton. Failure to fetch or parse is not fatal: the course continues with the Canvas groups as the only structure. Where Handbook and Canvas give a component weight and they differ, the Canvas group weight is used and a `weight` conflict is shown (D8).
+**D3. Handbook skeleton through the clipboard, tentative (#214).** The Handbook is behind bot protection: a plain `fetch` of `https://handbook.unimelb.edu.au/<year>/subjects/<code>/assessment` returns a block page (probe 2026-10-26, task 1.3), and code does not try to get around it. Instead, as for the Canvas API pages (D2), one short agent job opens that URL in the owner's Edge, selects all, copies and calls `handbook.capture {jobId, courseKey}`; the command reads the clipboard itself, caps it at 1 MB, parses the copied page text into the assessment rows (description, timing, percentage, hurdle text) with a small parser, never stores the raw text, and stores components as the course's tentative skeleton. Failure to capture or parse is not fatal: the course continues with the Canvas groups as the only structure. Where Handbook and Canvas give a component weight and they differ, the Canvas group weight is used and a `weight` conflict is shown (D8).
 
 **D4. Page routing by code (#201).** The `tabs` page gives each navigation tab's id, label and URL. A fixed table maps tab ids (Canvas built-ins such as `home`, `assignments`, `quizzes`, `modules`, `grades`, `pages`, `files`, `announcements`, `discussions`, `people`, `outcomes`, `collaborations`, `syllabus`) and known external tool labels (Lecture Capture, Ed Discussion, Gradescope, Echo360, Zoom, Office 365, Google Drive, Readings Online) to one route: `read`, `save`, `link`, `on-home-link` or `never`. Unknown tabs are `never` and are listed in the run for the owner. Prompts receive only allowed URLs and the rule "open no other page", but the guarantee is that no job is given a disallowed URL.
 - Why code, not prompt text: the navigation list is data; a fixed filter costs no tokens and cannot be forgotten.
@@ -66,7 +66,7 @@ The `groups` page sets each Canvas item's due (`due_at`), unlock time (`unlock_a
 ## Risks / Trade-offs
 
 - [Student session refuses an include or `tabs`] → Probe first (task 1.1); fall back to the #193 URLs; tabs fallback is the agent listing the navigation once.
-- [Handbook HTML changes or the subject has no assessment table] → Skeleton is optional; Canvas groups alone still give weights.
+- [Handbook page text changes, the subject has no assessment table, or the bot protection also blocks the owner's Edge] → Skeleton is optional; Canvas groups alone still give weights.
 - [`.mhtml` fingerprints change on every save (timestamps, tokens)] → Normalize before hashing; measure false "updated" notices in the live run (task 1.5).
 - [Parallel computer use fights over one pointer] → Default 1; experiment before raising it.
 - [`edstem-cli` changes its commands or output] → Called behind one adapter with a version check; the agent fallback stays.
@@ -82,5 +82,5 @@ Additive migration only. Existing assessments keep their values; `ongoing` reads
 
 - Do `include[]=assignments&include[]=submission` and `/tabs` work for the student session, and what does Edge copy from a JSON page? (task 1.1)
 - Can the owner create an Ed API token, and does `edstem-cli` return lessons with due dates for these courses? (task 1.2)
-- Is the Handbook fetch by code acceptable (public page, no login)? Proposed here; the owner has not answered it. Tasks 1.3 and 4.1 wait for this answer.
+- Is the Handbook fetch by code acceptable (public page, no login)? Answered: approved by the owner (#213), but a plain fetch is blocked by bot protection, so the page is captured through the clipboard instead (#214). What does Edge copy from the assessment page (row separators, column order)? (task 1.3, now with Codex)
 - Do parallel Codex jobs in separate Edge windows interfere? (task 1.4)

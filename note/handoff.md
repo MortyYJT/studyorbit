@@ -1,17 +1,17 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 的改法见 #165–#197，PRD 待更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/`（进行中：`canvas-check-item-policy`，规格已合并，实现未开始）；决定看 `note/decisions.md`（#1–#198）；进度看 `note/product/roadmap.md`。
+> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 的改法见 #165–#197，PRD 待更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/`（进行中：`layered-sync`，规格已合并，实现中）；决定看 `note/decisions.md`（#1–#214）；进度看 `note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-26 傍晚，Claude。
-- **模式：** OpenSpec 变更 `layered-sync`（路线图 C-5，**并入了原来的 `canvas-check-item-policy`**），规格已写好，过了两轮审查，实现还没开始。代码交给 dsh（DeepSeek）写（#209）；需要 Codex 的实测，等额度恢复后再做。
+- **最后更新：** 2026-10-26 晚，Claude。
+- **模式：** OpenSpec 变更 `layered-sync`（路线图 C-5，**并入了原来的 `canvas-check-item-policy`**），规格已合并，实现中：第 2 组已合并（#186），第 3 组在做（#185）。代码交给 dsh（DeepSeek）写（#209）；需要 Codex 的实测，等额度恢复后再做。
 - **本轮合并（10-26 凌晨）：** #175、#176 重写 README（项目说明、为什么读页面不用 token、功能、计划、进度），同时把决策 #193–#197 和路线图 C-5 带进了 main；GitHub 仓库的 About 说明也已更新；#178 合并了 C-5 规格。
 - **#191 删除隐私检查（沿用）：** 姓名、邮箱、学号、凭证样式的文字、本地路径都会原样存储、原样发给模型。保留引用完整性检查和 `source.record` 的网址规则。仓库和测试数据里仍然不能放真实课程数据、密钥和浏览器配置。
 - **分工（#189）：** 实现和审查优先交给 Codex；Claude 派活、提交、在本机重跑检查、浏览器验证、合并。Codex 额度用完时由 Claude 接手，审查改用只读的 Claude 子代理（#175、#176 就是这样审的）。
 
 ## 进行中：`layered-sync`（C-5，分层同步）
 
-- **来源**：你在对话里和 Claude 一起定的设计稿「分层同步 v0.3」（桌面 `Develop/墨大课业agent/架构图.drawio` 第 4 页，不进仓库）。决定 #199–#212。
+- **来源**：你在对话里和 Claude 一起定的设计稿「分层同步 v0.3」（桌面 `Develop/墨大课业agent/架构图.drawio` 第 4 页，不进仓库）。决定 #199–#214。
 - **要点**：
   - 代码一门一门地调度小任务：课程列表和作业数字（截止、开始时间、分值、得分、权重）走 Canvas 接口，Codex 复制、代码从剪贴板读（#208）。
   - Handbook 作暂定骨架（#203）；按导航栏分流页面（#201）；主 agent 只读主页。
@@ -19,9 +19,11 @@
   - 考核项收敛成 6 类，有计分规则（#202、#210–#212）；你点「开始」才读深层。
   - Ed 先试 edstem-cli（#207）；并行默认关，等实验结果（#206）。
 - **下一步（按顺序）**：
-  1. 等你答复「Handbook 由代码抓」（任务 1.3、4.1 在等）。
-  2. 按任务第 2 组起开 issue，派给 dsh（`dsh headless`，独立 clone，TDD），Claude 审查、提交、开 PR、合并。
-  3. Codex 额度恢复、你在场时做任务 1.1（接口参数）、1.4（多窗口并行实验），最后做 10.2（实测填表）。
+  1. Handbook：代码直接抓被反爬拦了（10-26 实测），改为 Codex 复制、代码解析（#214）。4.1 可以先用合成数据写；1.3b 等 Codex 额度。
+  2. 第 2 组（数据模型和存储）：issue #184 → PR #186 已合并（e9ab431）。dsh 写，Claude 子代理审了两轮（第 1 轮 1 个阻塞 + 4 个非阻塞，dsh 返工 1 次），CI 通过。
+  3. 第 3 组（Canvas 接口剪贴板读取，`canvas.capture`）：issue #185 已派给 dsh，clone `../unimelb-coursework-agent-layered-model`，分支 `dsh/canvas-capture`。之后按组继续：4.2 路由、5.x 流水线……
+  4. dsh 的 DeepSeek key 放在 `~/.zshenv` 的 `DEEPSEEK_API_KEY`（10-26 换过一次）；报 `AUTH` 错就是 key 失效。
+  5. Codex 额度恢复、你在场时做任务 1.1（接口参数）、1.4（多窗口并行实验），最后做 10.2（实测填表）。
 - **Ed**：edstem-cli 0.8.2 已全局安装；`edstem auth login` 等你粘贴 token（任务 1.2）。它现在的代码只认 Ed API token，不读 cookie。
 - **待你复核**：#210、#211、#212 是 Claude 根据审查意见做的细化。
 
