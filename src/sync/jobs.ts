@@ -10,6 +10,8 @@ import { importCourseDocument, type ImportOptions } from './course-import.js';
 import { canvasApiUrl, canvasCourseId, parseCanvasCourses, parseCanvasGroups, parseCanvasTabs, pbpasteClipboard,
   type CapturePage, type ClipboardReader, type GroupsStage, type TabsStage } from './canvas-api.js';
 import { handbookUrl, parseHandbook, type SkeletonStage } from './handbook.js';
+import { COMPONENT_KEY_PATTERN } from './grading.js';
+import { resolvedChoices } from './conflicts.js';
 
 /** A run ends within 20 minutes per selected course, and never sooner than 20 minutes. */
 export const RUN_BOUND_PER_COURSE_MS = 20 * 60_000;
@@ -268,6 +270,32 @@ export class SyncJobs {
       const at = this.now().toISOString();
       this.store.saveCourseSelections(input.selections.map(selection => ({ ...existing.get(selection.key)!, selected: selection.selected, decidedAt: at })));
       return { recorded: input.selections.length };
+    });
+  }
+
+  /** Owner only (the registry gates it): settle one conflict and return the choices the grading rule applies. */
+  resolve(input: { conflictId: string; choice: string }) {
+    return this.store.transaction(() => {
+      const conflict = this.store.loadSyncConflict(input.conflictId);
+      if (!conflict) throw new CourseworkError('NOT_FOUND', 'Sync conflict not found.');
+      if (conflict.state === 'agreed') throw new CourseworkError('INVALID_INPUT', 'An agreed conflict needs no resolution.');
+      if (conflict.field === 'weight') {
+        if (input.choice !== 'skeleton' && input.choice !== 'canvas') {
+          throw new CourseworkError('INVALID_INPUT', 'A weight conflict choice is skeleton or canvas.');
+        }
+      } else if (input.choice !== 'dismissed') {
+        if (!COMPONENT_KEY_PATTERN.test(input.choice)) {
+          throw new CourseworkError('INVALID_INPUT', 'An unmatched conflict choice is a component key or dismissed.');
+        }
+        const course = this.store.loadCourse(conflict.courseId);
+        // Without the course row the component key cannot be checked, so it is refused rather than trusted.
+        if (!course || !input.choice.startsWith(`${course.code}:`)) {
+          throw new CourseworkError('INVALID_INPUT', course ? `The component key must belong to ${course.code}.` : 'The conflict\'s course is not stored yet; dismiss it or resolve it after the next sync.');
+        }
+      }
+      const resolved = { ...conflict, state: 'resolved' as const, choice: input.choice, resolvedAt: this.now().toISOString() };
+      this.store.saveSyncConflict(resolved);
+      return { conflict: resolved, choices: resolvedChoices(this.store.listSyncConflicts(conflict.courseId)) };
     });
   }
 

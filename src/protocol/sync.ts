@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CourseSelectionSchema, RunSchema, SyncOutcomeSchema, type CourseSelection } from '../domain/schemas.js';
+import { CourseSelectionSchema, RunSchema, SyncConflictSchema, SyncOutcomeSchema, type CourseSelection } from '../domain/schemas.js';
 
 /** Sync and agent course-reading contracts (agent-course-reading). Browser-safe: the frontend client spreads them. */
 const id = z.string().trim().min(1).max(256);
@@ -111,6 +111,11 @@ export const SyncStatusSchema = z.strictObject({
 export const ImportReceiptSchema = z.strictObject({ stored: z.literal(true), key: id, submission: count, courseId: id,
   components: count, items: count, assessments: count, retired: count, unknownFields: paths, dropped: paths,
   warnings: z.array(z.strictObject({ code: warningCode, sum: z.number().optional() })).max(10) });
+/** The owner's settled choices, as `check.resolve` returns them for `gradeItems`. */
+export const ResolvedChoicesSchema = z.strictObject({
+  weight: z.record(z.string(), z.enum(['skeleton', 'canvas'])),
+  unmatched: z.record(z.string(), z.string().min(1).max(500)),
+});
 export const syncContracts = {
   /** Owner: start one agent reading job (Codex by default); resolves with its outcome when the job ends. */
   'sync.run': { input: z.strictObject({ course: z.string().regex(/^[A-Z]{4}\d{5}$/).optional() }),
@@ -144,6 +149,9 @@ export const syncContracts = {
   /** Owner only (frontend session or TTY). */
   'courses.select': { input: z.strictObject({ selections: z.array(z.strictObject({ key: id, selected: z.boolean() })).min(1).max(100) }),
     output: z.strictObject({ recorded: count }), level: 0 as const },
+  /** Owner only: settle one weight or unmatched conflict and return the choices `gradeItems` applies. */
+  'check.resolve': { input: z.strictObject({ conflictId: id, choice: z.string().trim().min(1).max(500) }),
+    output: z.strictObject({ conflict: SyncConflictSchema, choices: ResolvedChoicesSchema }), level: 0 as const },
   /** Agent write, job-scoped: one course document; the contract is the JSON Schema in the job prompt. */
   'course.import': { input: z.strictObject({ jobId: id, document: z.record(z.string(), z.unknown()).describe('One course document following the JSON Schema in the job prompt') }),
     output: ImportReceiptSchema, level: 0 as const },
@@ -163,5 +171,6 @@ export interface CourseReadingCommands {
   classify(input: ItemsClassifyInput): Output<'items.classify'>;
   candidates(): CourseSelection[];
   select(input: Input<'courses.select'>): Output<'courses.select'>;
+  resolve(input: Input<'check.resolve'>): Output<'check.resolve'>;
   import(input: Input<'course.import'>): Output<'course.import'>;
 }
