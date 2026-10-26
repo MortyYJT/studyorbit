@@ -188,7 +188,7 @@ function setup(options: SetupOptions = {}) {
   const pipeline: SyncPipeline = {
     prompt: options.prompt ?? (spec => JSON.stringify(spec)),
     tools: () => tools,
-    build: options.build ?? ((key: string) => ({ document: docFor(key), conflicts: [], complete: true })),
+    build: options.build ?? ((key: string) => ({ document: docFor(key), conflicts: [], complete: true, unknown: [], synthetic: {} })),
     ...(options.ed ? { ed: options.ed } : {}),
     ...(options.archive ? { archive: options.archive } : {}),
     ...(options.parallel !== undefined ? { parallel: options.parallel } : {}),
@@ -312,7 +312,7 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
       events.push(`start:${spec.courseKey ?? 'all'}:${spec.kind}`);
       yield* base(spec, call);
     }, build: (key, stages) => { events.push(`build:${key}`); expect(stages.tabs).toBeDefined();
-      return { document: docFor(key), conflicts: [], complete: true }; } });
+      return { document: docFor(key), conflicts: [], complete: true, unknown: [], synthetic: {} }; } });
     seed(f.store, keyA, keyB);
     await f.sync.run({});
     const kindsA = f.adapter.specs.filter(spec => spec.courseKey === keyA).map(spec => spec.kind);
@@ -339,7 +339,7 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
   it('Handbook unavailable: two failed handbook jobs do not stop the course, and the build sees no skeleton', async () => {
     let stagesSeen: Record<string, unknown> | undefined;
     const f = setup({ behaviour: spec => spec.kind === 'handbook' ? 'unavailable' : 'ok',
-      build: (key, stages) => { stagesSeen = stages; return { document: docFor(key), conflicts: [], complete: true }; } });
+      build: (key, stages) => { stagesSeen = stages; return { document: docFor(key), conflicts: [], complete: true, unknown: [], synthetic: {} }; } });
     seed(f.store, keyA);
     const result = await f.sync.run({});
     const handbook = result.run.jobs?.filter(job => job.kind === 'handbook') ?? [];
@@ -529,7 +529,7 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     const f = setup({ build: (key, stages) => {
       expect(stages.tabs).toBeDefined();
       if (failA && key === keyA) throw new Error('Synthetic build failure');
-      return { document: docFor(key), conflicts: [], complete: true };
+      return { document: docFor(key), conflicts: [], complete: true, unknown: [], synthetic: {} };
     } });
     seed(f.store, keyA, keyB);
     expect((await f.sync.run({})).outcome).toBe('OK');
@@ -658,6 +658,46 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     });
   });
 
+  it('Classification retry merges by id: first-round answers survive when the retry returns only re-checked items', async () => {
+    const groups = groupsWith(30);
+    const group = groups.groups[0]!;
+    const twoItems: GroupsStage = { ...groups, groups: [{ ...group, assignments: [
+      group.assignments[0]!,
+      { ...group.assignments[0]!, id: '2', name: 'Synthetic item 2', htmlUrl: `${canvasA}/assignments/2` },
+    ] }] };
+    const base = scripted({ skeleton: () => skeletonFor([{ name: 'Assignments', weight: 30 }]), groups: () => twoItems });
+    let classifications = 0;
+    const f = setup({ build: realBuild, script: async function* (spec, call) {
+      if (spec.kind === 'classify') {
+        classifications++;
+        // The first round also names item 2, but says `ungraded`; the retry names only the re-checked id.
+        const items = classifications > 1
+          ? [{ id: '2', category: 'assignment', component: 'Assignments', evidence: 'Synthetic group name' }]
+          : [
+            { id: '1', category: 'assignment', component: 'Assignments', evidence: 'Synthetic group name' },
+            { id: '2', category: 'ungraded', component: 'Assignments', evidence: 'Synthetic group name' },
+          ];
+        await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'classification', value: classifyAs(items) });
+        yield { type: 'tool_step', tool: 'coursework.items.classify', outcome: 'ok' };
+        yield { type: 'result', turns: 1 };
+        return;
+      }
+      yield* base(spec, call);
+    } });
+    seed(f.store, keyA);
+    const result = await f.sync.run({});
+    expect(result.outcome).toBe('OK');
+    const stage = f.jobs.load(f.adapter.specs[0]!.jobId)?.stages?.[keyA]?.classification as { items: { id: string; category: string }[] };
+    expect(stage.items).toEqual([
+      expect.objectContaining({ id: '1', category: 'assignment' }),
+      expect.objectContaining({ id: '2', category: 'assignment' }),
+    ]);
+    expect(f.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1')))
+      .toMatchObject({ kind: 'assignment', group: { key: 'SYNA10001:assignments' } });
+    expect(f.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:2')))
+      .toMatchObject({ kind: 'assignment', group: { key: 'SYNA10001:assignments' } });
+  });
+
   it('Classification still missing after the retry is stored unknown and counted in the run', async () => {
     const base = scripted({ skeleton: () => skeletonFor([{ name: 'Assignments', weight: 30 }]), groups: () => groupsWith(30) });
     const f = setup({ build: realBuild, script: async function* (spec, call) {
@@ -672,7 +712,11 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     seed(f.store, keyA);
     const result = await f.sync.run({});
     expect(f.adapter.specs.filter(spec => spec.kind === 'classify')).toHaveLength(2);
-    expect(result.run.courseCoverage?.[0]?.unknownFields ?? 0).toBeGreaterThan(0);
+    // `components[1].items[0].due` is synthetic; the item's unknown kind is the classification failure to count.
+    const unknownFields = f.jobs.load(result.run.id)?.results?.[keyA]?.unknownFields ?? [];
+    expect(unknownFields).toEqual(['course.name', 'components[0].kind', 'components[1].kind',
+      'components[1].items[0].due', 'components[1].items[0].kind']);
+    expect(result.run.courseCoverage?.[0]?.unknownFields).toBe(5);
     const item = f.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1'))!;
     expect(item.kind).toBeUndefined();
     expect(item.readState?.kind?.state).toBe('unknown');

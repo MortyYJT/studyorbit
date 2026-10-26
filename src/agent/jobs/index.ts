@@ -62,7 +62,8 @@ export function prompt(spec: JobSpec, ctx?: PipelineJobContext): string {
   const page = pageNote(spec);
   const urls = spec.urls.length ? spec.urls.map(url => `- ${url}`) : ['None. This job opens no page.'];
   const retry = spec.kind === 'classify' && spec.retry?.length
-    ? ['', '## Re-check', `Re-check these items: ${spec.retry.join(', ')}`]
+    ? ['', '## Re-check', `Re-check these items: ${spec.retry.join(', ')}`,
+      'Return every item, including the ones already classified; this call replaces the earlier classification stage.']
     : [];
   return [
     readJobFile('rules.md'),

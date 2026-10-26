@@ -5,7 +5,7 @@ import type { AgentAdapter, AgentEvent, AgentTool } from '../agent/adapter.js';
 import { packageRoot } from '../config/data-dir.js';
 import { RunSchema, type CourseSelection, type Run, type RunJob, type SyncJob, type SyncOutcome } from '../domain/schemas.js';
 import { CourseworkError } from '../protocol/errors.js';
-import type { SyncCommands } from '../protocol/sync.js';
+import type { ItemsClassifyInput, SyncCommands } from '../protocol/sync.js';
 import type { SqliteRepository } from '../store/sqlite.js';
 import { canvasApiUrl, canvasCourseId, type CanvasAssignmentValue, type GroupsStage, type TabsStage } from './canvas-api.js';
 import { classificationRetryIds, type BuildDocumentResult } from './build-document.js';
@@ -129,6 +129,22 @@ function findAssignment(stage: unknown, id: string): Record<string, unknown> | u
 
 const melbourneDate = (instant: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).format(instant);
 const platforms = ['canvas', 'ed'] as const;
+
+/** A stored classification stage's items, when the value has the shape `items.classify` wrote. */
+function classificationItems(value: unknown): ItemsClassifyInput['items'] | undefined {
+  const stage = jsonRecord(value);
+  return stage && Array.isArray(stage.items) ? stage.items as ItemsClassifyInput['items'] : undefined;
+}
+
+/** Merge a retry into the first round by id; retry entries win and the first round's other answers stay. */
+function mergeClassification(first: unknown, retry: unknown): { items: ItemsClassifyInput['items'] } | undefined {
+  const before = classificationItems(first);
+  const after = classificationItems(retry);
+  if (!after) return before ? { items: before } : undefined;
+  const byId = new Map((before ?? []).map(item => [item.id, item]));
+  for (const item of after) byId.set(item.id, item);
+  return { items: [...byId.values()] };
+}
 
 /** The fixed reading prompt plus this job's id, selected courses, date and the course document JSON Schema. */
 export function courseReadingPrompt(job: SyncJob, courses: readonly CourseSelection[], now: Date): string {
@@ -289,8 +305,14 @@ export class AgentSync implements SyncCommands {
     // One classification retry only, and only for ids the built document still leaves unknown.
     const retry = built !== undefined && 'document' in built ? classificationRetryIds(built) : [];
     if (retry.length && !signal.aborted) {
+      const firstClassification = this.stageContext(job, course).stages.classification;
       await run({ kind: 'classify', jobId: job.id, courseKey, urls: [], retry });
       if (signal.aborted) return { steps, turns };
+      // A retry may return only the re-checked ids; merge so the first round's other answers are not lost.
+      const merged = mergeClassification(firstClassification, this.stageContext(job, course).stages.classification);
+      if (merged) {
+        try { this.jobs.recordStage(job.id, courseKey, 'classification', merged); } catch { meta.sawError = true; }
+      }
       built = build();
     }
     if (built !== undefined) {

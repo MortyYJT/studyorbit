@@ -61,6 +61,10 @@ export interface BuildDocumentResult {
   document: CourseDocument;
   conflicts: GradingConflict[];
   complete: boolean;
+  /** Item `kind` paths the classifier left unknown after its retry; merged into the stored unknown fields. */
+  unknown: string[];
+  /** The synthetic component keys, so retry selection never infers them from a key suffix. */
+  synthetic: { ungraded?: string; unassigned?: string };
 }
 
 /** A missing or unquoted policy cannot be a found document value, so it stays unknown. */
@@ -121,10 +125,11 @@ function mostCommonCategory(items: readonly GradedItem[]): GradingCategory | und
 
 function hurdleMinimum(component: HandbookComponent, skeleton: SkeletonStage | undefined, now: string): Field<number> {
   if (!component.hurdle) return notApplicable();
-  const match = /(\d{1,3}(?:\.\d+)?)\s*%/.exec(component.hurdle);
-  if (!match) return notApplicable();
+  // The first percentage is often the assessment weight; only a percentage a minimum phrase introduces counts.
+  const match = /(?:at\s+least|minimum|pass(?:ing)?(?:\s+(?:mark|grade))?|achiev(?:e|es|ed)|obtain(?:s|ed)?)[^.;%\d]{0,60}?(\d{1,3}(?:\.\d+)?)\s*%/i.exec(component.hurdle);
+  if (!match) return unknownField(now);
   const value = Number(match[1]);
-  if (!Number.isFinite(value) || value < 0 || value > 100) return notApplicable();
+  if (!Number.isFinite(value) || value < 0 || value > 100) return unknownField(now);
   return found(value, 'handbook', { quote: quoteText(component.hurdle), ...(skeleton?.source ? { source: skeleton.source } : {}) });
 }
 
@@ -155,27 +160,32 @@ interface Mids {
   items: CourseItem[];
 }
 
+interface RetryItem { id: string; path: string }
+
 /**
- * The compact list of item ids the classifier must look at again: graded items whose category is still unknown, and
+ * The compact list of items the classifier must look at again: graded items whose category is still unknown, and
  * items of a component whose kind is still unknown. Ungraded items are never a classification failure.
  */
-export function classificationRetryIds(result: Pick<BuildDocumentResult, 'document'>): string[] {
-  const ids: string[] = [];
+function classificationRetries(document: CourseDocument, synthetic: BuildDocumentResult['synthetic']): RetryItem[] {
+  const retries: RetryItem[] = [];
   const seen = new Set<string>();
-  for (const component of result.document.components) {
-    if (component.key.endsWith(':ungraded')) continue;
+  document.components.forEach((component, componentIndex) => {
+    if (component.key === synthetic.ungraded) return;
     const unknownComponent = component.kind === undefined || component.kind.state === 'unknown' || component.kind.value === null;
-    for (const item of component.items) {
+    component.items.forEach((item, itemIndex) => {
       const id = /:canvas:assignment:(.+)$/.exec(item.key)?.[1];
-      if (id === undefined) continue;
+      if (id === undefined || seen.has(id)) return;
       const unknownItem = item.kind === undefined || item.kind.state === 'unknown' || item.kind.value === null;
-      if (!unknownComponent && !unknownItem) continue;
-      if (seen.has(id)) continue;
+      if (!unknownComponent && !unknownItem) return;
       seen.add(id);
-      ids.push(id);
-    }
-  }
-  return ids;
+      retries.push({ id, path: `components[${componentIndex}].items[${itemIndex}].kind` });
+    });
+  });
+  return retries;
+}
+
+export function classificationRetryIds(result: Pick<BuildDocumentResult, 'document' | 'synthetic'>): string[] {
+  return classificationRetries(result.document, result.synthetic).map(entry => entry.id);
 }
 
 /** Build the one document the pipeline imports; `conflicts` are the grading pass's remaining disagreements. */
@@ -197,15 +207,34 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
     if (!assignmentById.has(assignment.id)) assignmentById.set(assignment.id, assignment);
   }
 
-  const skeletonComponents: { key: string; component: HandbookComponent }[] = [];
-  const seenKeys = new Set<string>();
-  for (const component of skeleton?.components ?? []) {
+  // The key pattern only admits slug-shaped keys, so no synthetic key can be one a Handbook name cannot produce.
+  // A synthetic key is reserved before a real component may take it; a colliding real component is suffixed instead.
+  const rawSkeletonComponents = (skeleton?.components ?? []).flatMap(component => {
     const key = componentKeyFor(course.code, component.name);
-    if (!key || seenKeys.has(key)) continue;
+    return key ? [{ key, component }] : [];
+  });
+  const rawKeys = new Set(rawSkeletonComponents.map(entry => entry.key));
+  const unassignedItems = gradedItems.filter(item => item.componentKey === undefined || !rawKeys.has(item.componentKey));
+  const synthetic: BuildDocumentResult['synthetic'] = {
+    ...(ungradedItems.length ? { ungraded: `${course.code}:ungraded` } : {}),
+    ...(unassignedItems.length ? { unassigned: `${course.code}:unassigned` } : {}),
+  };
+  const syntheticKeys = new Set(Object.values(synthetic));
+  const seenKeys = new Set<string>();
+  const componentKeyByOriginal = new Map<string, string>();
+  const skeletonComponents: { key: string; component: HandbookComponent }[] = [];
+  for (const { key: originalKey, component } of rawSkeletonComponents) {
+    let key = originalKey;
+    if (syntheticKeys.has(key)) {
+      do { key = `${key}-component`; } while (rawKeys.has(key) || syntheticKeys.has(key) || seenKeys.has(key));
+    }
+    if (seenKeys.has(key)) continue;
     seenKeys.add(key);
+    if (!componentKeyByOriginal.has(originalKey)) componentKeyByOriginal.set(originalKey, key);
     skeletonComponents.push({ key, component });
   }
-  const gradedComponentKeys = new Set(skeletonComponents.map(entry => entry.key));
+  const resolvedComponentKey = (item: GradedItem): string | undefined =>
+    item.componentKey === undefined ? undefined : componentKeyByOriginal.get(item.componentKey);
 
   const buildItem = (item: GradedItem): CourseItem => {
     const assignment = assignmentById.get(item.id);
@@ -234,7 +263,7 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
   };
 
   const mids: Mids[] = skeletonComponents.map(({ key, component }) => {
-    const items = gradedItems.filter(item => item.componentKey === key);
+    const items = gradedItems.filter(item => resolvedComponentKey(item) === key);
     const category = mostCommonCategory(items);
     return {
       key,
@@ -247,8 +276,8 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
     };
   });
 
-  const ungradedComponent: Mids | undefined = ungradedItems.length ? {
-    key: `${course.code}:ungraded`,
+  const ungradedComponent: Mids | undefined = synthetic.ungraded ? {
+    key: synthetic.ungraded,
     name: derived('Ungraded'),
     kind: derived('ungraded'),
     count: derived(ungradedItems.length),
@@ -257,9 +286,8 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
     items: ungradedItems.map(buildItem),
   } : undefined;
 
-  const unassignedItems = gradedItems.filter(item => item.componentKey === undefined || !gradedComponentKeys.has(item.componentKey));
-  const unassignedComponent: Mids | undefined = unassignedItems.length ? {
-    key: `${course.code}:unassigned`,
+  const unassignedComponent: Mids | undefined = synthetic.unassigned ? {
+    key: synthetic.unassigned,
     name: derived('Unassigned'),
     kind: kindField(mostCommonCategory(unassignedItems) ?? 'unknown', now),
     count: derived(unassignedItems.length),
@@ -292,7 +320,7 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
     : unknownField(now);
   const storedBlocked = Array.isArray(stages.blocked) ? stages.blocked as ('canvas' | 'ed')[] : [];
   const blocked = new Set(input.blocked?.length ? input.blocked : storedBlocked);
-  const everyGradedItemHasComponent = gradedItems.every(item => item.componentKey !== undefined && gradedComponentKeys.has(item.componentKey));
+  const everyGradedItemHasComponent = gradedItems.every(item => resolvedComponentKey(item) !== undefined);
 
   const document: CourseDocument = {
     course: {
@@ -306,5 +334,6 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
     },
     components,
   };
-  return { document, conflicts: graded.conflicts, complete: groups !== undefined && groups.coverage === 'api' };
+  return { document, conflicts: graded.conflicts, complete: groups !== undefined && groups.coverage === 'api', synthetic,
+    unknown: classificationRetries(document, synthetic).map(entry => entry.path) };
 }

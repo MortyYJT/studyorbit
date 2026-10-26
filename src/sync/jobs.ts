@@ -361,7 +361,7 @@ export class SyncJobs {
       }
       const key = checked.key;
       if (!job.courses.includes(key)) throw new CourseworkError('INVALID_INPUT', `Course ${key} is not selected for this sync job.`);
-      const stored = this.storeChecked(job, checked, now);
+      const stored = this.storeChecked(job, checked, now, undefined, built?.unknown);
       if (!stored) throw new CourseworkError('INTERNAL', `Built document for ${key} could not be stored.`);
       reconcileConflicts(this.store, stored.receipt.courseId, found, now, fullyCaptured);
       return stored.receipt;
@@ -369,8 +369,9 @@ export class SyncJobs {
   }
 
   /** The one write path both `import()` and `storeBuilt()` use; the caller has already validated the document. */
-  private storeChecked(job: SyncJob, checked: CheckedDocument, at: string, submission?: number) {
+  private storeChecked(job: SyncJob, checked: CheckedDocument, at: string, submission?: number, extraUnknown?: readonly string[]) {
     const document = checked.document!;
+    const unknownFields = [...new Set([...checked.unknown, ...(extraUnknown ?? [])])].slice(0, 500);
     const key = checked.key!;
     let result: ReturnType<typeof importCourseDocument>;
     try {
@@ -383,11 +384,11 @@ export class SyncJobs {
     const weightSum = checked.warnings.find(warning => warning.code === 'WEIGHT_SUM')?.sum;
     const counted: SyncJob = submission === undefined ? job : { ...job, submissions: { ...job.submissions, [key]: submission } };
     this.store.saveSyncJob({ ...counted, results: { ...counted.results, [key]: { courseId: result.courseId, storedAt: at,
-      components: result.components, items: result.items, unknownFields: checked.unknown.slice(0, 500), dropped: checked.dropped.slice(0, 500),
+      components: result.components, items: result.items, unknownFields, dropped: checked.dropped.slice(0, 500),
       warnings: [...checked.warnings.map(warning => warning.code), ...result.warnings], ...(weightSum !== undefined ? { weightSum } : {}),
       platforms: document.course.platforms, policyChanged: result.policyChanged } } });
     return { key, result, receipt: { stored: true as const, key, courseId: result.courseId, components: result.components, items: result.items,
-      assessments: result.assessments, retired: result.retired, unknownFields: checked.unknown.slice(0, 500), dropped: checked.dropped.slice(0, 500),
+      assessments: result.assessments, retired: result.retired, unknownFields, dropped: checked.dropped.slice(0, 500),
       warnings: [...checked.warnings, ...result.warnings.map(code => ({ code }))] } };
   }
 }

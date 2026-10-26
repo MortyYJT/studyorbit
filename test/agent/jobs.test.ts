@@ -191,6 +191,7 @@ describe('pipeline job prompts (layered-sync task 5.2)', () => {
   it('classifier: a re-check lists the ids whose category the build still missed', () => {
     const text = prompt({ ...specFor('classify'), retry: ['500001', '500002'] }, context);
     expect(text).toContain('Re-check these items: 500001, 500002');
+    expect(text).toContain('Return every item, including the ones already classified');
     expect(prompt(specFor('classify'), context)).not.toContain('Re-check these items:');
   });
 

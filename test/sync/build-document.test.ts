@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { CourseSelection } from '../../src/domain/schemas.js';
 import type { ItemsClassifyInput } from '../../src/protocol/sync.js';
 import { canvasApiUrl, type CanvasAssignmentValue, type GroupsStage } from '../../src/sync/canvas-api.js';
-import { buildCourseDocument } from '../../src/sync/build-document.js';
+import { buildCourseDocument, classificationRetryIds, type BuildDocumentResult } from '../../src/sync/build-document.js';
 import { reconcileConflicts } from '../../src/sync/conflicts.js';
 import { assessmentId, componentAssessmentId, importCourseDocument, remainderAssessmentId } from '../../src/sync/course-import.js';
 import { validateCourseDocument } from '../../src/sync/course-json.js';
@@ -263,5 +263,80 @@ describe('build the course document from the pipeline stages (layered-sync task 
       coverage: 'partial' } }).complete).toBe(false);
     expect(build({ groups: stages.groups }).complete).toBe(true);
     expect(build({ groups: stages.groups }).document.course.componentsComplete).toBe(false);
+  });
+
+  it('counts item kinds the classifier left unknown even when the component kind is known', () => {
+    const classifiedUngraded = build({
+      skeleton: skeletonStage([{ name: 'Assignments', weight: 30 }]),
+      groups: groupsStage([{ name: 'Work', weight: 30, items: [
+        { id: '1', name: 'Synthetic item 1' }, { id: '2', name: 'Synthetic item 2' },
+      ] }]),
+      classification: classification([
+        { id: '1', category: 'assignment', component: 'Assignments', evidence: 'Synthetic group name' },
+        { id: '2', category: 'ungraded', component: 'Assignments', evidence: 'Synthetic group name' },
+      ]),
+    });
+    expect(classifiedUngraded.document.components[0]).toMatchObject({ kind: { value: 'assignment' },
+      items: [{ kind: { value: 'assignment' } }, { kind: { value: null, state: 'unknown' } }] });
+    expect(classifiedUngraded.unknown).toContain('components[0].items[1].kind');
+
+    // The Unassigned component's kind comes from item 1 while item 2 stays unclassified.
+    const unassigned = build({
+      skeleton: skeletonStage([{ name: 'Assignments', weight: 30 }]),
+      groups: groupsStage([{ name: 'Work', weight: 30, items: [
+        { id: '1', name: 'Synthetic item 1' }, { id: '2', name: 'Synthetic item 2' },
+      ] }]),
+      classification: classification([{ id: '1', category: 'assignment', component: 'Nowhere', evidence: 'Synthetic group name' }]),
+    });
+    const component = unassigned.document.components.find(entry => entry.key === `${code}:unassigned`)!;
+    const componentIndex = unassigned.document.components.indexOf(component);
+    expect(component).toMatchObject({ kind: { value: 'assignment' },
+      items: [{ kind: { value: 'assignment' } }, { kind: { value: null, state: 'unknown' } }] });
+    expect(unassigned.unknown).toContain(`components[${componentIndex}].items[1].kind`);
+  });
+
+  it('gives the synthetic components keys no Handbook component can take, renaming a colliding real component', () => {
+    const result = build({
+      skeleton: skeletonStage([{ name: 'Ungraded', weight: 10 }, { name: 'Unassigned', weight: 10 }]),
+      groups: groupsStage([
+        { name: 'Synthetic Practice', weight: 0, items: [{ id: '8', name: 'Synthetic practice' }] },
+        { name: 'Synthetic Weighted', weight: 10, items: [{ id: '9', name: 'Synthetic report' }] },
+      ]),
+      classification: classification([{ id: '9', category: 'assignment', evidence: 'Synthetic weighted group name' }]),
+    });
+    expect(result.synthetic).toEqual({ ungraded: `${code}:ungraded`, unassigned: `${code}:unassigned` });
+    expect(result.document.components.map(component => component.key)).toEqual(expect.arrayContaining([
+      `${code}:ungraded`, `${code}:unassigned`, `${code}:ungraded-component`, `${code}:unassigned-component`,
+    ]));
+    expect(result.document.components.find(component => component.key === `${code}:ungraded-component`))
+      .toMatchObject({ name: { value: 'Ungraded' }, items: [] });
+    expect(result.document.components.find(component => component.key === `${code}:unassigned-component`))
+      .toMatchObject({ name: { value: 'Unassigned' }, items: [] });
+    expect(result.document.components.find(component => component.key === `${code}:ungraded`)!.items.map(item => item.key))
+      .toEqual([`${code}:canvas:assignment:8`]);
+    expect(result.document.components.find(component => component.key === `${code}:unassigned`)!.items.map(item => item.key))
+      .toEqual([`${code}:canvas:assignment:9`]);
+  });
+
+  it('identifies the synthetic ungraded component by its flag, not by a key suffix', () => {
+    const syntheticKey = `${code}:ungraded`;
+    const document = {
+      components: [{ key: syntheticKey, kind: { value: 'ungraded', state: 'derived' },
+        items: [{ key: `${code}:canvas:assignment:8`, kind: { value: null, state: 'unknown', checkedAt: now } }] }],
+    } as unknown as BuildDocumentResult['document'];
+    expect(classificationRetryIds({ document, synthetic: {} })).toEqual(['8']);
+    expect(classificationRetryIds({ document, synthetic: { ungraded: syntheticKey } })).toEqual([]);
+  });
+
+  it('reads the hurdle minimum from the phrase that states it, not the first percentage', () => {
+    const hurdle = (text: string) => build({ skeleton: skeletonStage([{ name: 'Final exam', weight: 50, hurdle: text }]) })
+      .document.components[0]!.hurdleMin;
+    expect(hurdle('The exam (60%) is a hurdle; at least 50% is required.'))
+      .toMatchObject({ value: 50, state: 'found', via: 'handbook', quote: 'The exam (60%) is a hurdle; at least 50% is required.' });
+    expect(hurdle('The exam (60%) is a hurdle; a passing grade of 65% is required.'))
+      .toMatchObject({ value: 65, state: 'found' });
+    expect(hurdle('The exam (60%) is a hurdle; the minimum is 55%.'))
+      .toMatchObject({ value: 55, state: 'found' });
+    expect(hurdle('The exam (60%) is a hurdle.')).toEqual({ value: null, state: 'unknown', checkedAt: now });
   });
 });
