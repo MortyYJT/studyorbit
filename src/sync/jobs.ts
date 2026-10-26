@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { CoursePagesSchema, CourseTermSchema, type CourseSelection, type Run, type SyncJob, type SyncOutcome } from '../domain/schemas.js';
 import type { SqliteRepository } from '../store/sqlite.js';
 import { AgentFacingError, CourseworkError } from '../protocol/errors.js';
+import { AssignmentSavedInputSchema, CourseMapInputSchema, ItemsClassifyInputSchema, MaterialsSavedInputSchema, QuizzesReadInputSchema,
+  type AssignmentSavedInput, type CourseMapInput, type ItemsClassifyInput, type MaterialsSavedInput, type QuizzesReadInput } from '../protocol/sync.js';
 import { courseKey, MAX_SUBMISSIONS, normalizeCourseCode, validateCourseDocument, type CheckedDocument, type DocumentIssue } from './course-json.js';
 import { importCourseDocument, type ImportOptions } from './course-import.js';
 import { canvasApiUrl, canvasCourseId, parseCanvasCourses, parseCanvasGroups, parseCanvasTabs, pbpasteClipboard,
@@ -25,6 +28,11 @@ export interface SyncJobsOptions { now?: () => Date; annotatedWeight?: ImportOpt
 const describeIssues = (issues: readonly DocumentIssue[]) => {
   const shown = issues.slice(0, 100).map(issue => `${issue.path || '(document)'} (${issue.reason})`).join('; ');
   return issues.length > 100 ? `${shown}; and ${issues.length - 100} more` : shown;
+};
+
+const describeStageIssues = (issues: readonly { path: readonly PropertyKey[]; message: string }[]) => {
+  const shown = issues.slice(0, 50).map(issue => `${issue.path.map(String).join('.') || '(input)'} (${issue.message})`).join('; ');
+  return issues.length > 50 ? `${shown}; and ${issues.length - 50} more` : shown;
 };
 
 /**
@@ -70,7 +78,7 @@ export class SyncJobs {
   private requireActive(jobId: string, agentFacing = true): SyncJob {
     const job = this.store.loadSyncJob(jobId);
     if (!job || !this.isActive(job)) {
-      const message = 'No active sync job with this id; these commands work only during a sync run.';
+      const message = 'No active sync job with this id; these commands work only during a sync run. Nothing was stored.';
       // Code-side callers are not agents, so their refusal must not be offered to one.
       throw agentFacing ? new AgentFacingError('INVALID_INPUT', message) : new CourseworkError('INVALID_INPUT', message);
     }
@@ -131,8 +139,15 @@ export class SyncJobs {
 
   private requireStageCourse(job: SyncJob, key: string | undefined, stage: string): string {
     if (!key) throw new AgentFacingError('INVALID_INPUT', `courseKey is required for the ${stage} stage; use the key of one of this job's selected courses.`);
-    if (!job.courses.includes(key)) throw new AgentFacingError('INVALID_INPUT', `Course ${key} is not selected for this sync job; store only the courses listed in the prompt.`);
+    if (!job.courses.includes(key)) throw new AgentFacingError('INVALID_INPUT', `Course ${key} is not selected for this sync job; store only the courses listed in the prompt. Nothing was stored.`);
     return key;
+  }
+
+  /** Validate one stage payload again for direct callers, with the contract path the agent must fix. */
+  private stageValue<S extends z.ZodType>(schema: S, input: unknown, command: string): z.output<S> {
+    const parsed = schema.safeParse(input);
+    if (!parsed.success) throw new AgentFacingError('INVALID_INPUT', `${command} refused; nothing was stored. Fix: ${describeStageIssues(parsed.error.issues)}`);
+    return parsed.data;
   }
 
   private requireCaptureCourse(job: SyncJob, key: string | undefined, page: CapturePage): { key: string; canvasId: string } {
@@ -206,6 +221,42 @@ export class SyncJobs {
     this.saveStage(input.jobId, target!.key, 'groups', parsed);
     return { page: 'groups' as const, groups: parsed.groups.length,
       assignments: parsed.groups.reduce((total, group) => total + group.assignments.length, 0), coverage: parsed.coverage };
+  }
+
+  /** Store the home page map; code routes each link by URL, so no route is accepted or stored. */
+  map(input: CourseMapInput) {
+    const value = this.stageValue(CourseMapInputSchema, input, 'course.map');
+    this.recordStage(value.jobId, value.courseKey, 'map', { lms: value.lms, ed: value.ed, syllabus: value.syllabus, links: value.links });
+    return { links: value.links.length };
+  }
+
+  /** Store the quiz list text the API does not hold; nothing deep is saved. */
+  quizzes(input: QuizzesReadInput) {
+    const value = this.stageValue(QuizzesReadInputSchema, input, 'quizzes.read');
+    this.recordStage(value.jobId, value.courseKey, 'quizzes', { quizzes: value.quizzes });
+    return { quizzes: value.quizzes.length };
+  }
+
+  /** Store one assignment's quoted policy and saved file names, never its instructions or rubric. */
+  assignmentSaved(input: AssignmentSavedInput) {
+    const value = this.stageValue(AssignmentSavedInputSchema, input, 'assignment.saved');
+    // The same stage key as `stageFor({ kind: 'assignment', target })`.
+    this.recordStage(value.jobId, value.courseKey, `assignments.${value.assignmentId}`, { policy: value.policy, files: value.files });
+    return { files: value.files.length };
+  }
+
+  /** Store downloaded file names and link-only targets separately; recordings stay links. */
+  materialsSaved(input: MaterialsSavedInput) {
+    const value = this.stageValue(MaterialsSavedInputSchema, input, 'materials.saved');
+    this.recordStage(value.jobId, value.courseKey, 'materials', { files: value.files, links: value.links });
+    return { files: value.files.length, links: value.links.length };
+  }
+
+  /** Store the six-category classification with its evidence; ids are unique within the call. */
+  classify(input: ItemsClassifyInput) {
+    const value = this.stageValue(ItemsClassifyInputSchema, input, 'items.classify');
+    this.recordStage(value.jobId, value.courseKey, 'classification', { items: value.items });
+    return { items: value.items.length };
   }
 
   /** Owner only (the registry gates it): record selected or not for offered candidates, all or nothing. */

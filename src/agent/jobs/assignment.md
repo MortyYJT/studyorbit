@@ -8,4 +8,4 @@ Read only the AI statement on the assignment page and quote it. Then save the pa
 
 ## Output
 
-Call `assignment.saved` once with the job id, the course key, the assignment id of this job as `assignmentId`, the quoted policy and the saved file names in `files[]`.
+Call `assignment.saved` once with the job id, the course key, the assignment id of this job as `assignmentId`, `policy` and the saved file names in `files[]`. `policy` is `{ value, quote }` with `value` one of `allowed`, `prohibited` or `unknown`; the quote is the AI statement and is left out only when `value` is `unknown`.

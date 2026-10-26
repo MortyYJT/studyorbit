@@ -99,6 +99,20 @@ describe('pipeline job prompts (layered-sync task 5.2)', () => {
     expect(text).toContain('`assignmentId`');
   });
 
+  it('output prompts name the stage argument fields; main reports no link route', () => {
+    const main = prompt(specFor('main'), context);
+    for (const field of ['`lms`', '`ed`', '`syllabus`', '`links[]`', '{ label, url, quote }', 'Code decides']) expect(main).toContain(field);
+    expect(main).not.toContain('`route`');
+    // course.map refuses the whole call for a link off Canvas or Ed, so the prompt must leave such links out.
+    expect(main).toContain('Report only links on Canvas or Ed');
+    expect(prompt(specFor('assignment'), context)).toContain("`policy` is `{ value, quote }`");
+    expect(prompt(specFor('quizzes'), context)).toContain('`quizzes[]`');
+    expect(prompt(specFor('saver'), context)).toContain('`files[]`');
+    expect(prompt(specFor('saver'), context)).toContain('`links[]`');
+    expect(prompt(specFor('classify'), context)).toContain('`items[]`');
+    expect(prompt(specFor('classify'), context)).toContain('`id`');
+  });
+
   it('Handbook: lists only the one Handbook assessment URL', () => {
     const spec = specFor('handbook');
     const found = urlsIn(prompt(spec, context));

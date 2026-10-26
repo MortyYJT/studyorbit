@@ -10,4 +10,4 @@ Use only the compact list in this job. It holds item names with their stage ids,
 
 ## Output
 
-Call `items.classify` once with the job id, the course key and one entry per item, each with its `id` echoed exactly from the compact list.
+Call `items.classify` once with the job id, the course key and `items[]`, one entry per item, each with its `id` echoed exactly from the compact list.
