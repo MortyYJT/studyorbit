@@ -75,6 +75,14 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
     const previousById = new Map(previous.map(assessment => [assessment.id, assessment]));
     const produced = new Map<string, Assessment>(); const sourceItems: SourceItem[] = []; const newLinks: AssessmentLink[] = [];
     const warnings = new Set<'REMAINDER_SHORTFALL' | 'COUNT_MISMATCH'>();
+    // The previous value of an item is the row its current link points at, never a retired row: an item row when it
+    // still links there, the component row once it links to a component (conservative).
+    const previousFor = (sourceId: string) => {
+      const linkedId = links.get(sourceId)?.assessmentId;
+      if (linkedId === undefined) return undefined;
+      const assessment = previousById.get(linkedId);
+      return assessment?.retired ? undefined : assessment;
+    };
     // Item rows superseded by an agent or owner link: retired whatever the platform state, so no weight counts twice.
     const superseded = new Set<string>();
     const link = (assessment: string, sourceItem: string) => {
@@ -102,7 +110,7 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
         const itemWeight = stated[index] ?? share;
         const weightState: ReadState[string] = stated[index] !== undefined ? entry(item.weight) : share !== undefined ? { state: 'derived' } : entry(item.weight);
         const id = assessmentId(term, item.key);
-        const previousAssessment = previousById.get(id);
+        const previousAssessment = previousFor(sourceId);
         const readPolicy = knownOptional(item.aiPolicy);
         // A missed item read (unknown or skipped page) keeps the previously stored agent-read policy.
         return { item, sourceId, id, previousAssessment, readPolicy, policy: readPolicy ?? previousAssessment?.aiPolicy,
@@ -123,16 +131,39 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
         const status = scored ? 'graded' : rows.length && statuses.every(value => value === 'submitted' || value === 'graded') ? 'submitted'
           : statuses.some(value => value && value !== 'not_started') ? 'in_progress' : 'not_started';
         const hurdleMin = known(component.hurdleMin);
+        const previousComponent = previousById.get(id);
         // A final or hurdled component mirrors its items: prohibited wins, then the value every known item agrees on.
-        const policies = rows.map(row => row.policy).filter((value): value is NonNullable<Assessment['aiPolicy']> => value !== undefined);
+        // A missed item read falls back to the component's stored prohibited value when the item has no previous row.
+        const policies = rows.map(row => row.policy
+          ?? (row.readPolicy === undefined && previousComponent?.aiPolicy === 'prohibited' ? 'prohibited' : undefined))
+          .filter((value): value is NonNullable<Assessment['aiPolicy']> => value !== undefined);
         const componentPolicy = policies.includes('prohibited') ? 'prohibited'
           : policies.length > 0 && policies.every(value => value === policies[0]) ? policies[0] : undefined;
+        // The read state comes from the item that decided the component value: a prohibiting item, else an agreeing one.
+        const deciding = componentPolicy === undefined ? undefined
+          : rows.find(row => row.readPolicy !== undefined && row.readPolicy === componentPolicy);
+        const componentPolicyChanged = componentPolicy !== undefined && componentPolicy !== previousComponent?.aiPolicy;
+        const missedAt = rows.map(row => row.item.aiPolicy?.checkedAt)
+          .filter((value): value is string => value !== undefined).sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1) ?? at;
+        const componentPolicyState: ReadState[string] | undefined = deciding?.item.aiPolicy
+          ? entry(deciding.item.aiPolicy)
+          : previousComponent?.readState?.aiPolicy
+            ? { ...previousComponent.readState.aiPolicy, checkedAt: missedAt }
+            : undefined;
+        const componentMarker: ReadState[string] | undefined = componentPolicy === undefined ? undefined
+          : componentPolicyChanged
+            ? { state: 'found', checkedAt: at, ...(deciding?.item.aiPolicy?.quote ? { quote: deciding.item.aiPolicy.quote } : {}) }
+            : previousComponent?.readState?.aiPolicyChanged;
         produced.set(id, { id, courseId, name, ...(kind ? { kind } : {}), ...(weight !== undefined ? { weight } : {}), ...(score !== undefined ? { score } : {}),
           ...(dues[0] ? { due: dues[0] } : {}), ...(hurdleMin !== undefined ? { hurdleMin } : {}), ...(componentPolicy ? { aiPolicy: componentPolicy } : {}),
           isFinal: known(component.isFinal) === true, status, origin: 'sync', group: { ...group, role: 'component' },
           readState: { name: entry(component.name), kind: entry(component.kind), weight: entry(component.weight),
-            isFinal: entry(component.isFinal), hurdleMin: entry(component.hurdleMin), ...(dues[0] ? { due: { state: 'derived' } } : {}) } });
-        for (const row of rows) if (!row.kept) link(id, row.sourceId);
+            isFinal: entry(component.isFinal), hurdleMin: entry(component.hurdleMin), ...(dues[0] ? { due: { state: 'derived' } } : {}),
+            ...(componentPolicyState ? { aiPolicy: componentPolicyState } : {}), ...(componentMarker ? { aiPolicyChanged: componentMarker } : {}) } });
+        for (const row of rows) {
+          if (!row.kept && row.readPolicy !== undefined && row.readPolicy !== row.previousAssessment?.aiPolicy) itemPolicyChanges++;
+          if (!row.kept) link(id, row.sourceId);
+        }
         continue;
       }
       let effectiveSum = 0; let sumKnown = true;
