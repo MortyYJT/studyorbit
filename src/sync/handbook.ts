@@ -26,6 +26,8 @@ export interface SkeletonStage {
   source: string;
   via: 'handbook';
   components: HandbookComponent[];
+  /** The page's hurdle section, kept even when it names no component. Capped at 2000 characters. */
+  hurdles?: string;
 }
 
 /** The public assessment page for one course; the year comes from the course term (`YYYY:…`). */
@@ -43,7 +45,7 @@ const refuse = (reason: string): never => {
 
 /** Cells are separated by tabs or runs of two or more spaces. Empty cells keep the header positions. */
 function cells(line: string): string[] {
-  return line.trim().split(/\t+|\s{2,}/).map(cell => cell.trim());
+  return line.trim().split(/\t| {2,}/).map(cell => cell.trim());
 }
 
 const labelIndex = (row: readonly string[], label: RegExp): number => row.findIndex(cell => label.test(cell));
@@ -60,15 +62,23 @@ const percent = (value: string | undefined): number | undefined => {
 const sectionStart = (line: string): boolean => /^(?:hurdles?|additional requirements|special requirements|assessment details|fees|dates|contacts)\b/i.test(line);
 const normalizeName = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
+const HURDLE_HEADING = /^hurdles?(?:\s+requirements?)?\s*(?:[:\-]\s*(.*))?$/i;
+const isHurdleHeading = (line: string): boolean => HURDLE_HEADING.test(line.trim());
+
+/** Match a component name as whole words, so "Test" never matches inside "latest". */
+function mentionsName(section: string, name: string): boolean {
+  const normalized = normalizeName(name);
+  if (!normalized) return false;
+  const words = normalized.split(' ').join('\\s+');
+  return new RegExp(`\\b${words}\\b`).test(normalizeName(section));
+}
+
 /** The page's hurdle section: the heading text plus the paragraph under it, never following sections. */
 function hurdleSection(lines: readonly string[], from: number): string | undefined {
-  const index = lines.findIndex((line, position) => position >= from && /hurdle/i.test(line));
+  const index = lines.findIndex((line, position) => position >= from && isHurdleHeading(line));
   if (index < 0) return undefined;
   const heading = lines[index]!.trim();
-  let text = '';
-  const labelled = /^hurdles?(?:\s+requirements?)?\s*[:\-]\s*(.*)$/i.exec(heading);
-  if (labelled) text = labelled[1]!.trim();
-  else if (!/^hurdles?(?:\s+requirements?)?\s*$/i.test(heading)) text = heading.replace(/^hurdles?(?:\s+requirements?)?\s*[:\-]?\s*/i, '').trim();
+  let text = (HURDLE_HEADING.exec(heading)?.[1] ?? '').trim();
   for (let position = index + 1; position < lines.length; position++) {
     const line = lines[position]!.trim();
     if (!line) break;
@@ -78,12 +88,14 @@ function hurdleSection(lines: readonly string[], from: number): string | undefin
   return text.slice(0, 2000).trim() || undefined;
 }
 
+const appendQuote = (quote: string, line: string): string => (quote ? `${quote}\n${line}` : line).slice(0, 2000);
+
 function parseRow(row: readonly string[], columns: { description: number; timing: number; percentage: number }, line: string): HandbookComponent | undefined {
   const name = (columns.description >= 0 ? row[columns.description] : undefined)?.trim()
     || row.find(cell => cell.length > 0)?.trim();
   if (!name) return undefined;
-  const weight = percent(columns.percentage >= 0 ? row[columns.percentage] : undefined)
-    ?? row.map(cell => percent(cell)).find(value => value !== undefined);
+  // A located Percentage column is authoritative: a percentage inside the name is never the weight.
+  const weight = columns.percentage >= 0 ? percent(row[columns.percentage]) : undefined;
   const statedTiming = (columns.timing >= 0 ? row[columns.timing] : undefined)?.trim();
   const timing = statedTiming && percent(statedTiming) === undefined && statedTiming !== name ? statedTiming
     : row.find((cell, index) => index !== columns.description && cell.length > 0 && cell !== name && percent(cell) === undefined && !/hurdle/i.test(cell))?.trim();
@@ -106,32 +118,38 @@ export function parseHandbook(text: string, options: { source: string }): Skelet
     percentage: labelIndex(headerRow, /percentage/i) };
   const components: HandbookComponent[] = [];
   let tableEnd = lines.length;
+  let blankLines = 0;
   for (let position = header + 1; position < lines.length; position++) {
     const line = lines[position]!.trim();
     if (!line) {
-      // A blank line after the table ends it; blank lines before the first row are layout.
-      if (components.length) { tableEnd = position; break; }
+      // One blank line is layout inside a long table; two in a row end it.
+      blankLines++;
+      if (blankLines >= 2) { tableEnd = position; break; }
       continue;
     }
+    blankLines = 0;
     if (sectionStart(line)) { tableEnd = position; break; }
     const row = cells(line);
     if (isHeader(row)) continue;
-    if (row.filter(cell => cell.length > 0).length < 2 && percent(line) === undefined) { tableEnd = position; break; }
-    const component = parseRow(row, columns, line);
-    if (!component) {
-      if (components.length) { tableEnd = position; break; }
+    const nonEmpty = row.filter(cell => cell.length > 0);
+    const hasPercentage = row.some(cell => percent(cell) !== undefined);
+    const hasHurdle = /hurdle/i.test(line);
+    if (nonEmpty.length < 2 || (!hasPercentage && !hasHurdle)) {
+      // A wrapped description, footer or navigation line continues the previous row; it is never a component.
+      const previous = components[components.length - 1];
+      if (previous) previous.quote = appendQuote(previous.quote, line);
       continue;
     }
-    components.push(component);
+    const component = parseRow(row, columns, line);
+    if (component) components.push(component);
   }
   if (!components.length) refuse('No assessment table was found in the copied Handbook page.');
   const section = hurdleSection(lines, tableEnd);
   if (section) {
-    const mentioned = normalizeName(section);
     for (const component of components) {
-      if (component.hurdle || !mentioned.includes(normalizeName(component.name))) continue;
+      if (component.hurdle || !mentionsName(section, component.name)) continue;
       component.hurdle = section;
     }
   }
-  return { source: options.source, via: 'handbook', components };
+  return { source: options.source, via: 'handbook', components, ...(section ? { hurdles: section } : {}) };
 }

@@ -74,3 +74,101 @@ describe('Handbook skeleton parsing (layered-sync task 4.1)', () => {
     catch (error) { expect((error as Error).message).not.toContain(marker); }
   });
 });
+
+describe('Handbook parser review findings (#190)', () => {
+  const table = (...rows: string[]) => ['Description\tTiming\tPercentage', ...rows].join('\n');
+
+  it('takes the weight only from the Percentage column when the name contains a percentage', () => {
+    const parsed = parseHandbook(table(
+      'Attendance at 80% of tutorials\tThroughout semester\tN/A',
+      'Attendance at 85% of tutorials\tThroughout semester\tHurdle',
+      'Attendance at 90% of tutorials\tThroughout semester\t',
+    ), { source });
+    expect(parsed.components.map(component => component.weight)).toEqual([undefined, undefined, undefined]);
+    expect(parsed.components[0]).not.toHaveProperty('hurdle');
+    expect(parsed.components[1]).toMatchObject({ hurdle: 'Hurdle' });
+    expect(parsed.components[2]).not.toHaveProperty('hurdle');
+    for (const component of parsed.components) expect(component.quote).toContain('%');
+  });
+
+  it('keeps an empty Percentage cell aligned even when a later cell contains a percentage', () => {
+    const parsed = parseHandbook([
+      'Description\tTiming\tPercentage\tNotes',
+      'Attendance at 80% of tutorials\tThroughout semester\t\t40%',
+    ].join('\n'), { source });
+    expect(parsed.components[0]).not.toHaveProperty('weight');
+  });
+
+  it('keeps later rows across a single blank line', () => {
+    const parsed = parseHandbook(table(
+      'Assignments\tWeeks 3-10\t30%',
+      '',
+      'Exam\tDuring the examination period\t50%',
+    ), { source });
+    expect(parsed.components.map(component => [component.name, component.weight]))
+      .toEqual([['Assignments', 30], ['Exam', 50]]);
+  });
+
+  it('treats a wrapped description line as a continuation and keeps later rows', () => {
+    const parsed = parseHandbook(table(
+      'Assignments\tWeeks 3-10\t30%',
+      'The assignments include a report and a presentation.',
+      'Exam\tDuring the examination period\t50%',
+    ), { source });
+    expect(parsed.components.map(component => [component.name, component.weight]))
+      .toEqual([['Assignments', 30], ['Exam', 50]]);
+    expect(parsed.components[0]!.quote).toContain('report and a presentation');
+  });
+
+  it('ends the table only after two consecutive blank lines', () => {
+    const parsed = parseHandbook(table(
+      'Assignments\tWeeks 3-10\t30%',
+      '',
+      '',
+      'Exam\tDuring the examination period\t50%',
+    ), { source });
+    expect(parsed.components.map(component => component.name)).toEqual(['Assignments']);
+  });
+
+  it('never turns a footer or navigation row into a component', () => {
+    const parsed = parseHandbook(table(
+      'Assignments\tWeeks 3-10\t30%',
+      'Exam\tDuring the examination period\t50%',
+      'Print    Share    Feedback',
+    ), { source });
+    expect(parsed.components.map(component => component.name)).toEqual(['Assignments', 'Exam']);
+  });
+
+  it('does not open the hurdle section from prose that merely contains the word', () => {
+    const parsed = parseHandbook(table(
+      'Exam\tDuring the examination period\t50%',
+      '',
+      'This subject has a hurdle requirement: students must pass the Exam.',
+    ), { source });
+    expect(parsed.components[0]).not.toHaveProperty('hurdle');
+    expect(parsed).not.toHaveProperty('hurdles');
+  });
+
+  it('matches a component name in the hurdle section on whole words', () => {
+    const parsed = parseHandbook(table(
+      'Test\tWeek 6\t20%',
+      'Exam\tDuring the examination period\t50%',
+      '',
+      'Hurdle requirements',
+      'Students must pass the latest exam.',
+    ), { source });
+    expect(parsed.components[0]).not.toHaveProperty('hurdle');
+    expect(parsed.components[1]!.hurdle).toMatch(/latest exam/);
+  });
+
+  it('returns the hurdle section even when it names no component', () => {
+    const parsed = parseHandbook(table(
+      'Exam\tDuring the examination period\t50%',
+      '',
+      'Hurdle requirements:',
+      'Students must attend 75% of tutorials.',
+    ), { source });
+    expect(parsed.hurdles).toMatch(/75% of tutorials/i);
+    expect(parsed.components[0]).not.toHaveProperty('hurdle');
+  });
+});
