@@ -13,6 +13,7 @@ import { resolvedChoices } from './conflicts.js';
 import { CANVAS_ORIGIN, courseDocumentJsonSchema } from './course-json.js';
 import type { ResolvedChoices } from './grading.js';
 import { handbookUrl } from './handbook.js';
+import { ED_CLI_NOTE_STAGE, ED_CLI_NOT_USED } from './ed-cli.js';
 import { SyncJobs, runBoundMs } from './jobs.js';
 import { allowedUrls, isAllowed, routeTabs, type AllowedUrls, type HomeLink } from './routing.js';
 
@@ -281,9 +282,15 @@ export class AgentSync implements SyncCommands {
     await Promise.all(Array.from({ length: Math.min(limit, routed.length) }, () => worker()));
     if (signal.aborted) return { steps, turns };
 
-    // The injected Ed hook (7.2) replaces the fallback Ed page job; it is never a second Ed read.
+    // The injected Ed hook (7.2) stores the CLI stage; when it stores nothing, one Ed page job reads Ed instead.
     if (pipeline.ed) {
       try { await pipeline.ed(courseKey, this.stageContext(job, course)); } catch { meta.sawError = true; }
+      if (signal.aborted) return { steps, turns };
+    }
+    if (course.pages.ed && this.stageContext(job, course).stages.ed === undefined) {
+      // Keep the "CLI not used" note in the job's stages (the Run schema has no note field); the fallback job is one job.
+      try { this.jobs.recordStage(job.id, courseKey, ED_CLI_NOTE_STAGE, ED_CLI_NOT_USED); } catch { meta.sawError = true; }
+      await run({ kind: 'ed', jobId: job.id, courseKey, urls: [course.pages.ed] });
       if (signal.aborted) return { steps, turns };
     }
 
@@ -297,8 +304,9 @@ export class AgentSync implements SyncCommands {
       ...(resolved ? { resolved } : {}), ...(blocked?.length ? { blocked } : {}) });
     const build = (): BuildDocumentResult | undefined => {
       // No stage at all means every job of this course failed: keep the course's previously stored data untouched.
+      // The "CLI not used" note is run bookkeeping, not data, so it does not count.
       const builtFrom = this.stageContext(job, course).stages;
-      if (!Object.keys(builtFrom).length) return undefined;
+      if (!Object.keys(builtFrom).some(key => key !== ED_CLI_NOTE_STAGE)) return undefined;
       try { return pipeline.build(courseKey, builtFrom, buildContext()); } catch { meta.sawError = true; return undefined; }
     };
     let built = build();
@@ -394,9 +402,7 @@ export class AgentSync implements SyncCommands {
       specs.push({ kind: 'assignment', jobId: job.id, courseKey: course.key, urls: [url], target: assignment.id });
     }
     if (allowed.save.length) specs.push({ kind: 'saver', jobId: job.id, courseKey: course.key, urls: [...allowed.save] });
-    if (!this.options.pipeline!.ed && course.pages.ed) {
-      specs.push({ kind: 'ed', jobId: job.id, courseKey: course.key, urls: [course.pages.ed] });
-    }
+    // Ed is not a routed job: the CLI hook runs after routing and the one fallback Ed job runs only when it stored nothing.
     // The grades tab stays in `allowed.read` for the routing table, but no routed job may open it.
     return grades ? specs.flatMap(spec => {
       const urls = spec.urls.filter(url => url !== grades);

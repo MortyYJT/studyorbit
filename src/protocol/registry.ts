@@ -1,11 +1,11 @@
 import { metricsContracts } from '../metrics/contracts.js';
 import type { MetricsService } from '../metrics/service.js';
-import { annotationContracts, type AnnotationService } from './annotations.js';
+import { annotationCommandContracts, annotationRefusals, type AnnotationService } from './annotations.js';
 import { planningContracts, planningOwnerCommands, planningSessionCommands } from '../planning/contracts.js';
 import type { PlanningService } from '../planning/service.js';
 import { syncContracts, type SyncCommands, type CourseReadingCommands, type SyncCommandName } from './sync.js';
 import type { AssessmentFiles } from '../sync/assessment-files.js';
-import { autonomyContracts, type AssessmentAutonomy } from './autonomy.js';
+import { autonomyCommandContracts, type AssessmentAutonomy } from './autonomy.js';
 import { randomUUID } from 'node:crypto';
 import { sourceRecordRefusals } from '../revision/source-record.js';
 import { memoryContracts, memoryOwnerCommands, type MemoryCommand } from '../memory/contracts.js';
@@ -63,7 +63,7 @@ const safeMessages: Record<ErrorCode, string> = {
   LIMIT_EXCEEDED: 'The response exceeds 64 KiB.', INTERNAL: 'The command could not complete safely.',
 };
 /** The job-scoped stage writes list the failing contract paths so the agent can re-read and resubmit (#204). */
-const stageCommands = new Set(['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'items.classify']);
+const stageCommands = new Set(['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'ed.read', 'items.classify']);
 const agentFacingCommands = new Set(['courses.offer', 'course.import', 'canvas.capture', 'handbook.capture', 'assessment.files', ...stageCommands]);
 function describeInputIssues(issues: readonly { path: readonly PropertyKey[]; message: string }[]): string {
   const shown = issues.slice(0, 50).map(issue => `${issue.path.map(String).join('.') || '(input)'} (${issue.message})`).join('; ');
@@ -74,6 +74,7 @@ export function safeError(error: unknown, command?: string): CourseworkError {
   if (error instanceof AgentFacingError && agentFacingCommands.has(command ?? '')) return new CourseworkError(error.code, error.message);
   if (command === 'source.record' && error instanceof CourseworkError && sourceRecordRefusals.includes(error.message)) return new CourseworkError(error.code, error.message);
   if (command?.startsWith('memory.') && error instanceof CourseworkError && memoryRefusals.includes(error.message)) return new CourseworkError(error.code, error.message);
+  if (command?.startsWith('annotation.') && error instanceof CourseworkError && annotationRefusals.includes(error.message)) return new CourseworkError(error.code, error.message, error.next);
   const code = error instanceof CourseworkError && Object.hasOwn(retryable, error.code) ? error.code : 'INTERNAL';
   return new CourseworkError(code, error instanceof CourseworkError && error.message === 'Open coursework ui to perform this owner action.' ? error.message : safeMessages[code]);
 }
@@ -146,7 +147,7 @@ export async function dispatch(registry: Registry, name: string, input: unknown,
 }
 const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith('.list')).concat(['sources.get', 'revision.read', 'practice.stats', 'sync.status', 'courses.candidates', 'plan.read', 'planning.settings.read', 'annotation.read', 'metrics.read', 'autonomy.read', 'memory.list']));
 /** Contract commands that change state; transports require credentials for these whatever their autonomy level. */
-export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationContracts), ...Object.keys(syncContracts), ...Object.keys(memoryContracts)].filter(n => !readNames.has(n)));
+export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationCommandContracts), ...Object.keys(syncContracts), ...Object.keys(memoryContracts)].filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
 /** Bind the settled contract surface to injected ports; no production service is selected here. */
 export function createRegistry(options: { autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; courseReading?: CourseReadingCommands; annotations?: AnnotationService; metrics?: MetricsService; memory?: MemoryService; assessmentFiles?: AssessmentFiles } = {}): Registry {
@@ -193,16 +194,16 @@ export function createRegistry(options: { autonomy?: AssessmentAutonomy; plannin
     const canonicalHandler = handler;
     registry.register<z.ZodType, z.ZodType>({ name, ...contract, handler: canonicalHandler });
   }
-  for (const name of Object.keys(autonomyContracts) as (keyof typeof autonomyContracts)[]) {
+  for (const name of Object.keys(autonomyCommandContracts) as (keyof typeof autonomyCommandContracts)[]) {
     // autonomy.read is an L0 read with no authority decision: it skips the audit journal (runs still record it).
     if (name === 'autonomy.read') {
-      registry.register<z.ZodType, z.ZodType>({ name, ...autonomyContracts[name], selfAudited: true, handler: input => {
+      registry.register<z.ZodType, z.ZodType>({ name, ...autonomyCommandContracts[name], selfAudited: true, handler: input => {
         if (!options.autonomy) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
         return options.autonomy.read(input);
       } });
       continue;
     }
-    registry.register<z.ZodType, z.ZodType>({ name, ...autonomyContracts[name], ...(name !== 'autonomy.check' ? { authority: 'owner-session' as const, references: (input: unknown) => {
+    registry.register<z.ZodType, z.ZodType>({ name, ...autonomyCommandContracts[name], ...(name !== 'autonomy.check' ? { authority: 'owner-session' as const, references: (input: unknown) => {
       if (!options.autonomy) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
       return options.autonomy.references(name, input);
     } } : {}), handler: async (input, context) => {
@@ -242,15 +243,16 @@ export function createRegistry(options: { autonomy?: AssessmentAutonomy; plannin
     if (name === 'quizzes.read') return reading.quizzes(input as never);
     if (name === 'assignment.saved') return reading.assignmentSaved(input as never);
     if (name === 'materials.saved') return reading.materialsSaved(input as never);
+    if (name === 'ed.read') return reading.edRead(input as never);
     if (name === 'items.classify') return reading.classify(input as never);
     if (name === 'courses.candidates') return { items: reading.candidates() };
     if (name === 'courses.select') return reading.select(input as never);
     if (name === 'check.resolve') return reading.resolve(input as never);
     return reading.import(input as never);
   } });
-  for (const name of Object.keys(annotationContracts) as (keyof typeof annotationContracts)[]) {
+  for (const name of Object.keys(annotationCommandContracts) as (keyof typeof annotationCommandContracts)[]) {
     const owner = ['annotation.owner.record', 'annotation.confirm', 'annotation.replace'].includes(name);
-    registry.register<z.ZodType, z.ZodType>({ name, ...annotationContracts[name], ...(owner ? { authority: name === 'annotation.owner.record' ? 'owner' as const : 'owner-session' as const } : {}), handler: async (input, context) => {
+    registry.register<z.ZodType, z.ZodType>({ name, ...annotationCommandContracts[name], ...(owner ? { authority: name === 'annotation.owner.record' ? 'owner' as const : 'owner-session' as const } : {}), handler: async (input, context) => {
       if (!options.annotations) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
       return options.annotations.execute(name, input, context);
     } });

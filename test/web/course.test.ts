@@ -34,9 +34,13 @@ it('gives unknown weights a fixed unknown-style segment and marks the final figu
 
 it('shows levels from autonomy.read: exams none, prohibited courses locked at L0, overrides and defaults as read', () => {
   const entry = (assessmentId: string, override: 0 | 1 | 2 | null, effectiveLevel: 0 | 1 | 2 | null, kind: 'quiz' | 'exam' | null = 'quiz') =>
-    ({ assessmentId, kind, applicable: kind !== 'exam', requiredLevel: kind === 'exam' ? null : 1 as const, override, effectiveLevel });
+    ({ assessmentId, kind, applicable: kind !== 'exam', requiredLevel: kind === 'exam' ? null : 1 as const, override, effectiveLevel,
+      policy: null, policyOrigin: null, policyLevel: null,
+      effectivePolicy: { value: 'unknown' as const, origin: 'none' as const, level: 'none' as const } });
   const read = (policy: 'allowed' | 'prohibited' | null, assessments: ReturnType<typeof entry>[]) =>
-    ({ courseId: 'c1', policy, policyOrigin: policy ? 'owner' as const : null, cap: policy === 'prohibited' ? 0 as const : 2 as const, defaultLevel: 1 as const, assessments });
+    ({ courseId: 'c1', policy, policyOrigin: policy ? 'owner' as const : null, policyLevel: policy ? 'course' as const : null,
+      effectivePolicy: { value: policy ?? 'unknown' as const, origin: policy ? 'owner' as const : 'none' as const, level: policy ? 'course' as const : 'none' as const },
+      cap: policy === 'prohibited' ? 0 as const : 2 as const, defaultLevel: 1 as const, assessments });
   const allowed = read('allowed', [entry('quiz', 2, 2), entry('essay', null, 1), entry('exam', null, null, 'exam')]);
   expect(levelView({ id: 'exam', kind: 'exam' }, allowed)).toEqual({ kind: 'none' });
   expect(agentEntries({ kind: 'exam' }, 'allowed')).toEqual({ complete: false, explain: false });

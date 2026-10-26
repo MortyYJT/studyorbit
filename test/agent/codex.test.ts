@@ -144,7 +144,8 @@ it('Workspace instructions: a private workspace with no Git tree above it gets t
   expect(statSync(s.workspace).mode & 0o777).toBe(0o700);
   for (let dir = s.workspace; dir !== dirname(dir); dir = dirname(dir)) expect(existsSync(join(dir, '.git'))).toBe(false);
   const agents = s.calls()[0]!.agents!;
-  for (const rule of [/never press a final submit/i, /sign-in page/i, /never type a password/i, /prohibits AI/i, /level the owner granted/i, /other sites or tabs/i]) expect(agents).toMatch(rule);
+  for (const rule of [/never press a final submit/i, /sign-in page/i, /never type a password/i, /effective AI policy/i,
+    /granted level for that assessment/i, /read-only on assessments and courses/i, /other sites or tabs/i]) expect(agents).toMatch(rule);
   writeFileSync(join(s.workspace, 'AGENTS.md'), 'Synthetic tampering.');
   await collect(s.adapter.start(input));
   expect(s.calls()[1]!.agents).toBe(agents);

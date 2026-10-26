@@ -139,6 +139,36 @@ it('course policy text never changes the owner-only autonomy grant or its prohib
   expect(await f.call('annotation.owner.record', { entity: 'course', entityId: 'c', field: 'aiPolicy', value: 'Owner policy text' }, true)).toMatchObject({ ok: false });
   expect(await f.call('autonomy.check', { assessmentId: 'a', action: 'fill' })).toMatchObject({ data: { decision: 'denied', reason: 'course-prohibited' } });
 });
+it('Agent item policy annotation refused: an assessment aiPolicy annotation is rejected and nothing is stored', async () => {
+  const f = await fixture();
+  expect(await f.annotate('aiPolicy', 'prohibited')).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+  expect(f.store.readAnnotations('assessment', 'a')).toEqual([]);
+  expect(f.store.loadAssessment('a')?.aiPolicy).toBeUndefined();
+});
+it('lists and annotation reads report the effective per-assessment policy with origin and level', async () => {
+  const f = await fixture();
+  f.store.saveCourse({ ...f.store.loadCourse('c')!, aiPolicy: 'allowed' });
+  f.store.saveAssessment({ ...f.store.loadAssessment('a')!, aiPolicy: 'prohibited' });
+  expect(await f.call('autonomy.policy.set', { courseId: 'c', assessmentId: 'b', value: 'allowed' }, true)).toMatchObject({ ok: true });
+  type Page = { items: Record<string, any>[] };
+  const courses = await f.call('courses.list', { limit: 100 });
+  expect(courses).toMatchObject({ ok: true });
+  const course = (courses as unknown as { data: Page }).data.items.find(item => item.id === 'c');
+  expect(course).toMatchObject({ aiPolicy: 'allowed', policy: 'allowed', policyOrigin: 'agent', policyLevel: 'course',
+    effectivePolicy: { value: 'allowed', origin: 'agent', level: 'course' } });
+  const assessments = await f.call('assessments.list', { courseId: 'c', limit: 100 });
+  expect(assessments).toMatchObject({ ok: true });
+  const items = (assessments as unknown as { data: Page }).data.items;
+  expect(items.find(item => item.id === 'a')).toMatchObject({ aiPolicy: 'prohibited', policy: 'prohibited', policyOrigin: 'agent',
+    policyLevel: 'assessment', effectivePolicy: { value: 'prohibited', origin: 'agent', level: 'assessment' },
+    fields: { aiPolicy: { value: 'prohibited', origin: 'agent' } } });
+  expect(items.find(item => item.id === 'b')).toMatchObject({ policy: 'allowed', policyOrigin: 'owner', policyLevel: 'assessment',
+    fields: { aiPolicy: { value: 'allowed', origin: 'owner' } } });
+  expect(await f.read('a')).toMatchObject({ ok: true, data: { fields: { aiPolicy: { value: 'prohibited', origin: 'agent' } },
+    policy: 'prohibited', policyOrigin: 'agent', policyLevel: 'assessment' } });
+  expect(await f.read('b')).toMatchObject({ ok: true, data: { fields: { aiPolicy: { value: 'allowed', origin: 'owner' } },
+    policy: 'allowed', policyOrigin: 'owner', policyLevel: 'assessment' } });
+});
 it('course completeness coverage follows the effective annotated value', async () => {
   const f = await fixture();
   expect(await f.call('annotation.record', { entity: 'course', entityId: 'c', field: 'assessmentsComplete', value: true, sourceRevision: f.revision(), citations: f.cite() })).toMatchObject({ ok: true });
@@ -303,4 +333,17 @@ it('assessments.list derives platform submitted and removed flags from currently
   // A moved link no longer counts for its old assessment, matching the planner.
   link('b', 'item-1');
   expect(await platform()).toEqual({ a: { linked: true, submitted: false, removed: false }, b: { linked: true, submitted: true, removed: true } });
+});
+
+it('Owner item policy annotation points to autonomy.policy.set: an assessment aiPolicy is refused and nothing is stored', async () => {
+  const f = await fixture();
+  for (const value of ['prohibited', null]) {
+    expect(await f.call('annotation.owner.record', { entity: 'assessment', entityId: 'a', field: 'aiPolicy', value }, true))
+      .toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: expect.stringContaining('autonomy.policy.set') } });
+    expect(f.store.readAnnotations('assessment', 'a')).toEqual([]);
+    expect(f.store.loadAssessment('a')?.aiPolicy).toBeUndefined();
+  }
+  // The dedicated owner command still records the policy with its audit entry.
+  expect(await f.call('autonomy.policy.set', { courseId: 'c', assessmentId: 'a', value: 'prohibited' }, true)).toMatchObject({ ok: true });
+  expect(await f.read()).toMatchObject({ data: { policy: 'prohibited', policyOrigin: 'owner', policyLevel: 'assessment' } });
 });
