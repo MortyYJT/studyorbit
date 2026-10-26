@@ -15,7 +15,10 @@ const stageText = z.string().trim().min(1).max(4000);
 const stageQuote = z.string().trim().min(1).max(4000);
 const stageLabel = z.string().trim().min(1).max(300);
 const stageUrlText = z.string().trim().min(1).max(2048);
-const stageFileName = z.string().trim().min(1).max(300);
+/** A file name as it lands in Downloads: no path separator, and never `.` or `..`. */
+const stageFileName = z.string().trim().min(1).max(300)
+  .refine(name => !/[\\/]/.test(name), 'use the file name only, without a path')
+  .refine(name => name !== '.' && name !== '..', 'use the saved file name, not . or ..');
 const stageName = z.string().trim().min(1).max(500);
 const canvasId = z.string().trim().regex(/^\d+$/, 'Use the Canvas numeric id, digits only.').max(64);
 const courseMapOrigins = new Set(['https://canvas.lms.unimelb.edu.au', 'https://edstem.org']);
@@ -61,9 +64,6 @@ export const AssignmentSavedInputSchema = z.strictObject({
   if (input.policy.value !== 'unknown' && input.policy.quote === undefined) {
     ctx.addIssue({ code: 'custom', path: ['policy', 'quote'], message: 'the quoted AI statement is required unless the policy is unknown' });
   }
-  input.files.forEach((file, index) => {
-    if (/[\\/]/.test(file)) ctx.addIssue({ code: 'custom', path: ['files', index], message: `use the file name only, without a path: ${file}` });
-  });
 });
 
 export const MaterialsSavedInputSchema = z.strictObject({
@@ -71,10 +71,6 @@ export const MaterialsSavedInputSchema = z.strictObject({
   files: z.array(stageFileName).max(500),
   /** Link-only targets such as Lecture Capture recordings; recordings are never saved as files. */
   links: z.array(z.strictObject({ label: stageLabel, url: stageUrlText })).max(500),
-}).superRefine((input, ctx) => {
-  input.files.forEach((file, index) => {
-    if (/[\\/]/.test(file)) ctx.addIssue({ code: 'custom', path: ['files', index], message: `use the file name only, without a path: ${file}` });
-  });
 });
 
 const classificationCategory = z.enum(['exam', 'quiz', 'assignment', 'presentation', 'participation', 'ungraded']);

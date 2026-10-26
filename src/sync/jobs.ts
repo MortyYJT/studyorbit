@@ -260,7 +260,8 @@ export class SyncJobs {
   }
 
   /** Owner only (the registry gates it): record selected or not for offered candidates, all or nothing. */
-  select(input: SelectInput) {    return this.store.transaction(() => {
+  select(input: SelectInput) {
+    return this.store.transaction(() => {
       const existing = new Map(this.store.listCourseSelections().map(row => [row.key, row]));
       const missing = input.selections.filter(selection => !existing.has(selection.key));
       if (missing.length) throw new CourseworkError('NOT_FOUND', 'Course candidate not found.');

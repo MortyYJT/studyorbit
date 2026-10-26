@@ -156,6 +156,17 @@ describe('job-scoped stage write commands (layered-sync task 5.3)', () => {
     }
   });
 
+  it('assignment.saved and materials.saved refuse the file names . and .. (they name no file in Downloads)', async () => {
+    const f = setup(); f.select();
+    const job = f.jobs.open([key]);
+    for (const [name, payload] of [['assignment.saved', { ...assignment, files: ['..'] }],
+      ['materials.saved', { ...materials, files: ['.'] }]] as const) {
+      const result = await f.agentCall(name, { jobId: job.id, courseKey: key, ...payload });
+      expect(result).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+      expect(stages(f, job.id)).toBeUndefined();
+    }
+  });
+
   it('assignment.saved and quizzes.read refuse a non-digit Canvas id', async () => {
     const f = setup(); f.select();
     const job = f.jobs.open([key]);
