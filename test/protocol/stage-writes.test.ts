@@ -197,6 +197,20 @@ describe('job-scoped stage write commands (layered-sync task 5.3)', () => {
     expect(stages(f, job.id)).toBeUndefined();
   });
 
+  it('course.map stores a quoted course-wide AI rule and refuses a known one without a quote', async () => {
+    const f = setup(); f.select();
+    const job = f.jobs.open([key]);
+    const policy = { value: 'prohibited', quote: 'Synthetic course-wide AI quote' };
+    const result = await f.agentCall('course.map', { jobId: job.id, courseKey: key, ...map, aiPolicy: policy });
+    expect(result).toMatchObject({ ok: true });
+    expect(stages(f, job.id)?.map.aiPolicy).toEqual(policy);
+
+    const refused = await f.agentCall('course.map', { jobId: job.id, courseKey: key, ...map, aiPolicy: { value: 'allowed' } });
+    expect(refused).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect((refused as unknown as { error: { message: string } }).error.message.toLowerCase()).toContain('nothing was stored');
+    expect(stages(f, job.id)?.map.aiPolicy).toEqual(policy);
+  });
+
   it('course.map refuses a known syllabus location without a quote', async () => {
     const f = setup(); f.select();
     const job = f.jobs.open([key]);

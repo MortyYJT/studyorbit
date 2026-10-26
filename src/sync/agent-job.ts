@@ -7,8 +7,11 @@ import { RunSchema, type CourseSelection, type Run, type RunJob, type SyncJob, t
 import { CourseworkError } from '../protocol/errors.js';
 import type { SyncCommands } from '../protocol/sync.js';
 import type { SqliteRepository } from '../store/sqlite.js';
-import { canvasApiUrl, canvasCourseId, type GroupsStage, type TabsStage } from './canvas-api.js';
+import { canvasApiUrl, canvasCourseId, type CanvasAssignmentValue, type GroupsStage, type TabsStage } from './canvas-api.js';
+import { classificationRetryIds, type BuildDocumentResult } from './build-document.js';
+import { resolvedChoices } from './conflicts.js';
 import { CANVAS_ORIGIN, courseDocumentJsonSchema } from './course-json.js';
+import type { ResolvedChoices } from './grading.js';
 import { handbookUrl } from './handbook.js';
 import { SyncJobs, runBoundMs } from './jobs.js';
 import { allowedUrls, isAllowed, routeTabs, type AllowedUrls, type HomeLink } from './routing.js';
@@ -31,6 +34,8 @@ export interface JobSpec {
   urls: string[];
   /** The Canvas assignment id for `assignment` jobs (the stage key is per target). */
   target?: string;
+  /** For a classification re-check: the item ids whose category the first pass left unknown. */
+  retry?: string[];
 }
 
 /** The fixed stage each job kind must produce; `assignment` is per Canvas assignment. */
@@ -54,6 +59,13 @@ export interface PipelineJobContext {
   stages: PipelineStages;
 }
 
+/** What a build may use besides the stages: the course, the check time, settled choices and blocked platforms. */
+export interface PipelineBuildContext extends PipelineJobContext {
+  now: string;
+  resolved?: ResolvedChoices;
+  blocked?: readonly ('canvas' | 'ed')[];
+}
+
 /**
  * The injected pipeline. 5.2/5.3 supply the prompts and tools; 6.2 supplies the document builder; 7.1/7.2 the hooks.
  * The production host does not pass this yet, so the legacy single reading job remains the production path.
@@ -61,7 +73,7 @@ export interface PipelineJobContext {
 export interface SyncPipeline {
   prompt(spec: JobSpec, ctx?: PipelineJobContext): string;
   tools(spec: JobSpec): readonly AgentTool[];
-  build(courseKey: string, stages: PipelineStages): unknown | undefined;
+  build(courseKey: string, stages: PipelineStages, context?: PipelineBuildContext): BuildDocumentResult | undefined;
   ed?(courseKey: string, ctx: PipelineJobContext): void | Promise<void>;
   archive?(courseKey: string, ctx: PipelineJobContext): void | Promise<void>;
   /** `sync.parallel`: at most this many routed jobs of one course run at once; default 1. */
@@ -82,6 +94,39 @@ export interface AgentSyncOptions {
   timeoutMs?: number;
   now?: () => Date;
 }
+/** The plain JSON object shape stage results have after a round trip through the store. */
+const jsonRecord = (value: unknown): Record<string, unknown> | undefined =>
+  value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+
+/** A stored `updatedAt` API field's found value; a plain ISO string is accepted for synthetic stages. */
+function updatedAtOf(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  const field = jsonRecord(value);
+  return field?.state === 'found' && typeof field.value === 'string' ? field.value : undefined;
+}
+
+/** Whether a stored `assignments.<id>` stage holds a known (allowed or prohibited) policy. */
+function knownPolicyStage(stage: unknown): boolean {
+  const policy = jsonRecord(stage)?.policy;
+  const value = typeof policy === 'string' ? policy : jsonRecord(policy)?.value;
+  return value === 'allowed' || value === 'prohibited';
+}
+
+/** Find one assignment in a stored groups stage by Canvas id. */
+function findAssignment(stage: unknown, id: string): Record<string, unknown> | undefined {
+  const groups = jsonRecord(stage)?.groups;
+  if (!Array.isArray(groups)) return undefined;
+  for (const group of groups) {
+    const assignments = jsonRecord(group)?.assignments;
+    if (!Array.isArray(assignments)) continue;
+    for (const assignment of assignments) {
+      const row = jsonRecord(assignment);
+      if (row !== undefined && String(row.id) === id) return row;
+    }
+  }
+  return undefined;
+}
+
 const melbourneDate = (instant: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).format(instant);
 const platforms = ['canvas', 'ed'] as const;
 
@@ -229,14 +274,28 @@ export class AgentSync implements SyncCommands {
     await run({ kind: 'classify', jobId: job.id, courseKey, urls: [] });
     if (signal.aborted) return { steps, turns };
 
-    let built: unknown;
-    const builtFrom = this.stageContext(job, course).stages;
-    // No stage at all means every job of this course failed: keep the course's previously stored data untouched.
-    if (Object.keys(builtFrom).length) {
-      try { built = pipeline.build(courseKey, builtFrom); } catch { meta.sawError = true; }
+    // The owner's settled choices for this course apply to this run's grading; the build also sees blocked platforms.
+    const resolved = this.resolvedFor(courseKey);
+    const blocked = this.jobs.load(job.id)?.blocked;
+    const buildContext = (): PipelineBuildContext => ({ ...this.stageContext(job, course), now: this.now().toISOString(),
+      ...(resolved ? { resolved } : {}), ...(blocked?.length ? { blocked } : {}) });
+    const build = (): BuildDocumentResult | undefined => {
+      // No stage at all means every job of this course failed: keep the course's previously stored data untouched.
+      const builtFrom = this.stageContext(job, course).stages;
+      if (!Object.keys(builtFrom).length) return undefined;
+      try { return pipeline.build(courseKey, builtFrom, buildContext()); } catch { meta.sawError = true; return undefined; }
+    };
+    let built = build();
+    // One classification retry only, and only for ids the built document still leaves unknown.
+    const retry = built !== undefined && 'document' in built ? classificationRetryIds(built) : [];
+    if (retry.length && !signal.aborted) {
+      await run({ kind: 'classify', jobId: job.id, courseKey, urls: [], retry });
+      if (signal.aborted) return { steps, turns };
+      built = build();
     }
     if (built !== undefined) {
       // A build/import failure for one course is caught here; the course keeps its previously stored data.
+      // Import and conflict reconciliation share one transaction inside `storeBuilt`.
       try { this.jobs.storeBuilt(job.id, built); } catch { meta.sawError = true; }
     } else if (!hadOk) meta.sawError = true;
 
@@ -253,6 +312,32 @@ export class AgentSync implements SyncCommands {
 
   private stageContext(job: SyncJob, course: CourseSelection): PipelineJobContext {
     return { jobId: job.id, courseKey: course.key, course, stages: this.jobs.load(job.id)?.stages?.[course.key] ?? {} };
+  }
+
+  /** The owner's settled choices from earlier runs, so this run grades with them. */
+  private resolvedFor(courseKey: string): ResolvedChoices | undefined {
+    const courseId = this.jobs.courseIdFor(courseKey);
+    return courseId === undefined ? undefined : resolvedChoices(this.options.store.listSyncConflicts(courseId));
+  }
+
+  /** The most recent earlier finished sync job of this course. */
+  private previousFinishedJob(job: SyncJob, courseKey: string): SyncJob | undefined {
+    return this.options.store.listSyncJobs()
+      .filter(row => row.id !== job.id && row.endedAt !== undefined && row.courses.includes(courseKey))
+      .sort((left, right) => Date.parse(right.endedAt!) - Date.parse(left.endedAt!))[0];
+  }
+
+  /**
+   * An unchanged assignment page may be skipped when its API `updatedAt` equals the previous run's and that run
+   * stored a known policy. The fingerprint half of the rule stays with the folder sync (7.1/5.2b).
+   */
+  private unchangedAssignment(previous: SyncJob | undefined, courseKey: string, assignment: CanvasAssignmentValue): boolean {
+    const stage = previous?.stages?.[courseKey]?.[`assignments.${assignment.id}`];
+    if (stage === undefined || !knownPolicyStage(stage)) return false;
+    const previousGroups = previous?.stages?.[courseKey]?.groups;
+    const before = updatedAtOf(findAssignment(previousGroups, assignment.id)?.updatedAt);
+    const current = updatedAtOf(assignment.updatedAt);
+    return before !== undefined && current !== undefined && before === current;
   }
 
   /**
@@ -272,11 +357,18 @@ export class AgentSync implements SyncCommands {
       specs.push({ kind: 'quizzes', jobId: job.id, courseKey: course.key, urls: [quiz.url] });
     }
     const groups = stages.groups as unknown as GroupsStage | undefined;
+    const previous = this.previousFinishedJob(job, course.key);
     const seen = new Set<string>();
     for (const group of groups?.groups ?? []) for (const assignment of group.assignments ?? []) {
       const url = assignment.htmlUrl;
       if (!url || seen.has(url) || !this.assignmentUrlAllowed(url, allowed, canvasId)) continue;
       seen.add(url);
+      const stage = `assignments.${assignment.id}`;
+      const previousStage = previous?.stages?.[course.key]?.[stage];
+      if (previousStage !== undefined && this.unchangedAssignment(previous, course.key, assignment)) {
+        // The skipped page's last known policy is carried into this run so the build still sees it.
+        try { this.jobs.recordStage(job.id, course.key, stage, previousStage); continue; } catch { /* Fall back to a job. */ }
+      }
       specs.push({ kind: 'assignment', jobId: job.id, courseKey: course.key, urls: [url], target: assignment.id });
     }
     if (allowed.save.length) specs.push({ kind: 'saver', jobId: job.id, courseKey: course.key, urls: [...allowed.save] });

@@ -6,7 +6,10 @@ import type { AgentAdapter, AgentEvent, AgentInput, AgentRun, AgentTool } from '
 import { SqliteRepository } from '../../src/store/sqlite.js';
 import { AgentSync, type JobSpec, type PipelineJobContext, type SyncPipeline } from '../../src/sync/agent-job.js';
 import { canvasApiUrl, type CanvasTab, type GroupsStage, type TabsStage } from '../../src/sync/canvas-api.js';
+import { assessmentId } from '../../src/sync/course-import.js';
 import { SyncJobs } from '../../src/sync/jobs.js';
+import { buildCourseDocument } from '../../src/sync/build-document.js';
+import type { CourseDocument } from '../../src/sync/course-json.js';
 import { component, document, item } from './course-document.js';
 
 type Call = (name: string, input: unknown) => Promise<unknown>;
@@ -55,11 +58,12 @@ const selection = (key: string, pages: { canvas?: string; ed?: string } = pagesA
 const seed = (store: SqliteRepository, ...keys: string[]): void => {
   store.saveCourseSelections(keys.map(key => selection(key, key === keyB ? pagesB : pagesA)));
 };
-const docFor = (key: string): unknown => {
+const docFor = (key: string): CourseDocument => {
   const code = key.split(':')[0]!;
   const pages = code === 'SYNA10001' ? pagesA : pagesB;
   const url = `${pages.canvas}/assignments/1`;
-  return document([component('assignments', 60, [item(1, { url }, code)])], { pages }, code, '2026:S2');
+  return document([component('assignments', 60, [item(1, { url, kind: { value: 'assignment', state: 'found', via: 'ax' } }, code)])],
+    { pages }, code, '2026:S2') as CourseDocument;
 };
 const canvasId = (key: string): string => key === keyB ? '900002' : '900001';
 
@@ -78,21 +82,46 @@ function tabsFor(key: string, extra: CanvasTab[] = []): TabsStage {
 }
 function groupsFor(key: string, coverage: 'api' | 'partial' = 'api'): GroupsStage {
   const id = canvasId(key);
-  const group = { id: '1', name: 'Assignments', weight: { value: 60, state: 'found' as const, via: 'api' as const } };
-  return { source: canvasApiUrl('groups', id), via: 'api', coverage, unweighted: false, groups: [{
+  const source = canvasApiUrl('groups', id);
+  const at = '2026-10-24T00:00:00Z';
+  const group = { id: '1', name: 'Assignments', weight: { value: 60, state: 'found' as const, via: 'api' as const, source } };
+  return { source, via: 'api', coverage, unweighted: false, groups: [{
     ...group,
     assignments: [{ id: '1', name: 'Synthetic item 1', courseId: id, assignmentGroupId: '1',
       htmlUrl: `https://canvas.lms.unimelb.edu.au/courses/${id}/assignments/1`, group,
-      due: { value: null, state: 'unknown' as const }, unlockAt: { value: null, state: 'unknown' as const },
-      outOf: { value: 10, state: 'found' as const }, score: { value: null, state: 'unknown' as const },
-      status: { value: 'not_started' as const, state: 'found' as const }, updatedAt: { value: null, state: 'unknown' as const } }],
+      due: { value: null, state: 'unknown' as const, checkedAt: at }, unlockAt: { value: null, state: 'unknown' as const, checkedAt: at },
+      outOf: { value: 10, state: 'found' as const, via: 'api' as const, source }, score: { value: null, state: 'unknown' as const, checkedAt: at },
+      status: { value: 'not_started' as const, state: 'found' as const, via: 'api' as const, source },
+      updatedAt: { value: null, state: 'unknown' as const, checkedAt: at } }],
   }] };
+}
+
+/** The production build, wired into the fake adapter: the same function 6.2 adds. */
+const realBuild: SyncPipeline['build'] = (_key, stages, ctx) => {
+  if (!ctx) throw new Error('build needs the course context');
+  return buildCourseDocument({ course: ctx.course, stages, now: ctx.now,
+    ...(ctx.resolved ? { resolved: ctx.resolved } : {}), ...(ctx.blocked ? { blocked: ctx.blocked } : {}) });
+};
+const handbookPage = 'https://handbook.unimelb.edu.au/2026/subjects/syna10001/assessment';
+const skeletonFor = (components: { name: string; weight?: number; hurdle?: string }[]) => ({ source: handbookPage, via: 'handbook',
+  components: components.map(component => ({ ...component, quote: `${component.name}\tSynthetic timing\t${component.weight ?? 0}%` })) });
+const classifyAs = (items: { id: string; category: string; component?: string; evidence: string }[]) => ({ items });
+/** One weighted group "Assignments" with a known API `updatedAt`, so the skip rule can compare it. */
+function groupsWith(weight: number, options: { coverage?: 'api' | 'partial'; updatedAt?: string } = {}): GroupsStage {
+  const base = groupsFor(keyA, options.coverage ?? 'api');
+  const group = base.groups[0]!;
+  const updatedAt = { value: options.updatedAt ?? '2026-10-20T08:00:00Z', state: 'found' as const, via: 'api' as const, source: base.source };
+  return { ...base, groups: [{ ...group, weight: { ...group.weight, value: weight },
+    assignments: [{ ...group.assignments[0]!, group: { ...group, weight: { ...group.weight, value: weight } }, updatedAt }] }] };
 }
 
 interface BehaviourOptions {
   behaviour?: (spec: JobSpec) => Behaviour;
   tabs?: (spec: JobSpec) => TabsStage;
   groups?: (spec: JobSpec) => GroupsStage;
+  skeleton?: (spec: JobSpec) => unknown;
+  classification?: (spec: JobSpec) => unknown;
+  assignment?: (spec: JobSpec) => unknown;
   map?: (spec: JobSpec) => unknown;
 }
 /** The ordinary successful job: one output tool call, one tool step, then a result event. */
@@ -106,7 +135,7 @@ function scripted(options: BehaviourOptions = {}): Script {
     switch (spec.kind) {
       case 'courses': await call('courses.offer', { jobId: spec.jobId, courses: allCourses, blocked: [] }); break;
       case 'handbook': await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'skeleton',
-        value: { source: 'synthetic handbook', via: 'handbook', components: [] } }); break;
+        value: options.skeleton?.(spec) ?? { source: 'synthetic handbook', via: 'handbook', components: [] } }); break;
       case 'tabs': await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'tabs',
         value: options.tabs?.(spec) ?? tabsFor(spec.courseKey!) }); break;
       case 'groups': await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'groups',
@@ -115,10 +144,11 @@ function scripted(options: BehaviourOptions = {}): Script {
         value: options.map?.(spec) ?? { links: [] } }); break;
       case 'quizzes': await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'quizzes', value: { quizzes: [] } }); break;
       case 'assignment': await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey,
-        stage: `assignments.${spec.target}`, value: { policy: 'unknown', files: [] } }); break;
+        stage: `assignments.${spec.target}`, value: options.assignment?.(spec) ?? { policy: 'unknown', files: [] } }); break;
       case 'saver': await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'materials', value: { files: [], links: [] } }); break;
       case 'ed': await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'ed', value: { lessons: [] } }); break;
-      case 'classify': await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'classification', value: { items: [] } }); break;
+      case 'classify': await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'classification',
+        value: options.classification?.(spec) ?? { items: [] } }); break;
     }
     yield { type: 'tool_step', tool: `coursework.${spec.kind}`, outcome: 'ok' };
     yield { type: 'result', turns: 1 };
@@ -151,11 +181,14 @@ function setup(options: SetupOptions = {}) {
     { name: 'canvas.capture', description: 'Capture a Canvas page', inputSchema: {}, execute: async input => jobs.capture(input as Parameters<SyncJobs['capture']>[0]) },
     { name: 'handbook.capture', description: 'Capture the Handbook', inputSchema: {}, execute: async input => jobs.handbook(input as Parameters<SyncJobs['handbook']>[0]) },
   ];
+  let imports = 0;
+  tools.push({ name: 'course.import', description: 'Agent import must not be used by the pipeline', inputSchema: {},
+    execute: async () => { imports++; return { stored: true }; } });
   const adapter = new PipelineAgent(options.script ?? scripted(options));
   const pipeline: SyncPipeline = {
     prompt: options.prompt ?? (spec => JSON.stringify(spec)),
     tools: () => tools,
-    build: options.build ?? ((key: string) => docFor(key)),
+    build: options.build ?? ((key: string) => ({ document: docFor(key), conflicts: [], complete: true })),
     ...(options.ed ? { ed: options.ed } : {}),
     ...(options.archive ? { archive: options.archive } : {}),
     ...(options.parallel !== undefined ? { parallel: options.parallel } : {}),
@@ -164,7 +197,7 @@ function setup(options: SetupOptions = {}) {
     ...(options.runBoundMs !== undefined ? { runBoundMs: options.runBoundMs } : {}),
     ...(options.jobBoundMs !== undefined ? { jobBoundMs: options.jobBoundMs } : {}) });
   cleanups.push(() => { store.close(); rmSync(directory, { recursive: true, force: true }); });
-  return { store, jobs, sync, adapter, tools, directory, databasePath };
+  return { store, jobs, sync, adapter, tools, directory, databasePath, importCalls: () => imports };
 }
 
 describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
@@ -278,7 +311,8 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     const f = setup({ script: async function* (spec, call) {
       events.push(`start:${spec.courseKey ?? 'all'}:${spec.kind}`);
       yield* base(spec, call);
-    }, build: (key, stages) => { events.push(`build:${key}`); expect(stages.tabs).toBeDefined(); return docFor(key); } });
+    }, build: (key, stages) => { events.push(`build:${key}`); expect(stages.tabs).toBeDefined();
+      return { document: docFor(key), conflicts: [], complete: true }; } });
     seed(f.store, keyA, keyB);
     await f.sync.run({});
     const kindsA = f.adapter.specs.filter(spec => spec.courseKey === keyA).map(spec => spec.kind);
@@ -305,7 +339,7 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
   it('Handbook unavailable: two failed handbook jobs do not stop the course, and the build sees no skeleton', async () => {
     let stagesSeen: Record<string, unknown> | undefined;
     const f = setup({ behaviour: spec => spec.kind === 'handbook' ? 'unavailable' : 'ok',
-      build: (key, stages) => { stagesSeen = stages; return docFor(key); } });
+      build: (key, stages) => { stagesSeen = stages; return { document: docFor(key), conflicts: [], complete: true }; } });
     seed(f.store, keyA);
     const result = await f.sync.run({});
     const handbook = result.run.jobs?.filter(job => job.kind === 'handbook') ?? [];
@@ -495,7 +529,7 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     const f = setup({ build: (key, stages) => {
       expect(stages.tabs).toBeDefined();
       if (failA && key === keyA) throw new Error('Synthetic build failure');
-      return docFor(key);
+      return { document: docFor(key), conflicts: [], complete: true };
     } });
     seed(f.store, keyA, keyB);
     expect((await f.sync.run({})).outcome).toBe('OK');
@@ -521,4 +555,175 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     expect(hookCalls).toBe(1);
     expect(withHook.adapter.specs.some(spec => spec.kind === 'ed')).toBe(false);
   });
+  it('Built document imported: the pipeline builds and stores one document without an agent course.import call', async () => {
+    const f = setup({
+      build: realBuild,
+      skeleton: () => skeletonFor([{ name: 'Assignments', weight: 30 }]),
+      groups: () => groupsWith(30),
+      classification: () => classifyAs([{ id: '1', category: 'assignment', component: 'Assignments', evidence: 'Synthetic group name' }]),
+      map: () => ({ links: [], aiPolicy: { value: 'allowed', quote: 'Generative AI is permitted for this course.' } }),
+    });
+    seed(f.store, keyA);
+    const result = await f.sync.run({});
+    expect(result.outcome).toBe('OK');
+    expect(f.importCalls()).toBe(0);
+    const course = f.store.query('courses', { limit: 10 }).items[0] as { id: string; aiPolicy?: string };
+    expect(course).toMatchObject({ code: 'SYNA10001', aiPolicy: 'allowed' });
+    expect(f.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1'))).toMatchObject({
+      kind: 'assignment', weight: 30, group: { key: 'SYNA10001:assignments' },
+    });
+    expect(f.jobs.load(result.run.id)?.results?.[keyA]).toMatchObject({ courseId: course.id, components: 1, items: 1 });
+  });
+
+  it('Owner keeps the Handbook weight end to end: the skeleton choice is applied and the conflict stays resolved', async () => {
+    const f = setup({
+      build: realBuild,
+      skeleton: () => skeletonFor([{ name: 'Assignments', weight: 30 }]),
+      groups: () => groupsWith(40),
+      classification: () => classifyAs([{ id: '1', category: 'assignment', component: 'Assignments', evidence: 'Synthetic group name' }]),
+    });
+    seed(f.store, keyA);
+    await f.sync.run({});
+    const courseId = f.sync.status().courses.find(course => course.key === keyA)!.courseId!;
+    const open = f.store.listSyncConflicts(courseId).find(conflict => conflict.field === 'weight')!;
+    expect(open).toMatchObject({ state: 'open', skeletonValue: 30, canvasValue: 40 });
+    const id = assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1');
+    expect(f.store.loadAssessment(id)?.weight).toBe(40);
+
+    f.jobs.resolve({ conflictId: open.id, choice: 'skeleton' });
+    const second = await f.sync.run({});
+    expect(second.outcome).toBe('OK');
+    expect(f.store.loadAssessment(id)).toMatchObject({ weight: 30, group: { weight: 30 } });
+    expect(f.store.loadSyncConflict(open.id)).toMatchObject({ state: 'resolved', choice: 'skeleton' });
+  });
+
+  it('A later sync whose values agree closes the conflict; a partial groups stage does not', async () => {
+    let weight = 40;
+    const f = setup({
+      build: realBuild,
+      skeleton: () => skeletonFor([{ name: 'Assignments', weight: 30 }]),
+      groups: () => groupsWith(weight),
+      classification: () => classifyAs([{ id: '1', category: 'assignment', component: 'Assignments', evidence: 'Synthetic group name' }]),
+    });
+    seed(f.store, keyA);
+    await f.sync.run({});
+    const courseId = f.sync.status().courses.find(course => course.key === keyA)!.courseId!;
+    const open = f.store.listSyncConflicts(courseId)[0]!;
+    expect(open.state).toBe('open');
+    weight = 30;
+    await f.sync.run({});
+    expect(f.store.loadSyncConflict(open.id)).toMatchObject({ state: 'agreed' });
+    expect(f.store.listSyncConflicts(courseId)).toHaveLength(1);
+
+    let partialWeight = 40;
+    let coverage: 'api' | 'partial' = 'api';
+    const partial = setup({
+      build: realBuild,
+      skeleton: () => skeletonFor([{ name: 'Assignments', weight: 30 }]),
+      groups: () => groupsWith(partialWeight, { coverage }),
+      classification: () => classifyAs([{ id: '1', category: 'assignment', component: 'Assignments', evidence: 'Synthetic group name' }]),
+    });
+    seed(partial.store, keyA);
+    await partial.sync.run({});
+    const partialCourseId = partial.sync.status().courses.find(course => course.key === keyA)!.courseId!;
+    const stillOpen = partial.store.listSyncConflicts(partialCourseId)[0]!;
+    partialWeight = 30;
+    coverage = 'partial';
+    await partial.sync.run({});
+    expect(partial.store.loadSyncConflict(stillOpen.id)).toMatchObject({ state: 'open', canvasValue: 40 });
+  });
+
+  it('Classification retried once: the second classify job lists the missing id and its answer is stored', async () => {
+    const base = scripted({ skeleton: () => skeletonFor([{ name: 'Assignments', weight: 30 }]), groups: () => groupsWith(30) });
+    let classifications = 0;
+    const f = setup({ build: realBuild, script: async function* (spec, call) {
+      if (spec.kind === 'classify') {
+        classifications++;
+        await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'classification',
+          value: classifyAs(classifications > 1 ? [{ id: '1', category: 'assignment', component: 'Assignments', evidence: 'Synthetic group name' }] : []) });
+        yield { type: 'tool_step', tool: 'coursework.items.classify', outcome: 'ok' };
+        yield { type: 'result', turns: 1 };
+        return;
+      }
+      yield* base(spec, call);
+    } });
+    seed(f.store, keyA);
+    const result = await f.sync.run({});
+    expect(result.outcome).toBe('OK');
+    const classifySpecs = f.adapter.specs.filter(spec => spec.kind === 'classify');
+    expect(classifySpecs).toHaveLength(2);
+    expect(classifySpecs[1]!.retry).toEqual(['1']);
+    expect(f.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1'))).toMatchObject({
+      kind: 'assignment', group: { key: 'SYNA10001:assignments' },
+    });
+  });
+
+  it('Classification still missing after the retry is stored unknown and counted in the run', async () => {
+    const base = scripted({ skeleton: () => skeletonFor([{ name: 'Assignments', weight: 30 }]), groups: () => groupsWith(30) });
+    const f = setup({ build: realBuild, script: async function* (spec, call) {
+      if (spec.kind === 'classify') {
+        await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'classification', value: classifyAs([]) });
+        yield { type: 'tool_step', tool: 'coursework.items.classify', outcome: 'ok' };
+        yield { type: 'result', turns: 1 };
+        return;
+      }
+      yield* base(spec, call);
+    } });
+    seed(f.store, keyA);
+    const result = await f.sync.run({});
+    expect(f.adapter.specs.filter(spec => spec.kind === 'classify')).toHaveLength(2);
+    expect(result.run.courseCoverage?.[0]?.unknownFields ?? 0).toBeGreaterThan(0);
+    const item = f.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1'))!;
+    expect(item.kind).toBeUndefined();
+    expect(item.readState?.kind?.state).toBe('unknown');
+    expect(item.group?.key).toBe('SYNA10001:unassigned');
+  });
+
+  it('Course aiPolicy from course.map reaches the Course with its quote; absent means unknown', async () => {
+    const f = setup({ build: realBuild,
+      skeleton: () => skeletonFor([{ name: 'Assignments', weight: 30 }]), groups: () => groupsWith(30),
+      map: () => ({ links: [], aiPolicy: { value: 'prohibited', quote: 'No generative AI may be used in this course.' } }) });
+    seed(f.store, keyA);
+    await f.sync.run({});
+    const course = f.store.query('courses', { limit: 10 }).items[0] as { id: string };
+    expect(f.store.loadCourse(course.id)).toMatchObject({ aiPolicy: 'prohibited',
+      readState: { aiPolicy: { state: 'found', quote: 'No generative AI may be used in this course.' } } });
+
+    const missing = setup({ build: realBuild,
+      skeleton: () => skeletonFor([{ name: 'Assignments', weight: 30 }]), groups: () => groupsWith(30), map: () => ({ links: [] }) });
+    seed(missing.store, keyA);
+    await missing.sync.run({});
+    const other = missing.store.query('courses', { limit: 10 }).items[0] as { id: string };
+    expect(missing.store.loadCourse(other.id)?.aiPolicy).toBeUndefined();
+    expect(missing.store.loadCourse(other.id)?.readState?.aiPolicy?.state).toBe('unknown');
+  });
+
+  it('Old API data is reused-style skip: an unchanged assignment is not given a job and its stored policy reaches the build', async () => {
+    let assignmentJobs = 0;
+    const f = setup({ build: realBuild,
+      skeleton: () => skeletonFor([{ name: 'Assignments', weight: 30 }]),
+      groups: () => groupsWith(30, { updatedAt: '2026-10-20T08:00:00Z' }),
+      classification: () => classifyAs([{ id: '1', category: 'assignment', component: 'Assignments', evidence: 'Synthetic group name' }]),
+      assignment: () => {
+        assignmentJobs++;
+        return { policy: { value: assignmentJobs === 1 ? 'allowed' : 'prohibited',
+          quote: assignmentJobs === 1 ? 'Generative AI is allowed here.' : 'Generative AI is prohibited here.' }, files: [] };
+      } });
+    seed(f.store, keyA);
+    await f.sync.run({});
+    expect(assignmentJobs).toBe(1);
+    const id = assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1');
+    expect(f.store.loadAssessment(id)).toMatchObject({ aiPolicy: 'allowed',
+      readState: { aiPolicy: { quote: 'Generative AI is allowed here.' } } });
+
+    const before = f.adapter.specs.length;
+    const second = await f.sync.run({});
+    const newSpecs = f.adapter.specs.slice(before);
+    expect(second.outcome).toBe('OK');
+    expect(newSpecs.filter(spec => spec.kind === 'assignment')).toEqual([]);
+    expect(assignmentJobs).toBe(1);
+    expect(f.store.loadAssessment(id)).toMatchObject({ aiPolicy: 'allowed',
+      readState: { aiPolicy: { quote: 'Generative AI is allowed here.' } } });
+  });
+
 });

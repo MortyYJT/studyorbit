@@ -188,6 +188,18 @@ describe('pipeline job prompts (layered-sync task 5.2)', () => {
       'Synthetic handbook row text', 'Synthetic hurdle page text']) expect(text).not.toContain(pageText);
   });
 
+  it('classifier: a re-check lists the ids whose category the build still missed', () => {
+    const text = prompt({ ...specFor('classify'), retry: ['500001', '500002'] }, context);
+    expect(text).toContain('Re-check these items: 500001, 500002');
+    expect(prompt(specFor('classify'), context)).not.toContain('Re-check these items:');
+  });
+
+  it('main: asks for the course-wide AI rule only when the home page states one', () => {
+    const text = prompt(specFor('main'), context);
+    expect(text).toContain('`aiPolicy`');
+    expect(text).toContain('only when the home page states a course-wide AI rule');
+  });
+
   it('classifier: still renders without stage context', () => {
     const text = prompt(specFor('classify'));
     expect(text).toContain('items.classify');

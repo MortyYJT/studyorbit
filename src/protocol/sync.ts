@@ -34,9 +34,14 @@ export const CourseMapInputSchema = z.strictObject({
   syllabus: z.strictObject({ where: z.enum(['canvas', 'ed', 'handbook', 'unknown']), quote: stageQuote.optional() }),
   /** No `route`: code routes each link by its URL. */
   links: z.array(z.strictObject({ label: stageLabel, url: stageUrlText, quote: stageQuote })).max(200),
+  /** The course-wide AI rule, only when the home page states one; the quote is required unless unknown. */
+  aiPolicy: z.strictObject({ value: z.enum(['allowed', 'prohibited', 'unknown']), quote: stageQuote.optional() }).optional(),
 }).superRefine((input, ctx) => {
   if (input.syllabus.where !== 'unknown' && input.syllabus.quote === undefined) {
     ctx.addIssue({ code: 'custom', path: ['syllabus', 'quote'], message: 'a home-page quote is required unless the syllabus location is unknown' });
+  }
+  if (input.aiPolicy && input.aiPolicy.value !== 'unknown' && input.aiPolicy.quote === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['aiPolicy', 'quote'], message: 'the quoted AI statement is required unless the policy is unknown' });
   }
   input.links.forEach((link, index) => {
     if (!courseMapOrigins.has(webOrigin(link.url) ?? '')) {

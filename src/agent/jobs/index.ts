@@ -61,6 +61,9 @@ export function prompt(spec: JobSpec, ctx?: PipelineJobContext): string {
     .replace('{{compactList}}', () => compact);
   const page = pageNote(spec);
   const urls = spec.urls.length ? spec.urls.map(url => `- ${url}`) : ['None. This job opens no page.'];
+  const retry = spec.kind === 'classify' && spec.retry?.length
+    ? ['', '## Re-check', `Re-check these items: ${spec.retry.join(', ')}`]
+    : [];
   return [
     readJobFile('rules.md'),
     '',
@@ -73,6 +76,7 @@ export function prompt(spec: JobSpec, ctx?: PipelineJobContext): string {
     '## URLs you may open',
     ...urls,
     ...(page ? ['', page] : []),
+    ...retry,
     '',
     body,
     '',
