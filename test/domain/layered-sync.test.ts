@@ -113,6 +113,12 @@ describe('layered-sync run and job records', () => {
     expect(parsed.courseCoverage?.[0]?.canvasNumbers).toBe('api');
   });
 
+  it('accepts an optional missingFiles count and keeps older coverage without it readable', () => {
+    expect(RunSchema.parse(run).courseCoverage?.[0]?.missingFiles).toBeUndefined();
+    expect(RunSchema.parse({ ...run, courseCoverage: [{ ...coverage, missingFiles: 3 }] }).courseCoverage?.[0]?.missingFiles).toBe(3);
+    expect(RunSchema.safeParse({ ...run, courseCoverage: [{ ...coverage, missingFiles: -1 }] }).success).toBe(false);
+  });
+
   it.each(['api', 'partial', 'unavailable'] as const)('accepts Canvas coverage %s', canvasNumbers => {
     expect(RunSchema.parse({ ...run, courseCoverage: [{ ...coverage, canvasNumbers }] }).courseCoverage?.[0]?.canvasNumbers).toBe(canvasNumbers);
   });

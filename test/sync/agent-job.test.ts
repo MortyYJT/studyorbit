@@ -87,7 +87,7 @@ function setup(script: Script, options: SetupOptions = {}) {
     ...(options.runBoundMs !== undefined ? { runBoundMs: options.runBoundMs } : {}),
     ...(options.jobBoundMs !== undefined ? { jobBoundMs: options.jobBoundMs } : {}) });
   const select = (...keys: string[]) => dispatch(host.registry, 'courses.select', { selections: keys.map(key => ({ key, selected: true })) }, host.context);
-  return { store, sync, jobs, adapter, select };
+  return { store, sync, jobs, adapter, select, host };
 }
 /** Write the stage this job kind must produce, so the runner counts one successful attempt. */
 async function writeStage(spec: JobSpec, call: Call): Promise<void> {
@@ -112,6 +112,22 @@ function stageAll(spec: JobSpec, call: Call): AsyncGenerator<AgentEvent, void> {
     yield { type: 'tool_step', tool: `coursework.${spec.kind}`, outcome: 'ok' };
     yield { type: 'result', turns: 1 };
   })();
+}
+/** Every job succeeds and the archive hook records the synthetic counts production writes after a job. */
+function archiveScript(counts: { missing: number; unresolved: number }, extra: Record<string, unknown> = {}): Script {
+  return async function* (spec, call) {
+    if (spec.kind === 'courses') {
+      await call('courses.offer', { jobId: spec.jobId, courses: three.slice(0, 1), blocked: [] });
+      yield { type: 'tool_step', tool: 'coursework.courses.offer', outcome: 'ok' };
+      yield { type: 'result', turns: 1 };
+      return;
+    }
+    await writeStage(spec, call);
+    if (spec.courseKey) await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'archive',
+      value: { moved: 1, updated: 0, missing: counts.missing, unresolved: counts.unresolved, ...extra } });
+    yield { type: 'tool_step', tool: `coursework.${spec.kind}`, outcome: 'ok' };
+    yield { type: 'result', turns: 1 };
+  };
 }
 async function* offerOnly(spec: JobSpec, call: Call): AsyncGenerator<AgentEvent, void> {
   expect(spec.kind).toBe('courses');
@@ -180,6 +196,27 @@ describe('agent sync job (coursework-sync)', () => {
     expect(result.run.steps).toBe(7);
     expect(f.sync.status()).toMatchObject({ running: false, blocked: [], lastRun: { id: result.run.id, outcome: 'OK', turns: 7 },
       courses: [{ key: 'SYNA10001:2026:S2', storedAt: expect.any(String), courseId: expect.any(String), lastRun: { stored: true, unknownFields: [] } }] });
+  });
+
+  it('copies the archive missing and unresolved counts into coverage and sync.status, without file names or paths', async () => {
+    const f = setup(archiveScript({ missing: 2, unresolved: 1 },
+      { names: ['synthetic-final-report.pdf'], paths: ['/synthetic/Downloads/synthetic-final-report.pdf'] }), { ed: false });
+    f.store.saveCourseSelections([{ key: 'SYNA10001:2026:S2', code: 'SYNA10001', term: '2026:S2', pages: canvasOnly, offeredAt: '2026-10-24T00:00:00Z', selected: true }]);
+    const result = await f.sync.run({});
+    expect(result.run.courseCoverage).toEqual([expect.objectContaining({ missingFiles: 3 })]);
+    expect(f.sync.status().courses[0]!.lastRun).toMatchObject({ missingFiles: 3 });
+    expect(await dispatch(f.host.registry, 'sync.status', {}, f.host.context))
+      .toMatchObject({ ok: true, data: { courses: [{ lastRun: { missingFiles: 3 } }] } });
+    expect(JSON.stringify(result.run)).not.toContain('synthetic-final-report.pdf');
+    expect(JSON.stringify(f.sync.status())).not.toContain('synthetic-final-report.pdf');
+  });
+
+  it('stores no missingFiles when the archive stage reports nothing missing', async () => {
+    const f = setup(archiveScript({ missing: 0, unresolved: 0 }), { ed: false });
+    f.store.saveCourseSelections([{ key: 'SYNA10001:2026:S2', code: 'SYNA10001', term: '2026:S2', pages: canvasOnly, offeredAt: '2026-10-24T00:00:00Z', selected: true }]);
+    const result = await f.sync.run({});
+    expect(result.run.courseCoverage?.[0]).not.toHaveProperty('missingFiles');
+    expect(f.sync.status().courses[0]!.lastRun).not.toHaveProperty('missingFiles');
   });
 
   it('Second start: a start while a sync runs returns LOCKED and starts nothing', async () => {

@@ -110,3 +110,8 @@ it('orders notices after sync needs and before planning gaps, and lists both new
     .toEqual(['使用 Handbook', '使用 Canvas', '忽略', '考核内容已更新']);
   expect([en.coursePage.start, zh.coursePage.start]).toEqual(['Start', '开始']);
 });
+
+it('names the missing-file count per course in English and Chinese', () => {
+  expect(en.syncNeeds.missingFiles.join('3')).toBe('3 files were not downloaded; open the course page or sync again');
+  expect(zh.syncNeeds.missingFiles.join('3')).toBe('3 个文件没有下载；请打开课程页面或重新同步');
+});

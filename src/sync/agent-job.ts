@@ -96,6 +96,15 @@ export interface AgentSyncOptions {
 const jsonRecord = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 
+/** Missing plus unresolved counts from a course's archive stage; the stage's names and paths stay out of the Run. */
+function missingFileCount(stage: unknown): number | undefined {
+  const archive = jsonRecord(stage);
+  if (!archive) return undefined;
+  const count = (value: unknown) => typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0;
+  const total = count(archive.missing) + count(archive.unresolved);
+  return total > 0 ? total : undefined;
+}
+
 /** A stored `updatedAt` API field's found value; a plain ISO string is accepted for synthetic stages. */
 function updatedAtOf(value: unknown): string | undefined {
   if (typeof value === 'string') return value;
@@ -430,9 +439,10 @@ export class AgentSync implements SyncCommands {
       const state = (platform: 'canvas' | 'ed') => result?.platforms[platform] ?? (blocked.has(platform) ? 'blocked' as const : 'unread' as const);
       const groups = final.stages?.[key]?.groups as unknown as GroupsStage | undefined;
       const canvasNumbers = groups?.coverage === 'partial' ? 'partial' as const : groups?.coverage === 'api' ? 'api' as const : 'unavailable' as const;
+      const missingFiles = missingFileCount(final.stages?.[key]?.archive);
       return { courseRef: createHash('sha256').update(`course:${key}`).digest('hex'), stored: result !== undefined, submissions: final.submissions[key] ?? 0,
         unknownFields: result?.unknownFields.length ?? 0, platforms: { canvas: state('canvas'), ed: state('ed') }, policyChanged: result?.policyChanged ?? false,
-        ...(pipeline || groups ? { canvasNumbers } : {}) };
+        ...(pipeline || groups ? { canvasNumbers } : {}), ...(missingFiles !== undefined ? { missingFiles } : {}) };
     });
     const ok = outcome === 'OK' || outcome === 'NEEDS_SELECTION';
     const run = RunSchema.parse({ id: job.id, command: 'sync', startedAt: job.startedAt, endedAt: this.now().toISOString(), steps,
@@ -469,10 +479,12 @@ export class AgentSync implements SyncCommands {
       courses: selections.filter(row => row.selected === true).map(row => {
         const stored = jobs.find(job => job.results?.[row.key])?.results?.[row.key];
         const result = ended?.results?.[row.key];
+        const missingFiles = missingFileCount(ended?.stages?.[row.key]?.archive);
         return { key: row.key, code: row.code, term: row.term, ...(row.name ? { name: row.name } : {}),
           ...(stored ? { courseId: stored.courseId, storedAt: stored.storedAt } : {}),
           ...(ended?.courses.includes(row.key) ? { lastRun: { stored: result !== undefined, unknownFields: result?.unknownFields ?? [], dropped: result?.dropped ?? [],
-            warnings: result?.warnings ?? [], ...(result?.weightSum !== undefined ? { weightSum: result.weightSum } : {}), policyChanged: result?.policyChanged ?? false } } : {}) };
+            warnings: result?.warnings ?? [], ...(result?.weightSum !== undefined ? { weightSum: result.weightSum } : {}), policyChanged: result?.policyChanged ?? false,
+            ...(missingFiles !== undefined ? { missingFiles } : {}) } } : {}) };
       }),
     };
   }

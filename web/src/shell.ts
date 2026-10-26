@@ -13,7 +13,8 @@ export type Attention = { site: Site; kind: 'blocked' } | { kind: 'failed'; outc
   | { kind: 'unknown'; course: string; courseId?: string; fields: string[]; dropped: string[] }
   | { kind: 'weights'; course: string; courseId?: string; warning: Warning; sum?: number }
   | { kind: 'policy'; course: string; courseId?: string; value?: Policy; quote?: string }
-  | { kind: 'unread'; course: string };
+  | { kind: 'unread'; course: string }
+  | { kind: 'missing'; course: string; courseId?: string; count: number };
 export interface ShellState {
   courses?: Output<'courses.list'>;
   candidates?: Candidate[];
@@ -59,6 +60,8 @@ export function attention(state: ShellState): Attention[] {
     }
     // A run blocked on every platform read no course; the blocked items already say why.
     if (!run.stored && !allBlocked) items.push({ kind: 'unread', course: course.code });
+    const missingFiles = run.missingFiles ?? 0;
+    if (missingFiles > 0) items.push({ kind: 'missing', course: course.code, ...ids, count: missingFiles });
     return items;
   }) ?? [];
   // A NEEDS_SELECTION run keeps the entry while no course is selected (even after declining all), so it is never a dead end.

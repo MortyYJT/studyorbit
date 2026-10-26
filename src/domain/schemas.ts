@@ -203,6 +203,8 @@ export const CourseCoverageSchema = z.strictObject({
   platforms: z.strictObject({ canvas: PlatformRunStateSchema, ed: PlatformRunStateSchema }), policyChanged: z.boolean(),
   /** Whether the Canvas numbers came from the API, from a capped page, or not at all. */
   canvasNumbers: z.enum(['api', 'partial', 'unavailable']).optional(),
+  /** Reported files the archive hook could not move into the course folder (missing plus unresolved). */
+  missingFiles: CountSchema.optional(),
 });
 // Reads retain unmeasured historical sync runs; new finalization uses SyncRunSchema.
 export const RunSchema = RunBaseSchema.extend({
