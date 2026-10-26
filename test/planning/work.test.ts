@@ -71,3 +71,11 @@ it('includes unfinished manual tasks and unfinished steps but keeps all-day task
   store.saveTask({ ...store.loadTask('manual')!, done: true });
   expect(service.work('2026-S1').items.some(x => x.workId === 'manual')).toBe(false);
 });
+it('Ungraded practice quiz: an unsubmitted ungraded assessment is not plannable work and no deadline (study-planning)', () => {
+  const { store, service } = setup();
+  const practice = { ...synthetic.assessments.find(a => a.id === 'd')!, id: 'practice', name: 'Synthetic practice quiz', kind: 'ungraded' as const, weight: 0 };
+  store.saveAssessment(practice);
+  const work = service.work('2026-S1');
+  expect(work.items.map(x => x.workId)).not.toContain('practice');
+  expect(work.deadlines.map(x => x.workId)).not.toContain('practice');
+});
