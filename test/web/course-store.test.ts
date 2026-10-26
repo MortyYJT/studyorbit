@@ -146,3 +146,20 @@ it('Agent-copied source: concurrent source reads all land, and the copied marker
   expect(store.getSnapshot().sources.copied).toMatchObject({ copiedBy: 'agent' });
   expect(store.getSnapshot().sources.platform).not.toHaveProperty('copiedBy');
 });
+
+it('opens a saved assessment file through the owner session and re-reads the list so the updated marker clears', async () => {
+  let updated = true;
+  const saved = () => [{ id: 'saved-1', name: 'instructions.html', current: true, savedAt: '2026-10-24T00:00:00Z', updated }];
+  const fetcher = fixture({
+    'assessments.list': () => page([{ ...quiz, savedFiles: saved() }]),
+    'file.open': () => { updated = false; return { opened: true, openedAt: '2026-10-24T00:01:00Z' }; },
+  });
+  const store = new CourseStore(createClient(secret, fetcher), 'c1');
+  await store.load();
+  expect(store.getSnapshot().assessments![0]!.savedFiles![0]).toMatchObject({ name: 'instructions.html', updated: true });
+  expect(await store.openFile('saved-1')).toBe(true);
+  expect(calls(fetcher, 'file.open')).toEqual([{ body: { savedFileId: 'saved-1' }, session: secret }]);
+  expect(store.getSnapshot().assessments![0]!.savedFiles![0]!.updated).toBe(false);
+  const anonymous = new CourseStore(createClient(undefined, fetcher), 'c1');
+  expect(await anonymous.openFile('saved-1')).toBe(false);
+});

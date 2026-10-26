@@ -10,7 +10,13 @@ export interface DeadlineEntry { id: string; title: string; courseCode?: string;
 export interface PlannedItem { workId: string; title: string; courseCode?: string; minutes: number; startTime?: string; estimateMinutes?: number; actualMinutes: number; manual: boolean }
 export interface WorkRow { workId: string; title: string; courseCode?: string; minutes?: number; due?: string; estimateMinutes?: number; manual: boolean }
 export interface DayColumn { date: string; availableMinutes?: number; usedMinutes: number; deadlines: DeadlineEntry[]; items: PlannedItem[] }
-export type Need = Attention | { kind: 'overflow'; workId: string; title: string; courseCode?: string; minutes: number }
+export type Conflict = Output<'conflicts.list'>['items'][number];
+export type UpdateNotice = Output<'updates.list'>['items'][number];
+export type ConflictNeed =
+  | { kind: 'weight'; id: string; courseId: string; componentName?: string; handbook?: unknown; canvas: unknown }
+  | { kind: 'unmatched'; id: string; courseId: string; canvasName?: string; components: { key: string; name: string }[] };
+export type UpdateNeed = { kind: 'update'; savedFileId: string; courseId: string; assessmentId: string; assessmentName: string; name: string; savedAt: string };
+export type Need = Attention | ConflictNeed | UpdateNeed | { kind: 'overflow'; workId: string; title: string; courseCode?: string; minutes: number }
   | { kind: 'unestimated'; count: number };
 export interface CourseSummary { id: string; code: string; name: string; gradedWeight: number; unknownWeight: boolean; next?: { title: string; due: string }; undatedExams: string[] }
 export interface MonthCell { date: string; inMonth: boolean; deadlines: DeadlineEntry[] }
@@ -132,10 +138,43 @@ export function weekModel(input: { plan?: Plan; courses: readonly Course[]; asse
   const row = (workId: string, minutes?: number): WorkRow => { const { actualMinutes: _actual, ...rest } = describe(workId); return { ...rest, ...(minutes !== undefined ? { minutes } : {}) }; };
   return { days, overflow: (input.plan?.overflow ?? []).map(item => row(item.workId, item.minutes)), unestimated: (input.plan?.unestimated ?? []).map(item => row(item.workId)) };
 }
+/** A conflict value as the owner reads it: percentages for weights, a name for an unmatched Canvas item, never raw JSON. */
+export function conflictValue(value: unknown): string {
+  if (typeof value === 'number') return `${value}%`;
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object' && 'name' in value && typeof (value as { name?: unknown }).name === 'string') {
+    return (value as { name: string }).name;
+  }
+  return value === undefined || value === null ? '—' : JSON.stringify(value);
+}
+/** Open weight conflicts carry both values; unmatched Canvas items carry the component choices. */
+export function conflictNeeds(conflicts: readonly Conflict[]): ConflictNeed[] {
+  return conflicts.filter(conflict => conflict.state === 'open').map(conflict => conflict.field === 'weight'
+    ? { kind: 'weight' as const, id: conflict.id, courseId: conflict.courseId,
+      ...(conflict.componentName ? { componentName: conflict.componentName } : {}), handbook: conflict.skeletonValue, canvas: conflict.canvasValue }
+    : { kind: 'unmatched' as const, id: conflict.id, courseId: conflict.courseId,
+      ...(conflict.canvasName ? { canvasName: conflict.canvasName } : {}), components: conflict.components ?? [] });
+}
+export function updateNeeds(updates: readonly UpdateNotice[]): UpdateNeed[] {
+  return updates.map(update => ({ kind: 'update' as const, savedFileId: update.savedFileId, courseId: update.courseId,
+    assessmentId: update.assessmentId, assessmentName: update.assessmentName, name: update.name, savedAt: update.savedAt }));
+}
+export interface NeedGroup { kind: Need['kind']; items: Need[]; hidden: number }
+/** One group per kind in first-seen order; a long kind keeps its first `limit` entries visible. */
+export function needGroups(needs: readonly Need[], limit = 3): NeedGroup[] {
+  const groups = new Map<Need['kind'], Need[]>();
+  for (const item of needs) groups.set(item.kind, [...groups.get(item.kind) ?? [], item]);
+  return [...groups].map(([kind, items]) => ({ kind, items, hidden: Math.max(0, items.length - limit) }));
+}
+export function visibleNeedItems(group: NeedGroup, expanded: boolean, limit = 3): Need[] {
+  return expanded ? group.items : group.items.slice(0, limit);
+}
 export function needsYou(input: { attention: readonly Attention[]; overflow: readonly WorkRow[]; unestimated: readonly WorkRow[];
-  assessments?: readonly { id: string; courseId: string }[] }): Need[] {
+  conflicts?: readonly Conflict[]; updates?: readonly UpdateNotice[] }): Need[] {
   return [
     ...input.attention.map(item => 'site' in item ? { kind: item.kind, site: item.site } as Attention : item),
+    ...conflictNeeds(input.conflicts ?? []),
+    ...updateNeeds(input.updates ?? []),
     ...input.overflow.map(item => ({ kind: 'overflow' as const, workId: item.workId, title: item.title, courseCode: item.courseCode, minutes: item.minutes ?? 0 })),
     ...input.unestimated.length ? [{ kind: 'unestimated' as const, count: input.unestimated.length }] : [],
   ];

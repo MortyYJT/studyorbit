@@ -22,10 +22,13 @@ export interface ShellState {
   sync?: Output<'sync.status'>;
   planning?: Output<'planning.settings.read'>;
   audit?: Output<'audit.list'>;
+  conflicts?: Output<'conflicts.list'>;
+  updates?: Output<'updates.list'>;
   syncing: boolean;
+  resolving: boolean;
   saving: boolean;
   auditLoading: boolean;
-  errors: Partial<Record<'courses' | 'tasks' | 'sync' | 'planning' | 'audit' | 'action' | 'candidates' | 'select', string>>;
+  errors: Partial<Record<'courses' | 'tasks' | 'sync' | 'planning' | 'audit' | 'action' | 'candidates' | 'select' | 'conflicts' | 'updates', string>>;
 }
 const code = (error: unknown) => error instanceof ClientError ? error.code : 'SOURCE_UNAVAILABLE';
 export function emptyStore(state: ShellState): boolean {
@@ -93,7 +96,7 @@ export function settingsFromForm(previous: Settings | undefined, hours: string[]
   });
 }
 export class ShellStore {
-  private state: ShellState = { syncing: false, selecting: false, saving: false, auditLoading: false, errors: {} };
+  private state: ShellState = { syncing: false, selecting: false, resolving: false, saving: false, auditLoading: false, errors: {} };
   private listeners = new Set<() => void>();
   private refreshing?: Promise<void>;
   constructor(readonly client: Client) {}
@@ -107,13 +110,47 @@ export class ShellStore {
     return this.refreshing;
   }
   private async readStatus() {
-    await Promise.all(([
-      ['courses', 'courses.list'], ['tasks', 'tasks.list'],
-      ['sync', 'sync.status'], ['planning', 'planning.settings.read'],
-    ] as const).map(async ([key, command]) => {
+    await Promise.all([
+      ...([['courses', 'courses.list'], ['tasks', 'tasks.list'],
+        ['sync', 'sync.status'], ['planning', 'planning.settings.read']] as const).map(async ([key, command]) => {
+        try { const data = await this.client.call(command, {}); this.update({ [key]: data }); this.error(key); }
+        catch (error) { this.error(key, code(error)); }
+      }),
+      this.readNeeds(),
+    ]);
+  }
+  /** The open conflicts and content-updated notices behind "needs you"; each write re-reads them so resolved items disappear. */
+  private async readNeeds() {
+    await Promise.all(([['conflicts', 'conflicts.list'], ['updates', 'updates.list']] as const).map(async ([key, command]) => {
       try { const data = await this.client.call(command, {}); this.update({ [key]: data }); this.error(key); }
       catch (error) { this.error(key, code(error)); }
     }));
+  }
+  /** Settles one weight or unmatched conflict through the owner session, then re-reads "needs you". */
+  async resolveConflict(conflictId: string, choice: string): Promise<boolean> {
+    if (this.state.resolving) return false;
+    this.update({ resolving: true }); this.error('action');
+    try {
+      await this.client.call('check.resolve', { conflictId, choice });
+      const conflicts = this.state.conflicts;
+      if (conflicts) this.update({ conflicts: { ...conflicts, items: conflicts.items.filter(item => item.id !== conflictId) } });
+      await this.readNeeds(); return true;
+    }
+    catch (error) { this.error('action', code(error)); return false; }
+    finally { this.update({ resolving: false }); }
+  }
+  /** Opens one saved file in the owner's course folder; the server marks it opened, so the notice clears. */
+  async openUpdate(savedFileId: string): Promise<boolean> {
+    if (this.state.resolving) return false;
+    this.update({ resolving: true }); this.error('action');
+    try {
+      await this.client.call('file.open', { savedFileId });
+      const updates = this.state.updates;
+      if (updates) this.update({ updates: { ...updates, items: updates.items.filter(item => item.savedFileId !== savedFileId) } });
+      await this.readNeeds(); return true;
+    }
+    catch (error) { this.error('action', code(error)); return false; }
+    finally { this.update({ resolving: false }); }
   }
   async sync() {
     if (this.state.syncing || this.state.sync?.running) return;

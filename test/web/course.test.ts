@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { presets } from '../../src/agent/presets.js';
-import { UNKNOWN_SPAN, agentEntries, arcPath, assessmentGroups, isRemainder, policyView, valueLabel, canJudge, courseFigures, displayStatus, levelView, mergePlanWork, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink } from '../../web/src/course.js';
+import { UNKNOWN_SPAN, agentEntries, arcPath, assessmentGroups, fromCanvasApi, isNoMarks, isRemainder, policyView, valueLabel, canJudge, courseFigures, displayStatus, levelView, mergePlanWork, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink } from '../../web/src/course.js';
 
 const course = { id: 'c1', moduleId: 'm1', code: 'SYNA10001', name: 'Synthetic', term: '2026-S2', assessmentsComplete: false };
 const item = (id: string, weight: number | undefined, score?: number, isFinal = false) =>
@@ -43,11 +43,13 @@ it('shows levels from autonomy.read: exams none, prohibited courses locked at L0
       cap: policy === 'prohibited' ? 0 as const : 2 as const, defaultLevel: 1 as const, assessments });
   const allowed = read('allowed', [entry('quiz', 2, 2), entry('essay', null, 1), entry('exam', null, null, 'exam')]);
   expect(levelView({ id: 'exam', kind: 'exam' }, allowed)).toEqual({ kind: 'none' });
-  expect(agentEntries({ kind: 'exam' }, 'allowed')).toEqual({ complete: false, explain: false });
+  expect(agentEntries({ kind: 'exam' }, 'allowed')).toEqual({ start: false, complete: false, explain: false });
+  expect(agentEntries({ kind: 'quiz' }, 'allowed')).toEqual({ start: true, complete: true, explain: true });
+  expect(agentEntries({ kind: 'quiz' }, 'prohibited')).toEqual({ start: true, complete: false, explain: true });
   expect(levelView({ id: 'quiz', kind: 'quiz' }, allowed)).toEqual({ kind: 'level', level: 2, source: 'override' });
   expect(levelView({ id: 'essay' }, allowed)).toEqual({ kind: 'level', level: 1, source: 'default' });
-  expect(levelView({ id: 'quiz', kind: 'quiz' }, read('prohibited', [entry('quiz', 2, 0)]))).toEqual({ kind: 'locked' });
-  expect(agentEntries({ kind: 'quiz' }, 'prohibited')).toEqual({ complete: false, explain: true });
+  expect(levelView({ id: 'quiz', kind: 'quiz' }, read('prohibited', [entry('quiz', 2, 0)]))).toEqual({ kind: 'locked', origin: 'owner' });
+  expect(agentEntries({ kind: 'quiz' }, 'prohibited')).toEqual({ start: true, complete: false, explain: true });
   // Not yet read or missing from the read: unknown, never a guessed level.
   expect(levelView({ id: 'quiz', kind: 'quiz' }, undefined)).toEqual({ kind: 'unknown' });
   expect(levelView({ id: 'other' }, allowed)).toEqual({ kind: 'unknown' });
@@ -160,4 +162,36 @@ it('shows the agent-read AI policy with its quote and the effective origin', () 
 
 it('uses the registered preset ids', () => {
   expect(Object.values(presetIds).every(id => presets.some(preset => preset.id === id))).toBe(true);
+});
+
+it('locks an assessment whose own effective policy is prohibited while the course stays unlocked', () => {
+  const entry = (assessmentId: string, effectivePolicy: { value: 'allowed' | 'prohibited' | 'unknown'; origin: 'owner' | 'agent' | 'none'; level: 'course' | 'assessment' | 'none' },
+    effectiveLevel: 0 | 1 | 2 | null) => ({ assessmentId, kind: 'quiz' as const, applicable: true, requiredLevel: 1 as const, override: null,
+    effectiveLevel, policy: effectivePolicy.value === 'unknown' ? null : effectivePolicy.value,
+    policyOrigin: effectivePolicy.origin === 'none' ? null : effectivePolicy.origin,
+    policyLevel: effectivePolicy.level === 'none' ? null : effectivePolicy.level, effectivePolicy });
+  const read = (policy: 'allowed' | 'prohibited', effectivePolicy: { value: 'allowed' | 'prohibited'; origin: 'owner' | 'agent'; level: 'course' | 'assessment' },
+    assessments: ReturnType<typeof entry>[]) => ({ courseId: 'c1', policy, policyOrigin: 'owner' as const, policyLevel: 'course' as const,
+    effectivePolicy: { value: policy, origin: 'owner' as const, level: 'course' as const }, cap: policy === 'prohibited' ? 0 as const : 2 as const, defaultLevel: 1 as const, assessments });
+  // The course is allowed; only the assessment's own read prohibits AI (origin agent).
+  const unlocked = read('allowed', { value: 'allowed', origin: 'owner', level: 'course' }, [entry('essay', { value: 'prohibited', origin: 'agent', level: 'assessment' }, 0)]);
+  expect(levelView({ id: 'essay', kind: 'assignment' }, unlocked)).toEqual({ kind: 'locked', origin: 'agent' });
+  // The same item still reads as locked when only the list projection carries the policy (no autonomy read yet).
+  expect(levelView({ id: 'essay', kind: 'assignment', effectivePolicy: { value: 'prohibited', origin: 'owner', level: 'assessment' } }, undefined))
+    .toEqual({ kind: 'locked', origin: 'owner' });
+  expect(levelView({ id: 'quiz', kind: 'quiz' }, read('prohibited', { value: 'prohibited', origin: 'owner', level: 'course' }, [])))
+    .toEqual({ kind: 'locked', origin: 'owner' });
+});
+
+it('orders the six kinds and folds ungraded as well as weight-zero assessments at the bottom', () => {
+  const kinds = ['participation', 'quiz', 'assignment', 'presentation', 'exam', undefined] as const;
+  const row = (kind: typeof kinds[number]) => ({ id: kind ?? 'unknown', name: kind ?? 'unknown', isFinal: false, status: 'not_started' as const,
+    weight: 10, ...(kind ? { kind } : {}) });
+  expect(assessmentGroups(kinds.map(row)).map(group => group.items[0]!.kind)).toEqual(kinds);
+  expect([{ kind: 'ungraded' as const, weight: undefined }, { kind: 'quiz' as const, weight: 0 }, { kind: 'quiz' as const, weight: 10 }].map(isNoMarks))
+    .toEqual([true, true, false]);
+});
+
+it('marks only a platform value read through the Canvas API capture as "from Canvas API", skipping missing reads', () => {
+  expect(['api', 'ax', 'screenshot', 'handbook', undefined].map(fromCanvasApi)).toEqual([true, false, false, false, false]);
 });

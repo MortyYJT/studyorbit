@@ -23,6 +23,8 @@ const commands = {
   // K3 course page
   'sources.get': contracts['sources.get'], 'revision.read': contracts['revision.read'],
   'revision.list': contracts['revision.list'], 'practice.stats': contracts['practice.stats'],
+  // C-5 needs-you conflicts, content-updated notices and owner file opening
+  'conflicts.list': contracts['conflicts.list'], 'updates.list': contracts['updates.list'], 'file.open': contracts['file.open'],
   ...annotationCommands, ...autonomyCommands, ...autonomyReads, ...workCommands,
 } as const;
 function recorded<N extends 'plan.start.set' | 'plan.start.clear' | 'time.record' | 'manual.create' | 'manual.edit' | 'manual.complete' | 'manual.delete'>(name: N) {
@@ -45,7 +47,8 @@ const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegativ
 // Commands that need the owner session.
 const writes = new Set<Command>(['memory.add', 'memory.edit', 'memory.delete', 'sync.run', 'courses.select', 'planning.settings.set',
   'plan.start.set', 'plan.start.clear', 'time.record', 'manual.create', 'manual.edit', 'manual.complete', 'manual.delete',
-  'annotation.confirm', 'annotation.replace', ...Object.keys(autonomyCommands) as Command[], ...Object.keys(workCommands) as Command[]]);
+  'annotation.confirm', 'annotation.replace', 'check.resolve', 'file.open',
+  ...Object.keys(autonomyCommands) as Command[], ...Object.keys(workCommands) as Command[]]);
 export function createClient(initialSecret?: string, fetcher: typeof fetch = fetch) {
   let secret = initialSecret;
   return {
