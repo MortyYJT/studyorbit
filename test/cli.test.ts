@@ -67,14 +67,14 @@ it('coursework mcp over real stdio pipes writes only MCP frames to stdout and ex
   const frames = stdout.split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, any>);
   expect(frames.map(frame => frame.id)).toEqual([1, 2, 3, 4]);
   for (const frame of frames) expect(frame.jsonrpc).toBe('2.0');
-  // 42 agent commands (incl. metrics.read, autonomy.read, source.record, agent-course-reading's courses.offer,
+  // 43 agent commands (incl. metrics.read, autonomy.read, source.record, assessment.files, agent-course-reading's courses.offer,
   // courses.candidates and course.import, layered-sync's canvas.capture and handbook.capture, the six
   // stage writes course.map, quizzes.read, assignment.saved, materials.saved, ed.read and items.classify,
   // and the "needs you" reads conflicts.list and updates.list);
   // codex-browser-cleanup removed source.fetch, browser.status and the seven browser tools; long-term-memory
   // added memory.record and memory.list; owner commands (incl. courses.select, check.resolve, file.open and
   // memory.add/edit/delete) remain excluded.
-  expect(frames[1]!.result.tools.length).toBe(42);
+  expect(frames[1]!.result.tools.length).toBe(43);
   expect(frames[1]!.result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining(['memory.record', 'memory.list']));
   expect(frames[1]!.result.tools.map((tool: { name: string }) => tool.name)).not.toContain('memory.delete');
   expect(frames[1]!.result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining(['courses.offer', 'courses.candidates', 'course.import', 'canvas.capture', 'handbook.capture', 'course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'ed.read', 'items.classify']));

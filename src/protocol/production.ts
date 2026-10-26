@@ -9,6 +9,8 @@ import { PlanningService } from '../planning/service.js';
 import { SyncJobs } from '../sync/jobs.js';
 import type { ClipboardReader } from '../sync/canvas-api.js';
 import { AgentSync } from '../sync/agent-job.js';
+import { AssessmentFiles } from '../sync/assessment-files.js';
+import type { CourseFolderOptions } from '../sync/course-folder.js';
 import type { SyncCommands } from './sync.js';
 import { SqliteStudyRecordStore } from '../store/study-records.js';
 import { RevisionService, StoreStudyEvidence } from '../revision/service.js';
@@ -29,25 +31,22 @@ import type { TrustedContext } from './context.js';
 import { CourseworkError } from './errors.js';
 import { MemoryService } from '../memory/service.js';
 import { openSavedFile, openWithHostDefaultApp, type FileOpener } from '../sync/saved-files.js';
-import type { CourseFolderOptions } from '../sync/course-folder.js';
 export interface ProductionOptions {
   store?: SqliteRepository; files?: ProtocolFiles; metadata?: readonly EvidenceMetadata[];
   reads?: AuxiliaryReadPorts; study?: { provider: StudyEvidenceProvider; store: StudyRecordStore };
   sync?: SyncCommands;
   /** Tests inject a fake clipboard for `canvas.capture`; production uses `pbpaste`. */
   clipboard?: ClipboardReader;
+  /** Tests inject temporary course-folder/Downloads locations for `assessment.files`; production uses COURSEWORK_FILES/~Desktop and ~/Downloads. */
+  assessmentFilesOptions?: CourseFolderOptions;
+  /** Tests may inject the whole deep-layer reader instead of folder options. */
+  assessmentFiles?: AssessmentFiles;
   agentAdapter?: AgentAdapter; agentTools?: readonly AgentTool[];
   owner?: TrustedContext['owner'];
   /** Remembered course-folder location for `file.open`; defaults to COURSEWORK_FILES or ~/Desktop. */
   courseFolder?: CourseFolderOptions;
-  /** Convenience alias for `courseFolder.root`. */
-  courseFolderRoot?: string;
-  /** Alias for `courseFolderRoot`. */
-  filesRoot?: string;
   /** Tests inject a recording opener; production opens with the macOS default application. */
   fileOpener?: FileOpener;
-  /** Alias for `fileOpener`. */
-  opener?: FileOpener;
 }
 /** Compose durable storage and validated revision services once for all transports. */
 export function createProductionProtocol(options: ProductionOptions = {}) {
@@ -72,6 +71,7 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
     return weight && weight.origin !== 'sync' && typeof weight.value === 'number' ? weight.value : undefined;
   };
   const jobs = new SyncJobs(store, { annotatedWeight, ...(options.clipboard ? { clipboard: options.clipboard } : {}) });
+  const assessmentFiles = options.assessmentFiles ?? new AssessmentFiles(store, { folder: options.assessmentFilesOptions });
   const repository = new StoreProtocolReads(store, evidence, {
     ...options.reads,
     assessments: { query: input => store.queryEffectiveAssessments(input, effectiveKind) },
@@ -128,11 +128,9 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   // A sync run is an agent job over the chat adapter; adapter and tools are composed below and resolved per run.
   const sync = options.sync ?? new AgentSync({ store, jobs, adapter: () => adapter, tools: () => agentTools });
   const memory = new MemoryService(store);
-  const fileRoot = options.courseFolderRoot ?? options.filesRoot;
   const savedFiles = { open: (input: { savedFileId: string }) => openSavedFile(store, input.savedFileId,
-    { folder: options.courseFolder ?? (fileRoot === undefined ? undefined : { root: fileRoot }),
-      opener: options.fileOpener ?? options.opener ?? openWithHostDefaultApp }) };
-  const registry = createRegistry({ memory, autonomy, annotations, savedFiles, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync, courseReading: jobs });
+    { folder: options.courseFolder ?? options.assessmentFilesOptions, opener: options.fileOpener ?? openWithHostDefaultApp }) };
+  const registry = createRegistry({ memory, autonomy, annotations, savedFiles, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync, courseReading: jobs, assessmentFiles });
   // The chat agent gets the same owner-free tool set as MCP; every call still goes through dispatch().
   const agent = registry.agentTools(context);
   const agentTools = options.agentTools ?? agent.registry.list().map(entry => ({ name: entry.name, description: describe(entry),
