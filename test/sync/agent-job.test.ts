@@ -7,8 +7,9 @@ import { SqliteRepository } from '../../src/store/sqlite.js';
 import { createProductionProtocol } from '../../src/protocol/production.js';
 import { ProtocolFiles } from '../../src/protocol/files.js';
 import { dispatch } from '../../src/protocol/registry.js';
-import { AgentSync } from '../../src/sync/agent-job.js';
+import { AgentJobRunner, AgentSync, JOB_BOUND_MS, runBoundMs } from '../../src/sync/agent-job.js';
 import { SyncJobs } from '../../src/sync/jobs.js';
+import { AgentFacingError } from '../../src/protocol/errors.js';
 import { assessmentId } from '../../src/sync/course-import.js';
 import { component, document, found, item, quoted } from './course-document.js';
 
@@ -36,7 +37,7 @@ const cleanups: (() => void)[] = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); });
 const pages = { canvas: 'https://canvas.lms.unimelb.edu.au/courses/900001', ed: 'https://edstem.org/au/courses/800001' };
 const three = [{ code: 'SYNA10001', name: 'Synthetic Systems', term: '2026:S2', pages }, { code: 'SYNB20002', term: '2026:S2', pages: {} }, { code: 'SYNC30003', term: '2026:S2', pages: {} }];
-function setup(script: Script, options: { timeoutMs?: number } = {}) {
+function setup(script: Script, options: { runBoundMs?: number; jobBoundMs?: number } = {}) {
   const store = new SqliteRepository(':memory:');
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'agent-job-')));
   const host = createProductionProtocol({ store, files: new ProtocolFiles(join(directory, 'journal')), owner: { assertOwner: async () => {} } });
@@ -45,9 +46,10 @@ function setup(script: Script, options: { timeoutMs?: number } = {}) {
   const tools: AgentTool[] = agent.registry.list().map(entry => ({ name: entry.name, description: entry.name, inputSchema: {},
     execute: input => dispatch(agent.registry, entry.name, input, agent.context) }));
   const adapter = new ScriptedAgent(script);
-  const sync = new AgentSync({ store, jobs: new SyncJobs(store), adapter: () => adapter, tools: () => tools, ...options });
+  const jobs = new SyncJobs(store);
+  const sync = new AgentSync({ store, jobs, adapter: () => adapter, tools: () => tools, ...options });
   const select = (...keys: string[]) => dispatch(host.registry, 'courses.select', { selections: keys.map(key => ({ key, selected: true })) }, host.context);
-  return { store, sync, adapter, select };
+  return { store, sync, jobs, adapter, select };
 }
 async function* offerOnly(call: Call, jobId: string): AsyncGenerator<AgentEvent, void> {
   expect(await call('courses.offer', { jobId, courses: three, blocked: [] })).toMatchObject({ ok: true });
@@ -206,7 +208,7 @@ describe('agent sync job (coursework-sync)', () => {
   });
 
   it('stops a run after its time bound and records TIMEOUT', async () => {
-    const f = setup(async function* () { await new Promise(() => {}); yield { type: 'result', turns: 1 }; }, { timeoutMs: 30 });
+    const f = setup(async function* () { await new Promise(() => {}); yield { type: 'result', turns: 1 }; }, { runBoundMs: 30 });
     const result = await f.sync.run({});
     expect(result.outcome).toBe('TIMEOUT');
     expect(f.adapter.interrupted).toBe(1);
@@ -224,5 +226,188 @@ describe('agent sync job (coursework-sync)', () => {
     const result = await f.sync.run({});
     expect(result.run.courseCoverage).toEqual([expect.objectContaining({ submissions: 3, unknownFields: 1, policyChanged: true })]);
     expect(f.sync.status().courses[0]!.lastRun).toMatchObject({ unknownFields: ['components[0].items[0].due'], warnings: ['WEIGHT_SUM'], weightSum: 90, policyChanged: true });
+  });
+});
+
+const stageKey = 'SYNA10001:2026:S2';
+const stageSelection = { key: stageKey, code: 'SYNA10001', term: '2026:S2', pages, offeredAt: '2026-10-24T00:00:00Z', selected: true };
+
+/** The agent writes a stage through a tool, as 5.3's commands will through `coursework mcp`. */
+const stageTool = (jobs: SyncJobs): AgentTool => ({
+  name: 'stage.write', description: 'Store one pipeline stage', inputSchema: {},
+  execute: async input => {
+    const { jobId, courseKey, stage, value } = input as { jobId: string; courseKey: string; stage: string; value: unknown };
+    jobs.recordStage(jobId, courseKey, stage, value);
+    return { ok: true };
+  },
+});
+
+function runnerSetup(script: Script, options: { jobBoundMs?: number } = {}) {
+  const f = setup(script, options);
+  f.store.saveCourseSelections([stageSelection]);
+  const job = f.jobs.open([stageKey]);
+  const runner = new AgentJobRunner({ jobs: f.jobs, adapter: () => f.adapter, ...options });
+  return { ...f, job, runner };
+}
+
+const oldJob = (store: SqliteRepository, id: string, courses: string[], minutes: number, now: Date): void => {
+  store.saveSyncJob({ id, startedAt: new Date(now.getTime() - minutes * 60_000).toISOString(), courses, submissions: {} });
+};
+
+describe('agent job runner (layered-sync task 5.1)', () => {
+  it('bounds each job at ten minutes and each run at twenty minutes per selected course, at least twenty', () => {
+    expect(JOB_BOUND_MS).toBe(10 * 60_000);
+    expect(runBoundMs(0)).toBe(20 * 60_000);
+    expect(runBoundMs(1)).toBe(20 * 60_000);
+    expect(runBoundMs(3)).toBe(60 * 60_000);
+  });
+
+  it('runs one adapter start, counts tool steps and turns, and succeeds when the expected stage is stored', async () => {
+    const f = runnerSetup(async function* (call, jobId) {
+      await call('stage.write', { jobId, courseKey: stageKey, stage: 'map', value: { links: [] } });
+      yield { type: 'tool_step', tool: 'coursework.course.map', outcome: 'ok' };
+      yield { type: 'tool_step', tool: 'coursework.course.map', outcome: 'ok' };
+      yield { type: 'result', turns: 4 };
+    });
+    const result = await f.runner.run({ kind: 'main', jobId: f.job.id, courseKey: stageKey, prompt: `Job id: ${f.job.id}`,
+      tools: [stageTool(f.jobs)], stage: 'map' });
+    expect(result.outcome).toBe('ok');
+    expect(result.attempts).toEqual([{ kind: 'main', courseKey: stageKey, steps: 2, turns: 4, outcome: 'ok' }]);
+    expect(f.adapter.inputs).toHaveLength(1);
+    expect(f.adapter.inputs[0]!.transcript).toEqual([]);
+  });
+
+  it('fails a result that stored no expected stage, retries once and records both attempts', async () => {
+    const f = runnerSetup(async function* () {
+      yield { type: 'text', text: 'I stored the page.' };
+      yield { type: 'result', turns: 3 };
+    });
+    const result = await f.runner.run({ kind: 'main', jobId: f.job.id, courseKey: stageKey, prompt: `Job id: ${f.job.id}`,
+      tools: [], stage: 'map' });
+    expect(result.outcome).toBe('error');
+    expect(result.attempts).toEqual([
+      { kind: 'main', courseKey: stageKey, steps: 0, turns: 3, outcome: 'error' },
+      { kind: 'main', courseKey: stageKey, steps: 0, turns: 3, outcome: 'error' },
+    ]);
+    expect(f.adapter.inputs).toHaveLength(2);
+  });
+
+  it('interrupts a job at its own bound, records timeout on both attempts and ends instead of hanging', async () => {
+    const f = runnerSetup(async function* () { await new Promise(() => {}); yield { type: 'result', turns: 1 }; }, { jobBoundMs: 20 });
+    const result = await f.runner.run({ kind: 'main', jobId: f.job.id, courseKey: stageKey, prompt: `Job id: ${f.job.id}`,
+      tools: [], stage: 'map' });
+    expect(result.outcome).toBe('timeout');
+    expect(result.attempts).toEqual([
+      { kind: 'main', courseKey: stageKey, steps: 0, turns: 0, outcome: 'timeout' },
+      { kind: 'main', courseKey: stageKey, steps: 0, turns: 0, outcome: 'timeout' },
+    ]);
+    expect(f.adapter.interrupted).toBe(2);
+  });
+
+  it('treats an adapter error event as a failed job even when the stage was stored, and retries once', async () => {
+    const f = runnerSetup(async function* (call, jobId) {
+      await call('stage.write', { jobId, courseKey: stageKey, stage: 'map', value: { links: [] } });
+      yield { type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Synthetic unavailable', turns: 2 };
+    });
+    const result = await f.runner.run({ kind: 'main', jobId: f.job.id, courseKey: stageKey, prompt: `Job id: ${f.job.id}`,
+      tools: [stageTool(f.jobs)], stage: 'map' });
+    expect(result.outcome).toBe('error');
+    expect(result.attempts).toEqual([
+      { kind: 'main', courseKey: stageKey, steps: 0, turns: 2, outcome: 'error' },
+      { kind: 'main', courseKey: stageKey, steps: 0, turns: 2, outcome: 'error' },
+    ]);
+  });
+
+  it('treats a thrown adapter as a failed job and retries it once', async () => {
+    const f = runnerSetup(async function* () { throw new Error('Synthetic adapter failure'); });
+    const result = await f.runner.run({ kind: 'main', jobId: f.job.id, courseKey: stageKey, prompt: `Job id: ${f.job.id}`,
+      tools: [], stage: 'map' });
+    expect(result.outcome).toBe('error');
+    expect(result.attempts).toEqual([
+      { kind: 'main', courseKey: stageKey, steps: 0, turns: 0, outcome: 'error' },
+      { kind: 'main', courseKey: stageKey, steps: 0, turns: 0, outcome: 'error' },
+    ]);
+  });
+});
+
+describe('sync job staleness and stage storage (layered-sync task 5.1)', () => {
+  it('keeps a three-course job active at 30 minutes and ends a one-course job at 26', () => {
+    const store = new SqliteRepository(':memory:');
+    cleanups.push(() => store.close());
+    const now = new Date('2026-10-26T12:00:00Z');
+    const jobs = new SyncJobs(store, { now: () => now });
+    oldJob(store, 'three-courses', [stageKey, 'SYNB20002:2026:S2', 'SYNC30003:2026:S2'], 30, now);
+    oldJob(store, 'one-course', [stageKey], 26, now);
+    expect(jobs.isActive(jobs.load('three-courses')!)).toBe(true);
+    expect(jobs.isActive(jobs.load('one-course')!)).toBe(false);
+  });
+
+  it('refuses recordStage on an ended job and stores nothing', () => {
+    const store = new SqliteRepository(':memory:');
+    cleanups.push(() => store.close());
+    const now = new Date('2026-10-26T12:00:00Z');
+    const jobs = new SyncJobs(store, { now: () => now });
+    oldJob(store, 'ended', [stageKey], 26, now);
+    expect(() => jobs.recordStage('ended', stageKey, 'map', { links: [] })).toThrow(/No active sync job/);
+    expect(jobs.load('ended')?.stages).toBeUndefined();
+  });
+
+  it('merges stages for an active job and refuses a course outside the job', () => {
+    const store = new SqliteRepository(':memory:');
+    cleanups.push(() => store.close());
+    const jobs = new SyncJobs(store);
+    const job = jobs.open([stageKey]);
+    jobs.recordStage(job.id, stageKey, 'tabs', { tabs: [] });
+    jobs.recordStage(job.id, stageKey, 'map', { links: [] });
+    expect(jobs.load(job.id)?.stages).toEqual({ [stageKey]: { tabs: { tabs: [] }, map: { links: [] } } });
+    expect(() => jobs.recordStage(job.id, 'SYNB20002:2026:S2', 'map', { links: [] })).toThrow(/not selected/);
+    expect(jobs.load(job.id)?.stages).toEqual({ [stageKey]: { tabs: { tabs: [] }, map: { links: [] } } });
+  });
+
+  it('reads a stage written by a second SyncJobs instance on the same database file', () => {
+    const directory = realpathSync(mkdtempSync(join(tmpdir(), 'sync-stage-')));
+    const path = join(directory, 'coursework.sqlite');
+    const first = new SqliteRepository(path);
+    const second = new SqliteRepository(path);
+    cleanups.push(() => { first.close(); second.close(); rmSync(directory, { recursive: true, force: true }); });
+    const jobs = new SyncJobs(first);
+    const other = new SyncJobs(second);
+    const job = jobs.open([stageKey]);
+    const map = { links: [{ label: 'Synthetic Files', url: `${pages.canvas}/files` }] };
+    other.recordStage(job.id, stageKey, 'map', map);
+    expect(jobs.load(job.id)?.stages?.[stageKey]?.map).toEqual(map);
+  });
+});
+
+describe('built document import (layered-sync task 5.1)', () => {
+  it('imports a built document without counting a submission and records its result', () => {
+    const f = setup(offerOnly);
+    const job = f.jobs.open([stageKey]);
+    const receipt = f.jobs.storeBuilt(job.id, graded);
+    expect(receipt).toMatchObject({ stored: true, key: stageKey, components: 2, items: 2 });
+    const loaded = f.jobs.load(job.id)!;
+    expect(loaded.submissions).toEqual({});
+    expect(loaded.results?.[stageKey]).toMatchObject({ courseId: expect.any(String), components: 2, items: 2, storedAt: expect.any(String) });
+    expect(f.store.query('assessments', { limit: 10 }).items.length).toBeGreaterThan(0);
+  });
+
+  it('uses the final validation, so a built document with an unread field is stored with that field unknown', () => {
+    const f = setup(offerOnly);
+    const job = f.jobs.open([stageKey]);
+    const built = document([component('assignments', 60, [item(1, { due: { value: null, state: 'unknown', checkedAt: '2026-10-24T00:00:00Z' } })]),
+      component('exam', 40, [], { kind: found('exam'), isFinal: found(true) })]);
+    const receipt = f.jobs.storeBuilt(job.id, built);
+    expect(receipt).toMatchObject({ stored: true, key: stageKey, unknownFields: ['components[0].items[0].due'] });
+    expect(f.jobs.load(job.id)?.submissions).toEqual({});
+  });
+
+  it('refuses an invalid built document without an agent-facing error and stores nothing', () => {
+    const f = setup(offerOnly);
+    const job = f.jobs.open([stageKey]);
+    let caught: unknown;
+    try { f.jobs.storeBuilt(job.id, {}); } catch (error) { caught = error; }
+    expect(caught).toMatchObject({ code: 'INVALID_INPUT' });
+    expect(caught).not.toBeInstanceOf(AgentFacingError);
+    expect(f.jobs.load(job.id)?.results).toBeUndefined();
   });
 });

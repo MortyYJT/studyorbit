@@ -2,14 +2,19 @@ import { randomUUID } from 'node:crypto';
 import { CoursePagesSchema, CourseTermSchema, type CourseSelection, type Run, type SyncJob, type SyncOutcome } from '../domain/schemas.js';
 import type { SqliteRepository } from '../store/sqlite.js';
 import { AgentFacingError, CourseworkError } from '../protocol/errors.js';
-import { courseKey, MAX_SUBMISSIONS, normalizeCourseCode, validateCourseDocument, type DocumentIssue } from './course-json.js';
+import { courseKey, MAX_SUBMISSIONS, normalizeCourseCode, validateCourseDocument, type CheckedDocument, type DocumentIssue } from './course-json.js';
 import { importCourseDocument, type ImportOptions } from './course-import.js';
 import { canvasApiUrl, canvasCourseId, parseCanvasCourses, parseCanvasGroups, parseCanvasTabs, pbpasteClipboard,
   type CapturePage, type ClipboardReader, type GroupsStage, type TabsStage } from './canvas-api.js';
 import { handbookUrl, parseHandbook, type SkeletonStage } from './handbook.js';
 
-/** A job older than this counts as ended (stale lock), above the 20-minute run bound. */
-export const STALE_AFTER_MS = 25 * 60_000;
+/** A run ends within 20 minutes per selected course, and never sooner than 20 minutes. */
+export const RUN_BOUND_PER_COURSE_MS = 20 * 60_000;
+/** A job older than its own run bound plus this counts as ended (stale lock). */
+export const STALE_GRACE_MS = 5 * 60_000;
+export function runBoundMs(courseCount: number): number {
+  return Math.max(RUN_BOUND_PER_COURSE_MS, courseCount * RUN_BOUND_PER_COURSE_MS);
+}
 export interface OfferInput { jobId: string; courses: { code: string; name?: string; term: string; pages: { canvas?: string; ed?: string } }[]; blocked: ('canvas' | 'ed')[] }
 export interface SelectInput { selections: { key: string; selected: boolean }[] }
 export interface ImportInput { jobId: string; document: unknown }
@@ -29,7 +34,10 @@ const describeIssues = (issues: readonly DocumentIssue[]) => {
 export class SyncJobs {
   constructor(private readonly store: SqliteRepository, private readonly options: SyncJobsOptions = {}) {}
   private now(): Date { return this.options.now?.() ?? new Date(); }
-  isActive(job: SyncJob): boolean { return job.endedAt === undefined && this.now().getTime() - Date.parse(job.startedAt) < STALE_AFTER_MS; }
+  /** Active until the job ends or is older than its own run bound plus the grace period. */
+  isActive(job: SyncJob): boolean {
+    return job.endedAt === undefined && this.now().getTime() - Date.parse(job.startedAt) < runBoundMs(job.courses.length) + STALE_GRACE_MS;
+  }
   active(): SyncJob | undefined { return this.store.listSyncJobs().find(job => this.isActive(job)); }
   load(id: string): SyncJob | undefined { return this.store.loadSyncJob(id); }
   candidates(): CourseSelection[] { return this.store.listCourseSelections(); }
@@ -59,9 +67,13 @@ export class SyncJobs {
       return value;
     });
   }
-  private requireActive(jobId: string): SyncJob {
+  private requireActive(jobId: string, agentFacing = true): SyncJob {
     const job = this.store.loadSyncJob(jobId);
-    if (!job || !this.isActive(job)) throw new AgentFacingError('INVALID_INPUT', 'No active sync job with this id; these commands work only during a sync run.');
+    if (!job || !this.isActive(job)) {
+      const message = 'No active sync job with this id; these commands work only during a sync run.';
+      // Code-side callers are not agents, so their refusal must not be offered to one.
+      throw agentFacing ? new AgentFacingError('INVALID_INPUT', message) : new CourseworkError('INVALID_INPUT', message);
+    }
     return job;
   }
 
@@ -103,6 +115,26 @@ export class SyncJobs {
     return { stored: rows.length, undecided: all.filter(row => row.selected === undefined).length, selected: all.filter(row => row.selected === true).length };
   }
 
+  /**
+   * Store one stage result for a course of an active job. Tool calls run in the `coursework mcp` process, so the
+   * orchestrator reads the stage back from the store. 5.3's commands and the Step 2 pipeline use this same write.
+   */
+  recordStage(jobId: string, courseKey: string | undefined, stage: string, value: unknown) {
+    return this.store.transaction(() => {
+      const job = this.requireActive(jobId);
+      const key = this.requireStageCourse(job, courseKey, stage);
+      const stages = { ...job.stages, [key]: { ...job.stages?.[key], [stage]: value } } as SyncJob['stages'];
+      this.store.saveSyncJob({ ...job, stages });
+      return { courseKey: key, stage };
+    });
+  }
+
+  private requireStageCourse(job: SyncJob, key: string | undefined, stage: string): string {
+    if (!key) throw new AgentFacingError('INVALID_INPUT', `courseKey is required for the ${stage} stage; use the key of one of this job's selected courses.`);
+    if (!job.courses.includes(key)) throw new AgentFacingError('INVALID_INPUT', `Course ${key} is not selected for this sync job; store only the courses listed in the prompt.`);
+    return key;
+  }
+
   private requireCaptureCourse(job: SyncJob, key: string | undefined, page: CapturePage): { key: string; canvasId: string } {
     if (!key) throw new AgentFacingError('INVALID_INPUT', `courseKey is required for the ${page} page; use the key of one of this job's selected courses.`);
     if (!job.courses.includes(key)) throw new AgentFacingError('INVALID_INPUT', `Course ${key} is not selected for this sync job; capture only the courses listed in the prompt.`);
@@ -113,12 +145,7 @@ export class SyncJobs {
   }
 
   private saveStage(jobId: string, key: string, page: 'tabs' | 'groups', value: TabsStage | GroupsStage): void {
-    this.store.transaction(() => {
-      const job = this.requireActive(jobId);
-      this.requireCaptureCourse(job, key, page);
-      const stages = { ...job.stages, [key]: { ...job.stages?.[key], [page]: value } } as SyncJob['stages'];
-      this.store.saveSyncJob({ ...job, stages });
-    });
+    this.recordStage(jobId, key, page, value);
   }
 
   private requireHandbookCourse(job: SyncJob, key: string): { code: string; term: string } {
@@ -132,12 +159,7 @@ export class SyncJobs {
   }
 
   private saveSkeleton(jobId: string, key: string, value: SkeletonStage): void {
-    this.store.transaction(() => {
-      const job = this.requireActive(jobId);
-      this.requireHandbookCourse(job, key);
-      const stages = { ...job.stages, [key]: { ...job.stages?.[key], skeleton: value } } as SyncJob['stages'];
-      this.store.saveSyncJob({ ...job, stages });
-    });
+    this.recordStage(jobId, key, 'skeleton', value);
   }
 
   /** Read the copied Handbook page and store only the parsed skeleton, never the raw text. */
@@ -217,26 +239,58 @@ export class SyncJobs {
           ? `Submission ${submission} for ${key} refused; the course is reported as not read. ${describeIssues(checked.errors)}`
           : `Submission ${submission} of ${MAX_SUBMISSIONS} for ${key} refused; nothing was stored. Re-read these fields (take a screenshot for empty ones) and submit again: ${describeIssues(checked.errors)}` };
       }
-      let result: ReturnType<typeof importCourseDocument>;
-      try {
-        // A savepoint inside this transaction: a failed import leaves nothing partial, but the submission still counts.
-        const importer = this.options.importer ?? importCourseDocument;
-        result = this.store.transaction(() => importer(this.store, checked.document!, { at: now, annotatedWeight: this.options.annotatedWeight }));
-      } catch {
+      const stored = this.storeChecked(job, checked, now, submission);
+      if (!stored) {
         this.store.saveSyncJob(counted);
         return { refused: `Submission ${submission} for ${key} could not be stored because of an internal error; nothing was stored. Submit the course again.` };
       }
-      const weightSum = checked.warnings.find(warning => warning.code === 'WEIGHT_SUM')?.sum;
-      this.store.saveSyncJob({ ...counted, results: { ...counted.results, [key]: { courseId: result.courseId, storedAt: now,
-        components: result.components, items: result.items, unknownFields: checked.unknown.slice(0, 500), dropped: checked.dropped.slice(0, 500),
-        warnings: [...checked.warnings.map(warning => warning.code), ...result.warnings], ...(weightSum !== undefined ? { weightSum } : {}),
-        platforms: checked.document.course.platforms, policyChanged: result.policyChanged } } });
-      return { receipt: { stored: true as const, key, submission, courseId: result.courseId, components: result.components, items: result.items,
-        assessments: result.assessments, retired: result.retired, unknownFields: checked.unknown.slice(0, 500), dropped: checked.dropped.slice(0, 500),
-        warnings: [...checked.warnings, ...result.warnings.map(code => ({ code }))] } };
+      return { receipt: { ...stored.receipt, submission } };
     });
     // The count is committed before the refusal reaches the agent.
     if ('refused' in outcome) throw new AgentFacingError('INVALID_INPUT', outcome.refused!);
     return outcome.receipt;
+  }
+
+  /**
+   * Code-side import of a built document: final validation, the same store mapping and `results[courseKey]`
+   * recording as `import()`, but no submission count and no agent-facing refusal.
+   */
+  storeBuilt(jobId: string, document: unknown) {
+    return this.store.transaction(() => {
+      const job = this.requireActive(jobId, false);
+      const now = this.now().toISOString();
+      const checked = validateCourseDocument(document, { final: true, now });
+      if (!checked.document || checked.fatal || !checked.key) {
+        throw new CourseworkError('INVALID_INPUT', `Built course document refused; nothing was stored. ${describeIssues(checked.errors)}`);
+      }
+      const key = checked.key;
+      if (!job.courses.includes(key)) throw new CourseworkError('INVALID_INPUT', `Course ${key} is not selected for this sync job.`);
+      const stored = this.storeChecked(job, checked, now);
+      if (!stored) throw new CourseworkError('INTERNAL', `Built document for ${key} could not be stored.`);
+      return stored.receipt;
+    });
+  }
+
+  /** The one write path both `import()` and `storeBuilt()` use; the caller has already validated the document. */
+  private storeChecked(job: SyncJob, checked: CheckedDocument, at: string, submission?: number) {
+    const document = checked.document!;
+    const key = checked.key!;
+    let result: ReturnType<typeof importCourseDocument>;
+    try {
+      // A savepoint inside this transaction: a failed import leaves nothing partial, but the submission still counts.
+      const importer = this.options.importer ?? importCourseDocument;
+      result = this.store.transaction(() => importer(this.store, document, { at, annotatedWeight: this.options.annotatedWeight }));
+    } catch {
+      return undefined;
+    }
+    const weightSum = checked.warnings.find(warning => warning.code === 'WEIGHT_SUM')?.sum;
+    const counted: SyncJob = submission === undefined ? job : { ...job, submissions: { ...job.submissions, [key]: submission } };
+    this.store.saveSyncJob({ ...counted, results: { ...counted.results, [key]: { courseId: result.courseId, storedAt: at,
+      components: result.components, items: result.items, unknownFields: checked.unknown.slice(0, 500), dropped: checked.dropped.slice(0, 500),
+      warnings: [...checked.warnings.map(warning => warning.code), ...result.warnings], ...(weightSum !== undefined ? { weightSum } : {}),
+      platforms: document.course.platforms, policyChanged: result.policyChanged } } });
+    return { key, result, receipt: { stored: true as const, key, courseId: result.courseId, components: result.components, items: result.items,
+      assessments: result.assessments, retired: result.retired, unknownFields: checked.unknown.slice(0, 500), dropped: checked.dropped.slice(0, 500),
+      warnings: [...checked.warnings, ...result.warnings.map(code => ({ code }))] } };
   }
 }
