@@ -318,6 +318,17 @@ describe('build the course document from the pipeline stages (layered-sync task 
       .toEqual([`${code}:canvas:assignment:9`]);
   });
 
+  it('keeps a real "Ungraded" component on the same key whether or not this run has ungraded items', () => {
+    const skeleton = skeletonStage([{ name: 'Ungraded', weight: 10 }]);
+    const withUngraded = build({ skeleton, groups: groupsStage([{ name: 'Synthetic Practice', weight: 0, items: [{ id: '8', name: 'Synthetic practice' }] }]) });
+    const without = build({ skeleton, groups: groupsStage([{ name: 'Synthetic Weighted', weight: 10, items: [{ id: '9', name: 'Synthetic report' }] }]),
+      classification: classification([{ id: '9', category: 'assignment', component: 'Ungraded', evidence: 'Synthetic weighted group name' }]) });
+    const realKey = (result: typeof without) => result.document.components.find(component => component.name.value === 'Ungraded' && !component.key.endsWith(':ungraded'))?.key
+      ?? result.document.components.find(component => component.name.value === 'Ungraded')?.key;
+    expect(realKey(withUngraded)).toBe(`${code}:ungraded-component`);
+    expect(realKey(without)).toBe(`${code}:ungraded-component`);
+  });
+
   it('identifies the synthetic ungraded component by its flag, not by a key suffix', () => {
     const syntheticKey = `${code}:ungraded`;
     const document = {

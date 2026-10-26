@@ -219,7 +219,8 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
     ...(ungradedItems.length ? { ungraded: `${course.code}:ungraded` } : {}),
     ...(unassignedItems.length ? { unassigned: `${course.code}:unassigned` } : {}),
   };
-  const syntheticKeys = new Set(Object.values(synthetic));
+  // Both keys stay reserved in every run, so a real "Ungraded"/"Unassigned" component keeps one key across runs.
+  const syntheticKeys = new Set([`${course.code}:ungraded`, `${course.code}:unassigned`]);
   const seenKeys = new Set<string>();
   const componentKeyByOriginal = new Map<string, string>();
   const skeletonComponents: { key: string; component: HandbookComponent }[] = [];
