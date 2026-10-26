@@ -3,7 +3,7 @@ import type { GradeBand, GradeNeed } from '../../src/domain/grade.js';
 import type { Client } from './client.js';
 import type { AgentPreset } from './chat.js';
 import type { Copy, Language } from './i18n.js';
-import { agentEntries, arcPath, assessmentGroups, canJudge, fromCanvasApi, isNoMarks, isRemainder, policyView, valueLabel, courseFigures, displayStatus, levelView, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink,
+import { agentEntries, arcPath, assessmentPolicyView, assessmentGroups, canJudge, fromCanvasApi, isNoMarks, isRemainder, policyView, valueLabel, courseFigures, displayStatus, levelView, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink,
   type EditableField, type Field, type LevelView, type Policy, type WorkLevel } from './course.js';
 import { CourseStore, type AssessmentItem, type CourseState } from './course-store.js';
 
@@ -207,6 +207,7 @@ function Drawer({ store, state, item, policy, t, date, timeZone, onClose, onPres
   const work = state.work?.[item.id];
   const entries = agentEntries(item, policy);
   const view = levelView(item, state.autonomy);
+  const own = assessmentPolicyView(item);
   const entry = state.autonomy?.assessments.find(row => row.assessmentId === item.id);
   const recorded = state.recorded[item.id];
   const busy = !!state.saving || !store.client.hasSession();
@@ -237,6 +238,11 @@ function Drawer({ store, state, item, policy, t, date, timeZone, onClose, onPres
     {item.unlockAt && <div className="field"><span className="k">{c.unlockAt}</span><span>{date(item.unlockAt)}</span></div>}
     <div className="field"><span className="k">{c.scoreCol}</span><span>{item.score === undefined ? c.none : `${item.score}%`}</span>{item.score !== undefined && <span className="srcm">· {fromCanvasApi(item.readState?.score?.via) ? c.fromCanvasApi : c.origins.platform}</span>}</div>
     <div className="field"><span className="k">{c.status}</span><span>{c.statuses[displayStatus(item)]}</span><span className="srcm">· {fromCanvasApi(item.readState?.status?.via) ? c.fromCanvasApi : c.origins.platform}</span></div>
+    {item.kind !== 'exam' && <div className="field"><span className="k">{c.policy}</span>
+      <span>{own.effective === 'unknown' ? c.policyUnknown : c[own.effective]}{own.origin && <span className="srcm"> · {c.policyOrigins[own.origin]}</span>}{own.level && <span className="srcm"> · {c.policyLevels[own.level]}</span>}</span>
+      <select aria-label={c.policy} disabled={busy} value={own.owner} onChange={event => void store.setAssessmentPolicy(item.id, event.target.value === '' ? null : event.target.value as Policy)}>
+        <option value="">{own.owner ? c.policyClear : c.policyNone}</option>{(['allowed', 'prohibited', 'owner-attested'] as const).map(value => <option key={value} value={value}>{c[value]}</option>)}</select>
+      {own.quote && <p className="muted help">{c.policyRead}: “{own.quote}”</p>}</div>}
     {item.kind !== 'exam' && <div className="field"><span className="k">{c.level}</span><Level view={view} t={t} />
       {view.kind !== 'locked' && policy !== 'prohibited' && <select aria-label={c.level} disabled={busy || !entry} value={!entry ? '' : entry.override === null ? 'default' : String(entry.override)}
         onChange={event => void store.setOverride(item.id, event.target.value === 'default' ? null : Number(event.target.value) as WorkLevel)}>

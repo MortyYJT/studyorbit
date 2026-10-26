@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { presets } from '../../src/agent/presets.js';
-import { UNKNOWN_SPAN, agentEntries, arcPath, assessmentGroups, fromCanvasApi, isNoMarks, isRemainder, policyView, valueLabel, canJudge, courseFigures, displayStatus, levelView, mergePlanWork, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink } from '../../web/src/course.js';
+import { UNKNOWN_SPAN, agentEntries, assessmentPolicyView, arcPath, assessmentGroups, fromCanvasApi, isNoMarks, isRemainder, policyView, valueLabel, canJudge, courseFigures, displayStatus, levelView, mergePlanWork, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink } from '../../web/src/course.js';
 
 const course = { id: 'c1', moduleId: 'm1', code: 'SYNA10001', name: 'Synthetic', term: '2026-S2', assessmentsComplete: false };
 const item = (id: string, weight: number | undefined, score?: number, isFinal = false) =>
@@ -46,6 +46,11 @@ it('shows levels from autonomy.read: exams none, prohibited courses locked at L0
   expect(agentEntries({ kind: 'exam' }, 'allowed')).toEqual({ start: false, complete: false, explain: false });
   expect(agentEntries({ kind: 'quiz' }, 'allowed')).toEqual({ start: true, complete: true, explain: true });
   expect(agentEntries({ kind: 'quiz' }, 'prohibited')).toEqual({ start: true, complete: false, explain: true });
+  // An assessment's own prohibited policy removes "complete" even on an allowed course (#124, #197).
+  expect(agentEntries({ kind: 'quiz', effectivePolicy: { value: 'prohibited', origin: 'agent', level: 'assessment' } }, 'allowed'))
+    .toEqual({ start: true, complete: false, explain: true });
+  expect(agentEntries({ kind: 'quiz', effectivePolicy: { value: 'allowed', origin: 'owner', level: 'assessment' } }, 'allowed'))
+    .toEqual({ start: true, complete: true, explain: true });
   expect(levelView({ id: 'quiz', kind: 'quiz' }, allowed)).toEqual({ kind: 'level', level: 2, source: 'override' });
   expect(levelView({ id: 'essay' }, allowed)).toEqual({ kind: 'level', level: 1, source: 'default' });
   expect(levelView({ id: 'quiz', kind: 'quiz' }, read('prohibited', [entry('quiz', 2, 0)]))).toEqual({ kind: 'locked', origin: 'owner' });
@@ -194,4 +199,17 @@ it('orders the six kinds and folds ungraded as well as weight-zero assessments a
 
 it('marks only a platform value read through the Canvas API capture as "from Canvas API", skipping missing reads', () => {
   expect(['api', 'ax', 'screenshot', 'handbook', undefined].map(fromCanvasApi)).toEqual([true, false, false, false, false]);
+});
+
+it('the drawer policy shows the effective value with origin and level, the agent quote, and the owner\'s own assessment value only when set', () => {
+  const read = { id: 'a1', effectivePolicy: { value: 'prohibited' as const, origin: 'agent' as const, level: 'assessment' as const },
+    readState: { aiPolicy: { state: 'found' as const, quote: 'No generative AI for this report.' } } };
+  expect(assessmentPolicyView(read)).toEqual({ effective: 'prohibited', origin: 'agent', level: 'assessment',
+    quote: 'No generative AI for this report.', owner: '' });
+  const owned = { id: 'a1', effectivePolicy: { value: 'allowed' as const, origin: 'owner' as const, level: 'assessment' as const } };
+  expect(assessmentPolicyView(owned)).toMatchObject({ effective: 'allowed', origin: 'owner', owner: 'allowed' });
+  // A course-level owner value is the course's, not this assessment's own choice.
+  const course = { id: 'a1', effectivePolicy: { value: 'allowed' as const, origin: 'owner' as const, level: 'course' as const } };
+  expect(assessmentPolicyView(course)).toMatchObject({ effective: 'allowed', level: 'course', owner: '' });
+  expect(assessmentPolicyView({ id: 'a1' })).toEqual({ effective: 'unknown', owner: '' });
 });

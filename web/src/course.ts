@@ -121,6 +121,16 @@ export function levelView(assessment: { id: string; kind?: string; effectivePoli
   if (!entry || entry.effectiveLevel === null) return { kind: 'unknown' };
   return { kind: 'level', level: entry.effectiveLevel, source: entry.override === null ? 'default' : 'override' };
 }
+/** The drawer's AI policy: the effective value with its origin and level, the agent's quote, and the owner's own assessment value ('' when none). */
+export type AssessmentPolicyView = { effective: Policy | 'unknown'; origin?: 'owner' | 'agent'; level?: 'assessment' | 'course'; quote?: string; owner: Policy | '' };
+export function assessmentPolicyView(item: { id: string; effectivePolicy?: PolicyValue; readState?: { aiPolicy?: { quote?: string } } }): AssessmentPolicyView {
+  const policy = item.effectivePolicy;
+  const quote = item.readState?.aiPolicy?.quote;
+  const origin = policy && policy.origin !== 'none' ? policy.origin : undefined;
+  const level = policy?.level === 'assessment' || policy?.level === 'course' ? policy.level : undefined;
+  const owner = policy && policy.value !== 'unknown' && origin === 'owner' && level === 'assessment' ? policy.value : '';
+  return { effective: policy?.value ?? 'unknown', ...(origin ? { origin } : {}), ...(level ? { level } : {}), ...(quote ? { quote } : {}), owner };
+}
 /** The platform's submission state wins over a stale not-started or in-progress status. */
 export function displayStatus(item: { status: Assessment['status']; platform?: { linked: boolean; submitted: boolean; removed: boolean } }): Assessment['status'] {
   return item.platform?.submitted && (item.status === 'not_started' || item.status === 'in_progress') ? 'submitted' : item.status;
@@ -137,9 +147,11 @@ export function sourceLink(url?: string): string | undefined {
   catch { return undefined; }
 }
 /** Exams get no agent entry (#146); completing work on a prohibited course is never offered. Start reads the brief first, so every non-exam keeps it. */
-export function agentEntries(assessment: { kind?: string }, policy: Policy | undefined) {
+/** Exams get no agent entry; "complete" also needs neither the course nor the assessment's own effective policy to prohibit AI. */
+export function agentEntries(assessment: { kind?: string; effectivePolicy?: PolicyValue }, policy: Policy | undefined) {
   const exam = assessment.kind === 'exam';
-  return { start: !exam, complete: !exam && policy !== 'prohibited', explain: !exam };
+  const prohibited = policy === 'prohibited' || assessment.effectivePolicy?.value === 'prohibited';
+  return { start: !exam, complete: !exam && !prohibited, explain: !exam };
 }
 /** A platform marker says "from Canvas API" only when the read that produced the value carried `via: 'api'`. */
 export function fromCanvasApi(via?: string): boolean {

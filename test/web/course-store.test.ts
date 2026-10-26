@@ -163,3 +163,16 @@ it('opens a saved assessment file through the owner session and re-reads the lis
   const anonymous = new CourseStore(createClient(undefined, fetcher), 'c1');
   expect(await anonymous.openFile('saved-1')).toBe(false);
 });
+
+it('records the owner\'s assessment policy through the owner session and re-reads assessments and autonomy', async () => {
+  const fetcher = fixture();
+  const store = new CourseStore(createClient(secret, fetcher), 'c1');
+  await store.load();
+  const before = { assessments: calls(fetcher, 'assessments.list').length, autonomy: calls(fetcher, 'autonomy.read').length };
+  expect(await store.setAssessmentPolicy('quiz', 'allowed')).toBe(true);
+  expect(calls(fetcher, 'autonomy.policy.set')).toEqual([{ body: { courseId: 'c1', assessmentId: 'quiz', status: 'allowed' }, session: secret }]);
+  expect(await store.setAssessmentPolicy('quiz', null)).toBe(true);
+  expect(calls(fetcher, 'autonomy.policy.set')[1]!.body).toEqual({ courseId: 'c1', assessmentId: 'quiz', status: null });
+  expect(calls(fetcher, 'assessments.list').length).toBe(before.assessments + 2);
+  expect(calls(fetcher, 'autonomy.read').length).toBe(before.autonomy + 2);
+});

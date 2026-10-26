@@ -108,6 +108,11 @@ export class CourseStore {
   setPolicy(status: Policy | null) {
     return this.write('policy', () => this.client.call('autonomy.policy.set', { courseId: this.courseId, status }), () => Promise.all([this.loadCourse(), this.loadAutonomy()]));
   }
+  /** The owner's own policy for one assessment (#197); its effective policy and level are re-read, never computed here. */
+  setAssessmentPolicy(assessmentId: string, status: Policy | null) {
+    return this.write(`policy:${assessmentId}`, () => this.client.call('autonomy.policy.set', { courseId: this.courseId, assessmentId, status }),
+      () => Promise.all([this.loadAssessments(), this.loadAutonomy()]));
+  }
   setDefault(level: WorkLevel) {
     return this.write('default', () => this.client.call('autonomy.default.set', { courseId: this.courseId, level }), () => this.loadAutonomy());
   }

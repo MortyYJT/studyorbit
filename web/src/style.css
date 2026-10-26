@@ -225,6 +225,7 @@ dialog.drawer { margin:0 0 0 auto; width:min(460px,100vw); max-width:100vw; heig
 dialog.drawer h2 { margin:0; }
 dialog.drawer h3 { font-size:14px; margin:22px 0 6px; }
 .field { display:grid; grid-template-columns:96px minmax(0,1fr) auto; gap:6px 10px; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); }
+.field > .help { grid-column:1 / -1; margin:0; }
 .field .k { color:var(--muted); font-size:13px; }
 .field > .pill { justify-self:start; }
 .field select { grid-column:2 / -1; }
