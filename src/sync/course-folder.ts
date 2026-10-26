@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync,
+  copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -39,6 +39,8 @@ export interface CourseFolderStore {
   listSavedFiles(courseId: string): SavedFile[];
   listSavedFilesForAssessment?(assessmentId: string): SavedFile[];
   loadAssessment?(id: string): { id: string; name: string } | undefined;
+  /** Optional so a minimal fake still works; the real store groups the two record writes atomically. */
+  transaction?: <T>(operation: () => T) => T;
 }
 
 export interface MarkOpenedStore {
@@ -61,8 +63,10 @@ export interface ArchiveCourseInput {
 export interface ArchiveResult {
   /** Absolute destination paths of files moved into the course folder. */
   moved: string[];
-  /** Reported files that were absent, too old, unsafe, or whose assessment was unresolved. */
+  /** Reported files that were not archived: absent, too old, not a regular file, unsafe, or a failed move. */
   missing: string[];
+  /** Absolute destination paths archived under `assessments/<target>/` because the assessment is not stored yet. */
+  unresolved: string[];
   /** Absolute destination paths whose previous version was kept with a date suffix (update notice). */
   updated: string[];
 }
@@ -114,6 +118,28 @@ export function markOpened(store: MarkOpenedStore, savedFileId: string, now: Dat
   return opened;
 }
 
+/**
+ * True when `file` is current, unopened, and replaced an earlier copy of the same logical file.
+ * A first save has no superseded predecessor, so it never gets an update notice.
+ */
+export function hasUpdateNotice(records: readonly SavedFile[], file: SavedFile): boolean {
+  if (file.supersededAt !== undefined || file.openedAt !== undefined) return false;
+  return records.some(record =>
+    record.id !== file.id
+    && record.supersededAt !== undefined
+    && record.courseId === file.courseId
+    && record.assessmentId === file.assessmentId
+    && logicalFileName(record.path) === logicalFileName(file.path)
+  );
+}
+
+/** The file name without the date suffix that superseding adds. */
+function logicalFileName(path: string): string {
+  const extension = extname(path);
+  const stem = basename(path, extension).replace(/ \(\d{4}-\d{2}-\d{2}(?: \d+)?\)$/, '');
+  return `${stem}${extension}`.toLowerCase();
+}
+
 /** Move the files of one course's stages into its folder and record their fingerprints. */
 export function archiveCourse(input: ArchiveCourseInput): ArchiveResult {
   const { store, course } = input;
@@ -123,11 +149,23 @@ export function archiveCourse(input: ArchiveCourseInput): ArchiveResult {
   const jobStartedAt = typeof input.jobStartedAt === 'string' ? Date.parse(input.jobStartedAt) : input.jobStartedAt.getTime();
   if (Number.isNaN(jobStartedAt)) throw new Error(`Invalid job start time: ${String(input.jobStartedAt)}`);
   const downloads = resolve(expandHome(options.downloadsDir ?? options.downloads ?? options.downloadsDirectory ?? join(home(options), 'Downloads'), home(options)));
-  const courseDirectory = courseFolderPath(course, options);
   const moved: string[] = [];
   const missing: string[] = [];
+  const unresolved: string[] = [];
   const updated: string[] = [];
 
+  let courseDirectory: string;
+  try {
+    courseDirectory = courseFolderPath(course, options);
+  } catch {
+    // An unsupported term is a per-course result, not a reason to abort the other courses.
+    for (const stage of Object.values(input.stages)) {
+      for (const name of stageFiles(stage)) missing.push(name);
+    }
+    return { moved, missing, unresolved, updated };
+  }
+
+  const usedFolders = new Set<string>();
   const targets: { assessmentId?: string; folder: string; stage: unknown; unresolved: boolean }[] = [];
   for (const [key, stage] of Object.entries(input.stages)) {
     if (!key.startsWith('assignments.')) continue;
@@ -135,14 +173,16 @@ export function archiveCourse(input: ArchiveCourseInput): ArchiveResult {
     const assessmentId = input.assessmentIdFor(target);
     const assessment = assessmentId === undefined ? undefined : store.loadAssessment?.(assessmentId);
     if (assessment) {
+      const base = sanitizePathSegment(assessment.name?.trim() || target);
       targets.push({
         assessmentId: assessment.id,
-        folder: join('assessments', sanitizePathSegment(assessment.name?.trim() || target)),
+        folder: join('assessments', uniqueFolderName(base, assessment.id, usedFolders)),
         stage,
         unresolved: false,
       });
     } else {
-      targets.push({ folder: join('assessments', sanitizePathSegment(target)), stage, unresolved: true });
+      const base = sanitizePathSegment(target);
+      targets.push({ folder: join('assessments', uniqueFolderName(base, target, usedFolders)), stage, unresolved: true });
     }
   }
   if ('materials' in input.stages) {
@@ -156,13 +196,14 @@ export function archiveCourse(input: ArchiveCourseInput): ArchiveResult {
         continue;
       }
       const source = join(downloads, name);
-      let sourceStat: ReturnType<typeof statSync>;
+      let sourceStat: ReturnType<typeof lstatSync>;
       try {
-        sourceStat = statSync(source);
+        sourceStat = lstatSync(source);
       } catch {
         missing.push(name);
         continue;
       }
+      // A symlink, directory or other non-regular Downloads entry is missing, never moved.
       if (!sourceStat.isFile() || sourceStat.mtimeMs < jobStartedAt) {
         missing.push(name);
         continue;
@@ -174,47 +215,106 @@ export function archiveCourse(input: ArchiveCourseInput): ArchiveResult {
         mkdirSync(dirname(destination), { recursive: true });
         const fingerprint = fingerprintFile(source);
         const existing = currentRecord(store, course.id, target.assessmentId, relativePath, courseDirectory);
-        if (existing) {
-          if (existing.fingerprint === fingerprint) {
-            // Same page: keep the record (and its notice state), replace the bytes.
-            replaceFile(source, destination);
+        if (existing && existing.fingerprint === fingerprint) {
+          if (existsSync(destination)) {
+            if (fingerprintFile(destination) === fingerprint) {
+              // Already stored: leave the course folder and the Downloads copy exactly as they are.
+              continue;
+            }
+            // The owner changed the current file: keep it beside the new download, untracked.
+            const renames: RenamedFile[] = [];
+            try {
+              renames.push(preserveExisting(destination, melbourneDate(existing.savedAt)));
+              replaceFile(source, destination);
+            } catch (error) {
+              undoRenames(renames);
+              throw error;
+            }
           } else {
-            supersede(store, existing, courseDirectory, savedAt);
-            // The old current file normally occupied this path; if it did not, keep any untracked file too.
-            if (existsSync(destination)) preserveExisting(destination, savedAt);
             replaceFile(source, destination);
-            store.saveSavedFile({
-              id: randomUUID(),
-              courseId: course.id,
-              ...(target.assessmentId === undefined ? {} : { assessmentId: target.assessmentId }),
-              path: relativePath,
-              fingerprint,
-              savedAt,
-            });
-            updated.push(destination);
           }
-        } else {
-          // Never remove an owner's file: an untracked name collision is kept beside the new file.
-          if (existsSync(destination)) preserveExisting(destination, savedAt);
-          replaceFile(source, destination);
-          store.saveSavedFile({
-            id: randomUUID(),
-            courseId: course.id,
-            ...(target.assessmentId === undefined ? {} : { assessmentId: target.assessmentId }),
-            path: relativePath,
-            fingerprint,
-            savedAt,
-          });
+          moved.push(destination);
+          if (target.unresolved) unresolved.push(destination);
+          continue;
         }
+
+        if (existing) {
+          // Move the new file in first; if that fails, put the old file back and leave its record current.
+          const renames: RenamedFile[] = [];
+          let supersededRecord: SavedFile | undefined;
+          try {
+            supersededRecord = renameForSupersede(existing, courseDirectory, savedAt, renames);
+            // If the record did not occupy the destination, keep any untracked file there too.
+            if (existsSync(destination)) renames.push(preserveExisting(destination, savedAt));
+            replaceFile(source, destination);
+          } catch (error) {
+            undoRenames(renames);
+            throw error;
+          }
+          const nextRecord = savedFileRecord(course.id, target.assessmentId, relativePath, fingerprint, savedAt);
+          inTransaction(store, () => {
+            store.saveSavedFile(supersededRecord!);
+            store.saveSavedFile(nextRecord);
+          });
+          updated.push(destination);
+          moved.push(destination);
+          if (target.unresolved) unresolved.push(destination);
+          continue;
+        }
+
+        // Never remove an owner's file: an untracked name collision is kept beside the new file.
+        const renames: RenamedFile[] = [];
+        try {
+          if (existsSync(destination)) renames.push(preserveExisting(destination, savedAt));
+          replaceFile(source, destination);
+        } catch (error) {
+          undoRenames(renames);
+          throw error;
+        }
+        store.saveSavedFile(savedFileRecord(course.id, target.assessmentId, relativePath, fingerprint, savedAt));
         moved.push(destination);
-        if (target.unresolved) missing.push(name);
+        if (target.unresolved) unresolved.push(destination);
       } catch {
         missing.push(name);
       }
     }
   }
 
-  return { moved, missing, updated };
+  return { moved, missing, unresolved, updated };
+}
+
+function savedFileRecord(courseId: string, assessmentId: string | undefined, path: string, fingerprint: string,
+  savedAt: string): SavedFile {
+  return {
+    id: randomUUID(),
+    courseId,
+    ...(assessmentId === undefined ? {} : { assessmentId }),
+    path,
+    fingerprint,
+    savedAt,
+  };
+}
+
+function inTransaction<T>(store: CourseFolderStore, operation: () => T): T {
+  return store.transaction ? store.transaction(operation) : operation();
+}
+
+/** Keep the first folder name and give later collisions a short assessment-id suffix so their files never mix. */
+function uniqueFolderName(base: string, id: string, used: Set<string>): string {
+  let candidate = base;
+  if (used.has(candidate.toLowerCase())) {
+    const suffix = shortIdSuffix(id);
+    candidate = `${base} (${suffix})`;
+    for (let index = 2; used.has(candidate.toLowerCase()); index++) candidate = `${base} (${suffix} ${index})`;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+/** Prefer the last hyphen-separated segment; hash-only ids keep their last 8 characters. */
+function shortIdSuffix(id: string): string {
+  const segment = id.split('-').filter(part => part.length > 0).at(-1) ?? id;
+  return sanitizePathSegment(segment.length <= 12 ? segment : segment.slice(-8));
 }
 
 function home(options: CourseFolderOptions): string {
@@ -258,21 +358,48 @@ function sameRecordPath(saved: string, relativePath: string, courseDirectory: st
     || (isAbsolute(saved) && resolve(saved) === resolve(courseDirectory, relativePath));
 }
 
-/** Rename the old current file to `<stem> (<saved date>)<ext>` (or ` 2`, ` 3`, …) and mark it superseded. */
-function supersede(store: CourseFolderStore, record: SavedFile, courseDirectory: string, supersededAt: string): void {
-  const previous = isAbsolute(record.path) ? record.path : join(courseDirectory, record.path);
-  let path = record.path;
-  if (existsSync(previous)) {
-    const renamed = availableSuffixedPath(previous, melbourneDate(record.savedAt));
-    renameSync(previous, renamed);
-    path = isAbsolute(record.path) ? renamed : relative(courseDirectory, renamed);
-  }
-  store.saveSavedFile({ ...record, path, supersededAt });
+interface RenamedFile {
+  from: string;
+  to: string;
 }
 
-/** Keep an untracked file that a first save would otherwise overwrite. */
-function preserveExisting(destination: string, at: string): void {
-  renameSync(destination, availableSuffixedPath(destination, melbourneDate(at)));
+/** Rename the old current file aside and return the superseded record to write after the new file is in place. */
+function renameForSupersede(record: SavedFile, courseDirectory: string, supersededAt: string,
+  renames: RenamedFile[]): SavedFile {
+  const previous = isAbsolute(record.path) ? record.path : join(courseDirectory, record.path);
+  let path = record.path;
+  const renamed = renameAside(previous, melbourneDate(record.savedAt));
+  if (renamed) {
+    renames.push(renamed);
+    path = isAbsolute(record.path) ? renamed.to : relative(courseDirectory, renamed.to);
+  }
+  return { ...record, path, supersededAt };
+}
+
+/** Rename an existing file to its dated sibling, recording the pair so a failed move can undo it. */
+function renameAside(path: string, date: string): RenamedFile | undefined {
+  if (!existsSync(path)) return undefined;
+  const renamed = availableSuffixedPath(path, date);
+  renameSync(path, renamed);
+  return { from: path, to: renamed };
+}
+
+/** Keep an untracked file that a save would otherwise overwrite. */
+function preserveExisting(destination: string, at: string): RenamedFile {
+  const renamed = renameAside(destination, melbourneDate(at));
+  if (!renamed) throw new Error(`File disappeared before it could be preserved: ${destination}`);
+  return renamed;
+}
+
+/** Restore renamed files in reverse order when the new file could not be moved into place. */
+function undoRenames(renames: readonly RenamedFile[]): void {
+  for (const rename of [...renames].reverse()) {
+    try {
+      if (existsSync(rename.to) && !existsSync(rename.from)) renameSync(rename.to, rename.from);
+    } catch {
+      // Keep the original move error; the preserved copy is still on disk.
+    }
+  }
 }
 
 function availableSuffixedPath(path: string, date: string): string {
@@ -294,15 +421,31 @@ function melbourneDate(instant: string): string {
     .format(date);
 }
 
-/** Move within one filesystem; on a cross-device or locked rename, copy then remove the Downloads original. */
+/** Move within one filesystem; on a cross-device or locked rename, copy through a temp file beside the destination. */
 function replaceFile(source: string, destination: string): void {
   try {
     renameSync(source, destination);
+    return;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== 'EXDEV' && code !== 'EPERM' && code !== 'EACCES') throw error;
-    copyFileSync(source, destination);
+  }
+  const temporary = join(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`);
+  try {
+    copyFileSync(source, temporary);
+    renameSync(temporary, destination);
+  } catch (error) {
+    try {
+      if (existsSync(temporary)) unlinkSync(temporary);
+    } catch {
+      // Best-effort cleanup; the source is untouched.
+    }
+    throw error;
+  }
+  try {
     unlinkSync(source);
+  } catch {
+    // The destination is already in place; a leftover Downloads copy is harmless.
   }
 }
 
@@ -418,8 +561,19 @@ function decodeQuotedPrintable(text: string): Buffer {
 function normalizeHtml(html: string): string {
   return html
     .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
+    // Blink rewrites resource references as random per-save cid:...@mhtml.blink values.
+    .replace(/\bcid:[^"'\s)>]+/gi, 'cid:x')
+    // Canvas embeds a per-session CSRF token in the page head and in hidden form inputs.
+    .replace(/<meta\b[^>]*(?<![\w-])name\s*=\s*(?:"csrf-token"|'csrf-token'|csrf-token)(?=[\s/>])[^>]*>/gi,
+      tag => blankAttribute(tag, 'content'))
+    .replace(/<input\b[^>]*(?<![\w-])name\s*=\s*(?:"authenticity_token"|'authenticity_token'|authenticity_token)(?=[\s/>])[^>]*>/gi,
+      tag => blankAttribute(tag, 'value'))
     // ISO 8601 date-times, with or without a zone.
     .replace(/\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b/gi, '')
     // Canvas rendered date-times such as "26 Oct 2026 at 10:15".
     .replace(/\b\d{1,2}\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(?:\d{4}\s+)?at\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?\b/gi, '');
+}
+
+function blankAttribute(tag: string, attribute: string): string {
+  return tag.replace(new RegExp(`(?<![\\w-])${attribute}\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+)`, 'i'), `${attribute}=""`);
 }
