@@ -92,6 +92,48 @@ const effectivePolicy = z.strictObject({ value: z.enum(['allowed', 'prohibited',
 const policyRead = { policy: z.enum(['allowed', 'prohibited', 'owner-attested']).nullable().optional(),
   policyOrigin: z.enum(['owner', 'agent']).nullable().optional(), policyLevel: z.enum(['assessment', 'course']).nullable().optional(),
   effectivePolicy: effectivePolicy.optional() };
+const instant = z.iso.datetime({ offset: true });
+/** One saved file as the UI reads it: the file name only, never the stored path. */
+export const SavedFileViewSchema = z.strictObject({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(500),
+  current: z.boolean(),
+  savedAt: instant,
+  supersededAt: instant.optional(),
+  openedAt: instant.optional(),
+  /** A current file whose earlier version was superseded and that the owner has not opened. */
+  updated: z.boolean(),
+});
+export type SavedFileView = z.infer<typeof SavedFileViewSchema>;
+const savedFiles = z.array(SavedFileViewSchema).max(20).optional();
+/** The "needs you" content-updated notice; the UI opens it with `file.open` and it clears on open. */
+export const UpdateNoticeSchema = z.strictObject({
+  savedFileId: IdSchema,
+  courseId: IdSchema,
+  assessmentId: IdSchema,
+  assessmentName: z.string().trim().min(1).max(100000),
+  name: z.string().trim().min(1).max(500),
+  savedAt: instant,
+});
+/** A stored conflict plus the display names the owner needs to choose; selections stay in `target`/`choice`. */
+const conflictView = z.strictObject({
+  id: IdSchema,
+  courseId: IdSchema,
+  target: z.strictObject({ componentKey: IdSchema.optional(), canvasAssignmentId: IdSchema.optional() }),
+  field: z.enum(['weight', 'unmatched']),
+  skeletonValue: z.json().optional(),
+  canvasValue: z.json(),
+  state: z.enum(['open', 'agreed', 'resolved']),
+  choice: z.string().trim().min(1).max(500).optional(),
+  checkedAt: instant,
+  resolvedAt: instant.optional(),
+  /** Weight conflicts: the course component's display name. */
+  componentName: z.string().trim().min(1).max(500).optional(),
+  /** Unmatched conflicts: the Canvas assignment's name from its stored value. */
+  canvasName: z.string().trim().min(1).max(500).optional(),
+  /** Unmatched conflicts: the course's components the owner can assign the item to. */
+  components: z.array(z.strictObject({ key: IdSchema, name: z.string().trim().min(1).max(500) })).max(500).optional(),
+});
 const courses = { input: z.strictObject({ ...paging, term: text.optional() }), output: page(CourseSchema.strict().extend({ fields: AnnotationFieldsSchema.optional(),
   storedAt: z.iso.datetime({ offset: true }).optional(), ...policyRead })), level: 0 } as const;
 const policy = { input: PolicyRecordSchema, output: PolicyReceiptSchema, level: 0 } as const;
@@ -126,7 +168,17 @@ export const contracts = {
   'assessments.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }), output: page(AssessmentSchema.strict().extend({ fields: AnnotationFieldsSchema.optional(),
     // Derived from currently linked platform items; `linked: false` means submission state is unknown.
     platform: z.strictObject({ linked: z.boolean(), submitted: z.boolean(), removed: z.boolean(),
-      pointsEarned: z.number().nonnegative().optional(), pointsPossible: z.number().nonnegative().optional() }).optional(), ...policyRead })), level: 0 },
+      pointsEarned: z.number().nonnegative().optional(), pointsPossible: z.number().nonnegative().optional() }).optional(), ...policyRead,
+    // Newest first, at most 20; the item's `unlockAt` comes from the stored assessment.
+    savedFiles })), level: 0 },
+  // Owner and agent L0 read: newest conflicts first; `all` keeps open rows plus recent resolved ones.
+  'conflicts.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), state: z.enum(['open', 'all']).default('open') }),
+    output: page(conflictView), level: 0 },
+  // Owner and agent L0 read: open "assessment content updated" notices across courses.
+  'updates.list': { input: z.strictObject({ ...paging }), output: page(UpdateNoticeSchema), level: 0 },
+  // Owner only (frontend session or TTY); never an agent tool or an MCP tool. The path is never returned.
+  'file.open': { input: z.strictObject({ savedFileId: IdSchema }),
+    output: z.strictObject({ opened: z.literal(true), openedAt: instant }), level: 0 },
   'tasks.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), assessmentId: IdSchema.optional(), moduleId: IdSchema.optional() }), output: page(task), level: 0 },
   'sources.get': { input: z.strictObject({ sourceItemId: IdSchema }), output: SourceEvidenceSchema, level: 0 },
   'materials.list': { input: z.strictObject({ ...paging, courseId: IdSchema, sourceItemId: IdSchema.optional(), page: z.number().int().positive().safe().optional() }), output: page(SourceEvidenceSchema), level: 0 },
@@ -144,7 +196,7 @@ export type CommandName = keyof typeof contracts;
 export type CommandInput<N extends CommandName> = z.input<(typeof contracts)[N]['input']>;
 export type ParsedCommandInput<N extends CommandName> = z.output<(typeof contracts)[N]['input']>;
 export type CommandOutput<N extends CommandName> = z.output<(typeof contracts)[N]['output']>;
-export const ownerCommands: ReadonlySet<string> = new Set(['sync.run', 'policy.record', 'grant.record', 'annotation.owner.record', 'annotation.confirm', 'annotation.replace', 'planning.settings.record', 'courses.select', 'check.resolve',
+export const ownerCommands: ReadonlySet<string> = new Set(['sync.run', 'policy.record', 'grant.record', 'annotation.owner.record', 'annotation.confirm', 'annotation.replace', 'planning.settings.record', 'courses.select', 'check.resolve', 'file.open',
   // Long-term memory (C-4): only the owner adds, edits and deletes.
   'memory.add', 'memory.edit', 'memory.delete']);
 const meta = z.strictObject({ runId: z.uuid(), durationMs: z.number().nonnegative() });

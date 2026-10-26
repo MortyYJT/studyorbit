@@ -36,6 +36,7 @@ import { archiveCourse } from '../sync/course-folder.js';
 import { assessmentId } from '../sync/course-import.js';
 import { edHook, edItems, execFileEdRunner, type EdRunner, type EdStage } from '../sync/ed-cli.js';
 import type { CourseDocument } from '../sync/course-json.js';
+import { openSavedFile, openWithHostDefaultApp, type FileOpener } from '../sync/saved-files.js';
 export interface ProductionOptions {
   store?: SqliteRepository; files?: ProtocolFiles; metadata?: readonly EvidenceMetadata[];
   reads?: AuxiliaryReadPorts; study?: { provider: StudyEvidenceProvider; store: StudyRecordStore };
@@ -50,6 +51,10 @@ export interface ProductionOptions {
   /** Tests inject a fake `edstem` runner; production uses the CLI. */
   edRunner?: EdRunner;
   owner?: TrustedContext['owner'];
+  /** Remembered course-folder location for `file.open`; defaults to COURSEWORK_FILES or ~/Desktop. */
+  courseFolder?: CourseFolderOptions;
+  /** Tests inject a recording opener; production opens with the macOS default application. */
+  fileOpener?: FileOpener;
 }
 
 /**
@@ -187,7 +192,9 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   };
   const sync = options.sync ?? new AgentSync({ store, jobs, adapter: () => adapter, pipeline });
   const memory = new MemoryService(store);
-  const registry = createRegistry({ memory, autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync, courseReading: jobs, assessmentFiles });
+  const savedFiles = { open: (input: { savedFileId: string }) => openSavedFile(store, input.savedFileId,
+    { folder: options.courseFolder ?? options.assessmentFilesOptions, opener: options.fileOpener ?? openWithHostDefaultApp }) };
+  const registry = createRegistry({ memory, autonomy, annotations, savedFiles, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync, courseReading: jobs, assessmentFiles });
   // The chat agent gets the same owner-free tool set as MCP; every call still goes through dispatch().
   const agent = registry.agentTools(context);
   const agentTools = options.agentTools ?? agent.registry.list().map(entry => ({ name: entry.name, description: describe(entry),
