@@ -171,4 +171,61 @@ describe('Handbook parser review findings (#190)', () => {
     expect(parsed.hurdles).toMatch(/75% of tutorials/i);
     expect(parsed.components[0]).not.toHaveProperty('hurdle');
   });
+
+  it('keeps a wrapped "Hurdle requirement:" line inside a row as that row\'s hurdle and keeps later rows', () => {
+    const parsed = parseHandbook(table(
+      'Exam\tEnd of semester\t50%',
+      'Hurdle requirement: students must pass the exam',
+      'Assignments\tWeeks 3-10\t30%',
+      'Quiz\tWeek 4\t20%',
+    ), { source });
+    expect(parsed.components.map(component => [component.name, component.weight])).toEqual([['Exam', 50], ['Assignments', 30], ['Quiz', 20]]);
+    expect(parsed.components[0]!.hurdle).toBe('Hurdle requirement: students must pass the exam');
+    expect(parsed).not.toHaveProperty('hurdles');
+  });
+
+  it('reads a hurdle row that starts with "Hurdle" as a component and keeps later rows', () => {
+    const parsed = parseHandbook(table(
+      'Hurdle: attendance at 80% of tutorials\tThroughout semester\tN/A',
+      'Exam\tEnd of semester\t100%',
+    ), { source });
+    expect(parsed.components.map(component => [component.name, component.weight]))
+      .toEqual([['Hurdle: attendance at 80% of tutorials', undefined], ['Exam', 100]]);
+  });
+
+  it('keeps page text after a blank line out of the table and out of the last quote', () => {
+    const parsed = parseHandbook(table(
+      'Exam\tEnd of semester\t100%',
+      '',
+      'Note    Late penalty of 10% per day applies',
+      'Back to top',
+    ), { source });
+    expect(parsed.components.map(component => component.name)).toEqual(['Exam']);
+    expect(parsed.components[0]!.quote).toBe('Exam\tEnd of semester\t100%');
+  });
+
+  it('never reads a Total row as a component', () => {
+    const parsed = parseHandbook(table('Assignments\tWeeks 3-10\t30%', 'Exam\tEnd of semester\t70%', 'Total\t\t100%'), { source });
+    expect(parsed.components.map(component => component.name)).toEqual(['Assignments', 'Exam']);
+  });
+
+  it('keeps a leading empty cell so columns stay aligned with the header', () => {
+    const parsed = parseHandbook(['Type\tDescription\tTiming\tPercentage', '\tExam\tEnd of semester\t50%'].join('\n'), { source });
+    expect(parsed.components[0]).toMatchObject({ name: 'Exam', timing: 'End of semester', weight: 50 });
+  });
+
+  it('does not take a prose line naming all three columns as the table header', () => {
+    const parsed = parseHandbook([
+      'The description, timing and percentage of each task are below.',
+      'Description\tTiming\tPercentage',
+      'Assignments\tWeeks 3-10\t30%',
+    ].join('\n'), { source });
+    expect(parsed.components).toEqual([expect.objectContaining({ name: 'Assignments', weight: 30 })]);
+  });
+
+  it('reads the hurdle paragraph after a blank line under its heading', () => {
+    const parsed = parseHandbook(table('Exam\tEnd of semester\t100%', '', 'Hurdle requirements', '', 'Students must pass the exam.'), { source });
+    expect(parsed.hurdles).toBe('Students must pass the exam.');
+    expect(parsed.components[0]!.hurdle).toBe('Students must pass the exam.');
+  });
 });

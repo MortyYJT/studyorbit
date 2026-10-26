@@ -45,12 +45,16 @@ const refuse = (reason: string): never => {
 
 /** Cells are separated by tabs or runs of two or more spaces. Empty cells keep the header positions. */
 function cells(line: string): string[] {
-  return line.trim().split(/\t| {2,}/).map(cell => cell.trim());
+  // Leading tabs are empty cells, so only spaces and trailing whitespace are stripped before splitting.
+  return line.replace(/^ +/, '').replace(/\s+$/, '').split(/\t| {2,}/).map(cell => cell.trim());
 }
 
 const labelIndex = (row: readonly string[], label: RegExp): number => row.findIndex(cell => label.test(cell));
-const isHeader = (row: readonly string[]): boolean =>
-  labelIndex(row, /description/i) >= 0 && labelIndex(row, /timing/i) >= 0 && labelIndex(row, /percentage/i) >= 0;
+/** A header names the three columns in three different cells, so prose mentioning all three words is not one. */
+const isHeader = (row: readonly string[]): boolean => {
+  const indices = [labelIndex(row, /description/i), labelIndex(row, /timing/i), labelIndex(row, /percentage/i)];
+  return indices.every(index => index >= 0) && new Set(indices).size === 3;
+};
 
 const percent = (value: string | undefined): number | undefined => {
   const match = /(\d{1,3}(?:\.\d+)?)\s*%/.exec(value ?? '');
@@ -63,6 +67,8 @@ const sectionStart = (line: string): boolean => /^(?:hurdles?|additional require
 const normalizeName = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
 const HURDLE_HEADING = /^hurdles?(?:\s+requirements?)?\s*(?:[:\-]\s*(.*))?$/i;
+/** A bare section heading such as "Hurdle requirements" or "Fees", without text after it. */
+const isSectionHeading = (line: string): boolean => /^[a-z ]+:?$/i.test(line.trim()) && line.trim().split(/\s+/).length <= 4;
 const isHurdleHeading = (line: string): boolean => HURDLE_HEADING.test(line.trim());
 
 /** Match a component name as whole words, so "Test" never matches inside "latest". */
@@ -81,7 +87,11 @@ function hurdleSection(lines: readonly string[], from: number): string | undefin
   let text = (HURDLE_HEADING.exec(heading)?.[1] ?? '').trim();
   for (let position = index + 1; position < lines.length; position++) {
     const line = lines[position]!.trim();
-    if (!line) break;
+    if (!line) {
+      // Blank lines between the heading and its paragraph are layout; a blank line after the paragraph ends it.
+      if (text) break;
+      continue;
+    }
     if (/^(?:assessment|fees|dates|contacts|careers|additional information)\b/i.test(line)) break;
     text = text ? `${text} ${line}` : line;
   }
@@ -127,19 +137,26 @@ export function parseHandbook(text: string, options: { source: string }): Skelet
       if (blankLines >= 2) { tableEnd = position; break; }
       continue;
     }
+    const afterBlank = blankLines > 0 && components.length > 0;
     blankLines = 0;
-    if (sectionStart(line)) { tableEnd = position; break; }
-    const row = cells(line);
+    const row = cells(lines[position]!);
     if (isHeader(row)) continue;
     const nonEmpty = row.filter(cell => cell.length > 0);
-    const hasPercentage = row.some(cell => percent(cell) !== undefined);
-    const hasHurdle = /hurdle/i.test(line);
-    if (nonEmpty.length < 2 || (!hasPercentage && !hasHurdle)) {
-      // A wrapped description, footer or navigation line continues the previous row; it is never a component.
+    const rowLike = nonEmpty.length >= 2 && (row.some(cell => percent(cell) !== undefined) || /hurdle/i.test(line));
+    if (!rowLike) {
+      // After a blank line, page text (a heading, a footer, prose) ends the table and is never quoted as a row.
+      if (afterBlank || (sectionStart(line) && isSectionHeading(line))) { tableEnd = position; break; }
+      // Directly under a row, the line wraps that row's description; a hurdle line there is that row's hurdle.
       const previous = components[components.length - 1];
-      if (previous) previous.quote = appendQuote(previous.quote, line);
+      if (previous) {
+        previous.quote = appendQuote(previous.quote, line);
+        if (!previous.hurdle && /hurdle/i.test(line)) previous.hurdle = line.slice(0, 2000);
+      }
       continue;
     }
+    // A row after a blank line must have the header's shape; shorter lines are notes below the table.
+    if (afterBlank && row.length < headerRow.length) { tableEnd = position; break; }
+    if (/^total\b/i.test(nonEmpty[0]!)) continue;
     const component = parseRow(row, columns, line);
     if (component) components.push(component);
   }
