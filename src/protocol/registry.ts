@@ -1,6 +1,6 @@
 import { metricsContracts } from '../metrics/contracts.js';
 import type { MetricsService } from '../metrics/service.js';
-import { annotationCommandContracts, type AnnotationService } from './annotations.js';
+import { annotationCommandContracts, annotationRefusals, type AnnotationService } from './annotations.js';
 import { planningContracts, planningOwnerCommands, planningSessionCommands } from '../planning/contracts.js';
 import type { PlanningService } from '../planning/service.js';
 import { syncContracts, type SyncCommands, type CourseReadingCommands, type SyncCommandName } from './sync.js';
@@ -73,6 +73,7 @@ export function safeError(error: unknown, command?: string): CourseworkError {
   if (error instanceof AgentFacingError && agentFacingCommands.has(command ?? '')) return new CourseworkError(error.code, error.message);
   if (command === 'source.record' && error instanceof CourseworkError && sourceRecordRefusals.includes(error.message)) return new CourseworkError(error.code, error.message);
   if (command?.startsWith('memory.') && error instanceof CourseworkError && memoryRefusals.includes(error.message)) return new CourseworkError(error.code, error.message);
+  if (command?.startsWith('annotation.') && error instanceof CourseworkError && annotationRefusals.includes(error.message)) return new CourseworkError(error.code, error.message, error.next);
   const code = error instanceof CourseworkError && Object.hasOwn(retryable, error.code) ? error.code : 'INTERNAL';
   return new CourseworkError(code, error instanceof CourseworkError && error.message === 'Open coursework ui to perform this owner action.' ? error.message : safeMessages[code]);
 }

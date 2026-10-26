@@ -29,12 +29,6 @@ export const AutonomyAssessmentSchema = z.strictObject({ assessmentId: AuditIdSc
   ...policyFields });
 export const AutonomyReadSchema = z.strictObject({ courseId: AuditIdSchema, ...policyFields,
   cap: z.union([z.literal(0), z.literal(2)]), defaultLevel: WorkLevelSchema, assessments: z.array(AutonomyAssessmentSchema).max(500) });
-/** The browser copy (web/src/course-contracts.ts) is outside this issue's scope; keep its read shape unchanged. */
-const BrowserAutonomyReadSchema = z.strictObject({ courseId: AuditIdSchema, policy: PolicySchema.nullable(),
-  policyOrigin: z.enum(['owner', 'agent']).nullable(), cap: z.union([z.literal(0), z.literal(2)]),
-  defaultLevel: WorkLevelSchema, assessments: z.array(z.strictObject({ assessmentId: AuditIdSchema, kind: KindSchema.nullable(),
-    applicable: z.boolean(), requiredLevel: z.union([z.literal(1), z.literal(2)]).nullable(), override: WorkLevelSchema.nullable(),
-    effectiveLevel: WorkLevelSchema.nullable() })).max(500) });
 const PolicySetSchema = z.union([
   z.strictObject({ courseId: AuditIdSchema, assessmentId: AuditIdSchema.optional(), value: PolicySchema.nullable() }),
   z.strictObject({ courseId: AuditIdSchema, assessmentId: AuditIdSchema.optional(), status: PolicySchema.nullable() }),
@@ -43,16 +37,15 @@ export type PolicySetInput = z.infer<typeof PolicySetSchema>;
 export const autonomyContracts = {
   'autonomy.check': { input: z.strictObject({ assessmentId: AuditIdSchema, action: z.enum(['read', 'click', 'fill', 'select', 'submit', 'other']) }),
     output: z.strictObject({ decision: z.enum(['allowed', 'denied']), reason: ReasonSchema }), level: 0 },
-  'autonomy.read': { input: z.strictObject({ courseId: AuditIdSchema }), output: BrowserAutonomyReadSchema, level: 0 },
+  'autonomy.read': { input: z.strictObject({ courseId: AuditIdSchema }), output: AutonomyReadSchema, level: 0 },
   'autonomy.policy.set': { input: z.strictObject({ courseId: AuditIdSchema, status: PolicySchema.nullable() }), output: receipt, level: 0 },
   'autonomy.default.set': { input: z.strictObject({ courseId: AuditIdSchema, level: WorkLevelSchema }), output: receipt, level: 0 },
   'autonomy.override.set': { input: z.strictObject({ assessmentId: AuditIdSchema, level: WorkLevelSchema }), output: receipt, level: 0 },
   'autonomy.override.clear': { input: z.strictObject({ assessmentId: AuditIdSchema }), output: receipt, level: 0 },
 } as const;
-/** Server dispatch uses the extended per-assessment read and policy command; the export above mirrors the browser. */
+/** Server dispatch also accepts the value/status union for `autonomy.policy.set`. */
 export const autonomyCommandContracts = {
   ...autonomyContracts,
-  'autonomy.read': { input: autonomyContracts['autonomy.read'].input, output: AutonomyReadSchema, level: 0 },
   'autonomy.policy.set': { input: PolicySetSchema, output: receipt, level: 0 },
 } as const;
 export type AutonomyCommand = keyof typeof autonomyCommandContracts;

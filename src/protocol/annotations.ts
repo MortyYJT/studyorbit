@@ -23,6 +23,8 @@ const storedCitations = z.array(z.union([VerifiedCitationSchema, CitationInputSc
 const history = z.strictObject({ ...AnnotationSchema.shape, citations: storedCitations, verdicts, coverage: CoverageSchema });
 const readOutput = z.strictObject({ ...target, fields: AnnotationFieldsSchema, history: z.array(history).max(500),
   nextCursor: CursorSchema.optional(), coverage: CoverageSchema, links: z.array(AssessmentLinkSchema.strict()) });
+const policyRead = { policy: PolicySchema.nullable().optional(), policyOrigin: z.enum(['owner', 'agent']).nullable().optional(),
+  policyLevel: z.enum(['assessment', 'course']).nullable().optional(), effectivePolicy: EffectivePolicySchema.optional() };
 export const annotationContracts = {
   'annotation.record': { input: z.strictObject({ ...annotation, citations, sourceRevision: HashSchema }), output: receipt, level: 0 },
   'annotation.owner.record': { input: z.strictObject({ ...annotation, citations: citations.optional(), sourceRevision: HashSchema.optional() }), output: receipt, level: 0 },
@@ -30,17 +32,14 @@ export const annotationContracts = {
     name: citedValue(z.string().trim().min(1).max(100000)), weight: citedValue(AssessmentSchema.shape.weight.unwrap()) }), output: receipt, level: 0 },
   'assessment.link': { input: z.strictObject({ assessmentId: IdSchema, sourceItemId: IdSchema, sourceRevision: HashSchema }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
   'annotation.read': { input: z.strictObject({ ...target, limit: z.number().int().min(0).max(500).default(100), cursor: CursorSchema.optional() }),
-    output: readOutput, level: 0 },
+    output: readOutput.extend(policyRead), level: 0 },
   'annotation.confirm': { input: z.strictObject({ ...target, field, annotationId: IdSchema }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
   'annotation.replace': { input: z.strictObject({ ...annotation, annotationId: IdSchema }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
 } as const;
-const policyRead = { policy: PolicySchema.nullable().optional(), policyOrigin: z.enum(['owner', 'agent']).nullable().optional(),
-  policyLevel: z.enum(['assessment', 'course']).nullable().optional(), effectivePolicy: EffectivePolicySchema.optional() };
-/** Server dispatch adds the effective policy to annotation reads; the browser copy stays unchanged for this issue. */
-export const annotationCommandContracts = {
-  ...annotationContracts,
-  'annotation.read': { ...annotationContracts['annotation.read'], output: readOutput.extend(policyRead) },
-} as const;
+export const annotationCommandContracts = annotationContracts;
+/** A fixed refusal that may reach the caller (see `safeError`); it names the command that records the policy. */
+const ASSESSMENT_POLICY_REFUSAL = 'Assessment AI policy is set only with autonomy.policy.set; nothing was stored.';
+export const annotationRefusals: readonly string[] = [ASSESSMENT_POLICY_REFUSAL];
 export type AnnotationCommand = keyof typeof annotationCommandContracts;
 const assessmentFields = ['weight', 'kind', 'hurdleMin', 'isFinal', 'name', 'due', 'aiPolicy'] as const;
 const courseFields = ['assessmentsComplete', 'aiPolicy'] as const;
@@ -188,6 +187,11 @@ export class AnnotationService {
     }
     // A course's AI policy is read into the course document, never annotated by an agent (#180).
     if (!owner && 'field' in data && data.field === 'aiPolicy') throw invalid();
+    // An assessment policy changes autonomy, so it is recorded only by `autonomy.policy.set`, which audits it.
+    if (owner && 'field' in data && data.entity === 'assessment' && data.field === 'aiPolicy'
+      && (name === 'annotation.owner.record' || name === 'annotation.replace')) {
+      throw new CourseworkError('INVALID_INPUT', ASSESSMENT_POLICY_REFUSAL, 'Use autonomy.policy.set with courseId, assessmentId and value.');
+    }
     await context.authorization.check(name, 0, data);
     this.safe(data);
     const at = new Date().toISOString();

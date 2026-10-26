@@ -151,3 +151,13 @@ it('Owner clears the course policy: null clears the owner value and the agent-re
     .toMatchObject({ policy: 'prohibited', policyOrigin: 'agent', policyLevel: 'course', cap: 0 });
 });
 
+it('Refuses a policy set for another course assessment: NOT_FOUND and nothing is stored', async () => {
+  const { call, store } = setup();
+  store.saveCourse({ ...synthetic.course, id: 'other', code: 'SYNO10001', name: 'Other synthetic course' });
+  store.saveAssessment({ id: 'foreign', courseId: 'other', name: 'Foreign synthetic assessment', weight: 10, isFinal: false, status: 'not_started' });
+  expect(await call('autonomy.policy.set', { courseId, assessmentId: 'foreign', value: 'allowed' }))
+    .toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  expect(store.readAnnotations('assessment', 'foreign')).toEqual([]);
+  expect(store.readAnnotations('course', courseId)).toEqual([]);
+  expect(store.readAnnotations('course', 'other')).toEqual([]);
+});

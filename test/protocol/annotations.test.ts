@@ -334,3 +334,16 @@ it('assessments.list derives platform submitted and removed flags from currently
   link('b', 'item-1');
   expect(await platform()).toEqual({ a: { linked: true, submitted: false, removed: false }, b: { linked: true, submitted: true, removed: true } });
 });
+
+it('Owner item policy annotation points to autonomy.policy.set: an assessment aiPolicy is refused and nothing is stored', async () => {
+  const f = await fixture();
+  for (const value of ['prohibited', null]) {
+    expect(await f.call('annotation.owner.record', { entity: 'assessment', entityId: 'a', field: 'aiPolicy', value }, true))
+      .toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: expect.stringContaining('autonomy.policy.set') } });
+    expect(f.store.readAnnotations('assessment', 'a')).toEqual([]);
+    expect(f.store.loadAssessment('a')?.aiPolicy).toBeUndefined();
+  }
+  // The dedicated owner command still records the policy with its audit entry.
+  expect(await f.call('autonomy.policy.set', { courseId: 'c', assessmentId: 'a', value: 'prohibited' }, true)).toMatchObject({ ok: true });
+  expect(await f.read()).toMatchObject({ data: { policy: 'prohibited', policyOrigin: 'owner', policyLevel: 'assessment' } });
+});
