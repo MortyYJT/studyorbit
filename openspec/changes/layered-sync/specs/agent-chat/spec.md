@@ -22,3 +22,18 @@ Each Codex session SHALL reach our tools only through the `coursework mcp` stdio
 #### Scenario: Workspace instructions
 - **WHEN** a Codex session starts
 - **THEN** the workspace has no Git working tree above it, and its `AGENTS.md` contains the no-final-submit, stop-at-sign-in, prohibited-assessment, granted-level and no-other-sites rules before the child process is started
+
+### Requirement: Preset prompts with context
+The backend SHALL keep a fixed set of preset prompts, each with an id, a template and the context it needs: start an assessment (#200), complete an assessment, explain an assessment, fill in a course's missing information (annotations), estimate work, prepare revision, tutor revision, practise wrong answers only, and review a pending item from "needs you" (#144). The start preset SHALL give, for a `quiz`, the quiz URL and the granted level; for other kinds, the instruction to call `assessment.files` for that assessment and record requirements and rubric points as cited annotations (see `layered-sync`). Opening the Agent page from a preset SHALL create a conversation with that context and send the rendered prompt automatically, once. Presets SHALL name courses and assessments by stored id and title, never include page content, and SHALL NOT be offered for exams where #146 removes the entry.
+
+#### Scenario: From an assessment
+- **WHEN** the owner clicks "let the agent do it" on assessment `a-1` of course `c-1`
+- **THEN** a new conversation with that context starts and its first message is the rendered "complete an assessment" prompt naming `a-1`
+
+#### Scenario: Start a non-quiz assessment
+- **WHEN** the owner presses Start on assignment `a-2`
+- **THEN** the conversation's first message is the rendered start prompt naming `a-2` and telling the agent to call `assessment.files`
+
+#### Scenario: No double send
+- **WHEN** the owner reloads the Agent page right after a preset conversation was created
+- **THEN** the prompt is not sent a second time

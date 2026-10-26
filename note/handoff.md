@@ -3,18 +3,27 @@
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 的改法见 #165–#197，PRD 待更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/`（进行中：`canvas-check-item-policy`，规格已合并，实现未开始）；决定看 `note/decisions.md`（#1–#198）；进度看 `note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-26 凌晨 3 点，Claude。
-- **模式：** OpenSpec 变更 `canvas-check-item-policy`（路线图 C-5）规格已合并，实现未开始。真机验收（#186）也在进行中：第一次逐门读课已完成，4 门课都已存入，周视图能正常显示。
+- **最后更新：** 2026-10-26 傍晚，Claude。
+- **模式：** OpenSpec 变更 `layered-sync`（路线图 C-5，**并入了原来的 `canvas-check-item-policy`**），规格已写好，过了两轮审查，实现还没开始。代码交给 dsh（DeepSeek）写（#209）；需要 Codex 的实测，等额度恢复后再做。
 - **本轮合并（10-26 凌晨）：** #175、#176 重写 README（项目说明、为什么读页面不用 token、功能、计划、进度），同时把决策 #193–#197 和路线图 C-5 带进了 main；GitHub 仓库的 About 说明也已更新；#178 合并了 C-5 规格。
 - **#191 删除隐私检查（沿用）：** 姓名、邮箱、学号、凭证样式的文字、本地路径都会原样存储、原样发给模型。保留引用完整性检查和 `source.record` 的网址规则。仓库和测试数据里仍然不能放真实课程数据、密钥和浏览器配置。
 - **分工（#189）：** 实现和审查优先交给 Codex；Claude 派活、提交、在本机重跑检查、浏览器验证、合并。Codex 额度用完时由 Claude 接手，审查改用只读的 Claude 子代理（#175、#176 就是这样审的）。
 
-## 进行中：`canvas-check-item-policy`（C-5）
+## 进行中：`layered-sync`（C-5，分层同步）
 
-- **规格已合并（#178）**：`openspec/changes/canvas-check-item-policy/`（proposal、design、tasks，新能力 `canvas-check`，以及 coursework-sync、assessment-autonomy、agent-annotations、agent-chat、protocol-reads、domain-model、web-ui 的增量）。设计依据 #193–#198，#198 已由你确认。
-- **要点**：读完一门 Canvas 课后，Codex 打开一个固定地址 `/api/v1/courses/{id}/assignment_groups?include[]=assignments&include[]=submission&per_page=100`，全选复制，调 `canvas.check`，代码从剪贴板读原文；比对 SourceItem facts（agent 的原始读数）和 Canvas 的截止时间、分值、得分、是否提交、作业组权重；冲突由你在「需要你」里选，Canvas 值按字段落地（见 design D4）。AI 政策按作业生效（design D6）。
-- **下一步**：任务 1.1，你在场、屏幕解锁时实测这个地址（学生会话是否支持这些 include、Edge 全选复制出来是什么）。结果不进仓库，只把不含内容的结论写进 design 的 Open Questions。实测不通就按 #193 改回两个地址，再开始 3.x。
-- **理由待补**：#193 的取数方式、#194、#196。
+- **来源**：你在对话里和 Claude 一起定的设计稿「分层同步 v0.3」（桌面 `Develop/墨大课业agent/架构图.drawio` 第 4 页，不进仓库）。决定 #199–#212。
+- **要点**：
+  - 代码一门一门地调度小任务：课程列表和作业数字（截止、开始时间、分值、得分、权重）走 Canvas 接口，Codex 复制、代码从剪贴板读（#208）。
+  - Handbook 作暂定骨架（#203）；按导航栏分流页面（#201）；主 agent 只读主页。
+  - 作业只读表层，深层存到 `~/Desktop/UniMelb 26S2/<课程名>/`（#200、#204）；内容变了就提醒你（#205）。
+  - 考核项收敛成 6 类，有计分规则（#202、#210–#212）；你点「开始」才读深层。
+  - Ed 先试 edstem-cli（#207）；并行默认关，等实验结果（#206）。
+- **下一步（按顺序）**：
+  1. 等你答复「Handbook 由代码抓」（任务 1.3、4.1 在等）。
+  2. 按任务第 2 组起开 issue，派给 dsh（`dsh headless`，独立 clone，TDD），Claude 审查、提交、开 PR、合并。
+  3. Codex 额度恢复、你在场时做任务 1.1（接口参数）、1.4（多窗口并行实验），最后做 10.2（实测填表）。
+- **Ed**：edstem-cli 0.8.2 已全局安装；`edstem auth login` 等你粘贴 token（任务 1.2）。它现在的代码只认 Ed API token，不读 cookie。
+- **待你复核**：#210、#211、#212 是 Claude 根据审查意见做的细化。
 
 ## 本轮的调研结论（10-26）
 
