@@ -91,6 +91,18 @@ const courses = { input: z.strictObject({ ...paging, term: text.optional() }), o
   storedAt: z.iso.datetime({ offset: true }).optional() })), level: 0 } as const;
 const policy = { input: PolicyRecordSchema, output: PolicyReceiptSchema, level: 0 } as const;
 const grant = { input: GrantRecordSchema, output: GrantReceiptSchema, level: 0 } as const;
+/** A Downloads name, never a path: the move helper matches it exactly. */
+const savedFileName = z.string().trim().min(1).max(300)
+  .refine(name => !/[\\/]/.test(name), 'use the file name only, without a path')
+  .refine(name => name !== '.' && name !== '..', 'use the saved file name, not . or ..');
+const assessmentFile = z.strictObject({
+  sourceItemId: IdSchema.optional(),
+  name: z.string().trim().min(1).max(500),
+  kind: z.enum(['html', 'pdf', 'other']),
+  extracted: z.boolean(),
+  /** Present only for an extracted HTML/MHTML page; bounded by the command's 64 KiB response. */
+  text: z.string().max(200_000).optional(),
+});
 export const contracts = {
   'revision.read': { input: z.strictObject({ courseId: IdSchema }), output: z.strictObject({ sourceRevision: HashSchema, examScope: ExamScopeRecordSchema.nullable(), examTime: z.iso.datetime({ offset: true }).optional(), finalAssessmentId: IdSchema.optional() }), level: 0 },
   'practice.stats': { input: z.strictObject({ courseId: IdSchema }), output: z.strictObject({ questions: count, attempted: count, correct: count, incorrect: count, wrongQuestions: z.array(z.strictObject({ questionId: IdSchema, revision: z.uuid() })).max(500) }), level: 0 },
@@ -101,6 +113,10 @@ export const contracts = {
     // The receipt omits the text; `sources.get` reads it back. Pages are bounded to 60,000 encoded bytes (see source-record.ts).
     output: z.strictObject({ sourceItemId: IdSchema, empty: z.boolean(), locator: text, page: z.number().int().positive().safe().optional(),
       sourceHash: HashSchema, copiedBy: z.literal('agent'), sourceRevision: HashSchema }), level: 0 },
+  // Start reads the deep layer: extracted page text becomes a material SourceItem linked to the assessment.
+  'assessment.files': { input: z.strictObject({ assessmentId: IdSchema, saved: z.array(savedFileName).max(500).optional() }),
+    output: z.strictObject({ files: z.array(assessmentFile).max(500), nothing_saved: z.boolean().optional(),
+      instructions: z.string().max(4000).optional() }), level: 0 },
   'courses.list': courses,
   'assessments.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }), output: page(AssessmentSchema.strict().extend({ fields: AnnotationFieldsSchema.optional(),
     // Derived from currently linked platform items; `linked: false` means submission state is unknown.

@@ -164,6 +164,7 @@ it('lists no browser.* and no owner command (No resident-browser tools)', async 
   // layered-sync: the clipboard captures are agent tools, listed over stdio too.
   expect(names).toContain('canvas.capture');
   expect(names).toContain('handbook.capture');
+  expect(names).toContain('assessment.files');
   // The five job-scoped stage writes (task 5.3); course.import stays until the production switch-over (5.2b).
   expect(names).toEqual(expect.arrayContaining(['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'items.classify', 'course.import']));
   expect(names.some(name => name.startsWith('browser.') || name.startsWith('confirmation.'))).toBe(false);
