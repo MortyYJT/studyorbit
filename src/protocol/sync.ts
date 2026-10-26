@@ -37,6 +37,11 @@ export const syncContracts = {
     blocked: z.array(platform).max(2).default([]) }),
     output: z.strictObject({ stored: count, undecided: count, selected: count }), level: 0 as const },
   'courses.candidates': { input: z.strictObject({}), output: z.strictObject({ items: z.array(CourseSelectionSchema.strict()).max(500) }), level: 0 as const },
+  /** Agent write, job-scoped: parse one Canvas API page from the clipboard; page text is never an argument. */
+  'canvas.capture': { input: z.strictObject({ jobId: id, courseKey: id.optional(), page: z.enum(['courses', 'tabs', 'groups']) }),
+    output: z.strictObject({ page: z.enum(['courses', 'tabs', 'groups']), stored: count.optional(), skipped: count.optional(),
+      undecided: count.optional(), selected: count.optional(), tabs: count.optional(), groups: count.optional(),
+      assignments: count.optional(), coverage: z.enum(['api', 'partial']).optional() }), level: 0 as const },
   /** Owner only (frontend session or TTY). */
   'courses.select': { input: z.strictObject({ selections: z.array(z.strictObject({ key: id, selected: z.boolean() })).min(1).max(100) }),
     output: z.strictObject({ recorded: count }), level: 0 as const },
@@ -50,6 +55,7 @@ type Input<N extends SyncCommandName> = z.output<(typeof syncContracts)[N]['inpu
 export interface SyncCommands { run(input: { course?: string }): Promise<Output<'sync.run'>>; status(): Output<'sync.status'> }
 export interface CourseReadingCommands {
   offer(input: Input<'courses.offer'>): Output<'courses.offer'>;
+  capture(input: Input<'canvas.capture'>): Output<'canvas.capture'>;
   candidates(): CourseSelection[];
   select(input: Input<'courses.select'>): Output<'courses.select'>;
   import(input: Input<'course.import'>): Output<'course.import'>;

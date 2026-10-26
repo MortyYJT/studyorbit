@@ -161,6 +161,8 @@ it('audit.record is neither advertised nor callable over MCP and cannot attest a
 it('lists no browser.* and no owner command (No resident-browser tools)', async () => {
   const names = (await (await connect(createRegistry(), createFakeContext())).client.listTools()).tools.map(tool => tool.name);
   expect(names).toContain('source.record');
+  // layered-sync: the clipboard capture is an agent tool, listed over stdio too.
+  expect(names).toContain('canvas.capture');
   expect(names.some(name => name.startsWith('browser.') || name.startsWith('confirmation.'))).toBe(false);
   expect(names.some(name => isOwnerCommand(name))).toBe(false);
 });
