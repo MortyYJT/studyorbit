@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
 import type { GradeBand, GradeNeed } from '../../src/domain/grade.js';
 import type { Client } from './client.js';
 import type { AgentPreset } from './chat.js';
@@ -31,6 +31,20 @@ export function CoursePage({ courseId, client, t, language, timeZone, openAgent,
     const shown = field === 'due' ? date(item.due) : `${number(item.weight!)}%`;
     return label.kind === 'derived' ? <span title={c.evenSplit}>≈ {shown}<small className="derived">{c.evenSplit}</small></span> : shown;
   };
+  const rows = (items: AssessmentItem[]) => items.map(item => isRemainder(item) ? <div key={item.id} className="arow remainder" title={c.remainderHelp}>
+    <span className="aname">{item.name}{item.kind && <span className={`kind ${item.kind}`}>{c.kinds[item.kind]}</span>}</span>
+    <span className="muted">{c.notPublished}</span>
+    <span className="num">{value(item, 'weight')}</span>
+    <span className="num">{c.none}</span><span className="muted">{c.notPublished}</span><span>{c.none}</span>
+  </div> : <button key={item.id} className="arow" onClick={() => { setOpen(item.id); void store.openAssessment(item.id); }}>
+    <span className="aname">{item.name}{item.kind && <span className={`kind ${item.kind}`}>{c.kinds[item.kind]}</span>}</span>
+    <span className="muted">{value(item, 'due')}</span>
+    <span className="num">{value(item, 'weight')}</span>
+    <span className="num points">{item.score === undefined ? c.none : `${item.platform?.pointsEarned !== undefined && item.platform.pointsPossible !== undefined
+      ? `${number(item.platform.pointsEarned)}/${number(item.platform.pointsPossible)} · ` : ''}${number(item.score)}%`}</span>
+    <span>{c.statuses[displayStatus(item)]}</span>
+    <span><Level view={levelView(item, state.autonomy)} t={t} /></span>
+  </button>);
   const policy: Policy | undefined = state.autonomy?.policy ?? undefined;
   const failed = (['autonomy', 'assessments', 'plan', 'revision', 'notes', 'stats'] as const).filter(key => state.errors[key]);
   if (state.errors.course) return <section className="card"><button className="crumb" onClick={onBack}>{c.back}</button><p>{state.errors.course === 'NOT_FOUND' ? c.notFound : errorText(state.errors.course, t)}</p></section>;
@@ -51,24 +65,17 @@ export function CoursePage({ courseId, client, t, language, timeZone, openAgent,
         : !state.assessments.length ? <p className="muted">{c.noAssessments}</p>
         : <div className="assessment-list">
           <div className="arow head" aria-hidden="true"><span>{c.name}</span><span>{c.due}</span><span className="num">{c.weight}</span><span className="num">{c.scoreCol}</span><span>{c.status}</span><span>{c.level}</span></div>
-          {assessmentGroups(state.assessments).map((group, _, all) => <div className="agroup" role="group" key={group.key ?? ''} aria-label={group.name ?? c.otherGroup}>
+          {assessmentGroups(state.assessments.filter(item => item.weight !== 0)).map((group, index, all) => <div className="agroup" role="group" key={group.key ?? `loose-${index}`} aria-label={group.name ?? c.otherGroup}>
             {(group.key !== undefined || all.length > 1) && <div className="ghead"><b>{group.name ?? c.otherGroup}</b>
               {group.key !== undefined && <span className="muted">{group.weight === undefined ? <span className="unknown">{t.unknown}</span> : `${number(group.weight)}%`}
                 {' · '}{group.earned === undefined ? <span className="unknown">{c.earnedUnknown}</span> : <>{number(group.earned)} {c.groupEarned}</>}</span>}</div>}
-            {group.items.map(item => isRemainder(item) ? <div key={item.id} className="arow remainder" title={c.remainderHelp}>
-              <span className="aname">{item.name}{item.kind && <span className={`kind ${item.kind}`}>{c.kinds[item.kind]}</span>}</span>
-              <span className="muted">{c.notPublished}</span>
-              <span className="num">{value(item, 'weight')}</span>
-              <span className="num">{c.none}</span><span className="muted">{c.notPublished}</span><span>{c.none}</span>
-            </div> : <button key={item.id} className="arow" onClick={() => { setOpen(item.id); void store.openAssessment(item.id); }}>
-              <span className="aname">{item.name}{item.kind && <span className={`kind ${item.kind}`}>{c.kinds[item.kind]}</span>}</span>
-              <span className="muted">{value(item, 'due')}</span>
-              <span className="num">{value(item, 'weight')}</span>
-              <span className="num">{item.score === undefined ? c.none : `${number(item.score)}%`}</span>
-              <span>{c.statuses[displayStatus(item)]}</span>
-              <span><Level view={levelView(item, state.autonomy)} t={t} /></span>
-            </button>)}
+            {rows(group.items)}
           </div>)}
+          {state.assessments.some(item => item.weight === 0) && <details className="no-marks">
+            <summary>{c.noMarks} ({state.assessments.filter(item => item.weight === 0).length})</summary>
+            {assessmentGroups(state.assessments.filter(item => item.weight === 0)).map((group, index) =>
+              <div key={group.key ?? `loose-${index}`}>{rows(group.items)}</div>)}
+          </details>}
         </div>
         : <Revision store={store} state={state} t={t} date={date} onPreset={id => openAgent({ id, courseId })} />}
     </section>
@@ -93,18 +100,27 @@ function needText(need: GradeNeed, t: Copy) {
 function ScoreCard({ course, items, t }: { course: NonNullable<CourseState['course']>; items: AssessmentItem[]; t: Copy }) {
   const c = t.coursePage;
   const [band, setBand] = useState<GradeBand>('H1');
+  const grooveId = useId();
   const figures = courseFigures(course, items, band);
   const segments = ringSegments(items);
   const unavailable = figures.need.status === 'unavailable';
   return <section className="card score" aria-label={c.score}>
     <svg className="donut" viewBox="0 0 170 170" role="img" aria-label={`${c.score}: ${figures.earned.toFixed(1)} ${c.earned}`}>
-      <circle className="track" cx="85" cy="85" r="70" />
+      <defs><filter id={grooveId} x="-10%" y="-10%" width="120%" height="120%">
+        <feGaussianBlur in="SourceAlpha" stdDeviation="1" result="blur" />
+        <feOffset in="blur" dy="1.5" result="offset" />
+        <feComposite in="SourceAlpha" in2="offset" operator="out" result="inner" />
+        <feFlood floodColor="#000" floodOpacity="0.45" />
+        <feComposite in2="inner" operator="in" />
+        <feMerge><feMergeNode in="SourceGraphic" /><feMergeNode /></feMerge>
+      </filter></defs>
+      <circle className="track" cx="85" cy="85" r="70" filter={`url(#${grooveId})`} />
       {segments.map((segment, index) => {
         // Gaps separate assessments, not the earned and lost parts of one assessment.
         const first = segments[index - 1]?.assessmentId !== segment.assessmentId;
         const last = segments[index + 1]?.assessmentId !== segment.assessmentId;
         const start = segment.start + (first ? 1.2 : 0), end = segment.end - (last ? 1.2 : 0);
-        return end > start && <path key={`${segment.assessmentId}-${segment.style}`} className={segment.style} d={arcPath(70, start, end)} />;
+        return end > start && <path key={`${segment.assessmentId}-${segment.style}`} className={segment.style === 'earned' ? 'earned' : 'not-earned'} d={arcPath(70, start, end)} />;
       })}
       <text x="85" y="90" className="total">{figures.earned.toFixed(1)}</text>
       <text x="85" y="110" className="caption">{c.earned}</text>
@@ -116,7 +132,7 @@ function ScoreCard({ course, items, t }: { course: NonNullable<CourseState['cour
         <div><div className={unavailable ? 'v small' : 'v'}>{needText(figures.need, t)}</div>
           <label className="inline muted">{c.need} · {c.target}<select value={band} onChange={event => setBand(event.target.value as GradeBand)}>{bands.map(value => <option key={value}>{value}</option>)}</select></label></div>
       </div>
-      <div className="key">{([['earned', c.kEarned], ['lost', c.kLost], ['ungraded', c.kUngraded], ['unknown', c.kUnknown]] as const).map(([style, label]) =>
+      <div className="key">{([['earned', c.kEarned], ['not-earned', c.kNotEarned]] as const).map(([style, label]) =>
         <span key={style}><i className={style} />{label}</span>)}</div>
     </div>
   </section>;

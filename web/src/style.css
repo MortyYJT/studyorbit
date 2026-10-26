@@ -175,15 +175,15 @@ button.small { padding:4px 10px; font-size:12px; }
 /* K3 course page */
 .course-list .course-link { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 16px; width:100%; border:0; background:none; padding:0; text-align:left; }
 .course-list .course-link small { margin-left:auto; }
-.course-page { --lost:color-mix(in srgb, var(--ink) 40%, var(--panel)); --faint:color-mix(in srgb, var(--muted) 70%, var(--panel)); overflow-wrap:anywhere; }
+.course-page { --ring-earned:#facc15; --ring-rest:#fff; --ring-groove:color-mix(in srgb, var(--text) 22%, var(--panel)); overflow-wrap:anywhere; }
 .crumb { border:0; background:none; padding:2px 0; color:var(--muted); font-size:13px; margin-bottom:8px; }
 .chead { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; margin-bottom:16px; }
 .score { display:grid; grid-template-columns:170px minmax(0,1fr); gap:24px; align-items:center; }
 .donut { width:170px; height:170px; }
 .donut path,.donut circle { fill:none; stroke-width:16; }
-.donut .track { stroke:var(--line); stroke-width:1; }
-.donut .earned { stroke:var(--ink); } .donut .lost { stroke:var(--lost); } .donut .ungraded { stroke:color-mix(in srgb, var(--ink) 14%, var(--panel)); }
-.donut .unknown { stroke:var(--faint); stroke-width:4; stroke-dasharray:3 3; }
+.donut .track { stroke:var(--ring-groove); stroke-width:22; }
+.donut .earned { stroke:var(--ring-earned); }
+.donut .not-earned { stroke:var(--ring-rest); }
 .donut text { fill:var(--text); text-anchor:middle; } .donut .total { font-size:28px; font-weight:700; } .donut .caption { font-size:11px; fill:var(--muted); }
 .facts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
 .facts .v { font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; } .facts .v.small { font-size:14px; }
@@ -191,7 +191,10 @@ label.inline { display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px;
 label.inline select { width:auto; padding:4px 6px; }
 .key { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:14px; font-size:12px; color:var(--muted); }
 .key i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
-.key .earned { background:var(--ink); } .key .lost { background:var(--lost); } .key .ungraded { background:color-mix(in srgb, var(--ink) 14%, var(--panel)); } .key .unknown { border:1.5px dashed var(--faint); }
+.key .earned { background:var(--ring-earned); } .key .not-earned { background:var(--ring-rest); }
+.key i { border:1px solid var(--ring-groove); }
+.no-marks { margin-top:18px; }
+.no-marks summary { cursor:pointer; padding:10px 4px; color:var(--muted); border-bottom:1px solid var(--line); }
 .policy { display:flex; flex-wrap:wrap; align-items:center; gap:10px 20px; margin:16px 0 0; font-size:13px; }
 .policy .help { flex-basis:100%; margin:0; font-size:12px; }
 .policy-read { color:var(--muted); min-width:0; overflow-wrap:anywhere; }
@@ -201,9 +204,10 @@ label.inline select { width:auto; padding:4px 6px; }
 .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin:20px 0 6px; }
 .tabs button { border:0; border-radius:0; background:none; padding:9px 10px; color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-1px; }
 .tabs button[aria-selected="true"] { color:var(--text); border-color:var(--ink); }
-.arow { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1.3fr) 84px 56px minmax(0,1fr) 92px; gap:10px; align-items:center; width:100%; padding:11px 4px; border:0; border-bottom:1px solid var(--line); border-radius:0; background:none; text-align:left; }
+.arow { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1.3fr) 84px 104px minmax(0,1fr) 92px; gap:10px; align-items:center; width:100%; padding:11px 4px; border:0; border-bottom:1px solid var(--line); border-radius:0; background:none; text-align:left; }
 .arow.head { font-size:12px; color:var(--muted); padding-top:4px; }
 .arow .num { text-align:right; font-variant-numeric:tabular-nums; }
+.arow .points { white-space:nowrap; }
 .kind { font-size:10px; padding:0 6px; border-radius:999px; border:1px solid var(--line); margin-left:6px; color:var(--muted); white-space:nowrap; }
 .kind.exam { border:1.5px solid var(--ink); color:var(--text); font-weight:700; }
 .srcm { font-size:11px; color:var(--muted); white-space:nowrap; }

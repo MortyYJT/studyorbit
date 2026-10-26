@@ -68,8 +68,8 @@ export interface AuxiliaryReadPorts {
   audit?: { read(input: ParsedCommandInput<'audit.list'>): Promise<CommandOutput<'audit.list'>> };
   /** M1 entities do not store source links except Task citations; never infer them by name. */
   entitySources?: (collection: 'courses' | 'assessments', id: string) => readonly string[];
-  /** Submitted/removed booleans from linked platform items; no item text or facts beyond these leave the store. */
-  platform?: (assessmentId: string) => { linked: boolean; submitted: boolean; removed: boolean };
+  /** Linked platform state and points only when exactly one current linked item states both; no item text is returned. */
+  platform?: (assessmentId: string) => { linked: boolean; submitted: boolean; removed: boolean; pointsEarned?: number; pointsPossible?: number };
 }
 type Gap = { code: 'MISSING_EVIDENCE' | 'UNSUPPORTED' | 'INCOMPLETE'; reference?: string };
 const unsupported = () => ({ items: [], evidence: [], coverage: { complete: false, gaps: [{ code: 'UNSUPPORTED' }] } });

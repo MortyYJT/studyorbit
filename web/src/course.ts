@@ -42,14 +42,17 @@ export function courseFigures(course: Course, items: readonly Assessment[], band
   return projectGrade(course, items, band);
 }
 
-type Grouped = Pick<Assessment, 'id' | 'weight' | 'score' | 'group' | 'readState'>;
+type Grouped = Pick<Assessment, 'id' | 'weight' | 'score' | 'group' | 'readState' | 'kind' | 'due'>;
 /** `earned` is undefined when a scored item's weight is unknown, as the ring then cannot size it either. */
 export interface AssessmentGroup<T> { key?: string; name?: string; weight?: number; earned?: number; items: T[] }
-/** Groups by grading component in list order; assessments without a component come last in one unnamed group. */
+const kindOrder = { ongoing: 0, quiz: 1, assignment: 2, exam: 3 };
+const dueTime = (item: { due?: string }) => item.due ? Date.parse(item.due) : Infinity;
+const byDue = (a: { due?: string }, b: { due?: string }) => dueTime(a) - dueTime(b);
+/** Groups retain component membership; loose items are grouped by kind to participate in the same order. */
 export function assessmentGroups<T extends Grouped>(items: readonly T[]): AssessmentGroup<T>[] {
-  const groups = new Map<string | undefined, AssessmentGroup<T>>();
+  const groups = new Map<string, AssessmentGroup<T>>();
   for (const item of items) {
-    const key = item.group?.key;
+    const key = item.group ? `component:${item.group.key}` : `loose:${item.kind ?? 'unknown'}`;
     const group = groups.get(key) ?? { ...(item.group ? { key: item.group.key, name: item.group.name, ...(item.group.weight !== undefined ? { weight: item.group.weight } : {}) } : {}), earned: 0, items: [] };
     // A final or hurdled component is one row: its effective weight (an owner override included) is the component's weight.
     if (item.group?.role === 'component') { if (item.weight === undefined) delete group.weight; else group.weight = item.weight; }
@@ -58,8 +61,12 @@ export function assessmentGroups<T extends Grouped>(items: readonly T[]): Assess
     if (item.score !== undefined) group.earned = item.weight === undefined || group.earned === undefined ? undefined : group.earned + item.weight * item.score / 100;
     groups.set(key, group);
   }
-  const loose = groups.get(undefined);
-  return [...[...groups.values()].filter(group => group !== loose), ...loose ? [loose] : []];
+  // Capture kind before sorting: a mixed component takes its first input item's kind (#192).
+  return [...groups.values()].map(group => ({ group, rank: kindOrder[group.items[0]!.kind!] ?? 4 }))
+    .map(entry => { entry.group.items.sort(byDue); return entry; })
+    .sort((a, b) => a.rank - b.rank || byDue(a.group.items[0]!, b.group.items[0]!)
+      || Number(a.group.key === undefined) - Number(b.group.key === undefined))
+    .map(entry => entry.group);
 }
 /** The unpublished share of a component, marked by import. */
 export function isRemainder(item: Pick<Assessment, 'id'> & { group?: Assessment['group'] }): boolean {

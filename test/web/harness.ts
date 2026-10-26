@@ -150,6 +150,8 @@ const assessments: Assessment[] = [
     group: { ...written, role: 'remainder' }, readState: { name: found, kind: found, weight: derived } }),
   assessment({ id: 'syn-a-exam', courseId: 'syn-course-a', name: 'Synthetic Systems final exam', kind: 'exam', weight: 30, hurdleMin: 40, isFinal: true, due: soon(5, '00:00:00Z'), status: 'not_started',
     group: { ...examGroup, role: 'component' }, readState: { name: found, kind: found, weight: found, isFinal: found, hurdleMin: found, due: derived } }),
+  // Worth no marks (#192): folded into the collapsed section at the bottom of the course page.
+  assessment({ id: 'syn-a-attendance', courseId: 'syn-course-a', name: 'Synthetic attendance hurdle', kind: 'ongoing', weight: 0, status: 'in_progress' }),
   assessment({ id: 'syn-b-lab', courseId: 'syn-course-b', name: 'Synthetic Lab Quiz', kind: 'quiz', weight: 15, score: 90, due: due(0, '05:00:00Z'), status: 'graded' }),
   // Weight unknown and never annotated.
   assessment({ id: 'syn-b-reflection', courseId: 'syn-course-b', name: 'Synthetic Weekly Reflection', kind: 'ongoing', due: soon(2), status: 'not_started' }),
@@ -179,6 +181,8 @@ const sourceItems: SourceItem[] = [
   source('syn-src-a-week', 'syn-course-a', 'canvas', 'material', 'Synthetic week notes', texts.week, { externalId: materialPage('synthetic-week-notes', 1) }),
   // Text the agent copied from the owner's Edge with source.record; the drawer labels quotes from it.
   source('syn-src-a-lecture', 'syn-course-a', 'canvas', 'material', 'Synthetic lecture 5', texts.lecture, { externalId: materialPage('synthetic-lecture-5', 1), copiedBy: 'agent' }),
+  // Points on the linked Canvas item let the course page show `36/50 · 72%` (#192).
+  source('syn-src-a-assign-1', 'syn-course-a', 'canvas', 'assignment', 'Synthetic Assignment 1', '', { facts: { due: due(-7), pointsPossible: 50, pointsEarned: 36, submitted: true } }),
   source('syn-src-b-policy', 'syn-course-b', 'canvas', 'announcement', 'Synthetic AI policy', texts.policy),
   source('syn-src-b-outline', 'syn-course-b', 'canvas', 'announcement', 'Synthetic Ethics Seminar outline', texts.ethics),
 ];
@@ -218,6 +222,7 @@ store.saveBatch({
   assessmentLinks: [
     { assessmentId: 'syn-a-assign-2', sourceItemId: 'syn-src-a-brief', origin: 'sync', at: linkedAt },
     { assessmentId: 'syn-a-quiz-2', sourceItemId: 'syn-src-a-outline', origin: 'sync', at: linkedAt },
+    { assessmentId: 'syn-a-assign-1', sourceItemId: 'syn-src-a-assign-1', origin: 'sync', at: linkedAt },
   ],
 });
 
