@@ -1,8 +1,9 @@
-## 1. Live probes (owner present, screen unlocked; Codex quota needed except 1.2 and 1.3)
+## 1. Live probes (owner present, screen unlocked; Codex quota needed except 1.2 and 1.3a)
 
 - [ ] 1.1 In the owner's Edge, open the `courses`, `tabs` and `groups` URLs for one selected course, select all and copy; record in `.local/` only (never in git) whether each returns the expected keys for the student session and what text precedes the JSON. Write the content-free result into `design.md` Open Questions. If an include or `tabs` is refused, switch D2 to the #193 URLs (and an agent listing of the navigation) before 3.x.
 - [ ] 1.2 Owner creates an Ed API token and runs `edstem auth login`; then `edstem units` and `edstem lessons <unit>` with JSON output for one course; record which fields hold due dates (content-free) in Open Questions.
-- [ ] 1.3 Fetch one Handbook assessment page by code and confirm the table is in the served HTML (not rendered by script); record the selector in Open Questions.
+- [x] 1.3a Fetch one Handbook assessment page by code: blocked by bot protection (block page, HTTP 200, about 1 KB), so the page is captured through the clipboard (#214).
+- [ ] 1.3b (Codex) In the owner's Edge, open one Handbook assessment page, select all and copy; record in `.local/` only what the copied text looks like around the assessment table (row and column separators), content-free, in Open Questions.
 - [ ] 1.4 Experiment (#206): two Codex jobs at once, each told to open its own Edge window; record whether either took the other's window or pointer. Set the default of `sync.parallel` from the result.
 - [ ] 1.5 After 9.2: count false "content updated" notices over two syncs with no real change.
 
@@ -18,13 +19,13 @@
 
 ## 4. Skeleton and routing
 
-- [ ] 4.1 `src/sync/handbook.ts`: fetch with timeout, parse rows into components (name, weight, timing, hurdle, quote); failure is non-fatal; tests on synthetic HTML.
+- [ ] 4.1 `src/sync/handbook.ts` and agent command `handbook.capture {jobId, courseKey}`: read the clipboard through the injectable reader, 1 MB cap, parse the copied page text into components (name, weight, timing, hurdle, quote), store the skeleton as a job stage, no raw text stored; failure is non-fatal; tests on synthetic copied text; update the MCP tool count test. Revisit the parser after 1.3b.
 - [ ] 4.2 `src/sync/routing.ts`: the fixed route table, unknown tabs `never` and listed, home-page links unlock `on-home-link`; tests for the routing scenarios.
 
 ## 5. Pipeline and agent jobs
 
 - [ ] 5.1 Orchestrator in `src/sync/agent-job.ts`: course list, then per course the stages in order; one retry per failed job; per-job records; 10-minute job bound and 20-minute-per-course run bound; job staleness from the run bound; `sync.parallel` (default 1); stage results in the store. Tests with a fake adapter for the sync-start, run-state and pipeline scenarios.
-- [ ] 5.2 Job prompts under `src/agent/jobs/` (main, quiz page, assignment page, saver, classifier, Ed fallback), each role · task · output, with only allowed URLs; delete `src/agent/course-reading.md` and its prompt test; tests that each prompt names its output tool and lists only routed URLs.
+- [ ] 5.2 Job prompts under `src/agent/jobs/` (main, quiz page, assignment page, saver, classifier, Ed fallback, Handbook capture), each role · task · output, with only allowed URLs; delete `src/agent/course-reading.md` and its prompt test; tests that each prompt names its output tool and lists only routed URLs (the Handbook prompt lists only the one Handbook assessment URL).
 - [ ] 5.3 Agent commands `course.map`, `quizzes.read`, `assignment.saved`, `materials.saved`, `items.classify`, each tied to an active job and course; remove `course.import` from the agent tools and update the command-registry tool-list test; rewrite the tests for "Import outside a run" and "Count shared across processes" into the stage-output scenarios; tests.
 
 ## 6. Classification and document build

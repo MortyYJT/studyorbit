@@ -1,7 +1,7 @@
 # 交接
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
-> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 的改法见 #165–#197，PRD 待更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/`（进行中：`layered-sync`，规格已合并，实现中）；决定看 `note/decisions.md`（#1–#213）；进度看 `note/product/roadmap.md`。
+> 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 的改法见 #165–#197，PRD 待更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/`（进行中：`layered-sync`，规格已合并，实现中）；决定看 `note/decisions.md`（#1–#214）；进度看 `note/product/roadmap.md`。
 
 - **最后更新：** 2026-10-26 晚，Claude。
 - **模式：** OpenSpec 变更 `layered-sync`（路线图 C-5，**并入了原来的 `canvas-check-item-policy`**），规格已合并，实现中：第 2 组已合并（#186），第 3 组在做（#185）。代码交给 dsh（DeepSeek）写（#209）；需要 Codex 的实测，等额度恢复后再做。
@@ -11,7 +11,7 @@
 
 ## 进行中：`layered-sync`（C-5，分层同步）
 
-- **来源**：你在对话里和 Claude 一起定的设计稿「分层同步 v0.3」（桌面 `Develop/墨大课业agent/架构图.drawio` 第 4 页，不进仓库）。决定 #199–#213。
+- **来源**：你在对话里和 Claude 一起定的设计稿「分层同步 v0.3」（桌面 `Develop/墨大课业agent/架构图.drawio` 第 4 页，不进仓库）。决定 #199–#214。
 - **要点**：
   - 代码一门一门地调度小任务：课程列表和作业数字（截止、开始时间、分值、得分、权重）走 Canvas 接口，Codex 复制、代码从剪贴板读（#208）。
   - Handbook 作暂定骨架（#203）；按导航栏分流页面（#201）；主 agent 只读主页。
@@ -19,7 +19,7 @@
   - 考核项收敛成 6 类，有计分规则（#202、#210–#212）；你点「开始」才读深层。
   - Ed 先试 edstem-cli（#207）；并行默认关，等实验结果（#206）。
 - **下一步（按顺序）**：
-  1. Handbook 由代码抓已获你同意（#213），任务 1.3、4.1 解除阻塞。
+  1. Handbook：代码直接抓被反爬拦了（10-26 实测），改为 Codex 复制、代码解析（#214）。4.1 可以先用合成数据写；1.3b 等 Codex 额度。
   2. 第 2 组（数据模型和存储）：issue #184 → PR #186 已合并（e9ab431）。dsh 写，Claude 子代理审了两轮（第 1 轮 1 个阻塞 + 4 个非阻塞，dsh 返工 1 次），CI 通过。
   3. 第 3 组（Canvas 接口剪贴板读取，`canvas.capture`）：issue #185 已派给 dsh，clone `../unimelb-coursework-agent-layered-model`，分支 `dsh/canvas-capture`。之后按组继续：4.2 路由、5.x 流水线……
   4. dsh 的 DeepSeek key 放在 `~/.zshenv` 的 `DEEPSEEK_API_KEY`（10-26 换过一次）；报 `AUTH` 错就是 key 失效。
