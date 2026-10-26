@@ -382,7 +382,8 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
       aiPolicy: coursePolicy,
       pages: { ...course.pages },
       platforms: { canvas: groups ? 'read' : blocked.has('canvas') ? 'blocked' : 'absent',
-        ed: edStage ? 'read' : blocked.has('ed') ? 'blocked' : 'absent' },
+        // Only a full CLI read lists every lesson; the page fallback may be partial, so it never lets import retire Ed rows (#216).
+        ed: record(edStage)?.via === 'api' ? 'read' : blocked.has('ed') ? 'blocked' : 'absent' },
       componentsComplete: skeleton !== undefined && everyGradedItemHasComponent,
     },
     components,

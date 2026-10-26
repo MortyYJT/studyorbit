@@ -268,6 +268,15 @@ describe('build the course document from the pipeline stages (layered-sync task 
     expect(buildCourseDocument({ course, stages: {}, now, blocked: ['canvas'] }).document.course.platforms.canvas).toBe('blocked');
   });
 
+  it('reports Ed read only for a full CLI read, so a page-fallback sync never retires Ed lessons (#216)', () => {
+    const cli = { via: 'api', source: 'edstem-cli', unitId: 1, files: [],
+      lessons: [{ id: '7001', title: 'Synthetic lesson', module: '', dueAt: null, url: 'https://edstem.org/au/courses/8001/lessons/7001' }] };
+    const page = { via: 'ax', source: 'edstem-page', lessons: [{ title: 'Synthetic lesson', quote: 'Synthetic lesson' }] };
+    expect(buildCourseDocument({ course, stages: { ed: cli }, now }).document.course.platforms.ed).toBe('read');
+    expect(buildCourseDocument({ course, stages: { ed: page }, now }).document.course.platforms.ed).toBe('absent');
+    expect(buildCourseDocument({ course, stages: {}, now, blocked: ['ed'] }).document.course.platforms.ed).toBe('blocked');
+  });
+
   it('is complete only for a full groups stage and a skeleton covering every graded item', () => {
     const stages = {
       skeleton: skeletonStage([{ name: 'Work', weight: 20 }]),
@@ -387,6 +396,23 @@ describe('build the course document from the pipeline stages (layered-sync task 
     expect(typeof projection.gradedWeight).toBe('number');
     expect(Number.isFinite(projection.gradedWeight)).toBe(true);
     expect(saved.checked.warnings).toEqual([{ code: 'WEIGHT_SUM', sum: 90 }]);
+  });
+
+  it('retires an Ed lesson that disappeared only after a full CLI read, never after a page fallback (#216)', () => {
+    const lessons = [
+      { id: '7101', title: 'Synthetic weekly workshop', dueAt: '2026-10-30T12:59:00Z' },
+      { id: '7102', title: 'Synthetic removed lesson', dueAt: '2026-11-06T12:59:00Z' },
+    ];
+    const again = (store: SqliteRepository, ed: unknown) => {
+      const checked = validateCourseDocument(build({ ed }).document, { final: true, now });
+      importCourseDocument(store, checked.document!, { at: now });
+      return store.loadAssessment(assessmentId(term, `${code}:ed:lesson:7102`));
+    };
+    const fallback = save(build({ ed: edApiStage(lessons) })).store;
+    expect(again(fallback, { via: 'ax', source: 'edstem-page', lessons: [{ title: 'Synthetic weekly workshop', dueAt: '2026-10-30T12:59:00Z', quote: 'Synthetic weekly workshop' }] })?.retired)
+      .not.toBe(true);
+    const cli = save(build({ ed: edApiStage(lessons) })).store;
+    expect(again(cli, edApiStage([lessons[0]!]))?.retired).toBe(true);
   });
 
   it('stores an ungraded or unclassified dated Ed lesson as ungraded weight 0, outside planning, with no retry', () => {
