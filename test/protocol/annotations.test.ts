@@ -248,6 +248,36 @@ it('review 6: planner shares effective kind, name and due resolution after evide
   expect(plan).toMatchObject({ ok: true, data: { deadlines: [], work: expect.arrayContaining([expect.objectContaining({ workId: 'a', title: 'Synthetic assessment' })]) } });
   if (plan.ok) expect((plan.data as { work: { workId: string; due?: string }[] }).work.find(item => item.workId === 'a')?.due).toBeUndefined();
 });
+it('assessments.list returns points only from exactly one current linked item stating both', async () => {
+  const f = await fixture();
+  const platform = async () => {
+    const result = await f.call('assessments.list', { courseId: 'c' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('assessments.list failed');
+    return Object.fromEntries((result.data as { items: { id: string; platform?: unknown }[] }).items.map(item => [item.id, item.platform]));
+  };
+  const link = (assessmentId: string, sourceItemId: string) => f.store.appendAssessmentLink({ assessmentId, sourceItemId, origin: 'sync', at: '2026-01-01T00:00:00Z' });
+  const facts = (id: string, points: { pointsEarned?: number; pointsPossible?: number }) =>
+    f.store.saveSourceItem({ ...f.store.loadSourceItem(id)!, facts: points });
+  const flags = { linked: true, submitted: false, removed: false };
+  facts('item-0', { pointsEarned: 4, pointsPossible: 5 });
+  link('a', 'item-0');
+  expect(await platform()).toMatchObject({ a: { ...flags, pointsEarned: 4, pointsPossible: 5 } });
+  // Partial facts on different items cannot be combined into a score.
+  facts('item-1', { pointsEarned: 4 }); facts('item-2', { pointsPossible: 5 });
+  link('b', 'item-1'); link('b', 'item-2');
+  expect((await platform()).b).toEqual(flags);
+  // Incomplete items do not make a single complete candidate ambiguous; zero is a stated score.
+  facts('item-1', { pointsEarned: 0, pointsPossible: 5 });
+  expect((await platform()).b).toEqual({ ...flags, pointsEarned: 0, pointsPossible: 5 });
+  // Even equal points from two complete candidates are ambiguous.
+  facts('item-2', { pointsEarned: 0, pointsPossible: 5 });
+  expect((await platform()).b).toEqual(flags);
+  // Moving a link removes its points from the old assessment and creates ambiguity in the new one.
+  link('b', 'item-0');
+  expect(await platform()).toEqual({ a: { linked: false, submitted: false, removed: false }, b: flags });
+});
+
 it('assessments.list derives platform submitted and removed flags from currently linked items only', async () => {
   const f = await fixture();
   const platform = async () => Object.fromEntries(((await f.call('assessments.list', { courseId: 'c' })) as { data: { items: { id: string; platform?: unknown }[] } })
