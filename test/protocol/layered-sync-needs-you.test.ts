@@ -144,6 +144,21 @@ describe('layered-sync 9.2-9.3 reads and file.open (issue #225)', () => {
     expect(everything.items).toHaveLength(1);
   });
 
+  it('offers every graded component of the course for an unmatched conflict, including components stored as items, but not the synthetic ones', async () => {
+    const f = setup();
+    const group = (key: string, name: string, role: 'item' | 'remainder' | 'component') => ({ key, name, weight: 20, role });
+    f.store.saveAssessment({ id: 'item-1', courseId: course.id, name: 'Synthetic Quiz 1', kind: 'quiz', weight: 10, isFinal: false,
+      status: 'not_started', group: group(`${course.code}:quizzes`, 'Quizzes', 'item') });
+    f.store.saveAssessment({ id: 'rest-1', courseId: course.id, name: 'Labs remainder', kind: 'assignment', weight: 20, isFinal: false,
+      status: 'not_started', group: group(`${course.code}:labs`, 'Labs', 'remainder') });
+    f.store.saveAssessment({ id: 'ungraded-1', courseId: course.id, name: 'Synthetic survey', kind: 'ungraded', weight: 0, isFinal: false,
+      status: 'not_started', group: { key: `${course.code}:ungraded`, name: 'Ungraded', weight: 0, role: 'item' } });
+    reconcileConflicts(f.store, course.id, [{ field: 'unmatched', canvasAssignmentId: '700009',
+      canvasValue: { id: '700009', name: 'Synthetic Assignment 9', due: null } }], new Date(Date.now() - 60_000).toISOString(), true);
+    const open = data<{ items: ConflictItem[] }>(await f.call('conflicts.list', { courseId: course.id, state: 'open', limit: 10 }));
+    expect(open.items[0]!.components!.map(component => component.key).sort()).toEqual([`${course.code}:labs`, `${course.code}:quizzes`]);
+  });
+
   it('lists weight and unmatched conflicts with display names, hides a resolved conflict as open, and shows it in all', async () => {
     const f = setup();
     f.store.saveAssessment({ id: 'component:assignments', courseId: course.id, name: 'Assignments', kind: 'assignment',
