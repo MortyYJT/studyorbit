@@ -25,7 +25,8 @@ export const autonomyCommands = {
   'autonomy.override.set': { input: z.strictObject({ assessmentId: AuditId, level: WorkLevel }), output: recorded },
   'autonomy.override.clear': { input: z.strictObject({ assessmentId: AuditId }), output: recorded },
 } as const;
-const Kind = z.enum(['quiz', 'ongoing', 'assignment', 'exam']);
+const Kind = z.preprocess(value => value === 'ongoing' ? 'participation' : value,
+  z.enum(['exam', 'quiz', 'assignment', 'presentation', 'participation', 'ungraded']));
 /** Anonymous L0 read; kept apart from the owner writes above so it never needs the session. */
 export const autonomyReads = {
   'autonomy.read': { input: z.strictObject({ courseId: AuditId }), output: z.strictObject({ courseId: AuditId,

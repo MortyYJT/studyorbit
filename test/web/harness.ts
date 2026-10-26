@@ -151,10 +151,10 @@ const assessments: Assessment[] = [
   assessment({ id: 'syn-a-exam', courseId: 'syn-course-a', name: 'Synthetic Systems final exam', kind: 'exam', weight: 30, hurdleMin: 40, isFinal: true, due: soon(5, '00:00:00Z'), status: 'not_started',
     group: { ...examGroup, role: 'component' }, readState: { name: found, kind: found, weight: found, isFinal: found, hurdleMin: found, due: derived } }),
   // Worth no marks (#192): folded into the collapsed section at the bottom of the course page.
-  assessment({ id: 'syn-a-attendance', courseId: 'syn-course-a', name: 'Synthetic attendance hurdle', kind: 'ongoing', weight: 0, status: 'in_progress' }),
+  assessment({ id: 'syn-a-attendance', courseId: 'syn-course-a', name: 'Synthetic attendance hurdle', kind: 'participation', weight: 0, status: 'in_progress' }),
   assessment({ id: 'syn-b-lab', courseId: 'syn-course-b', name: 'Synthetic Lab Quiz', kind: 'quiz', weight: 15, score: 90, due: due(0, '05:00:00Z'), status: 'graded' }),
   // Weight unknown and never annotated.
-  assessment({ id: 'syn-b-reflection', courseId: 'syn-course-b', name: 'Synthetic Weekly Reflection', kind: 'ongoing', due: soon(2), status: 'not_started' }),
+  assessment({ id: 'syn-b-reflection', courseId: 'syn-course-b', name: 'Synthetic Weekly Reflection', kind: 'participation', due: soon(2), status: 'not_started' }),
   assessment({ id: 'syn-b-essay', courseId: 'syn-course-b', name: 'Synthetic Essay', kind: 'assignment', weight: 25, due: soon(4), status: 'not_started' }),
   assessment({ id: 'syn-b-exam', courseId: 'syn-course-b', name: 'Synthetic Ethics final exam', kind: 'exam', weight: 50, isFinal: true, due: soon(23, '00:00:00Z'), status: 'not_started' }),
 ];

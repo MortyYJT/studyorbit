@@ -81,6 +81,8 @@ it('parses owner values per field and rejects invalid input instead of defaultin
   expect(() => ownerValue('weight', '120')).toThrow();
   expect(() => ownerValue('weight', ' ')).toThrow();
   expect(ownerValue('kind', 'quiz')).toBe('quiz');
+  for (const kind of ['exam', 'quiz', 'assignment', 'presentation', 'participation', 'ungraded']) expect(ownerValue('kind', kind)).toBe(kind);
+  expect(ownerValue('kind', 'ongoing')).toBe('participation');
   expect(() => ownerValue('kind', 'essay')).toThrow();
   expect(ownerValue('isFinal', 'true')).toBe(true);
   // The wall-clock time is read in the planning time zone, not the browser's.

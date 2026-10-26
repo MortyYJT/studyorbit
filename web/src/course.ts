@@ -45,7 +45,7 @@ export function courseFigures(course: Course, items: readonly Assessment[], band
 type Grouped = Pick<Assessment, 'id' | 'weight' | 'score' | 'group' | 'readState' | 'kind' | 'due'>;
 /** `earned` is undefined when a scored item's weight is unknown, as the ring then cannot size it either. */
 export interface AssessmentGroup<T> { key?: string; name?: string; weight?: number; earned?: number; items: T[] }
-const kindOrder = { ongoing: 0, quiz: 1, assignment: 2, exam: 3 };
+const kindOrder: Record<string, number> = { participation: 0, quiz: 1, assignment: 2, exam: 3 };
 const dueTime = (item: { due?: string }) => item.due ? Date.parse(item.due) : Infinity;
 const byDue = (a: { due?: string }, b: { due?: string }) => dueTime(a) - dueTime(b);
 /** Groups retain component membership; loose items are grouped by kind to participate in the same order. */

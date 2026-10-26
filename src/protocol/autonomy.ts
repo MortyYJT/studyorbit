@@ -41,7 +41,7 @@ type AutonomyRepository = Pick<Repository, 'loadCourse' | 'loadAssessment' | 're
   & Partial<Pick<CurrentStateReader, 'query'>>;
 type OwnerCommand = Exclude<AutonomyCommand, 'autonomy.check' | 'autonomy.read'>;
 
-export function required(kind: unknown): 1 | 2 { return kind === 'quiz' || kind === 'ongoing' ? 1 : 2; }
+export function required(kind: unknown): 1 | 2 { return kind === 'quiz' || kind === 'participation' || kind === 'ongoing' ? 1 : 2; }
 export function cap(policy?: Policy): 0 | 2 { return policy === 'prohibited' ? 0 : 2; }
 export function effective(defaultLevel: WorkLevel, override?: WorkLevel, policy?: Policy): WorkLevel {
   return Math.min(override ?? defaultLevel, cap(policy)) as WorkLevel;
