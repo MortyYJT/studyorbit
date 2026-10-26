@@ -77,7 +77,7 @@ it('upgrades every historical operation and preserves entities, runs and histori
     const kinds = ['created', 'updated', 'updated', 'updated', 'deleted'];
     expect(fixture(file, [], 'SELECT json FROM change_event ORDER BY seq').map((row: { json: string }) => JSON.parse(row.json))).toEqual(oldEvents.map((event: object, index: number) => ({ ...event, kind: kinds[index] })));
   } finally { store.close(); }
-  expect(fixture(file)).toEqual([{ user_version: 5 }]);
+  expect(fixture(file)).toEqual([{ user_version: 6 }]);
   expect(tables(file)).toEqual([{ name: 'change_event', type: 'table' }]);
   const bytes = readFileSync(file);
   const reopened = new SqliteRepository(file); reopened.close();
