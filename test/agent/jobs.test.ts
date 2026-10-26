@@ -184,6 +184,43 @@ describe('pipeline job prompts (layered-sync task 5.2)', () => {
     expect(text.toLowerCase()).toContain('echo');
   });
 
+  it('classifier: lists dated Ed lessons with stage ids and module, never a URL, quote or undated lesson', () => {
+    const apiContext: PipelineJobContext = { ...context, stages: { ...stages, ed: {
+      via: 'api', source: 'edstem-cli', unitId: 4101, files: [],
+      lessons: [
+        { id: '7001', title: 'Synthetic Ed quiz', module: 'Synthetic module', dueAt: '2026-10-30T12:59:00Z',
+          url: 'https://edstem.org/au/courses/800001/lessons/7001' },
+        { id: '7002', title: 'Synthetic undated Ed lesson', module: 'Synthetic module', dueAt: null,
+          url: 'https://edstem.org/au/courses/800001/lessons/7002' },
+      ],
+    } } };
+    const text = prompt(specFor('classify'), apiContext);
+    expect(text).toContain('Ed lessons');
+    expect(text).toContain('[id ed:7001] Synthetic Ed quiz');
+    expect(text).toContain('Synthetic module');
+    expect(text).not.toContain('Synthetic undated Ed lesson');
+    expect(text).not.toMatch(/https?:\/\//);
+    expect(text).toContain('may be quizzes or assignments');
+    expect(text).toContain('weekly workshops');
+
+    const fallbackContext: PipelineJobContext = { ...context, stages: { ...stages, ed: {
+      via: 'ax', source: 'edstem-page',
+      lessons: [
+        { title: 'Synthetic fallback dated one', dueAt: '2026-10-30T12:59:00Z', quote: 'Synthetic quote that must not leak' },
+        { title: 'Synthetic fallback undated', quote: 'Synthetic undated quote' },
+        { title: 'Synthetic fallback dated two', dueAt: '2026-11-06T12:59:00Z', quote: 'Synthetic second quote' },
+      ],
+    } } };
+    const fallback = prompt(specFor('classify'), fallbackContext);
+    expect(fallback).toContain('[id ed:1] Synthetic fallback dated one');
+    expect(fallback).toContain('[id ed:3] Synthetic fallback dated two');
+    expect(fallback).not.toContain('[id ed:2]');
+    expect(fallback).not.toContain('Synthetic fallback undated');
+    expect(fallback).not.toContain('Synthetic quote that must not leak');
+    expect(fallback).not.toContain('Synthetic undated quote');
+    expect(fallback).not.toMatch(/https?:\/\//);
+  });
+
   it('classifier: lists no URL and carries the compact list without page text', () => {
     const text = prompt(specFor('classify'), context);
     expect(text).not.toMatch(/https?:\/\//);

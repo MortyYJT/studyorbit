@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { AgentTool } from '../adapter.js';
 import { packageRoot } from '../../config/data-dir.js';
 import type { JobKind, JobSpec, PipelineJobContext } from '../../sync/agent-job.js';
+import { edLessonEntries, type EdStage } from '../../sync/ed-cli.js';
 
 /**
  * The layered pipeline's short job prompts (layered-sync task 5.2, #200).
@@ -106,6 +107,7 @@ function pageNote(spec: JobSpec): string | undefined {
  */
 function compactList(ctx?: PipelineJobContext): string {
   const groups = groupRows(ctx?.stages.groups);
+  const ed = edRows(ctx?.stages.ed, ctx?.course.code);
   const quizzes = quizRows(ctx?.stages.quizzes);
   const components = componentRows(ctx?.stages.skeleton);
   return [
@@ -113,6 +115,9 @@ function compactList(ctx?: PipelineJobContext): string {
     '',
     'Canvas items:',
     ...(groups.length ? groups : ['- none']),
+    '',
+    'Ed lessons (dated lessons only; an Ed lesson is a quiz, an assignment or ungraded):',
+    ...(ed.length ? ed : ['- none']),
     '',
     'Quizzes (Quiz lines add flags to the Canvas items above; they are not extra entries):',
     ...(quizzes.length ? quizzes : ['- none']),
@@ -137,6 +142,18 @@ function groupRows(stage: unknown): string[] {
     });
     return (items.length ? items : ['(no items)'])
       .map(item => `- ${item} — group ${name}${weight === undefined ? '' : ` (weight ${weight})`}`);
+  });
+}
+
+/** Dated Ed lessons with the id the classifier echoes and the module when the stage knows it; never a URL or quote. */
+function edRows(stage: unknown, courseCode: string | undefined): string[] {
+  const value = record(stage);
+  if (!value || (value.via !== 'api' && value.via !== 'ax') || !Array.isArray(value.lessons)) return [];
+  return edLessonEntries(value as unknown as EdStage, courseCode ?? '').flatMap(entry => {
+    const title = text(entry.title);
+    if (!title) return [];
+    const module = entry.module ? text(entry.module) : undefined;
+    return [`- [id ${entry.id}] ${title}${module ? ` — module ${module}` : ''}`];
   });
 }
 

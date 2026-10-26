@@ -1,4 +1,5 @@
 import type { GroupsStage } from './canvas-api.js';
+import type { EdLessonEntry } from './ed-cli.js';
 import type { SkeletonStage } from './handbook.js';
 import type { ItemsClassifyInput, QuizzesReadInput } from '../protocol/sync.js';
 
@@ -51,6 +52,8 @@ export interface GradeInput {
   classification?: ItemsClassifyInput;
   /** The quiz flags the classifier saw; weights still decide, so this does not override the grading rule. */
   quizzes?: QuizzesReadInput;
+  /** Dated Ed lessons; they have no Canvas group, so only a weighted classified component makes them graded. */
+  edLessons?: readonly EdLessonEntry[];
   resolved?: ResolvedChoices;
 }
 
@@ -214,6 +217,23 @@ export function gradeItems(input: GradeInput): GradeResult {
           canvasValue: { id: assignment.id, name: assignment.name, due: assignment.due.value } });
       }
     }
+  }
+
+  // An Ed lesson has no Canvas group and no points: it counts only when the classifier names a component
+  // with a weight above 0. A duplicate of a Canvas item stays with Canvas, which carries points and state.
+  const canvasNames = new Set((input.groups?.groups ?? []).flatMap(group => group.assignments.map(item => normalizeName(item.name))));
+  for (const lesson of input.edLessons ?? []) {
+    if (canvasNames.has(normalizeName(lesson.title))) continue;
+    const classification = classified.get(lesson.id);
+    const component = classification && classification.category !== 'ungraded' && classification.evidence.trim()
+      ? matchComponent(classification.component, byName) : undefined;
+    const graded = component?.weight !== undefined && component.weight > 0;
+    if (!graded || !classification || !component) {
+      items.push({ id: lesson.id, name: lesson.title, category: 'ungraded', graded: false });
+      continue;
+    }
+    items.push({ id: lesson.id, name: lesson.title, category: classification.category, graded: true,
+      componentKey: component.key, effectiveComponentWeight: component.weight });
   }
 
   return { items, conflicts: [...weightConflicts.values(), ...unmatched] };
