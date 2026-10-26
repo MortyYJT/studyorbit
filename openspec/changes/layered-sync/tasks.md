@@ -25,7 +25,8 @@
 ## 5. Pipeline and agent jobs
 
 - [ ] 5.1 Orchestrator in `src/sync/agent-job.ts`: course list, then per course the stages in order; one retry per failed job; per-job records; 10-minute job bound and 20-minute-per-course run bound; job staleness from the run bound; `sync.parallel` (default 1); stage results in the store. Tests with a fake adapter for the sync-start, run-state and pipeline scenarios.
-- [ ] 5.2 Job prompts under `src/agent/jobs/` (main, quiz page, assignment page, saver, classifier, Ed fallback, Handbook capture), each role · task · output, with only allowed URLs; delete `src/agent/course-reading.md` and its prompt test; tests that each prompt names its output tool and lists only routed URLs (the Handbook prompt lists only the one Handbook assessment URL).
+- [ ] 5.2 Job prompts under `src/agent/jobs/` (main, quiz page, assignment page, saver, classifier, Ed fallback, Handbook capture), each role · task · output, with only allowed URLs; tests that each prompt names its output tool and lists only routed URLs (the Handbook prompt lists only the one Handbook assessment URL).
+- [ ] 5.2b Delete `src/agent/course-reading.md`, `courseReadingPrompt` and its prompt test when production switches to the pipeline in `src/protocol/production.ts` (after 5.3 and 6.2; moved out of 5.2 because production still runs the legacy job).
 - [ ] 5.3 Agent commands `course.map`, `quizzes.read`, `assignment.saved`, `materials.saved`, `items.classify`, each tied to an active job and course; remove `course.import` from the agent tools and update the command-registry tool-list test; rewrite the tests for "Import outside a run" and "Count shared across processes" into the stage-output scenarios; tests.
 
 ## 6. Classification and document build
