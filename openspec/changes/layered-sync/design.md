@@ -82,5 +82,5 @@ Additive migration only. Existing assessments keep their values; `ongoing` reads
 
 - Do `include[]=assignments&include[]=submission` and `/tabs` work for the student session, and what does Edge copy from a JSON page? (task 1.1)
 - Can the owner create an Ed API token, and does `edstem-cli` return lessons with due dates for these courses? (task 1.2)
-- Is the Handbook fetch by code acceptable (public page, no login)? Proposed here; the owner has not answered it. Tasks 1.3 and 4.1 wait for this answer.
+- Is the Handbook fetch by code acceptable (public page, no login)? Answered: approved by the owner (#213).
 - Do parallel Codex jobs in separate Edge windows interfere? (task 1.4)
