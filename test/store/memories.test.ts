@@ -18,7 +18,7 @@ it('migration 005 adds memories; rows survive reopening and existing tables are 
   first.saveMemory(memory);
   first.close();
   // PRAGMA user_version is a big-endian 32-bit integer at SQLite header offset 60.
-  expect(readFileSync(file).readUInt32BE(60)).toBe(5);
+  expect(readFileSync(file).readUInt32BE(60)).toBe(6);
   const second = new SqliteRepository(file);
   try {
     expect(second.loadModule('m')).toMatchObject({ id: 'm' });

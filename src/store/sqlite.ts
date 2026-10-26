@@ -12,7 +12,8 @@ import {
   EstimateSchema, type Estimate, StartTimeSchema, type StartTime,
   TimeLogSchema, type TimeLog, CourseAutonomySchema, type CourseAutonomy,
   ConversationSchema, type Conversation, MessageSchema, type Message,
-  PendingConfirmationSchema, type PendingConfirmation, PracticeAttemptSchema, type PracticeAttempt
+  PendingConfirmationSchema, type PendingConfirmation, PracticeAttemptSchema, type PracticeAttempt,
+  SavedFileSchema, type SavedFile, SyncConflictSchema, type SyncConflict
 } from '../domain/schemas.js';
 import { queryPlan, type Collection, type QueryInput, type QueryItem, type QueryPage, type CurrentStateReader } from './queries.js';
 import { mkdirSync } from 'node:fs';
@@ -118,6 +119,30 @@ export class SqliteRepository implements Repository, CurrentStateReader {
   deleteManualTask(id: string): void { this.db.prepare("DELETE FROM tasks WHERE id = ? AND json_extract(json, '$.source') = 'manual'").run(id); }
   recordRun(value: Run): void { this.saveBatch({ runs: [value] }); }
   loadRun(id: string): Run | undefined { return this.load('runs', 'id', id, RunSchema); }
+  saveSavedFile(value: SavedFile): void { this.write('saved_files', SavedFileSchema, value, ['courseId', 'assessmentId', 'savedAt']); }
+  loadSavedFile(id: string): SavedFile | undefined { return this.load('saved_files', 'id', id, SavedFileSchema); }
+  /** Newest first; course materials and assessment files both belong to the course. */
+  listSavedFiles(courseId: string): SavedFile[] {
+    return this.db.prepare('SELECT json FROM saved_files WHERE courseId = ? ORDER BY savedAt DESC, id').all(courseId)
+      .map(row => SavedFileSchema.parse(JSON.parse(row.json as string)));
+  }
+  listSavedFilesForAssessment(assessmentId: string): SavedFile[] {
+    return this.db.prepare('SELECT json FROM saved_files WHERE assessmentId = ? ORDER BY savedAt DESC, id').all(assessmentId)
+      .map(row => SavedFileSchema.parse(JSON.parse(row.json as string)));
+  }
+  saveSyncConflict(value: SyncConflict): void { this.write('sync_conflicts', SyncConflictSchema, value, ['courseId', 'field', 'state', 'checkedAt']); }
+  loadSyncConflict(id: string): SyncConflict | undefined { return this.load('sync_conflicts', 'id', id, SyncConflictSchema); }
+  /** Newest check first. */
+  listSyncConflicts(courseId: string): SyncConflict[] {
+    return this.db.prepare('SELECT json FROM sync_conflicts WHERE courseId = ? ORDER BY checkedAt DESC, id').all(courseId)
+      .map(row => SyncConflictSchema.parse(JSON.parse(row.json as string)));
+  }
+  listOpenSyncConflicts(courseId?: string): SyncConflict[] {
+    const rows = courseId === undefined
+      ? this.db.prepare("SELECT json FROM sync_conflicts WHERE state = 'open' ORDER BY checkedAt DESC, id").all()
+      : this.db.prepare("SELECT json FROM sync_conflicts WHERE courseId = ? AND state = 'open' ORDER BY checkedAt DESC, id").all(courseId);
+    return rows.map(row => SyncConflictSchema.parse(JSON.parse(row.json as string)));
+  }
 
   /** Identifiers here are fixed by repository methods, never caller-supplied SQL. */
   private append<T>(table: string, schema: EntitySchema<T>, input: T, columns: readonly string[]): void {
@@ -212,14 +237,14 @@ export class SqliteRepository implements Repository, CurrentStateReader {
 
   /** Filter by the same append-order precedence used by annotation reads, before pagination. */
   queryEffectiveAssessments(input: QueryInput<'assessments'>, resolveKind?: (id: string) => string | null): QueryPage<QueryItem<'assessments'>> {
-    const plan = queryPlan('assessments', input);
     const latest = `(SELECT a.json FROM annotations a WHERE a.entity = 'assessment' AND a.entityId = assessments.id
       AND json_extract(a.json, '$.field') = 'kind'
       ORDER BY CASE json_extract(a.json, '$.origin') WHEN 'owner' THEN 0 ELSE 1 END, a.seq DESC LIMIT 1)`;
     // A recorded null explicitly clears classification instead of falling through to the platform kind.
     if (resolveKind) this.db.function('effective_assessment_kind', id => resolveKind(String(id)));
     const kind = resolveKind ? 'effective_assessment_kind(assessments.id)' : `(CASE WHEN ${latest} IS NOT NULL THEN json_extract(${latest}, '$.value') ELSE json_extract(assessments.json, '$.kind') END)`;
-    const rows = this.db.prepare(plan.sql.replace("json_extract(json, '$.kind')", kind)).all(...plan.params);
+    const plan = queryPlan('assessments', input, kind);
+    const rows = this.db.prepare(plan.sql).all(...plan.params);
     const values = rows.map(row => AssessmentSchema.parse(JSON.parse(row.json as string)));
     const items = values.slice(0, plan.limit);
     return { items, ...(values.length > plan.limit ? { nextCursor: plan.cursorFor(items.at(-1)!.id) } : {}) };

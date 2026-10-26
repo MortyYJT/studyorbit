@@ -225,7 +225,7 @@ function Drawer({ store, state, item, policy, t, date, timeZone, onClose, onPres
       <Marker field={field} store={store} state={state} t={t}>{close => <div className="verdicts">
         <button disabled={busy} onClick={() => void store.confirm('assessment', item.id, name, field!.annotationId!).then(ok => ok && close())}>{c.confirmValue}</button>
         <form onSubmit={event => void submit(event, value => store.replace('assessment', item.id, name, ownerValue(name, value, timeZone), field!.annotationId!))}>
-          {name === 'kind' ? <select name="value" aria-label={c.useMine}>{(['quiz', 'ongoing', 'assignment', 'exam'] as const).map(kind => <option key={kind} value={kind}>{c.kinds[kind]}</option>)}</select>
+          {name === 'kind' ? <select name="value" aria-label={c.useMine}>{(['quiz', 'participation', 'assignment', 'presentation', 'exam', 'ungraded'] as const).map(kind => <option key={kind} value={kind}>{c.kinds[kind]}</option>)}</select>
             : name === 'isFinal' ? <select name="value" aria-label={c.useMine}><option value="true">{c.yes}</option><option value="false">{c.no}</option></select>
             : <input name="value" aria-label={c.useMine} required type={name === 'due' ? 'datetime-local' : name === 'name' ? 'text' : 'number'} min="0" max="100" step={name === 'due' ? 60 : 'any'} />}
           <button type="submit" disabled={busy}>{c.useMine}</button></form></div>}</Marker></div>;

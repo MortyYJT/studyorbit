@@ -19,10 +19,10 @@ vi.mock('../../web/src/course-store.js', () => ({ CourseStore: class {
   subscribe = () => () => {};
   getSnapshot = () => fixture.state;
 } }));
-const item = (id: string, kind?: 'ongoing' | 'quiz' | 'assignment' | 'exam', due?: string, weight: number | undefined = 10) => ({
+const item = (id: string, kind?: 'participation' | 'quiz' | 'assignment' | 'exam', due?: string, weight: number | undefined = 10) => ({
   id, courseId: 'c', name: id, kind, due, weight, isFinal: kind === 'exam', status: 'not_started' as const,
 });
-const grouped = (id: string, kind?: 'ongoing' | 'quiz' | 'assignment' | 'exam', due?: string) => ({
+const grouped = (id: string, kind?: 'participation' | 'quiz' | 'assignment' | 'exam', due?: string) => ({
   ...item(id, kind, due), group: { key: id, name: id, weight: 10 },
 });
 
@@ -33,9 +33,9 @@ it('orders components by kind then due time, and items by actual due instant wit
     { ...item('offset-later', 'quiz', '2026-04-01T01:00:00Z'), group: quiz },
     { ...item('later', 'quiz', '2026-05-01T00:00:00Z'), group: quiz },
     { ...item('earlier', 'quiz', '2026-04-01T11:00:00+11:00'), group: quiz },
-    grouped('ongoing', 'ongoing'), grouped('early-quiz', 'quiz', '2026-03-01T00:00:00Z')];
+    grouped('participation', 'participation'), grouped('early-quiz', 'quiz', '2026-03-01T00:00:00Z')];
   expect(assessmentGroups(items).map(group => [group.key, group.items.map(row => row.id)])).toEqual([
-    ['ongoing', ['ongoing']], ['early-quiz', ['early-quiz']], ['quiz', ['earlier', 'offset-later', 'later', 'undated']], ['undated-quiz', ['undated-quiz']],
+    ['participation', ['participation']], ['early-quiz', ['early-quiz']], ['quiz', ['earlier', 'offset-later', 'later', 'undated']], ['undated-quiz', ['undated-quiz']],
     ['assignment', ['assignment']], ['exam', ['exam']], ['unknown', ['unknown']],
   ]);
   expect(items[0]!.id).toBe('unknown');
@@ -44,8 +44,8 @@ it('orders components by kind then due time, and items by actual due instant wit
 it('orders ungrouped items by kind and keeps a mixed component at its first item kind', () => {
   const mixed = { key: 'mixed', name: 'Mixed', weight: 20 };
   expect(assessmentGroups([item('exam', 'exam'), { ...item('mixed-quiz', 'quiz'), group: mixed },
-    { ...item('mixed-ongoing', 'ongoing', '2026-01-01T00:00:00Z'), group: mixed }, item('ongoing', 'ongoing')])
-    .flatMap(group => group.items.map(row => row.id))).toEqual(['ongoing', 'mixed-ongoing', 'mixed-quiz', 'exam']);
+    { ...item('mixed-ongoing', 'participation', '2026-01-01T00:00:00Z'), group: mixed }, item('participation', 'participation')])
+    .flatMap(group => group.items.map(row => row.id))).toEqual(['participation', 'mixed-ongoing', 'mixed-quiz', 'exam']);
 });
 
 function page(items: CourseState['assessments']) {
@@ -56,7 +56,7 @@ function page(items: CourseState['assessments']) {
 }
 
 it('collects only effective zero weights in one native collapsed section after marked work', () => {
-  const html = page([{ ...item('attendance', 'ongoing', undefined, 0), group: { key: 'attendance', name: 'Attendance', weight: 10 } }, item('essay', 'assignment'),
+  const html = page([{ ...item('attendance', 'participation', undefined, 0), group: { key: 'attendance', name: 'Attendance', weight: 10 } }, item('essay', 'assignment'),
     { ...item('unknown-weight', 'quiz'), weight: undefined }, item('feedback', 'assignment', undefined, 0)]);
   expect(html.match(/<details/g)).toHaveLength(1);
   expect(html).toContain('<details class="no-marks">');

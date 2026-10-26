@@ -1,7 +1,8 @@
 import type {
   AssessmentLink, Annotation, AnnotationVerdict, PlanningSettings,
   Estimate, StartTime, TimeLog, CourseAutonomy,
-  Conversation, Message, PendingConfirmation, PracticeAttempt
+  Conversation, Message, PendingConfirmation, PracticeAttempt,
+  SavedFile, SyncConflict
 } from '../domain/schemas.js';
 import type { Module, Course, Assessment, SourceItem, Task, Run } from '../domain/schemas.js';
 
@@ -34,6 +35,14 @@ export interface Repository {
   deleteManualTask(id: string): void;
   recordRun(value: Run): void;
   loadRun(id: string): Run | undefined;
+  saveSavedFile(value: SavedFile): void;
+  loadSavedFile(id: string): SavedFile | undefined;
+  listSavedFiles(courseId: string): SavedFile[];
+  listSavedFilesForAssessment(assessmentId: string): SavedFile[];
+  saveSyncConflict(value: SyncConflict): void;
+  loadSyncConflict(id: string): SyncConflict | undefined;
+  listSyncConflicts(courseId: string): SyncConflict[];
+  listOpenSyncConflicts(courseId?: string): SyncConflict[];
   saveBatch(batch: SaveBatch): void;
   appendAssessmentLink(value: AssessmentLink): void;
   readAssessmentLinks(assessmentId: string): AssessmentLink[];

@@ -6,6 +6,7 @@ import { createFakeContext } from '../../src/protocol/fakes.js';
 import type { TrustedContext } from '../../src/protocol/context.js';
 import { httpCommandContext } from '../../src/protocol/http.js';
 import { parseProtocolCLI } from '../../src/protocol/cli.js';
+import { CanonicalAuthorizationStore } from '../../src/protocol/canonical-authorization.js';
 import { synthetic } from '../fixtures/synthetic.js';
 import { hash } from '../../src/citations/exact.js';
 const stores: SqliteRepository[] = [];
@@ -27,7 +28,7 @@ const writes = [
   ['autonomy.override.clear', { assessmentId: 'd' }],
 ] as const;
 it('required kind, cap and effective level follow work type, not browser action', () => {
-  expect(['quiz', 'ongoing', 'assignment', 'exam', undefined].map(kind => required(kind))).toEqual([1, 1, 2, 2, 2]);
+  expect(['quiz', 'ongoing', 'participation', 'assignment', 'presentation', 'ungraded', 'exam', undefined].map(kind => required(kind))).toEqual([1, 1, 1, 2, 2, 2, 2, 2]);
   expect(cap('prohibited')).toBe(0); expect(cap(undefined)).toBe(2);
   expect(effective(1, 2, 'prohibited')).toBe(0);
   expect(effective(1, 2, undefined)).toBe(2);
@@ -42,11 +43,11 @@ it('prohibited caps L2 overrides at L0; clearing policy restores the uncapped ov
   await call('autonomy.policy.set', { courseId, status: null });
   expect(await call('autonomy.check', { assessmentId: 'd', action: 'submit' })).toMatchObject({ ok: true, data: { decision: 'allowed' } });
 });
-it('owner L1 default allows quizzes and ongoing work, but assignments require L2', async () => {
+it('owner L1 default allows quizzes and participation work, but assignments require L2', async () => {
   const { call, store } = setup();
   await call('autonomy.policy.set', { courseId, status: 'allowed' });
   await call('autonomy.default.set', { courseId, level: 1 });
-  for (const kind of ['quiz', 'ongoing', 'assignment'] as const) {
+  for (const kind of ['quiz', 'ongoing', 'participation', 'assignment'] as const) {
     store.saveAssessment({ ...synthetic.assessments[3]!, kind });
     expect(await call('autonomy.check', { assessmentId: 'd', action: 'fill' }))
       .toMatchObject({ ok: true, data: { decision: kind === 'assignment' ? 'denied' : 'allowed' } });
@@ -223,4 +224,12 @@ it('autonomy.read writes no audit rows, is an anonymous agent read and refuses u
   expect(context.events.length).toBe(before);
   expect(await call('autonomy.read', { courseId: 'missing' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
   expect(context.events.length).toBe(before);
+});
+
+it('canonical authorization maps participation to the existing ongoing category', async () => {
+  const store = new SqliteRepository(':memory:'); stores.push(store);
+  store.saveBatch({ modules: [synthetic.module], courses: [synthetic.course], assessments: synthetic.assessments });
+  store.saveAssessment({ ...synthetic.assessments[0]!, kind: 'participation' });
+  const authorization = new CanonicalAuthorizationStore({} as never, store);
+  expect(await authorization.target(synthetic.assessments[0]!.id)).toMatchObject({ category: 'ongoing' });
 });

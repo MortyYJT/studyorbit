@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { createClient } from '../../web/src/client.js';
-import { defaultRange, formatDuration, loadMetrics, metricsCards, rangeInput } from '../../web/src/metrics.js';
+import { defaultRange, formatDuration, kindLabel, loadMetrics, metricsCards, rangeInput } from '../../web/src/metrics.js';
 import { en, zh } from '../../web/src/i18n.js';
 const meta = { runId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', durationMs: 0 };
 const range = { from: '2026-09-23T14:00:00.000Z', to: '2026-10-23T13:00:00.000Z' };
@@ -13,6 +13,13 @@ it('defaults to the last 30 days in the owner time zone, end date inclusive, acr
   expect(dates).toEqual({ from: '2026-09-24', to: '2026-10-23' });
   expect(rangeInput(dates, 'Australia/Melbourne')).toEqual(range);
   expect(rangeInput({ from: '2026-10-24', to: '2026-10-23' }, 'Australia/Melbourne')).toBeUndefined();
+});
+it('labels all six assessment kinds, keeps the legacy ongoing name and falls back to unknown', () => {
+  expect(['quiz', 'ongoing', 'participation', 'assignment', 'presentation', 'exam', 'ungraded'].map(kind => kindLabel(kind, en)))
+    .toEqual([en.mQuiz, en.mOngoing, en.mOngoing, en.mAssignment, en.mPresentation, en.mExam, en.mUngraded]);
+  expect(kindLabel('presentation', zh)).toBe(zh.mPresentation);
+  expect(kindLabel('ungraded', zh)).toBe(zh.mUngraded);
+  expect(kindLabel('not-a-kind', en)).toBe(en.unknown);
 });
 it('shows every metric without data as unavailable with its reason, never as zero', () => {
   const cards = metricsCards(empty, en, 'en');

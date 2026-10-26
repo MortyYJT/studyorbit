@@ -6,7 +6,7 @@ const PercentSchema = z.number().min(0).max(100);
 
 const FieldReadStateSchema = z.object({
   state: z.enum(['found', 'unknown', 'not_applicable', 'derived']),
-  via: z.enum(['ax', 'screenshot']).optional(),
+  via: z.enum(['ax', 'screenshot', 'api', 'handbook']).optional(),
   checkedAt: TimeSchema.optional(),
   quote: z.string().max(2000).optional(),
   source: z.url().max(2048).optional(),
@@ -40,24 +40,44 @@ export const CourseSchema = z.object({
   readState: ReadStateSchema.optional(),
 });
 
+type AssessmentKind = 'exam' | 'quiz' | 'assignment' | 'presentation' | 'participation' | 'ungraded';
+type StoredAssessmentKind = AssessmentKind | 'ongoing';
+/** Old rows and annotations store `ongoing`; every read presents `participation` (#184). */
+export function normalizeAssessmentKind(value: unknown): unknown {
+  return value === 'ongoing' ? 'participation' : value;
+}
+// Old rows store `ongoing`; parse it as `participation` while keeping the input type useful to callers.
+const AssessmentKindSchema = z.preprocess(
+  normalizeAssessmentKind,
+  z.enum(['exam', 'quiz', 'assignment', 'presentation', 'participation', 'ungraded']),
+) as unknown as z.ZodType<AssessmentKind, StoredAssessmentKind>;
+
 export const AssessmentSchema = z.object({
   id: IdSchema,
   courseId: IdSchema,
   name: z.string(),
-  kind: z.enum(['quiz', 'ongoing', 'assignment', 'exam']).optional(),
+  kind: AssessmentKindSchema.optional(),
   weight: PercentSchema.optional(),
   origin: z.enum(['sync', 'agent', 'owner']).default('sync').optional(),
   score: PercentSchema.optional(),
   due: TimeSchema.optional(),
+  /** When the platform opens the assessment (Canvas `unlock_at`). */
+  unlockAt: TimeSchema.optional(),
   hurdleMin: PercentSchema.optional(),
   isFinal: z.boolean(),
   status: z.enum(['not_started', 'in_progress', 'submitted', 'graded']),
+  /** Agent-read AI policy of this assessment; same values as Course, absent means unknown. */
+  aiPolicy: AiPolicySchema.optional(),
   /** The grading component an item (or a component's remainder) belongs to. */
   group: z.object({ key: IdSchema, name: z.string(), weight: PercentSchema.optional(), count: z.number().int().nonnegative().optional(),
     role: z.enum(['item', 'remainder', 'component']).optional() }).optional(),
   /** No longer listed or replaced by its items; reads, planning and the grade projection omit retired assessments. */
   retired: z.boolean().optional(),
   readState: ReadStateSchema.optional(),
+}).superRefine((assessment, ctx) => {
+  if (assessment.kind === 'ungraded' && assessment.weight !== undefined && assessment.weight > 0) {
+    ctx.addIssue({ code: 'custom', path: ['weight'], message: 'Ungraded assessments have weight 0' });
+  }
 });
 
 export const SourceItemSchema = z.object({
@@ -74,8 +94,8 @@ export const SourceItemSchema = z.object({
   removed: z.boolean().default(false).optional(),
   /** `agent` when the agent copied this text from the owner's Edge with `source.record` (#187). */
   copiedBy: z.literal('agent').optional(),
-  facts: z.object({ due: TimeSchema.optional(), pointsPossible: z.number().nonnegative().optional(),
-    pointsEarned: z.number().nonnegative().optional(), submitted: z.boolean().optional() }).optional(),
+  facts: z.object({ due: TimeSchema.optional(), unlockAt: TimeSchema.optional(), pointsPossible: z.number().nonnegative().optional(),
+    pointsEarned: z.number().nonnegative().optional(), submitted: z.boolean().optional(), updatedAt: TimeSchema.optional() }).optional(),
 }).superRefine((source, ctx) => {
   if (source.facts !== undefined && source.kind !== 'assignment') {
     ctx.addIssue({ code: 'custom', path: ['facts'], message: 'Only assignments have facts' });
@@ -167,11 +187,22 @@ const RunBaseSchema = z.object({
 });
 
 export const SyncOutcomeSchema = z.enum(['OK', 'PARTIAL', 'NEEDS_SELECTION', 'AGENT_UNAVAILABLE', 'TIMEOUT', 'FAILED']);
+export const RunJobSchema = z.object({
+  kind: IdSchema,
+  courseKey: IdSchema.optional(),
+  steps: CountSchema,
+  turns: CountSchema,
+  outcome: z.enum(['ok', 'error', 'timeout']),
+  inputTokens: CountSchema.optional(),
+  outputTokens: CountSchema.optional(),
+});
 const PlatformRunStateSchema = z.enum(['read', 'blocked', 'absent', 'unread']);
 /** Counts and platform states only: no URLs, titles, names, quotes or free-form errors. */
 export const CourseCoverageSchema = z.strictObject({
   courseRef: z.string().regex(/^[a-f0-9]{64}$/), stored: z.boolean(), submissions: CountSchema, unknownFields: CountSchema,
   platforms: z.strictObject({ canvas: PlatformRunStateSchema, ed: PlatformRunStateSchema }), policyChanged: z.boolean(),
+  /** Whether the Canvas numbers came from the API, from a capped page, or not at all. */
+  canvasNumbers: z.enum(['api', 'partial', 'unavailable']).optional(),
 });
 // Reads retain unmeasured historical sync runs; new finalization uses SyncRunSchema.
 export const RunSchema = RunBaseSchema.extend({
@@ -180,6 +211,8 @@ export const RunSchema = RunBaseSchema.extend({
   /** Agent sync jobs (agent-course-reading): turns without a conversation, the job outcome and per-course coverage. */
   syncOutcome: SyncOutcomeSchema.optional(),
   courseCoverage: z.array(CourseCoverageSchema).max(500).optional(),
+  /** One record per agent job: kind, course, steps, turns, outcome and token counts when reported. */
+  jobs: z.array(RunJobSchema).max(500).optional(),
   pages: measurements.pages.optional(),
   requests: measurements.requests.optional(),
   failures: measurements.failures.optional(),
@@ -190,7 +223,7 @@ export const RunSchema = RunBaseSchema.extend({
       if (run[field] === undefined) ctx.addIssue({ code: 'custom', path: [field], message: 'Agent replies require conversationId and turns' });
     }
   }
-  const agentSync = run.syncOutcome !== undefined || run.courseCoverage !== undefined;
+  const agentSync = run.syncOutcome !== undefined || run.courseCoverage !== undefined || run.jobs !== undefined;
   if (agentSync) {
     for (const field of ['syncOutcome', 'courseCoverage', 'turns'] as const) {
       if (run[field] === undefined) ctx.addIssue({ code: 'custom', path: [field], message: 'Agent sync runs require syncOutcome, courseCoverage and turns' });
@@ -228,6 +261,61 @@ export const SyncJobSchema = z.object({
   blocked: z.array(z.enum(['canvas', 'ed'])).max(2).optional(),
   /** Per course key, what the last stored document of this job produced (paths are contract paths, never page text). */
   results: z.record(z.string(), SyncJobResultSchema).optional(),
+  /** Per course key, the stored result of each finished pipeline stage (JSON; no page text). */
+  stages: z.record(z.string(), z.record(z.string(), z.json())).optional(),
+});
+
+export const SavedFileSchema = z.object({
+  id: IdSchema,
+  courseId: IdSchema,
+  /** Absent for course materials. */
+  assessmentId: IdSchema.optional(),
+  /** Path inside the owner's course folder. */
+  path: z.string().min(1).max(4096),
+  fingerprint: z.string().min(1).max(500),
+  savedAt: TimeSchema,
+  supersededAt: TimeSchema.optional(),
+  /** Set when the owner opens an update notice. */
+  openedAt: TimeSchema.optional(),
+});
+
+/**
+ * A Canvas/skeleton disagreement. `target` names the component for `weight` conflicts and the Canvas assignment for
+ * `unmatched` ones; `choice` is the owner's resolution and is valid only for its conflict kind.
+ */
+export const SyncConflictSchema = z.object({
+  id: IdSchema,
+  courseId: IdSchema,
+  target: z.object({ componentKey: IdSchema.optional(), canvasAssignmentId: IdSchema.optional() }),
+  field: z.enum(['weight', 'unmatched']),
+  skeletonValue: z.json().optional(),
+  canvasValue: z.json(),
+  state: z.enum(['open', 'agreed', 'resolved']),
+  choice: z.string().min(1).max(500).optional(),
+  checkedAt: TimeSchema,
+  resolvedAt: TimeSchema.optional(),
+}).superRefine((conflict, ctx) => {
+  const expected = conflict.field === 'weight' ? 'componentKey' : 'canvasAssignmentId';
+  const unexpected = conflict.field === 'weight' ? 'canvasAssignmentId' : 'componentKey';
+  if (conflict.target[expected] === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['target', expected], message: `A ${conflict.field} conflict requires target.${expected}` });
+  }
+  if (conflict.target[unexpected] !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['target', unexpected], message: `A ${conflict.field} conflict has no target.${unexpected}` });
+  }
+  if (conflict.field === 'unmatched' && conflict.skeletonValue !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['skeletonValue'], message: 'An unmatched conflict has no skeleton value' });
+  }
+  if (conflict.choice !== undefined) {
+    const valid = conflict.field === 'weight'
+      ? conflict.choice === 'skeleton' || conflict.choice === 'canvas'
+      : conflict.choice === 'dismissed'
+        || conflict.choice !== 'skeleton' && conflict.choice !== 'canvas' && IdSchema.safeParse(conflict.choice).success;
+    if (!valid) {
+      ctx.addIssue({ code: 'custom', path: ['choice'], message: conflict.field === 'weight'
+        ? 'A weight conflict choice is skeleton or canvas' : 'An unmatched conflict choice is a component key or dismissed' });
+    }
+  }
 });
 
 export type Module = z.infer<typeof ModuleSchema>;
@@ -254,6 +342,9 @@ export const MemorySchema = z.object({
 export type Memory = z.infer<typeof MemorySchema>;
 export type CourseSelection = z.infer<typeof CourseSelectionSchema>;
 export type SyncJob = z.infer<typeof SyncJobSchema>;
+export type SavedFile = z.infer<typeof SavedFileSchema>;
+export type SyncConflict = z.infer<typeof SyncConflictSchema>;
+export type RunJob = z.infer<typeof RunJobSchema>;
 export type SyncJobResult = z.infer<typeof SyncJobResultSchema>;
 export type ReadState = z.infer<typeof ReadStateSchema>;
 
