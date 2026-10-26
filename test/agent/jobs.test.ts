@@ -117,18 +117,36 @@ describe('pipeline job prompts (layered-sync task 5.2)', () => {
     expect(text).not.toMatch(/open the modules page/i);
   });
 
-  it('rules: allows following file or attachment links on a listed page for the named downloads', () => {
+  it('rules: allows following file links on a listed page only within this Canvas course, never to other sites', () => {
     const text = prompt(specFor('saver'), context);
     expect(text).toContain('Following the file or attachment links on a listed page');
-    expect(text).toContain('nothing else');
+    expect(text).toContain('stay on this Canvas course');
+    expect(text).toContain('never follow a link to another site');
   });
 
-  it('courses: after canvas.capture refuses a sign-in page, offers the course list and stops', () => {
+  it('saver: may enter the subfolders of a listed Files folder', () => {
+    expect(prompt(specFor('saver'), context)).toContain('and their subfolders');
+  });
+
+  it('courses: a sign-in page seen before or after copying leads to courses.offer, not just a stop', () => {
     const text = prompt(specFor('courses'), context);
-    expect(text).toContain('If `canvas.capture` is refused because the copied page is a sign-in page');
+    expect(text).toContain('If a sign-in page appears (before or after copying), or `canvas.capture` is refused');
     expect(text).toContain('blocked: ["canvas"]');
-    expect(text).toContain('then stop');
+    // Rule 3 must hand over to the job's named fallback instead of stopping outright.
+    expect(text).toContain('then make only the fallback call this job names, if any');
     expect(text).toContain('for the course list, after `courses.offer` when it is used');
+  });
+
+  it('classifier: an id that carries a URL is left out, so no URL reaches the prompt', () => {
+    const leaky: PipelineJobContext = { ...context, stages: { ...stages,
+      quizzes: { quizzes: [{ id: 'https://canvas.test/courses/900001/quizzes/7', name: 'Quiz 7' }] } } };
+    const text = prompt(specFor('classify'), leaky);
+    expect(text).not.toMatch(/https?:\/\//);
+    expect(text).toContain('- Quiz 7');
+  });
+
+  it('classifier: says the quiz section only adds flags to the Canvas items, not extra entries', () => {
+    expect(prompt(specFor('classify'), context)).toContain('Quiz lines add flags to the Canvas items');
   });
 
   it('classifier: names each stage item id so repeated names in different groups stay distinct', () => {

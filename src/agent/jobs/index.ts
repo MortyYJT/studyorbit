@@ -86,7 +86,7 @@ function pageNote(spec: JobSpec): string | undefined {
       '## Page',
       'Call `canvas.capture` with page `courses` and no course key.',
       '',
-      'If `canvas.capture` is refused because the copied page is a sign-in page, call `courses.offer` with the job id, no courses and `blocked: ["canvas"]`, then stop. If the computer-use tool or Edge is unavailable, call it the same way with `blocked: ["canvas", "ed"]`, then stop.',
+      'If a sign-in page appears (before or after copying), or `canvas.capture` is refused because the copied page is a sign-in page, call `courses.offer` with the job id, no courses and `blocked: ["canvas"]`, then stop. If the computer-use tool or Edge is unavailable, call it the same way with `blocked: ["canvas", "ed"]`, then stop.',
     ].join('\n');
   }
   if (spec.kind === 'tabs' || spec.kind === 'groups') {
@@ -109,7 +109,7 @@ function compactList(ctx?: PipelineJobContext): string {
     'Canvas items:',
     ...(groups.length ? groups : ['- none']),
     '',
-    'Quizzes:',
+    'Quizzes (Quiz lines add flags to the Canvas items above; they are not extra entries):',
     ...(quizzes.length ? quizzes : ['- none']),
     '',
     'Handbook components:',
@@ -199,5 +199,6 @@ function identifier(value: unknown): string | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   if (typeof value !== 'string') return undefined;
   const clean = value.trim();
-  return clean ? clean.slice(0, 256) : undefined;
+  // An id that carries a URL is dropped: the classifier prompt never lists a URL.
+  return clean && !/:\/\//.test(clean) ? clean.slice(0, 256) : undefined;
 }
