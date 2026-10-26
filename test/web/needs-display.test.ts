@@ -36,3 +36,10 @@ it('shows the first three of a long kind and a "show N more" toggle', () => {
   expect(html).not.toContain('SYN40004');
   expect(html).toContain('Show 2 more');
 });
+
+it('shows the missing-file count for a course with the Open course button', () => {
+  const html = renderToStaticMarkup(createElement(NeedsYou, { ...props,
+    needs: [{ kind: 'missing', course: 'SYNA10001', courseId: 'c-a', count: 3 }] }));
+  expect(html).toContain('SYNA10001 · 3 files were not downloaded; open the course page or sync again');
+  expect(html).toContain('Open course');
+});
