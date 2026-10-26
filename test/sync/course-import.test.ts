@@ -207,6 +207,198 @@ describe('store mapping and precedence (coursework-sync)', () => {
   });
 });
 
+describe('AI policy per assessment with a course default (coursework-sync)', () => {
+  const work = (items: Record<string, unknown>[], overrides = {}) => component('work', 100, items, { count: found(items.length), ...overrides });
+  const final = (slug: string, items: Record<string, unknown>[], overrides = {}) =>
+    component(slug, 100, items, { kind: found('exam'), isFinal: found(true), count: found(items.length), ...overrides });
+  const itemId = (id: number) => assessmentId(term, `SYNA10001:canvas:assignment:${id}`);
+
+  it('Item policy read: a prohibited item keeps its quote while the course stays allowed and the change marker is set', () => {
+    const f = setup();
+    const quote = 'You must not use generative AI to write this report.';
+    const result = f.save(document([work([item(1, { aiPolicy: quoted('prohibited', quote) })])],
+      { aiPolicy: quoted('allowed', 'This subject allows generative AI with citation.') }));
+    expect(result).toMatchObject({ policyChanged: true, itemPolicyChanges: 1 });
+    expect(f.get(itemId(1))).toMatchObject({ aiPolicy: 'prohibited',
+      readState: { aiPolicy: { state: 'found', via: 'ax', quote, source: 'https://canvas.lms.unimelb.edu.au/courses/900001/assignments/syllabus' },
+        aiPolicyChanged: { state: 'found', checkedAt: now, quote } } });
+    expect(f.store.loadCourse(result.courseId)).toMatchObject({ aiPolicy: 'allowed',
+      readState: { aiPolicy: { state: 'found', quote: 'This subject allows generative AI with citation.' } } });
+  });
+
+  it('an unchanged item policy leaves an older change marker as is and is not counted again', () => {
+    const f = setup();
+    const quote = 'No AI for this report.';
+    const doc = () => document([work([item(1, { aiPolicy: quoted('prohibited', quote) })])]);
+    f.save(doc());
+    const later = '2026-10-25T02:00:00Z';
+    expect(f.save(doc(), false, later).itemPolicyChanges).toBe(0);
+    expect(f.get(itemId(1))?.readState?.aiPolicyChanged).toEqual({ state: 'found', checkedAt: now, quote });
+  });
+
+  it('Missed item read keeps the last value and quote, updates checkedAt and writes no new marker', () => {
+    const f = setup();
+    const quote = 'No AI for this report.';
+    f.save(document([work([item(1, { aiPolicy: quoted('prohibited', quote) })])]));
+    // A value stored before change markers existed: the missed read must not invent one.
+    const stored = f.get(itemId(1))!;
+    const { aiPolicyChanged: _oldMarker, ...readState } = stored.readState!;
+    f.store.saveBatch({ assessments: [{ ...stored, readState }] });
+    const later = '2026-10-25T02:00:00Z';
+    expect(f.save(document([work([item(1, { aiPolicy: unknown(later) })])]), false, later).itemPolicyChanges).toBe(0);
+    expect(f.get(itemId(1))).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { state: 'found', quote, checkedAt: later } } });
+    expect(f.get(itemId(1))?.readState?.aiPolicyChanged).toBeUndefined();
+    // A skipped page has no aiPolicy field at all; the stored value and quote stay and only the check time moves.
+    const skipped = '2026-10-26T02:00:00Z';
+    f.save(document([work([item(1)])]), false, skipped);
+    expect(f.get(itemId(1))).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { quote, checkedAt: skipped } } });
+    expect(f.get(itemId(1))?.readState?.aiPolicyChanged).toBeUndefined();
+  });
+
+  it('Owner item policy kept: an owner allowed annotation stays while the agent-read prohibited and quote are stored', () => {
+    const f = setup();
+    const id = itemId(1);
+    f.save(document([work([item(1)])]));
+    f.store.appendAnnotation({ id: 'owner-policy', entity: 'assessment', entityId: id, field: 'aiPolicy', value: 'allowed', origin: 'owner', citations: [], at: now });
+    const quote = 'No generative AI may be used for this report.';
+    f.save(document([work([item(1, { aiPolicy: quoted('prohibited', quote) })])]));
+    expect(f.store.readAnnotations('assessment', id).filter(row => row.field === 'aiPolicy'))
+      .toEqual([expect.objectContaining({ value: 'allowed', origin: 'owner' })]);
+    expect(f.get(id)).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { state: 'found', quote } } });
+  });
+
+  it('Component policy: prohibited wins, agreed known values agree, mixed with unknown keeps the known value, all missed keeps the last value, none ever known is absent', () => {
+    const f = setup();
+    const componentId = componentAssessmentId(term, 'SYNA10001:final');
+    f.save(document([final('final', [item(1, { aiPolicy: quoted('prohibited', 'No AI.') })])]));
+    expect(f.get(componentId)?.aiPolicy).toBe('prohibited');
+    f.save(document([final('final', [item(2, { aiPolicy: quoted('allowed', 'AI allowed.') }), item(3, { aiPolicy: quoted('allowed', 'AI allowed.') })])]));
+    expect(f.get(componentId)?.aiPolicy).toBe('allowed');
+    f.save(document([final('final', [item(4, { aiPolicy: quoted('allowed', 'AI allowed.') }), item(5)])]));
+    expect(f.get(componentId)?.aiPolicy).toBe('allowed');
+    // Every item missed this run: the last stored value stays (spec "Missed item read keeps the last value").
+    f.save(document([final('final', [item(6)])]));
+    expect(f.get(componentId)?.aiPolicy).toBe('allowed');
+    // Nothing known and nothing stored before: absent.
+    const fresh = setup();
+    fresh.save(document([final('final', [item(7)])]));
+    expect(fresh.get(componentId)?.aiPolicy).toBeUndefined();
+  });
+
+  it('Component policy survives a missed read and an item that later stands alone', () => {
+    const f = setup();
+    const detail = 'No generative AI is permitted for this final assessment.';
+    const componentId = componentAssessmentId(term, 'SYNA10001:final');
+    const finalDoc = (aiPolicy: Record<string, unknown>) => document([final('final', [item(1, { aiPolicy })])]);
+    f.save(finalDoc(quoted('prohibited', detail)));
+    expect(f.get(componentId)).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { state: 'found', quote: detail } } });
+    const missed = '2026-10-25T02:00:00Z';
+    f.save(finalDoc(unknown(missed)), false, missed);
+    expect(f.get(componentId)).toMatchObject({ aiPolicy: 'prohibited',
+      readState: { aiPolicy: { state: 'found', quote: detail, checkedAt: missed } } });
+    // A newly listed item has no previous row of its own; the component's stored prohibited value still wins.
+    const replaced = '2026-10-25T03:00:00Z';
+    f.save(document([final('final', [item(2, { aiPolicy: unknown(replaced) })])]), false, replaced);
+    expect(f.get(componentId)).toMatchObject({ aiPolicy: 'prohibited',
+      readState: { aiPolicy: { state: 'found', quote: detail, checkedAt: replaced } } });
+    // The component stops being final; its item now stands alone and misses its read too.
+    const standalone = '2026-10-26T02:00:00Z';
+    f.save(document([component('final', 100, [item(1, { aiPolicy: unknown(standalone) })], { count: found(1) })]), false, standalone);
+    expect(f.get(itemId(1))).toMatchObject({ aiPolicy: 'prohibited',
+      readState: { aiPolicy: { state: 'found', quote: detail, checkedAt: standalone } } });
+  });
+
+  it('A final component that lists no item this run keeps its prohibited policy', () => {
+    const f = setup();
+    const detail = 'No generative AI is permitted for this final assessment.';
+    const componentId = componentAssessmentId(term, 'SYNA10001:final');
+    f.save(document([final('final', [item(1, { aiPolicy: quoted('prohibited', detail) })])]));
+    const empty = '2026-10-25T02:00:00Z';
+    f.save(document([final('final', [])]), false, empty);
+    expect(f.get(componentId)).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { quote: detail } } });
+  });
+
+  it('An item whose own row was retired keeps its prohibited policy when it reappears with an unknown read', () => {
+    const f = setup();
+    const detail = 'You must not use generative AI for this report.';
+    f.save(document([work([item(1, { aiPolicy: quoted('prohibited', detail) })])]));
+    f.save(document([work([item(2, { aiPolicy: quoted('allowed', 'AI allowed with citation.') })])]), false, '2026-10-25T02:00:00Z');
+    expect(f.get(itemId(1))?.retired).toBe(true);
+    const back = '2026-10-26T02:00:00Z';
+    f.save(document([work([item(1, { aiPolicy: unknown(back) })])]), false, back);
+    expect(f.get(itemId(1))).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { quote: detail, checkedAt: back } } });
+  });
+
+  it('A component that returns after being retired marks a new prohibited read as a change', () => {
+    const f = setup();
+    const detail = 'No generative AI for this component.';
+    const componentId = componentAssessmentId(term, 'SYNA10001:final');
+    f.save(document([final('final', [item(1, { aiPolicy: quoted('prohibited', detail) })])]));
+    f.save(document([component('final', 100, [item(1, { aiPolicy: quoted('allowed', 'AI allowed.') })], { count: found(1) })]), false, '2026-10-25T02:00:00Z');
+    expect(f.get(componentId)?.retired).toBe(true);
+    const again = '2026-10-26T02:00:00Z';
+    f.save(document([final('final', [item(1, { aiPolicy: quoted('prohibited', detail) })])]), false, again);
+    expect(f.get(componentId)).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicyChanged: { checkedAt: again, quote: detail } } });
+  });
+
+  it('A retired item row never supplies the previous policy for its component or a later standalone item', () => {
+    const f = setup();
+    const allowed = 'Generative AI is allowed with citation.';
+    const prohibited = 'No generative AI for this component.';
+    const componentId = componentAssessmentId(term, 'SYNA10001:final');
+    f.save(document([work([item(1, { aiPolicy: quoted('allowed', allowed) })])]));
+    expect(f.get(itemId(1))).toMatchObject({ aiPolicy: 'allowed' });
+    const inComponent = '2026-10-25T02:00:00Z';
+    f.save(document([final('final', [item(1, { aiPolicy: quoted('prohibited', prohibited) })])]), false, inComponent);
+    expect(f.get(itemId(1))).toMatchObject({ retired: true, aiPolicy: 'allowed' });
+    expect(f.get(componentId)?.aiPolicy).toBe('prohibited');
+    const missed = '2026-10-26T02:00:00Z';
+    f.save(document([final('final', [item(1, { aiPolicy: unknown(missed) })])]), false, missed);
+    expect(f.get(componentId)).toMatchObject({ aiPolicy: 'prohibited',
+      readState: { aiPolicy: { quote: prohibited, checkedAt: missed } } });
+    // Allowed standalone, prohibited in the component, then allowed standalone: a change from the component's value.
+    const standalone = '2026-10-27T02:00:00Z';
+    const result = f.save(document([work([item(1, { aiPolicy: quoted('allowed', allowed) })])]), false, standalone);
+    expect(result.itemPolicyChanges).toBe(1);
+    expect(f.get(itemId(1))).toMatchObject({ aiPolicy: 'allowed',
+      readState: { aiPolicy: { state: 'found', quote: allowed }, aiPolicyChanged: { state: 'found', checkedAt: standalone, quote: allowed } } });
+    expect(f.get(itemId(1))?.retired).toBeUndefined();
+  });
+
+  it('Component assessments record the deciding item read, keep it on missed reads, mark changes and count item changes', () => {
+    const f = setup();
+    const prohibited = 'No generative AI for this component.';
+    const allowed = 'Generative AI is allowed with citation.';
+    const componentId = componentAssessmentId(term, 'SYNA10001:final');
+    const doc = (one: Record<string, unknown>, two: Record<string, unknown>) =>
+      document([final('final', [item(1, { aiPolicy: one }), item(2, { aiPolicy: two })])]);
+    const first = f.save(doc(quoted('prohibited', prohibited), quoted('allowed', allowed)));
+    expect(first.itemPolicyChanges).toBe(2);
+    expect(f.get(componentId)).toMatchObject({ aiPolicy: 'prohibited',
+      readState: { aiPolicy: { state: 'found', quote: prohibited }, aiPolicyChanged: { state: 'found', checkedAt: now, quote: prohibited } } });
+    const missed = '2026-10-25T02:00:00Z';
+    const second = f.save(doc(unknown(missed), unknown(missed)), false, missed);
+    expect(second.itemPolicyChanges).toBe(0);
+    expect(f.get(componentId)).toMatchObject({ aiPolicy: 'prohibited',
+      readState: { aiPolicy: { state: 'found', quote: prohibited, checkedAt: missed },
+        aiPolicyChanged: { state: 'found', checkedAt: now, quote: prohibited } } });
+    const changed = '2026-10-26T02:00:00Z';
+    const third = f.save(doc(quoted('allowed', allowed), quoted('allowed', allowed)), false, changed);
+    expect(third.itemPolicyChanges).toBe(2);
+    expect(f.get(componentId)).toMatchObject({ aiPolicy: 'allowed',
+      readState: { aiPolicy: { state: 'found', quote: allowed }, aiPolicyChanged: { state: 'found', checkedAt: changed, quote: allowed } } });
+  });
+
+  it('Hurdle components combine their items and remainders store no policy', () => {
+    const f = setup();
+    const hurdle = component('hurdle', 50, [item(1, { aiPolicy: quoted('prohibited', 'No AI.') })],
+      { kind: found('exam'), hurdleMin: quoted(40), count: found(1) });
+    f.save(document([hurdle, component('rest', 50, [item(2, { aiPolicy: quoted('prohibited', 'No AI.') })], { count: found(2) })]));
+    expect(f.get(componentAssessmentId(term, 'SYNA10001:hurdle'))?.aiPolicy).toBe('prohibited');
+    expect(f.get(remainderAssessmentId(term, 'SYNA10001:rest'))?.aiPolicy).toBeUndefined();
+  });
+});
+
 describe('review fixes: no weight counted twice', () => {
   const total = (f: ReturnType<typeof setup>) => f.live().reduce((sum, a) => sum + (a.weight ?? 0), 0);
   it('a component that stops being final retires its component row even without componentsComplete', () => {
