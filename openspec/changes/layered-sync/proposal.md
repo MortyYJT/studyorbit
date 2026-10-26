@@ -4,7 +4,7 @@ One Codex session reads every selected course end to end (#165), and it is too e
 
 ## What Changes
 
-- **BREAKING (sync pipeline):** a sync run becomes a code-driven pipeline, one course at a time (#199): course list → Handbook skeleton → page routing → small agent jobs → code-built course document → import. No model writes the full course document any more; the course reading prompt is replaced by one short prompt per job (main, quiz page, assignment page, saver, classifier).
+- **BREAKING (sync pipeline):** a sync run becomes a code-driven pipeline, one course at a time (#199): course list → Handbook skeleton (agent copy, code parse) → page routing → small agent jobs → code-built course document → import. No model writes the full course document any more; the course reading prompt is replaced by one short prompt per job (main, quiz page, assignment page, saver, classifier, Handbook capture).
 - Course list (layer 0): Codex copies Canvas's course list API page; code parses it into course candidates; the owner selects in the frontend (unchanged ownership, #117-style).
 - Skeleton (layer 1): an agent copies the public Handbook assessment page in the owner's Edge and code parses the clipboard text into components and weights as a tentative skeleton; the LMS wins where they disagree (#203).
 - Canvas numbers come from the API (#208): Codex copies `assignment_groups?include[]=assignments&include[]=submission` (and the course tabs page); code parses due, unlock time, points, score, submission state and group weights. The agent no longer reads these for Canvas items, and the old agent-versus-Canvas conflicts (#194, #198) are removed.
