@@ -59,7 +59,7 @@ describe('check.resolve owner command (layered-sync task 6.1)', () => {
   it('Owner keeps the Handbook weight: resolving with skeleton stores the choice and the next gradeItems uses 30', async () => {
     const f = setup();
     const before = gradeItems(gradeInput);
-    const reconciled = reconcileConflicts(f.store, courseId, before.conflicts, at);
+    const reconciled = reconcileConflicts(f.store, courseId, before.conflicts, at, true);
     const open = reconciled.conflicts[0]!;
     expect(open).toMatchObject({ field: 'weight', state: 'open', skeletonValue: 30, canvasValue: 40 });
 
@@ -78,12 +78,12 @@ describe('check.resolve owner command (layered-sync task 6.1)', () => {
     const f = setup();
     const found: FoundConflict = { field: 'unmatched', canvasAssignmentId: '700001',
       canvasValue: { id: '700001', name: 'Synthetic Assignment 1', due: '2026-10-31T12:59:00Z' } };
-    const row = reconcileConflicts(f.store, courseId, [found], at).conflicts[0]!;
+    const row = reconcileConflicts(f.store, courseId, [found], at, true).conflicts[0]!;
     const assigned = await f.ownerCall('check.resolve', { conflictId: row.id, choice: key });
     expect(assigned).toMatchObject({ ok: true });
     expect(data<{ conflict: Record<string, unknown> }>(assigned).conflict).toMatchObject({ state: 'resolved', choice: key });
 
-    const second = reconcileConflicts(f.store, courseId, [found], at).conflicts[0]!;
+    const second = reconcileConflicts(f.store, courseId, [found], at, true).conflicts[0]!;
     const dismissed = await f.ownerCall('check.resolve', { conflictId: second.id, choice: 'dismissed' });
     expect(dismissed).toMatchObject({ ok: true });
     expect(data<{ choices: { unmatched: Record<string, string> } }>(dismissed).choices.unmatched).toEqual({ '700001': 'dismissed' });
@@ -91,13 +91,13 @@ describe('check.resolve owner command (layered-sync task 6.1)', () => {
 
   it('refuses a wrong choice for the field, an unknown id, an agreed conflict and another course component key', async () => {
     const f = setup();
-    const weight = reconcileConflicts(f.store, courseId, [{ field: 'weight', componentKey: key, skeletonValue: 30, canvasValue: 40 }], at).conflicts[0]!;
+    const weight = reconcileConflicts(f.store, courseId, [{ field: 'weight', componentKey: key, skeletonValue: 30, canvasValue: 40 }], at, true).conflicts[0]!;
     expect(await f.ownerCall('check.resolve', { conflictId: weight.id, choice: 'dismissed' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
     expect(await f.ownerCall('check.resolve', { conflictId: 'synthetic-missing', choice: 'skeleton' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
     expect(await f.ownerCall('check.resolve', { conflictId: weight.id, choice: 'skeleton' })).toMatchObject({ ok: true });
 
     const unmatched = reconcileConflicts(f.store, courseId, [{ field: 'unmatched', canvasAssignmentId: '700001',
-      canvasValue: { id: '700001', name: 'Synthetic Assignment 1', due: null } }], at).conflicts[0]!;
+      canvasValue: { id: '700001', name: 'Synthetic Assignment 1', due: null } }], at, true).conflicts[0]!;
     expect(await f.ownerCall('check.resolve', { conflictId: unmatched.id, choice: 'SYNB20002:assignments' }))
       .toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
     f.store.saveSyncConflict({ id: 'synthetic-agreed', courseId, target: { componentKey: key }, field: 'weight',

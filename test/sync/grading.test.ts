@@ -13,16 +13,25 @@ interface SyntheticItem { id: string; name: string; due?: string | null }
 
 /** A Canvas groups stage with one synthetic group and its synthetic assignments. */
 function groupsStage(weight: number, items: SyntheticItem[], name = 'Synthetic Group'): GroupsStage {
-  const group = { id: '501', name, weight: { value: weight, state: 'found' as const, via: 'api' as const, source } };
-  return { source, via: 'api', coverage: 'api', unweighted: weight === 0, groups: [{ ...group, assignments: items.map(item => ({
-    id: item.id, name: item.name, courseId: '900001', assignmentGroupId: group.id, group,
-    due: { value: item.due === undefined ? '2026-10-31T12:59:00Z' : item.due, state: 'found' as const, via: 'api' as const, source },
-    unlockAt: { value: '2026-10-01T00:00:00Z', state: 'found' as const, via: 'api' as const, source },
-    outOf: { value: 14, state: 'found' as const, via: 'api' as const, source },
-    score: { value: null, state: 'unknown' as const, checkedAt: at },
-    status: { value: 'not_started' as const, state: 'found' as const, via: 'api' as const, source },
-    updatedAt: { value: '2026-10-20T08:00:00Z', state: 'found' as const, via: 'api' as const, source },
-  })) }] };
+  return groupsStageWith([{ weight, items, name }]);
+}
+
+/** A Canvas groups stage with several synthetic groups, for name-ambiguity cases. */
+function groupsStageWith(groups: { name: string; weight: number; items: SyntheticItem[] }[]): GroupsStage {
+  return { source, via: 'api', coverage: 'api', unweighted: groups.every(group => group.weight === 0),
+    groups: groups.map((entry, index) => {
+      const group = { id: String(501 + index), name: entry.name,
+        weight: { value: entry.weight, state: 'found' as const, via: 'api' as const, source } };
+      return { ...group, assignments: entry.items.map(item => ({
+        id: item.id, name: item.name, courseId: '900001', assignmentGroupId: group.id, group,
+        due: { value: item.due === undefined ? '2026-10-31T12:59:00Z' : item.due, state: 'found' as const, via: 'api' as const, source },
+        unlockAt: { value: '2026-10-01T00:00:00Z', state: 'found' as const, via: 'api' as const, source },
+        outOf: { value: 14, state: 'found' as const, via: 'api' as const, source },
+        score: { value: null, state: 'unknown' as const, checkedAt: at },
+        status: { value: 'not_started' as const, state: 'found' as const, via: 'api' as const, source },
+        updatedAt: { value: '2026-10-20T08:00:00Z', state: 'found' as const, via: 'api' as const, source },
+      })) };
+    }) };
 }
 
 function skeletonStage(components: SkeletonStage['components']): SkeletonStage {
@@ -159,5 +168,98 @@ describe('grading rule (layered-sync task 6.1)', () => {
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ id: '700009', category: 'quiz', graded: true,
       componentKey: `${courseCode}:quizzes`, effectiveComponentWeight: 10 });
+  });
+
+  it('does not map a quiz classification by name when two groups items share it, while an own assignment-id entry still wins', () => {
+    const skeleton = skeletonStage([{ name: 'Quizzes', weight: 10, quote: 'Quizzes\tWeeks 2-12\t10%' }]);
+    const result = gradeItems({
+      courseCode,
+      groups: groupsStageWith([
+        { name: 'Synthetic Quizzes', weight: 10, items: [{ id: '700009', name: 'Synthetic Quiz 1' }] },
+        { name: 'Synthetic Practice', weight: 0, items: [{ id: '700010', name: 'Synthetic Quiz 1' }] },
+      ]),
+      skeleton,
+      classification: classificationStage([
+        { id: '700009', category: 'quiz', component: 'Quizzes', evidence: 'Synthetic assignment id' },
+        { id: '800001', category: 'quiz', component: 'Quizzes', evidence: 'Synthetic graded quiz page name' },
+        { id: '800002', category: 'quiz', evidence: 'Synthetic practice quiz page name' },
+      ]),
+      quizzes: quizzesStage([
+        { id: '800001', name: 'Synthetic Quiz 1', survey: false, practice: false },
+        { id: '800002', name: 'Synthetic Practice Quiz', survey: false, practice: true },
+      ]),
+    });
+    const quiz = result.items.find(item => item.id === '700009')!;
+    const practice = result.items.find(item => item.id === '700010')!;
+    expect(quiz).toMatchObject({ category: 'quiz', graded: true,
+      componentKey: `${courseCode}:quizzes`, effectiveComponentWeight: 10 });
+    expect(practice).toMatchObject({ category: 'ungraded', graded: false });
+    expect(practice).not.toHaveProperty('componentKey');
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it('does not map a quiz classification by name when two quizzes share it, even if the groups item name is unique', () => {
+    const skeleton = skeletonStage([{ name: 'Quizzes', weight: 10, quote: 'Quizzes\tWeeks 2-12\t10%' }]);
+    const result = gradeItems({
+      courseCode,
+      groups: groupsStage(10, [{ id: '700011', name: 'Synthetic Quiz 1' }], 'Synthetic Quizzes'),
+      skeleton,
+      classification: classificationStage([
+        { id: '800003', category: 'quiz', component: 'Quizzes', evidence: 'Synthetic graded quiz page name' },
+        { id: '800004', category: 'quiz', evidence: 'Synthetic practice quiz page name' },
+      ]),
+      quizzes: quizzesStage([
+        { id: '800003', name: 'Synthetic Quiz 1', survey: false, practice: false },
+        { id: '800004', name: 'Synthetic Quiz 1', survey: false, practice: true },
+      ]),
+    });
+    expect(result.items[0]).toMatchObject({ category: 'unknown', graded: true });
+    expect(result.items[0]).not.toHaveProperty('componentKey');
+    expect(result.conflicts).toEqual([{ field: 'unmatched', canvasAssignmentId: '700011',
+      canvasValue: { id: '700011', name: 'Synthetic Quiz 1', due: '2026-10-31T12:59:00Z' } }]);
+  });
+
+  it('strips a trailing weight annotation from a classified component before matching', () => {
+    for (const component of ['- Assignments (weight 30)', 'Assignments 30%']) {
+      const result = gradeItems({
+        courseCode,
+        groups: groupsStage(0, [{ id: '700012', name: 'Synthetic Assignment 3' }], 'Synthetic Assignments'),
+        skeleton: assignments,
+        classification: classificationStage([{ id: '700012', category: 'assignment', component, evidence: 'Synthetic group name' }]),
+      });
+      expect(result.items[0]).toMatchObject({ componentKey: assignmentsKey, category: 'assignment', graded: true,
+        effectiveComponentWeight: 30 });
+      expect(result.conflicts).toEqual([{ field: 'weight', componentKey: assignmentsKey, skeletonValue: 30, canvasValue: 0 }]);
+    }
+  });
+
+  it('falls back to the unique skeleton component whose name is a word-boundary prefix of the classified name', () => {
+    const result = gradeItems({
+      courseCode,
+      groups: groupsStage(0, [{ id: '700013', name: 'Synthetic Assignment Extension' }], 'Synthetic Assignments'),
+      skeleton: assignments,
+      classification: classificationStage([{ id: '700013', category: 'assignment',
+        component: '- Assignments Extension (weight 30)', evidence: 'Synthetic group name' }]),
+    });
+    expect(result.items[0]).toMatchObject({ componentKey: assignmentsKey, category: 'assignment', graded: true,
+      effectiveComponentWeight: 30 });
+    expect(result.conflicts).toEqual([{ field: 'weight', componentKey: assignmentsKey, skeletonValue: 30, canvasValue: 0 }]);
+  });
+
+  it('does not fall back when more than one skeleton component is a prefix of the classified name', () => {
+    const skeleton = skeletonStage([
+      { name: 'Assignments', weight: 30, quote: 'Assignments\tWeeks 3-10\t30%' },
+      { name: 'Assignments Part', weight: 20, quote: 'Assignments Part\tWeek 11\t20%' },
+    ]);
+    const result = gradeItems({
+      courseCode,
+      groups: groupsStage(0, [{ id: '700014', name: 'Synthetic Assignment Part A' }], 'Synthetic Assignments'),
+      skeleton,
+      classification: classificationStage([{ id: '700014', category: 'assignment',
+        component: '- Assignments Part A (weight 20)', evidence: 'Synthetic group name' }]),
+    });
+    expect(result.items[0]).toMatchObject({ category: 'ungraded', graded: false });
+    expect(result.items[0]).not.toHaveProperty('componentKey');
+    expect(result.conflicts).toEqual([]);
   });
 });

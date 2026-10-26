@@ -52,37 +52,42 @@ export function resolvedChoices(conflicts: readonly SyncConflict[]): CompleteRes
 /**
  * Upsert the conflicts one grading pass found. A conflict found again stays or becomes `open`; a `resolved` row
  * stays resolved while both values are unchanged and reopens when either changes; an `open` row that is no longer
- * found has agreed and becomes `agreed`. Rows are never deleted, so the owner can still see how a value was settled.
+ * found has agreed and becomes `agreed` only when `complete` says the Canvas side was fully captured. Rows are never
+ * deleted, so the owner can still see how a value was settled. The whole pass is one transaction: a failing write
+ * leaves no half-written rows.
  */
-export function reconcileConflicts(store: SqliteRepository, courseId: string, found: readonly FoundConflict[], now: string): ReconcileResult {
-  const foundIds = new Set<string>();
-  for (const conflict of found) {
-    const id = conflictId(courseId, conflict.field, targetOf(conflict));
-    foundIds.add(id);
-    const existing = store.loadSyncConflict(id);
-    if (!existing) {
-      store.saveSyncConflict(row(conflict, id, courseId, now));
-      continue;
+export function reconcileConflicts(store: SqliteRepository, courseId: string, found: readonly FoundConflict[],
+  now: string, complete: boolean): ReconcileResult {
+  return store.transaction(() => {
+    const foundIds = new Set<string>();
+    for (const conflict of found) {
+      const id = conflictId(courseId, conflict.field, targetOf(conflict));
+      foundIds.add(id);
+      const existing = store.loadSyncConflict(id);
+      if (!existing) {
+        store.saveSyncConflict(row(conflict, id, courseId, now));
+        continue;
+      }
+      const unchanged = same(existing.skeletonValue, conflict.field === 'weight' ? conflict.skeletonValue : undefined)
+        && same(existing.canvasValue, conflict.canvasValue);
+      if (existing.state === 'resolved' && unchanged) {
+        store.saveSyncConflict({ ...existing, checkedAt: now });
+      } else if (existing.state === 'open' && unchanged) {
+        store.saveSyncConflict({ ...existing, checkedAt: now });
+      } else {
+        // A new, changed or previously agreed conflict is open again; any old choice no longer applies.
+        store.saveSyncConflict(row(conflict, id, courseId, now));
+      }
     }
-    const unchanged = same(existing.skeletonValue, conflict.field === 'weight' ? conflict.skeletonValue : undefined)
-      && same(existing.canvasValue, conflict.canvasValue);
-    if (existing.state === 'resolved' && unchanged) {
-      store.saveSyncConflict({ ...existing, checkedAt: now });
-    } else if (existing.state === 'open' && unchanged) {
-      store.saveSyncConflict({ ...existing, checkedAt: now });
-    } else {
-      // A new, changed or previously agreed conflict is open again; any old choice no longer applies.
-      store.saveSyncConflict(row(conflict, id, courseId, now));
-    }
-  }
 
-  // An open disagreement the new values no longer show has been settled by the platform or the skeleton.
-  for (const existing of store.listSyncConflicts(courseId)) {
-    if (existing.state === 'open' && !foundIds.has(existing.id)) {
-      store.saveSyncConflict({ ...existing, state: 'agreed', checkedAt: now });
+    // An open disagreement the new values no longer show has been settled by the platform or the skeleton.
+    for (const existing of store.listSyncConflicts(courseId)) {
+      if (complete && existing.state === 'open' && !foundIds.has(existing.id)) {
+        store.saveSyncConflict({ ...existing, state: 'agreed', checkedAt: now });
+      }
     }
-  }
 
-  const conflicts = store.listSyncConflicts(courseId);
-  return { conflicts, resolved: resolvedChoices(conflicts) };
+    const conflicts = store.listSyncConflicts(courseId);
+    return { conflicts, resolved: resolvedChoices(conflicts) };
+  });
 }

@@ -78,11 +78,30 @@ function normalizeName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+/** A weight the classifier copied from the compact list, such as `(weight 30)`, `(30%)` or `30%`. */
+const WEIGHT_SUFFIX = /\s*(?:\(\s*weight\s+\d+(?:\.\d+)?\s*\)|\(\s*\d+(?:\.\d+)?\s*%\s*\)|\d+(?:\.\d+)?\s*%)\s*$/i;
+
+/** The classifier's component name without a trailing weight, normalized for comparison. */
+function normalizeComponentName(value: string): string {
+  return normalizeName(value.replace(WEIGHT_SUFFIX, ''));
+}
+
 interface Component {
   key: string;
   name: string;
   weight?: number;
   hurdle?: string;
+}
+
+/** Exact normalized name first; otherwise the one skeleton name that is a word-boundary prefix. */
+function matchComponent(name: string | undefined, byName: ReadonlyMap<string, Component>): Component | undefined {
+  if (!name) return undefined;
+  const normalized = normalizeComponentName(name);
+  if (!normalized) return undefined;
+  const exact = byName.get(normalized);
+  if (exact) return exact;
+  const candidates = [...byName.entries()].filter(([candidate]) => normalized.startsWith(`${candidate} `));
+  return candidates.length === 1 ? candidates[0]![1] : undefined;
 }
 
 function skeletonComponents(courseCode: string, skeleton: SkeletonStage | undefined): Component[] {
@@ -106,15 +125,31 @@ export function gradeItems(input: GradeInput): GradeResult {
   const byName = new Map(components.map(component => [normalizeName(component.name), component]));
   const byKey = new Map(components.map(component => [component.key, component]));
   const assignmentIds = new Set((input.groups?.groups ?? []).flatMap(group => group.assignments.map(item => item.id)));
+  const groupNameCounts = new Map<string, number>();
+  for (const group of input.groups?.groups ?? []) {
+    for (const assignment of group.assignments) {
+      const name = normalizeName(assignment.name);
+      groupNameCounts.set(name, (groupNameCounts.get(name) ?? 0) + 1);
+    }
+  }
   const classified = new Map((input.classification?.items ?? []).map(item => [item.id, item]));
   // A quiz page can name the same item with a quiz id, while the Canvas groups page names its assignment id;
-  // map such a classified id through the quiz name only when it corresponds to a groups item.
-  const quizNames = new Map((input.quizzes?.quizzes ?? []).map(quiz => [quiz.id, normalizeName(quiz.name)]));
+  // map such an id through the quiz name only when that name identifies one quiz and one groups item.
+  const quizNames = new Map<string, string>();
+  const quizNameCounts = new Map<string, number>();
+  for (const quiz of input.quizzes?.quizzes ?? []) {
+    const name = normalizeName(quiz.name);
+    quizNames.set(quiz.id, name);
+    quizNameCounts.set(name, (quizNameCounts.get(name) ?? 0) + 1);
+  }
   const classifiedByQuizName = new Map<string, ItemsClassifyInput['items'][number]>();
   for (const item of input.classification?.items ?? []) {
     if (assignmentIds.has(item.id)) continue;
     const name = quizNames.get(item.id);
-    if (name && !classifiedByQuizName.has(name)) classifiedByQuizName.set(name, item);
+    if (name && quizNameCounts.get(name) === 1 && groupNameCounts.get(name) === 1
+      && !classifiedByQuizName.has(name)) {
+      classifiedByQuizName.set(name, item);
+    }
   }
   const items: GradedItem[] = [];
   const weightConflicts = new Map<string, WeightConflict>();
@@ -126,7 +161,7 @@ export function gradeItems(input: GradeInput): GradeResult {
     const groupGraded = groupWeight !== null && groupWeight > 0;
     for (const assignment of group.assignments) {
       const classification = classified.get(assignment.id) ?? classifiedByQuizName.get(normalizeName(assignment.name));
-      let component = classification?.component ? byName.get(normalizeName(classification.component)) : undefined;
+      let component = matchComponent(classification?.component, byName);
       const resolvedComponent = input.resolved?.unmatched?.[assignment.id];
       const dismissed = resolvedComponent === 'dismissed';
       if (resolvedComponent !== undefined && !dismissed) {
