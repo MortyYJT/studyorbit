@@ -4,7 +4,7 @@
 > 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 的改法见 #165–#197，PRD 待更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/`（进行中：`layered-sync`，规格已合并，实现中）；决定看 `note/decisions.md`（#1–#214）；进度看 `note/product/roadmap.md`。
 
 - **最后更新：** 2026-10-26 晚，Claude。
-- **模式：** OpenSpec 变更 `layered-sync`（路线图 C-5，**并入了原来的 `canvas-check-item-policy`**），规格已合并，实现中：第 2 组（#186）、第 3 组（#191）、4.1（#193）已合并；下一步 4.2。代码交给 dsh（DeepSeek）写（#209）；需要 Codex 的实测，等额度恢复后再做。
+- **模式：** OpenSpec 变更 `layered-sync`（路线图 C-5，**并入了原来的 `canvas-check-item-policy`**），规格已合并，实现中：第 2 组（#186）、第 3 组（#191）、4.1（#193）、4.2（#196）已合并；下一步 5.1。代码交给 dsh（DeepSeek）写（#209）；需要 Codex 的实测，等额度恢复后再做。
 - **本轮合并（10-26 凌晨）：** #175、#176 重写 README（项目说明、为什么读页面不用 token、功能、计划、进度），同时把决策 #193–#197 和路线图 C-5 带进了 main；GitHub 仓库的 About 说明也已更新；#178 合并了 C-5 规格。
 - **#191 删除隐私检查（沿用）：** 姓名、邮箱、学号、凭证样式的文字、本地路径都会原样存储、原样发给模型。保留引用完整性检查和 `source.record` 的网址规则。仓库和测试数据里仍然不能放真实课程数据、密钥和浏览器配置。
 - **分工（#189）：** 实现和审查优先交给 Codex；Claude 派活、提交、在本机重跑检查、浏览器验证、合并。Codex 额度用完时由 Claude 接手，审查改用只读的 Claude 子代理（#175、#176 就是这样审的）。
@@ -23,7 +23,9 @@
   2. 第 2 组（数据模型和存储）：issue #184 → PR #186 已合并（e9ab431）。dsh 写，Claude 子代理审了两轮（第 1 轮 1 个阻塞 + 4 个非阻塞，dsh 返工 1 次），CI 通过。
   3. 第 3 组（Canvas 接口剪贴板读取，`canvas.capture`）：issue #185 → PR #191 已合并（de08156），审查一轮通过、CI 通过。非阻塞遗留（课程代码正则未锚定、同码同学期合并、空课程列表返回 0、权重 >100 整页拒、未加权课程仍存 0 权重）写在 PR #191 正文里，5.1/6.2 要处理。
   3b. 4.1（Handbook 剪贴板解析，`handbook.capture`）：issue #190 → PR #193 已合并（1aef782）。两轮审查都要改（第 1 轮：描述里的百分比被当成权重；第 2 轮：折行的 Hurdle 行截断表格），dsh 返工 1 次，第 2 轮由 Claude 先写测试再修，之后按规则自主决定合并。解析器只用合成文本测过，1.3b 实测后要回头调。
-  3c. 下一步：4.2 路由（`src/sync/routing.ts`）开 issue 派给 dsh，然后 5.x 流水线、6.x 分类和文档构建。clone `../unimelb-coursework-agent-layered-model` 可以复用（每个 issue 从最新 main 开新的 `dsh/<topic>` 分支）。
+  3c. 4.2（导航栏路由，`src/sync/routing.ts`）：issue #195 → PR #196 已合并（3605c6d），审查一轮通过，Claude 补了加固：返回规范化网址，拒绝 userinfo 和编码斜杠，混合工具名一律算 `never`，可以传入课程 id。
+  3d. 待核实（实测 1.1）：Canvas tabs 接口的 `html_url` 可能是相对路径（绝对地址在 `full_url`）。这是根据文档推断的，没验证。`parseCanvasTabs` 现在假设它是绝对地址；如果实测是相对的，主页链接放行会全部失效（往保守方向失效）。另外 grades 标签的网址留在了 `allowed.read` 里，5.1 不要把它交给任何任务。
+  3e. 下一步：5.1 编排器（`src/sync/agent-job.ts`），然后 5.2 任务 prompt、5.3 agent 命令。clone `../unimelb-coursework-agent-layered-model` 可以复用（每个 issue 从最新 main 开新的 `dsh/<topic>` 分支）。
   4. dsh 的 DeepSeek key 放在 `~/.zshenv` 的 `DEEPSEEK_API_KEY`（10-26 换过一次）；报 `AUTH` 错就是 key 失效。
   5. Codex 额度恢复、你在场时做任务 1.1（接口参数）、1.4（多窗口并行实验），最后做 10.2（实测填表）。
 - **Ed**：edstem-cli 0.8.2 已全局安装；`edstem auth login` 等你粘贴 token（任务 1.2）。它现在的代码只认 Ed API token，不读 cookie。
