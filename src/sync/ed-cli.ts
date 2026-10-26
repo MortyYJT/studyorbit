@@ -72,8 +72,60 @@ export interface EdPageLesson { title: string; dueAt?: string; quote: string }
 export interface EdPageStage { via: 'ax'; source: 'edstem-page'; lessons: EdPageLesson[] }
 export type EdStage = EdApiStage | EdPageStage;
 
-/** A course-document Ed item; 5.2b's build merges these with the course's components. */
+/** A course-document Ed item; the build maps these with the course's components. */
 export type EdItem = Pick<CourseItem, 'key' | 'url' | 'name' | 'kind' | 'due'>;
+
+/** One dated Ed lesson as the classifier and the build see it. */
+export interface EdLessonEntry {
+  /** The classifier id: `ed:<lessonId>` for the CLI stage, `ed:<n>` (1-based) for the fallback stage. */
+  id: string;
+  /** The stable course-document item key. */
+  key: string;
+  title: string;
+  module?: string;
+  due: string;
+  via: 'api' | 'ax';
+  /** The lesson URL when the CLI supplied one; the fallback reads a page, not a lesson URL. */
+  url?: string;
+  /** The page quote for a fallback lesson; the CLI has no quote. */
+  quote?: string;
+}
+
+/** The key's slug segment stays short enough for the item-key contract, even with a `-2` suffix. */
+const ED_SLUG_MAX = 120;
+
+/** A stable lower-case slug for a fallback lesson title; an empty title still gets a usable segment. */
+function lessonSlug(title: string): string {
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, ED_SLUG_MAX).replace(/-+$/g, '');
+  return slug || 'lesson';
+}
+
+/**
+ * The dated lessons of an Ed stage in stage order, with the id the classifier echoes and the key the
+ * document uses. The fallback has no lesson id, so its keys come from the slugged title and duplicates get
+ * `-2`, `-3`, ...; that keeps a key stable across runs as long as the lesson list order is.
+ */
+export function edLessonEntries(stage: EdStage, courseCode: string): EdLessonEntry[] {
+  if (stage.via === 'api') {
+    return stage.lessons.flatMap(lesson => !lesson.dueAt ? [] : [{
+      id: `ed:${lesson.id}`, key: `${courseCode}:ed:lesson:${lesson.id}`,
+      title: lesson.title, ...(lesson.module ? { module: lesson.module } : {}), due: lesson.dueAt,
+      via: 'api' as const, url: lesson.url,
+    }]);
+  }
+  const used = new Set<string>();
+  const entries: EdLessonEntry[] = [];
+  stage.lessons.forEach((lesson, index) => {
+    if (!lesson.dueAt) return;
+    const base = lessonSlug(lesson.title);
+    let slug = base;
+    for (let suffix = 2; used.has(slug); suffix++) slug = `${base}-${suffix}`;
+    used.add(slug);
+    entries.push({ id: `ed:${index + 1}`, key: `${courseCode}:ed:lesson:${slug}`,
+      title: lesson.title, due: lesson.dueAt, via: 'ax', quote: lesson.quote });
+  });
+  return entries;
+}
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const sessionHas = (session: string, value: string): boolean => new RegExp(`(?:^|\\D)${value}(?!\\d)`).test(session);
@@ -169,16 +221,20 @@ export function edHook(runner: EdRunner, jobs: Pick<SyncJobs, 'recordStage'>, op
 }
 
 /**
- * Map dated CLI lessons to course-document items: only lessons with a due date become items, and the due
- * and name carry `via: "api"` with the Ed lesson URL as source. The kind is left for 5.2b's classification.
+ * Map dated lessons to course-document items: only lessons with a due date become items, and the due and
+ * name carry the stage's `via` and its source. The CLI knows each lesson URL; the fallback page's quote and
+ * the course's Ed page are its source. The kind is left for the classification and build.
  */
-export function edItems(stage: EdStage, courseCode: string, checkedAt = new Date().toISOString()): EdItem[] {
-  if (stage.via !== 'api') return [];
-  return stage.lessons.flatMap(lesson => lesson.dueAt === null ? [] : [{
-    key: `${courseCode}:ed:lesson:${lesson.id}`,
-    url: lesson.url,
-    name: { value: lesson.title, state: 'found' as const, via: 'api' as const, source: lesson.url },
-    kind: { value: null, state: 'unknown' as const, checkedAt },
-    due: { value: lesson.dueAt, state: 'found' as const, via: 'api' as const, source: lesson.url },
-  }]);
+export function edItems(stage: EdStage, courseCode: string, checkedAt = new Date().toISOString(), pageUrl?: string): EdItem[] {
+  return edLessonEntries(stage, courseCode).map(entry => {
+    const source = entry.url ?? pageUrl;
+    const page = { ...(entry.quote ? { quote: entry.quote } : {}), ...(source ? { source } : {}) };
+    return {
+      key: entry.key,
+      ...(entry.url ? { url: entry.url } : {}),
+      name: { value: entry.title, state: 'found' as const, via: entry.via, ...page },
+      kind: { value: null, state: 'unknown' as const, checkedAt },
+      due: { value: entry.due, state: 'found' as const, via: entry.via, ...page },
+    };
+  });
 }

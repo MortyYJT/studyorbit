@@ -4,6 +4,7 @@ import type { CanvasAssignmentValue, GroupsStage } from './canvas-api.js';
 import type { CourseComponent, CourseDocument, CourseItem, Field } from './course-json.js';
 import { componentKeyFor, gradeItems, type GradedItem, type GradingCategory, type GradingConflict, type ResolvedChoices } from './grading.js';
 import type { HandbookComponent, SkeletonStage } from './handbook.js';
+import { edLessonEntries, type EdLessonEntry, type EdStage } from './ed-cli.js';
 
 /**
  * Build the course document from the pipeline stages (layered-sync task 6.2, #212).
@@ -43,6 +44,11 @@ const asClassification = (value: unknown): ItemsClassifyInput | undefined => {
 const asQuizzes = (value: unknown): QuizzesReadInput | undefined => {
   const stage = record(value);
   return stage && Array.isArray(stage.quizzes) ? stage as unknown as QuizzesReadInput : undefined;
+};
+const asEdStage = (value: unknown): EdStage | undefined => {
+  const stage = record(value);
+  return stage && (stage.via === 'api' || stage.via === 'ax') && Array.isArray(stage.lessons)
+    ? stage as unknown as EdStage : undefined;
 };
 
 export interface BuildDocumentInput {
@@ -195,10 +201,14 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
   const skeleton = asSkeleton(stages.skeleton);
   const classification = asClassification(stages.classification);
   const quizzes = asQuizzes(stages.quizzes);
+  const edStage = asEdStage(stages.ed);
+  const edLessons = edStage ? edLessonEntries(edStage, course.code) : [];
+  const edById = new Map(edLessons.map(entry => [entry.id, entry]));
   const map = record(stages.map) as CourseMapInput | undefined;
 
   const graded = gradeItems({ courseCode: course.code, ...(groups ? { groups } : {}), ...(skeleton ? { skeleton } : {}),
-    ...(classification ? { classification } : {}), ...(quizzes ? { quizzes } : {}), ...(resolved ? { resolved } : {}) });
+    ...(classification ? { classification } : {}), ...(quizzes ? { quizzes } : {}),
+    ...(edLessons.length ? { edLessons } : {}), ...(resolved ? { resolved } : {}) });
   const gradedItems = graded.items.filter(item => item.graded);
   const ungradedItems = graded.items.filter(item => !item.graded);
 
@@ -263,17 +273,58 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
     };
   };
 
+  /** An Ed item has no points or Canvas state; name and due keep the stage that read them. */
+  const buildEdItem = (item: GradedItem, entry: EdLessonEntry): CourseItem => {
+    const fallbackSource = course.pages.ed;
+    const quote = entry.quote ? { quote: quoteText(entry.quote) } : {};
+    const page = entry.via === 'api' ? { source: entry.url } : { ...quote, ...(fallbackSource ? { source: fallbackSource } : {}) };
+    return {
+      key: entry.key,
+      ...(entry.url ? { url: entry.url } : {}),
+      name: found(entry.title, entry.via, page),
+      kind: kindField(item.category, now),
+      unlockAt: unknownField(now),
+      due: found(entry.due, entry.via, page),
+      status: derived('not_started'),
+      score: notApplicable(),
+      outOf: notApplicable(),
+      weight: item.graded ? unknownField(now) : derived(0),
+    };
+  };
+
+  const buildItemFor = (item: GradedItem): CourseItem => {
+    const entry = edById.get(item.id);
+    return entry ? buildEdItem(item, entry) : buildItem(item);
+  };
+
+  /** A graded Ed item shows the same derived even share the import would compute for its component. */
+  const buildComponentItems = (items: readonly GradedItem[], weight: Field<number> | undefined): CourseItem[] => {
+    const built = items.map(buildItemFor);
+    const total = weight ? known(weight) : undefined;
+    if (total === undefined) return built;
+    const stated = built.filter(item => item.weight.state === 'found' && item.weight.value !== null);
+    const slots = built.length - stated.length;
+    if (slots <= 0) return built;
+    const statedSum = stated.reduce((sum, item) => sum + (item.weight.value as number), 0);
+    const share = Math.max(0, (total - statedSum) / slots);
+    built.forEach((item, index) => {
+      if (edById.has(items[index]!.id) && items[index]!.graded) item.weight = derived(share);
+    });
+    return built;
+  };
+
   const mids: Mids[] = skeletonComponents.map(({ key, component }) => {
     const items = gradedItems.filter(item => resolvedComponentKey(item) === key);
     const category = mostCommonCategory(items);
+    const weight = componentWeight(component, key, items, groups, skeleton, resolved, now);
     return {
       key,
       name: found(component.name, 'handbook', { quote: quoteText(component.quote), ...(skeleton?.source ? { source: skeleton.source } : {}) }),
       kind: kindField(category ?? 'unknown', now),
       count: items.length ? derived(items.length) : unknownField(now),
-      weight: componentWeight(component, key, items, groups, skeleton, resolved, now),
+      weight,
       hurdleMin: hurdleMinimum(component, skeleton, now),
-      items: items.map(buildItem),
+      items: buildComponentItems(items, weight),
     };
   });
 
@@ -284,7 +335,7 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
     count: derived(ungradedItems.length),
     weight: derived(0),
     hurdleMin: notApplicable(),
-    items: ungradedItems.map(buildItem),
+    items: ungradedItems.map(buildItemFor),
   } : undefined;
 
   const unassignedComponent: Mids | undefined = synthetic.unassigned ? {
@@ -294,7 +345,7 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
     count: derived(unassignedItems.length),
     weight: unknownField(now),
     hurdleMin: notApplicable(),
-    items: unassignedItems.map(buildItem),
+    items: unassignedItems.map(buildItemFor),
   } : undefined;
 
   // One final at most: the heaviest exam component, with the first in Handbook order breaking a tie.
@@ -330,7 +381,8 @@ export function buildCourseDocument(input: BuildDocumentInput): BuildDocumentRes
       term: found(course.term, 'api'),
       aiPolicy: coursePolicy,
       pages: { ...course.pages },
-      platforms: { canvas: groups ? 'read' : blocked.has('canvas') ? 'blocked' : 'absent', ed: 'absent' },
+      platforms: { canvas: groups ? 'read' : blocked.has('canvas') ? 'blocked' : 'absent',
+        ed: edStage ? 'read' : blocked.has('ed') ? 'blocked' : 'absent' },
       componentsComplete: skeleton !== undefined && everyGradedItemHasComponent,
     },
     components,

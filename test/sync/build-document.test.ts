@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { projectGrade } from '../../src/domain/grade.js';
 import type { CourseSelection } from '../../src/domain/schemas.js';
 import type { ItemsClassifyInput } from '../../src/protocol/sync.js';
 import { canvasApiUrl, type CanvasAssignmentValue, type GroupsStage } from '../../src/sync/canvas-api.js';
@@ -7,6 +8,7 @@ import { reconcileConflicts } from '../../src/sync/conflicts.js';
 import { assessmentId, componentAssessmentId, importCourseDocument, remainderAssessmentId } from '../../src/sync/course-import.js';
 import { validateCourseDocument } from '../../src/sync/course-json.js';
 import type { SkeletonStage } from '../../src/sync/handbook.js';
+import { collectWork } from '../../src/planning/work.js';
 import { SqliteRepository } from '../../src/store/sqlite.js';
 
 const now = '2026-10-24T01:00:00Z';
@@ -54,6 +56,20 @@ function skeletonStage(components: { name: string; weight?: number; hurdle?: str
 
 function classification(items: ItemsClassifyInput['items']): ItemsClassifyInput {
   return { jobId: 'synthetic-job', courseKey: key, items };
+}
+
+/** A synthetic CLI Ed stage: only the fields the build reads, with invented ids and titles. */
+function edApiStage(lessons: { id: string; title: string; dueAt: string | null; module?: string }[]) {
+  return { via: 'api' as const, source: 'edstem-cli' as const, unitId: 4101, files: [],
+    lessons: lessons.map(lesson => ({ id: lesson.id, title: lesson.title, module: lesson.module ?? 'Synthetic module',
+      dueAt: lesson.dueAt, url: `https://edstem.org/au/courses/800001/lessons/${lesson.id}` })) };
+}
+
+/** A synthetic fallback Ed page stage; the quote is invented page text. */
+function edPageStage(lessons: { title: string; dueAt?: string }[]) {
+  return { via: 'ax' as const, source: 'edstem-page' as const,
+    lessons: lessons.map(lesson => ({ title: lesson.title, ...(lesson.dueAt ? { dueAt: lesson.dueAt } : {}),
+      quote: `Synthetic quote for ${lesson.title}` })) };
 }
 
 const assignmentStage = (id: string, policy: 'allowed' | 'prohibited' | 'unknown' = 'allowed') =>
@@ -337,6 +353,123 @@ describe('build the course document from the pipeline stages (layered-sync task 
     } as unknown as BuildDocumentResult['document'];
     expect(classificationRetryIds({ document, synthetic: {} })).toEqual(['8']);
     expect(classificationRetryIds({ document, synthetic: { ungraded: syntheticKey } })).toEqual([]);
+  });
+
+  it('classifies two dated Ed lessons as quizzes in a weighted component, split evenly, with the weight-sum warning intact', () => {
+    const result = build({
+      skeleton: skeletonStage([{ name: 'Quizzes', weight: 10 }, { name: 'Exam', weight: 80 }]),
+      ed: edApiStage([
+        { id: '7001', title: 'Synthetic Ed quiz 1', dueAt: '2026-10-30T12:59:00Z' },
+        { id: '7002', title: 'Synthetic Ed quiz 2', dueAt: '2026-11-06T12:59:00Z' },
+      ]),
+      classification: classification([
+        { id: 'ed:7001', category: 'quiz', component: 'Quizzes', evidence: 'Synthetic Ed lesson list' },
+        { id: 'ed:7002', category: 'quiz', component: 'Quizzes', evidence: 'Synthetic Ed lesson list' },
+      ]),
+    });
+    const quizzes = result.document.components.find(component => component.key === `${code}:quizzes`)!;
+    expect(quizzes.items.map(item => item.key)).toEqual([
+      `${code}:ed:lesson:7001`, `${code}:ed:lesson:7002`,
+    ]);
+    expect(quizzes.items.map(item => item.kind?.value)).toEqual(['quiz', 'quiz']);
+    expect(quizzes.items.map(item => item.weight)).toEqual([
+      { value: 5, state: 'derived' }, { value: 5, state: 'derived' },
+    ]);
+
+    const saved = save(result);
+    for (const lessonId of ['7001', '7002']) {
+      expect(saved.store.loadAssessment(assessmentId(term, `${code}:ed:lesson:${lessonId}`)))
+        .toMatchObject({ kind: 'quiz', weight: 5, group: { key: `${code}:quizzes` } });
+    }
+    const course = saved.store.loadCourse(saved.receipt.courseId)!;
+    const assessments = saved.store.query('assessments', { limit: 50 }).items;
+    const projection = projectGrade(course, assessments, 'H1');
+    expect(typeof projection.gradedWeight).toBe('number');
+    expect(Number.isFinite(projection.gradedWeight)).toBe(true);
+    expect(saved.checked.warnings).toEqual([{ code: 'WEIGHT_SUM', sum: 90 }]);
+  });
+
+  it('stores an ungraded or unclassified dated Ed lesson as ungraded weight 0, outside planning, with no retry', () => {
+    const result = build({
+      skeleton: skeletonStage([{ name: 'Workshops', weight: 10 }]),
+      ed: edApiStage([
+        { id: '7101', title: 'Synthetic weekly workshop', dueAt: '2026-10-30T12:59:00Z' },
+        { id: '7102', title: 'Synthetic unclassified lesson', dueAt: '2026-11-06T12:59:00Z' },
+      ]),
+      classification: classification([
+        { id: 'ed:7101', category: 'ungraded', component: 'Workshops', evidence: 'Synthetic Ed lesson list' },
+      ]),
+    });
+    const ungraded = result.document.components.find(component => component.key === `${code}:ungraded`)!;
+    expect(ungraded.items.map(item => item.key)).toEqual([
+      `${code}:ed:lesson:7101`, `${code}:ed:lesson:7102`,
+    ]);
+    expect(ungraded.items.map(item => item.weight)).toEqual([
+      { value: 0, state: 'derived' }, { value: 0, state: 'derived' },
+    ]);
+    expect(classificationRetryIds(result)).toEqual([]);
+
+    const saved = save(result);
+    for (const lessonId of ['7101', '7102']) {
+      expect(saved.store.loadAssessment(assessmentId(term, `${code}:ed:lesson:${lessonId}`)))
+        .toMatchObject({ kind: 'ungraded', weight: 0 });
+    }
+    const work = collectWork(saved.store, term, 'Australia/Melbourne');
+    const planned = [...work.items, ...work.deadlines].map(entry => entry.workId);
+    expect(planned).not.toContain(assessmentId(term, `${code}:ed:lesson:7101`));
+    expect(planned).not.toContain(assessmentId(term, `${code}:ed:lesson:7102`));
+  });
+
+  it('keeps only the Canvas item when an Ed lesson name normalizes to the same name', () => {
+    const result = build({
+      skeleton: skeletonStage([{ name: 'Quizzes', weight: 10 }]),
+      groups: groupsStage([{ name: 'Quizzes', weight: 10, items: [{ id: '1', name: 'Synthetic Shared Quiz' }] }]),
+      ed: edApiStage([
+        { id: '7201', title: 'synthetic shared quiz', dueAt: '2026-10-30T12:59:00Z' },
+        { id: '7202', title: 'Synthetic unique quiz', dueAt: '2026-11-06T12:59:00Z' },
+      ]),
+      classification: classification([
+        { id: '1', category: 'quiz', component: 'Quizzes', evidence: 'Synthetic group name' },
+        { id: 'ed:7201', category: 'quiz', component: 'Quizzes', evidence: 'Synthetic Ed lesson list' },
+        { id: 'ed:7202', category: 'quiz', component: 'Quizzes', evidence: 'Synthetic Ed lesson list' },
+      ]),
+    });
+    expect(result.document.components.flatMap(component => component.items.map(item => item.key)))
+      .toEqual([`${code}:canvas:assignment:1`, `${code}:ed:lesson:7202`]);
+    const saved = save(result);
+    expect(saved.store.loadAssessment(assessmentId(term, `${code}:ed:lesson:7201`))).toBeUndefined();
+    expect(saved.store.loadAssessment(assessmentId(term, `${code}:ed:lesson:7202`))).toMatchObject({ kind: 'quiz' });
+    expect(saved.store.loadAssessment(assessmentId(term, `${code}:canvas:assignment:1`))).toMatchObject({ kind: 'quiz' });
+  });
+
+  it('builds fallback Ed items with slugged stable keys, the page quote and source, and no URL', () => {
+    const stages = {
+      skeleton: skeletonStage([{ name: 'Workshops', weight: 20 }]),
+      ed: edPageStage([
+        { title: 'Weekly Workshop', dueAt: '2026-10-30T12:59:00Z' },
+        { title: 'Synthetic undated workshop' },
+        { title: 'Weekly Workshop', dueAt: '2026-11-06T12:59:00Z' },
+      ]),
+      classification: classification([
+        { id: 'ed:1', category: 'participation', component: 'Workshops', evidence: 'Synthetic Ed page quote' },
+        { id: 'ed:3', category: 'participation', component: 'Workshops', evidence: 'Synthetic Ed page quote' },
+      ]),
+    };
+    const first = build(stages);
+    const second = build(stages);
+    const keys = (result: typeof first) => result.document.components
+      .flatMap(component => component.items.map(item => item.key)).filter(itemKey => itemKey.includes(':ed:'));
+    expect(keys(first)).toEqual([`${code}:ed:lesson:weekly-workshop`, `${code}:ed:lesson:weekly-workshop-2`]);
+    expect(keys(second)).toEqual(keys(first));
+
+    const items = first.document.components.find(component => component.key === `${code}:workshops`)!.items;
+    expect(items.map(item => item.key)).toEqual(keys(first));
+    expect(items[0]).toMatchObject({
+      name: { value: 'Weekly Workshop', via: 'ax', quote: 'Synthetic quote for Weekly Workshop', source: edPage },
+      due: { value: '2026-10-30T12:59:00Z', via: 'ax', quote: 'Synthetic quote for Weekly Workshop', source: edPage },
+    });
+    expect(items[0]).not.toHaveProperty('url');
+    expect(items[1]!.due).toMatchObject({ value: '2026-11-06T12:59:00Z', via: 'ax', source: edPage });
   });
 
   it('reads the hurdle minimum from the phrase that states it, not the first percentage', () => {
