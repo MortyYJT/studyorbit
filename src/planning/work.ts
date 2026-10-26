@@ -49,6 +49,8 @@ export function collectWork(store: SqliteRepository, term: string, timeZone: str
     if (title === null) continue;
     const kind = fields.kind!.value;
     const base = { workId: assessment.id, title, courseId: assessment.courseId, due: due ?? undefined, actualMinutes: 0 };
+    // Ungraded work (#202) is kept for display but is never planned and is no deadline.
+    if (kind === 'ungraded') continue;
     if (kind === 'exam') { deadlines.push({ workId: base.workId, title, courseId: base.courseId, due: due ?? undefined, kind: 'exam', ...(due ? { date: localDate(due, timeZone) } : {}) }); continue; }
     active.set(assessment.id, base); items.push(base);
   }
