@@ -3,39 +3,69 @@ import type { Copy, Language } from './i18n.js';
 import type { WeekStore, ManualFields } from './weekStore.js';
 import type { AgentPreset } from './chat.js';
 import { fieldName } from './shell.js';
-import { addDays, courseSummaries, deadlinesByDate, localDate, localTime, mondayOf, monthGrid, weekModel, zonedIso, type DeadlineEntry, type Need, type PlannedItem, type Task, type WorkRow } from './week.js';
+import { addDays, conflictValue, courseSummaries, deadlinesByDate, localDate, localTime, mondayOf, monthGrid, needGroups, visibleNeedItems, weekModel, zonedIso,
+  type ConflictNeed, type DeadlineEntry, type Need, type PlannedItem, type Task, type WorkRow } from './week.js';
 
 const hours = (minutes: number) => `${Math.round(minutes / 6) / 10}`;
 function errorText(code: string, t: Copy) { return code === 'OWNER_SESSION_EXPIRED' ? t.session : `${t.error} (${code})`; }
 function scrollTo(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 
-export function NeedsYou({ needs, t, onStatus, onSelect, onCourse }: { needs: Need[]; t: Copy; onStatus: () => void;
-  onSelect: () => void; onCourse: (courseId: string) => void }) {
+function UnmatchedChoice({ item, t, onResolve }: { item: ConflictNeed & { kind: 'unmatched' }; t: Copy;
+  onResolve: (conflictId: string, choice: string) => void }) {
   const s = t.syncNeeds;
+  const [choice, setChoice] = useState('');
+  return <span className="need-actions"><select aria-label={s.assignTo} value={choice} onChange={event => setChoice(event.target.value)}>
+    <option value="">{s.assignTo}</option>{item.components.map(component => <option key={component.key} value={component.key}>{component.name}</option>)}
+  </select><button disabled={!choice} onClick={() => onResolve(item.id, choice)}>{s.assign}</button>
+    <button onClick={() => onResolve(item.id, 'dismissed')}>{s.dismiss}</button></span>;
+}
+
+export function NeedsYou({ needs, t, onStatus, onSelect, onCourse, onResolve, onOpenUpdate }: { needs: Need[]; t: Copy; onStatus: () => void;
+  onSelect: () => void; onCourse: (courseId: string) => void; onResolve: (conflictId: string, choice: string) => void;
+  onOpenUpdate: (savedFileId: string) => void }) {
+  const s = t.syncNeeds;
+  const [expanded, setExpanded] = useState<ReadonlySet<Need['kind']>>(new Set());
+  const groups = useMemo(() => needGroups(needs), [needs]);
   if (!needs.length) return null;
-  return <section className="needs" aria-labelledby="needs-title"><h2 id="needs-title">{t.needs}</h2>{needs.map(item => {
-    const site = 'site' in item ? item.site === 'ed' ? 'Ed' : 'Canvas' : '';
-    const course = 'courseId' in item && item.courseId ? item.courseId : undefined;
-    const open: [string, () => void] | undefined = course ? [s.openCourse, () => onCourse(course)] : undefined;
-    const [text, action] = ((): [ReactNode, [string, () => void] | undefined] => {
-      switch (item.kind) {
-        case 'blocked': return [s.blockedHelp.join(site), [t.status, onStatus]];
-        case 'failed': return [`${t.syncFailed} · ${s.outcomes[item.outcome]}${item.outcome === 'AGENT_UNAVAILABLE' ? ` · ${s.agentHelp}` : ''}`, [t.status, onStatus]];
-        case 'select': return [item.count ? `${item.count} ${s.select}` : s.selectNone, [s.choose, onSelect]];
-        case 'unknown': return [<>{item.course} · {item.fields.length > 0 && <>{s.unknown}{t.colon}{item.fields.map(path => fieldName(path, t)).join('; ')}</>}
-          {item.fields.length > 0 && item.dropped.length > 0 && ' · '}{item.dropped.length > 0 && <>{s.dropped}{t.colon}{item.dropped.map(path => fieldName(path, t)).join('; ')}</>}</>, open];
-        case 'weights': return [`${item.course} · ${item.warning === 'WEIGHT_SUM' ? item.sum === undefined ? s.weightSumUnknown : s.weightSum.join(String(item.sum))
-          : (s.warnings as Record<string, string>)[item.warning] ?? item.warning}`, open];
-        case 'policy': return [<>{item.course} · {item.value ? <>{s.policy} {t.coursePage[item.value]}</> : s.policyUnknown}{item.quote && <> · <q>{item.quote}</q></>}</>, open];
-        case 'unread': return [`${item.course} · ${s.unread}`, [t.status, onStatus]];
-        case 'overflow': return [`${item.courseCode ? `${item.courseCode} · ` : ''}${item.title} · ${t.overflowMissing} ${hours(item.minutes)} ${t.h}`, [t.show, () => scrollTo('overflow')]];
-        case 'unestimated': return [`${item.count} ${t.unestimatedCount}`, [t.show, () => scrollTo('unestimated')]];
-      }
-    })();
-    const key = item.kind === 'overflow' ? item.workId : 'site' in item ? `${item.kind}-${item.site}`
-      : 'course' in item ? `${item.course}-${item.kind === 'weights' ? item.warning : ''}` : item.kind;
-    return <div className="attention-row" key={`${item.kind}-${key}`}><span>{text}</span>{action && <button onClick={action[1]}>{action[0]}</button>}</div>;
-  })}</section>;
+  const toggle = (kind: Need['kind']) => setExpanded(current => {
+    const next = new Set(current); if (next.has(kind)) next.delete(kind); else next.add(kind); return next;
+  });
+  const key = (item: Need, index: number) => item.kind === 'overflow' ? `overflow-${item.workId}`
+    : item.kind === 'weight' || item.kind === 'unmatched' ? `${item.kind}-${item.id}`
+    : item.kind === 'update' ? `update-${item.savedFileId}`
+    : 'site' in item ? `${item.kind}-${item.site}`
+    : 'course' in item ? `${item.kind}-${item.course}-${item.kind === 'weights' ? item.warning : ''}` : `${item.kind}-${index}`;
+  return <section className="needs" aria-labelledby="needs-title"><h2 id="needs-title">{t.needs}</h2>{groups.map(group =>
+    <div className="need-group" key={group.kind}>{visibleNeedItems(group, expanded.has(group.kind)).map((item, index) => {
+      const site = 'site' in item ? item.site === 'ed' ? 'Ed' : 'Canvas' : '';
+      const course = 'courseId' in item && item.courseId ? item.courseId : undefined;
+      const open = course ? <button onClick={() => onCourse(course)}>{s.openCourse}</button> : undefined;
+      const [text, actions] = ((): [ReactNode, ReactNode] => {
+        switch (item.kind) {
+          case 'blocked': return [s.blockedHelp.join(site), <button onClick={onStatus}>{t.status}</button>];
+          case 'failed': return [`${t.syncFailed} · ${s.outcomes[item.outcome]}${item.outcome === 'AGENT_UNAVAILABLE' ? ` · ${s.agentHelp}` : ''}`, <button onClick={onStatus}>{t.status}</button>];
+          case 'select': return [item.count ? `${item.count} ${s.select}` : s.selectNone, <button onClick={onSelect}>{s.choose}</button>];
+          case 'unknown': return [<>{item.course} · {item.fields.length > 0 && <>{s.unknown}{t.colon}{item.fields.map(path => fieldName(path, t)).join('; ')}</>}
+            {item.fields.length > 0 && item.dropped.length > 0 && ' · '}{item.dropped.length > 0 && <>{s.dropped}{t.colon}{item.dropped.map(path => fieldName(path, t)).join('; ')}</>}</>, open];
+          case 'weights': return [`${item.course} · ${item.warning === 'WEIGHT_SUM' ? item.sum === undefined ? s.weightSumUnknown : s.weightSum.join(String(item.sum))
+            : (s.warnings as Record<string, string>)[item.warning] ?? item.warning}`, open];
+          case 'policy': return [<>{item.course} · {item.value ? <>{s.policy} {t.coursePage[item.value]}</> : s.policyUnknown}{item.quote && <> · <q>{item.quote}</q></>}</>, open];
+          case 'unread': return [`${item.course} · ${s.unread}`, <button onClick={onStatus}>{t.status}</button>];
+          case 'weight': return [`${item.componentName ?? t.unknown} · ${s.handbook}${t.colon}${conflictValue(item.handbook)} · ${s.canvas}${t.colon}${conflictValue(item.canvas)}`,
+            <span className="need-actions"><button onClick={() => onResolve(item.id, 'skeleton')}>{s.useHandbook}</button>
+              <button onClick={() => onResolve(item.id, 'canvas')}>{s.useCanvas}</button></span>];
+          case 'unmatched': return [<>{s.unmatchedItem}{item.canvasName && <> · {item.canvasName}</>}</>,
+            <UnmatchedChoice item={item} t={t} onResolve={onResolve} />];
+          case 'update': return [`${item.assessmentName} · ${s.contentUpdated} · ${item.name}`, <button onClick={() => onOpenUpdate(item.savedFileId)}>{s.openSaved}</button>];
+          case 'overflow': return [`${item.courseCode ? `${item.courseCode} · ` : ''}${item.title} · ${t.overflowMissing} ${hours(item.minutes)} ${t.h}`, <button onClick={() => scrollTo('overflow')}>{t.show}</button>];
+          case 'unestimated': return [`${item.count} ${t.unestimatedCount}`, <button onClick={() => scrollTo('unestimated')}>{t.show}</button>];
+        }
+      })();
+      return <div className="attention-row" key={key(item, index)}><span>{text}</span>{actions}</div>;
+    })}
+    {group.hidden > 0 && <button className="more" aria-expanded={expanded.has(group.kind)} onClick={() => toggle(group.kind)}>
+      {expanded.has(group.kind) ? s.showLess : s.showMore.join(String(group.hidden))}</button>}
+    </div>)}</section>;
 }
 
 function Modal({ title, close, onClose, children }: { title: string; close: string; onClose: () => void; children: ReactNode }) {

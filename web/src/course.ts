@@ -45,9 +45,13 @@ export function courseFigures(course: Course, items: readonly Assessment[], band
 type Grouped = Pick<Assessment, 'id' | 'weight' | 'score' | 'group' | 'readState' | 'kind' | 'due'>;
 /** `earned` is undefined when a scored item's weight is unknown, as the ring then cannot size it either. */
 export interface AssessmentGroup<T> { key?: string; name?: string; weight?: number; earned?: number; items: T[] }
-const kindOrder: Record<string, number> = { participation: 0, quiz: 1, assignment: 2, exam: 3 };
+const kindOrder: Record<string, number> = { participation: 0, quiz: 1, assignment: 2, presentation: 3, exam: 4, ungraded: 5 };
 const dueTime = (item: { due?: string }) => item.due ? Date.parse(item.due) : Infinity;
 const byDue = (a: { due?: string }, b: { due?: string }) => dueTime(a) - dueTime(b);
+/** No marks: an `ungraded` kind or any effective weight of 0 is folded into the collapsed bottom section. */
+export function isNoMarks(item: Pick<Assessment, 'kind' | 'weight'> & { kind?: string }): boolean {
+  return item.kind === 'ungraded' || item.weight === 0;
+}
 /** Groups retain component membership; loose items are grouped by kind to participate in the same order. */
 export function assessmentGroups<T extends Grouped>(items: readonly T[]): AssessmentGroup<T>[] {
   const groups = new Map<string, AssessmentGroup<T>>();
@@ -62,7 +66,7 @@ export function assessmentGroups<T extends Grouped>(items: readonly T[]): Assess
     groups.set(key, group);
   }
   // Capture kind before sorting: a mixed component takes its first input item's kind (#192).
-  return [...groups.values()].map(group => ({ group, rank: kindOrder[group.items[0]!.kind!] ?? 4 }))
+  return [...groups.values()].map(group => ({ group, rank: kindOrder[group.items[0]!.kind!] ?? 6 }))
     .map(entry => { entry.group.items.sort(byDue); return entry; })
     .sort((a, b) => a.rank - b.rank || byDue(a.group.items[0]!, b.group.items[0]!)
       || Number(a.group.key === undefined) - Number(b.group.key === undefined))
@@ -92,7 +96,7 @@ export function policyView(course: Pick<Course, 'id' | 'aiPolicy' | 'readState'>
     ...(course.aiPolicy ? { read: course.aiPolicy } : {}), ...(course.aiPolicy && quote ? { quote } : {}) };
 }
 
-export const presetIds ={ complete: 'complete-assessment', explain: 'explain-assessment', tutor: 'tutor-revision', wrong: 'wrong-answers-only' } as const;
+export const presetIds ={ start: 'start-assessment', complete: 'complete-assessment', explain: 'explain-assessment', tutor: 'tutor-revision', wrong: 'wrong-answers-only' } as const;
 export type Field = z.output<typeof AnnotationFieldsSchema>[string];
 export type Origin = 'platform' | 'agent' | 'owner';
 export function originOf(field?: Field): Origin | undefined {
@@ -101,14 +105,31 @@ export function originOf(field?: Field): Origin | undefined {
 export type WorkLevel = 0 | 1 | 2;
 export type Policy = 'allowed' | 'prohibited' | 'owner-attested';
 export type AutonomyRead = z.output<typeof autonomyReads['autonomy.read']['output']>;
-export type LevelView = { kind: 'none' } | { kind: 'locked' } | { kind: 'unknown' } | { kind: 'level'; level: WorkLevel; source: 'override' | 'default' };
-/** Levels come only from `autonomy.read`; anything it does not cover stays unknown. */
-export function levelView(assessment: { id: string; kind?: string }, autonomy: AutonomyRead | undefined): LevelView {
+export type PolicyValue = { value: Policy | 'unknown'; origin: 'owner' | 'agent' | 'none'; level?: 'course' | 'assessment' | 'none' };
+export type LevelView = { kind: 'none' } | { kind: 'locked'; origin?: 'owner' | 'agent' } | { kind: 'unknown' } | { kind: 'level'; level: WorkLevel; source: 'override' | 'default' };
+/** Levels come only from `autonomy.read`; an assessment's own prohibited policy locks it even on an allowed course. */
+export function levelView(assessment: { id: string; kind?: string; effectivePolicy?: PolicyValue }, autonomy: AutonomyRead | undefined): LevelView {
   const entry = autonomy?.assessments.find(row => row.assessmentId === assessment.id);
   if (assessment.kind === 'exam' || entry?.kind === 'exam') return { kind: 'none' };
-  if (autonomy?.policy === 'prohibited') return { kind: 'locked' };
+  // The assessment's projected policy (or its autonomy entry) wins over the course because it already resolved #197.
+  const own = entry?.effectivePolicy ?? assessment.effectivePolicy;
+  if (own?.value === 'prohibited') return { kind: 'locked', ...(own.origin === 'none' ? {} : { origin: own.origin }) };
+  if (autonomy?.policy === 'prohibited' || autonomy?.effectivePolicy?.value === 'prohibited') {
+    const origin = autonomy.policyOrigin ?? (autonomy.effectivePolicy.origin === 'none' ? undefined : autonomy.effectivePolicy.origin);
+    return { kind: 'locked', ...(origin ? { origin } : {}) };
+  }
   if (!entry || entry.effectiveLevel === null) return { kind: 'unknown' };
   return { kind: 'level', level: entry.effectiveLevel, source: entry.override === null ? 'default' : 'override' };
+}
+/** The drawer's AI policy: the effective value with its origin and level, the agent's quote, and the owner's own assessment value ('' when none). */
+export type AssessmentPolicyView = { effective: Policy | 'unknown'; origin?: 'owner' | 'agent'; level?: 'assessment' | 'course'; quote?: string; owner: Policy | '' };
+export function assessmentPolicyView(item: { id: string; effectivePolicy?: PolicyValue; readState?: { aiPolicy?: { quote?: string } } }): AssessmentPolicyView {
+  const policy = item.effectivePolicy;
+  const quote = item.readState?.aiPolicy?.quote;
+  const origin = policy && policy.origin !== 'none' ? policy.origin : undefined;
+  const level = policy?.level === 'assessment' || policy?.level === 'course' ? policy.level : undefined;
+  const owner = policy && policy.value !== 'unknown' && origin === 'owner' && level === 'assessment' ? policy.value : '';
+  return { effective: policy?.value ?? 'unknown', ...(origin ? { origin } : {}), ...(level ? { level } : {}), ...(quote ? { quote } : {}), owner };
 }
 /** The platform's submission state wins over a stale not-started or in-progress status. */
 export function displayStatus(item: { status: Assessment['status']; platform?: { linked: boolean; submitted: boolean; removed: boolean } }): Assessment['status'] {
@@ -125,10 +146,16 @@ export function sourceLink(url?: string): string | undefined {
   try { const parsed = new URL(url); return parsed.protocol === 'https:' && sourceOrigins.includes(parsed.origin) ? parsed.href : undefined; }
   catch { return undefined; }
 }
-/** Exams get no agent entry (#146); completing work on a prohibited course is never offered. */
-export function agentEntries(assessment: { kind?: string }, policy: Policy | undefined) {
+/** Exams get no agent entry (#146); completing work on a prohibited course is never offered. Start reads the brief first, so every non-exam keeps it. */
+/** Exams get no agent entry; "complete" also needs neither the course nor the assessment's own effective policy to prohibit AI. */
+export function agentEntries(assessment: { kind?: string; effectivePolicy?: PolicyValue }, policy: Policy | undefined) {
   const exam = assessment.kind === 'exam';
-  return { complete: !exam && policy !== 'prohibited', explain: !exam };
+  const prohibited = policy === 'prohibited' || assessment.effectivePolicy?.value === 'prohibited';
+  return { start: !exam, complete: !exam && !prohibited, explain: !exam };
+}
+/** A platform marker says "from Canvas API" only when the read that produced the value carried `via: 'api'`. */
+export function fromCanvasApi(via?: string): boolean {
+  return via === 'api';
 }
 export type EditableField = 'weight' | 'kind' | 'hurdleMin' | 'isFinal' | 'name' | 'due';
 /** `due` is a datetime-local wall-clock time in the planning time zone (the zone dates are shown in). */

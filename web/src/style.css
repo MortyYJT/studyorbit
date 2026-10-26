@@ -225,6 +225,7 @@ dialog.drawer { margin:0 0 0 auto; width:min(460px,100vw); max-width:100vw; heig
 dialog.drawer h2 { margin:0; }
 dialog.drawer h3 { font-size:14px; margin:22px 0 6px; }
 .field { display:grid; grid-template-columns:96px minmax(0,1fr) auto; gap:6px 10px; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); }
+.field > .help { grid-column:1 / -1; margin:0; }
 .field .k { color:var(--muted); font-size:13px; }
 .field > .pill { justify-self:start; }
 .field select { grid-column:2 / -1; }
@@ -246,6 +247,14 @@ button.primary:hover:enabled { background:var(--ink); opacity:.9; }
 .check-row > span:first-of-type { flex:1; min-width:0; overflow-wrap:anywhere; }
 .check-row input { width:18px; height:18px; flex:none; }
 .attention-row > span { min-width:0; overflow-wrap:anywhere; }
+.need-group { min-width:0; }
+.need-group + .need-group { margin-top:8px; }
+.need-actions { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.need-group .more { margin:4px 0 0; }
+.saved-files { list-style:none; padding:0; margin:6px 0; display:grid; gap:4px; }
+.saved-files li { display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; }
+.saved-files button.link { border:0; background:none; padding:0; color:var(--text); text-decoration:underline dotted; text-underline-offset:3px; cursor:pointer; overflow-wrap:anywhere; }
+.pill.updated { border-color:var(--alert); color:var(--alert); }
 .ghead { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 12px; padding:16px 4px 6px; border-bottom:1px solid var(--line); font-size:13px; }
 .arow .derived { display:block; font-size:11px; color:var(--muted); font-style:italic; }
 .arow.remainder { color:var(--muted); cursor:default; }

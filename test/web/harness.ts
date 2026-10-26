@@ -15,12 +15,12 @@
  * attached, and sync runs are refused (the status shows a seeded agent sync job). Stop with Ctrl-C; the temporary directory is removed on exit.
  * The printed URL carries the owner session in its fragment, so treat it as a local secret.
  */
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AgentAdapter, AgentEvent, AgentInput, AgentRun } from '../../src/agent/adapter.js';
-import type { Assessment, Course, Module, SourceItem, Run } from '../../src/domain/schemas.js';
+import type { Assessment, Course, Module, SavedFile, SourceItem, Run, SyncConflict } from '../../src/domain/schemas.js';
 import type { OwnerInteraction } from '../../src/protocol/context.js';
 
 type Production = typeof import('../../src/protocol/production.js');
@@ -39,6 +39,8 @@ const dist = (path: string) => pathToFileURL(join(root, 'dist', path)).href;
 // The data directory must be private and fresh before any compiled module resolves it.
 const home = mkdtempSync(join(realpathSync(tmpdir()), 'coursework-ui-harness-'));
 process.env.COURSEWORK_HOME = home;
+// Saved files stay inside this temporary folder; `file.open` never launches the host application here.
+const filesRoot = join(home, 'files');
 // Also covers a failed seeding step, which ends the process through the rejected top-level await.
 process.once('exit', () => rmSync(home, { recursive: true, force: true }));
 
@@ -95,6 +97,8 @@ const agentSync = new AgentSync({ store, adapter: () => { throw new CourseworkEr
 const host = createProductionProtocol({
   store,
   agentAdapter: new ScriptedAdapter(),
+  courseFolder: { root: filesRoot },
+  fileOpener: async () => {},
   // Status reads the seeded runs; a real sync would need Codex and the owner's sign-in in their Edge.
   sync: { status: () => agentSync.status(), run: async () => { throw new CourseworkError('SOURCE_UNAVAILABLE', 'Sync is disabled in the synthetic harness.'); } },
 });
@@ -128,19 +132,25 @@ const assessment = (value: Omit<Assessment, 'origin' | 'isFinal'> & { isFinal?: 
 const found = { state: 'found' as const, via: 'ax' as const, checkedAt: new Date(Date.now() - 3600_000).toISOString() };
 const derived = { state: 'derived' as const };
 const itemRead = (extra: Assessment['readState'] = {}) => ({ name: found, status: found, due: found, weight: found, kind: found, ...extra });
-const quizzes = { key: 'syna10001-quizzes', name: 'Quizzes', weight: 10, count: 2 };
-const assignments = { key: 'syna10001-assignments', name: 'Assignments', weight: 45, count: 2 };
-const written = { key: 'syna10001-written-assignments', name: 'Written assignments', weight: 15, count: 4 };
-const examGroup = { key: 'syna10001-final-exam', name: 'Final exam', weight: 30, count: 1 };
+const quizzes = { key: 'SYNA10001:quizzes', name: 'Quizzes', weight: 10, count: 2 };
+const assignments = { key: 'SYNA10001:assignments', name: 'Assignments', weight: 45, count: 2 };
+const written = { key: 'SYNA10001:written-assignments', name: 'Written assignments', weight: 15, count: 4 };
+const examGroup = { key: 'SYNA10001:final-exam', name: 'Final exam', weight: 30, count: 1 };
 const assessments: Assessment[] = [
   // Graded but its weight stayed unknown after retries, so the Quizzes earned share is unknown (as in the ring).
   assessment({ id: 'syn-a-quiz-1', courseId: 'syn-course-a', name: 'Synthetic Quiz 1', kind: 'quiz', score: 80, due: due(-14), status: 'graded', group: { ...quizzes, role: 'item' },
     readState: itemRead({ weight: { state: 'unknown', via: 'screenshot', checkedAt: found.checkedAt } }) }),
   // Weight unknown after retries; an agent annotation below proposes 5% with a citation.
+  // Its own AI policy prohibits AI while the course allows it, so its level stays locked at L0 (#197, 9.3).
   assessment({ id: 'syn-a-quiz-2', courseId: 'syn-course-a', name: 'Synthetic Quiz 2', kind: 'quiz', due: soon(1), status: 'not_started', group: { ...quizzes, role: 'item' },
-    readState: itemRead({ weight: { state: 'unknown', via: 'screenshot', checkedAt: found.checkedAt } }) }),
+    unlockAt: soon(-1, '00:00:00Z'), aiPolicy: 'prohibited',
+    readState: itemRead({ weight: { state: 'unknown', via: 'screenshot', checkedAt: found.checkedAt },
+      aiPolicy: { state: 'found', via: 'ax', checkedAt: found.checkedAt, quote: 'Generative AI is not permitted for this quiz.' } }) }),
   assessment({ id: 'syn-a-assign-1', courseId: 'syn-course-a', name: 'Synthetic Assignment 1', kind: 'assignment', weight: 20, score: 72, due: due(-7), status: 'graded', group: { ...assignments, role: 'item' }, readState: itemRead() }),
-  assessment({ id: 'syn-a-assign-2', courseId: 'syn-course-a', name: 'Synthetic Assignment 2', kind: 'assignment', weight: 25, due: soon(3), status: 'in_progress', group: { ...assignments, role: 'item' }, readState: itemRead() }),
+  // Unlock time for the drawer, and a weight read through the Canvas API capture so its marker says "from Canvas API".
+  assessment({ id: 'syn-a-assign-2', courseId: 'syn-course-a', name: 'Synthetic Assignment 2', kind: 'assignment', weight: 25, due: soon(3), status: 'in_progress',
+    group: { ...assignments, role: 'item' }, unlockAt: soon(-2, '22:00:00Z'),
+    readState: itemRead({ weight: { state: 'found', via: 'api', source: 'https://canvas.lms.unimelb.edu.au/courses/900001/assignments/2' } }) }),
   // Scenario "Component group": 15% over four items, two published and graded (80% and 100%), each an even split of 3.75.
   assessment({ id: 'syn-a-written-1', courseId: 'syn-course-a', name: 'Synthetic Written Task 1', kind: 'assignment', weight: 3.75, score: 80, due: due(-10), status: 'graded',
     group: { ...written, role: 'item' }, readState: itemRead({ weight: derived }) }),
@@ -227,7 +237,30 @@ store.saveBatch({
   ],
 });
 
-// ---- Owner choices and agent records through the real command surface -------------------------------------
+// A current and a superseded saved file for the same logical name: the current one is the content-updated notice
+// until the owner opens it. The files exist only inside this temporary course folder.
+const courseFolder = join(filesRoot, `UniMelb ${term.slice(2, 4)}${term.slice(-2)}`, 'Synthetic Systems');
+mkdirSync(courseFolder, { recursive: true });
+writeFileSync(join(courseFolder, 'instructions.html'), '<p>Synthetic assignment 2 instructions.</p>');
+writeFileSync(join(courseFolder, 'instructions (2026-10-20).html'), '<p>Earlier synthetic instructions.</p>');
+const savedAt = new Date(Date.parse(fetchedAt) + 60_000).toISOString();
+const earlierSavedAt = new Date(Date.parse(fetchedAt) - 86400_000).toISOString();
+const savedFiles: SavedFile[] = [
+  { id: 'syn-saved-old', courseId: 'syn-course-a', assessmentId: 'syn-a-assign-2', path: 'instructions (2026-10-20).html',
+    fingerprint: 'synthetic-old-fingerprint', savedAt: earlierSavedAt, supersededAt: earlierSavedAt },
+  { id: 'syn-saved-current', courseId: 'syn-course-a', assessmentId: 'syn-a-assign-2', path: 'instructions.html',
+    fingerprint: 'synthetic-current-fingerprint', savedAt },
+];
+for (const file of savedFiles) store.saveSavedFile(file);
+
+// One open weight conflict and one unmatched Canvas item, both resolvable through check.resolve in the UI.
+const conflicts: SyncConflict[] = [
+  { id: 'syn-conflict-weight', courseId: 'syn-course-a', target: { componentKey: 'SYNA10001:assignments' }, field: 'weight',
+    skeletonValue: 40, canvasValue: 45, state: 'open', checkedAt: fetchedAt },
+  { id: 'syn-conflict-unmatched', courseId: 'syn-course-a', target: { canvasAssignmentId: 'syn-canvas-unlisted' }, field: 'unmatched',
+    canvasValue: { id: 'syn-canvas-unlisted', name: 'Synthetic unlisted reflection', due: null }, state: 'open', checkedAt: fetchedAt },
+];
+for (const conflict of conflicts) store.saveSyncConflict(conflict);
 await call('planning.settings.set', { timeZone, weekdayMinutes: [180, 120, 120, 180, 90, 240, 60], teachingWeekAnchor: addDays(monday, -63), breakWeeks: [7] });
 await call('autonomy.policy.set', { courseId: 'syn-course-a', status: 'allowed' });
 await call('autonomy.default.set', { courseId: 'syn-course-a', level: 1 });

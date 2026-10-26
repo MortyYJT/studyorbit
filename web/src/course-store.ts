@@ -108,6 +108,11 @@ export class CourseStore {
   setPolicy(status: Policy | null) {
     return this.write('policy', () => this.client.call('autonomy.policy.set', { courseId: this.courseId, status }), () => Promise.all([this.loadCourse(), this.loadAutonomy()]));
   }
+  /** The owner's own policy for one assessment (#197); its effective policy and level are re-read, never computed here. */
+  setAssessmentPolicy(assessmentId: string, status: Policy | null) {
+    return this.write(`policy:${assessmentId}`, () => this.client.call('autonomy.policy.set', { courseId: this.courseId, assessmentId, status }),
+      () => Promise.all([this.loadAssessments(), this.loadAutonomy()]));
+  }
   setDefault(level: WorkLevel) {
     return this.write('default', () => this.client.call('autonomy.default.set', { courseId: this.courseId, level }), () => this.loadAutonomy());
   }
@@ -128,6 +133,10 @@ export class CourseStore {
   }
   setEstimate(workId: string, minutes: number) {
     return this.write('estimate', () => this.client.call('estimate.owner.set', { workId, minutes }), () => this.loadPlan());
+  }
+  /** Opens one saved assessment file through the owner session; the read again clears its "updated" marker. */
+  openFile(savedFileId: string) {
+    return this.write('file', () => this.client.call('file.open', { savedFileId }), () => this.loadAssessments());
   }
   recordTime(workId: string, minutes: number) {
     return this.write('time', () => this.client.call('time.record', { workId, minutes }), async () => {

@@ -146,3 +146,33 @@ it('Agent-copied source: concurrent source reads all land, and the copied marker
   expect(store.getSnapshot().sources.copied).toMatchObject({ copiedBy: 'agent' });
   expect(store.getSnapshot().sources.platform).not.toHaveProperty('copiedBy');
 });
+
+it('opens a saved assessment file through the owner session and re-reads the list so the updated marker clears', async () => {
+  let updated = true;
+  const saved = () => [{ id: 'saved-1', name: 'instructions.html', current: true, savedAt: '2026-10-24T00:00:00Z', updated }];
+  const fetcher = fixture({
+    'assessments.list': () => page([{ ...quiz, savedFiles: saved() }]),
+    'file.open': () => { updated = false; return { opened: true, openedAt: '2026-10-24T00:01:00Z' }; },
+  });
+  const store = new CourseStore(createClient(secret, fetcher), 'c1');
+  await store.load();
+  expect(store.getSnapshot().assessments![0]!.savedFiles![0]).toMatchObject({ name: 'instructions.html', updated: true });
+  expect(await store.openFile('saved-1')).toBe(true);
+  expect(calls(fetcher, 'file.open')).toEqual([{ body: { savedFileId: 'saved-1' }, session: secret }]);
+  expect(store.getSnapshot().assessments![0]!.savedFiles![0]!.updated).toBe(false);
+  const anonymous = new CourseStore(createClient(undefined, fetcher), 'c1');
+  expect(await anonymous.openFile('saved-1')).toBe(false);
+});
+
+it('records the owner\'s assessment policy through the owner session and re-reads assessments and autonomy', async () => {
+  const fetcher = fixture();
+  const store = new CourseStore(createClient(secret, fetcher), 'c1');
+  await store.load();
+  const before = { assessments: calls(fetcher, 'assessments.list').length, autonomy: calls(fetcher, 'autonomy.read').length };
+  expect(await store.setAssessmentPolicy('quiz', 'allowed')).toBe(true);
+  expect(calls(fetcher, 'autonomy.policy.set')).toEqual([{ body: { courseId: 'c1', assessmentId: 'quiz', status: 'allowed' }, session: secret }]);
+  expect(await store.setAssessmentPolicy('quiz', null)).toBe(true);
+  expect(calls(fetcher, 'autonomy.policy.set')[1]!.body).toEqual({ courseId: 'c1', assessmentId: 'quiz', status: null });
+  expect(calls(fetcher, 'assessments.list').length).toBe(before.assessments + 2);
+  expect(calls(fetcher, 'autonomy.read').length).toBe(before.autonomy + 2);
+});

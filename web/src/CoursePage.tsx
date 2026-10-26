@@ -3,7 +3,7 @@ import type { GradeBand, GradeNeed } from '../../src/domain/grade.js';
 import type { Client } from './client.js';
 import type { AgentPreset } from './chat.js';
 import type { Copy, Language } from './i18n.js';
-import { agentEntries, arcPath, assessmentGroups, canJudge, isRemainder, policyView, valueLabel, courseFigures, displayStatus, levelView, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink,
+import { agentEntries, arcPath, assessmentPolicyView, assessmentGroups, canJudge, fromCanvasApi, isNoMarks, isRemainder, policyView, valueLabel, courseFigures, displayStatus, levelView, minutesFrom, originOf, ownerValue, presetIds, ringSegments, sourceLink,
   type EditableField, type Field, type LevelView, type Policy, type WorkLevel } from './course.js';
 import { CourseStore, type AssessmentItem, type CourseState } from './course-store.js';
 
@@ -65,15 +65,15 @@ export function CoursePage({ courseId, client, t, language, timeZone, openAgent,
         : !state.assessments.length ? <p className="muted">{c.noAssessments}</p>
         : <div className="assessment-list">
           <div className="arow head" aria-hidden="true"><span>{c.name}</span><span>{c.due}</span><span className="num">{c.weight}</span><span className="num">{c.scoreCol}</span><span>{c.status}</span><span>{c.level}</span></div>
-          {assessmentGroups(state.assessments.filter(item => item.weight !== 0)).map((group, index, all) => <div className="agroup" role="group" key={group.key ?? `loose-${index}`} aria-label={group.name ?? c.otherGroup}>
+          {assessmentGroups(state.assessments.filter(item => !isNoMarks(item))).map((group, index, all) => <div className="agroup" role="group" key={group.key ?? `loose-${index}`} aria-label={group.name ?? c.otherGroup}>
             {(group.key !== undefined || all.length > 1) && <div className="ghead"><b>{group.name ?? c.otherGroup}</b>
               {group.key !== undefined && <span className="muted">{group.weight === undefined ? <span className="unknown">{t.unknown}</span> : `${number(group.weight)}%`}
                 {' · '}{group.earned === undefined ? <span className="unknown">{c.earnedUnknown}</span> : <>{number(group.earned)} {c.groupEarned}</>}</span>}</div>}
             {rows(group.items)}
           </div>)}
-          {state.assessments.some(item => item.weight === 0) && <details className="no-marks">
-            <summary>{c.noMarks} ({state.assessments.filter(item => item.weight === 0).length})</summary>
-            {assessmentGroups(state.assessments.filter(item => item.weight === 0)).map((group, index) =>
+          {state.assessments.some(isNoMarks) && <details className="no-marks">
+            <summary>{c.noMarks} ({state.assessments.filter(isNoMarks).length})</summary>
+            {assessmentGroups(state.assessments.filter(isNoMarks)).map((group, index) =>
               <div key={group.key ?? `loose-${index}`}>{rows(group.items)}</div>)}
           </details>}
         </div>
@@ -87,7 +87,7 @@ export function CoursePage({ courseId, client, t, language, timeZone, openAgent,
 function Level({ view, t }: { view: LevelView; t: Copy }) {
   const c = t.coursePage;
   return view.kind === 'none' ? <span aria-label={c.none}>{c.none}</span>
-    : view.kind === 'locked' ? <span className="pill lock">{c.locked}</span>
+    : view.kind === 'locked' ? <span className="pill lock" title={c.lockedHelp}>{c.locked}{view.origin && <span className="srcm"> · {c.policyOrigins[view.origin]}</span>}</span>
     : view.kind === 'unknown' ? <span className="unknown">{c.notReadable}</span>
     : <span className="pill">L{view.level}</span>;
 }
@@ -162,12 +162,12 @@ function Header({ store, state, policy, t }: { store: CourseStore; state: Course
 }
 
 /** Origin marker; agent values open their citations with confirm and "use my value". */
-function Marker({ field, store, state, t, children }: { field?: Field; store: CourseStore; state: CourseState; t: Copy; children?: (close: () => void) => ReactNode }) {
+function Marker({ field, via, store, state, t, children }: { field?: Field; via?: string; store: CourseStore; state: CourseState; t: Copy; children?: (close: () => void) => ReactNode }) {
   const c = t.coursePage;
   const [open, setOpen] = useState(false);
   const origin = originOf(field);
   if (!origin) return null;
-  if (origin !== 'agent') return <span className="srcm">· {c.origins[origin]}</span>;
+  if (origin !== 'agent') return <span className="srcm">· {fromCanvasApi(via) ? c.fromCanvasApi : c.origins[origin]}</span>;
   return <>
     <button className="srcm link" aria-expanded={open} title={c.originHelp} onClick={() => setOpen(!open)}>· {c.origins.agent} ⓘ</button>
     {open && <div className="cite-panel">
@@ -207,6 +207,7 @@ function Drawer({ store, state, item, policy, t, date, timeZone, onClose, onPres
   const work = state.work?.[item.id];
   const entries = agentEntries(item, policy);
   const view = levelView(item, state.autonomy);
+  const own = assessmentPolicyView(item);
   const entry = state.autonomy?.assessments.find(row => row.assessmentId === item.id);
   const recorded = state.recorded[item.id];
   const busy = !!state.saving || !store.client.hasSession();
@@ -222,7 +223,7 @@ function Drawer({ store, state, item, policy, t, date, timeZone, onClose, onPres
   const row = (name: EditableField) => {
     const field = fields[name];
     return <div className="field" key={name}><span className="k">{c[name]}</span><span>{display(name, field?.value)}</span>
-      <Marker field={field} store={store} state={state} t={t}>{close => <div className="verdicts">
+      <Marker field={field} via={item.readState?.[name]?.via} store={store} state={state} t={t}>{close => <div className="verdicts">
         <button disabled={busy} onClick={() => void store.confirm('assessment', item.id, name, field!.annotationId!).then(ok => ok && close())}>{c.confirmValue}</button>
         <form onSubmit={event => void submit(event, value => store.replace('assessment', item.id, name, ownerValue(name, value, timeZone), field!.annotationId!))}>
           {name === 'kind' ? <select name="value" aria-label={c.useMine}>{(['quiz', 'participation', 'assignment', 'presentation', 'exam', 'ungraded'] as const).map(kind => <option key={kind} value={kind}>{c.kinds[kind]}</option>)}</select>
@@ -234,13 +235,25 @@ function Drawer({ store, state, item, policy, t, date, timeZone, onClose, onPres
     <div className="dialog-heading"><div><small>{state.course?.code}</small><h2 id="drawer-title">{item.name}</h2></div><button onClick={() => dialog.current?.close()}>{t.close}</button></div>
     {state.errors.detail && <p role="status">{errorText(state.errors.detail, t)}</p>}
     {(['due', 'weight', 'kind', 'hurdleMin', 'isFinal'] as const).map(row)}
-    <div className="field"><span className="k">{c.scoreCol}</span><span>{item.score === undefined ? c.none : `${item.score}%`}</span>{item.score !== undefined && <span className="srcm">· {c.origins.platform}</span>}</div>
-    <div className="field"><span className="k">{c.status}</span><span>{c.statuses[displayStatus(item)]}</span><span className="srcm">· {c.origins.platform}</span></div>
+    {item.unlockAt && <div className="field"><span className="k">{c.unlockAt}</span><span>{date(item.unlockAt)}</span></div>}
+    <div className="field"><span className="k">{c.scoreCol}</span><span>{item.score === undefined ? c.none : `${item.score}%`}</span>{item.score !== undefined && <span className="srcm">· {fromCanvasApi(item.readState?.score?.via) ? c.fromCanvasApi : c.origins.platform}</span>}</div>
+    <div className="field"><span className="k">{c.status}</span><span>{c.statuses[displayStatus(item)]}</span><span className="srcm">· {fromCanvasApi(item.readState?.status?.via) ? c.fromCanvasApi : c.origins.platform}</span></div>
+    {item.kind !== 'exam' && <div className="field"><span className="k">{c.policy}</span>
+      <span>{own.effective === 'unknown' ? c.policyUnknown : c[own.effective]}{own.origin && <span className="srcm"> · {c.policyOrigins[own.origin]}</span>}{own.level && <span className="srcm"> · {c.policyLevels[own.level]}</span>}</span>
+      <select aria-label={c.policy} disabled={busy} value={own.owner} onChange={event => void store.setAssessmentPolicy(item.id, event.target.value === '' ? null : event.target.value as Policy)}>
+        <option value="">{own.owner ? c.policyClear : c.policyNone}</option>{(['allowed', 'prohibited', 'owner-attested'] as const).map(value => <option key={value} value={value}>{c[value]}</option>)}</select>
+      {own.quote && <p className="muted help">{c.policyRead}: “{own.quote}”</p>}</div>}
     {item.kind !== 'exam' && <div className="field"><span className="k">{c.level}</span><Level view={view} t={t} />
-      {policy !== 'prohibited' && <select aria-label={c.level} disabled={busy || !entry} value={!entry ? '' : entry.override === null ? 'default' : String(entry.override)}
+      {view.kind !== 'locked' && policy !== 'prohibited' && <select aria-label={c.level} disabled={busy || !entry} value={!entry ? '' : entry.override === null ? 'default' : String(entry.override)}
         onChange={event => void store.setOverride(item.id, event.target.value === 'default' ? null : Number(event.target.value) as WorkLevel)}>
         {!entry && <option value="" disabled>{c.notReadable}</option>}
         <option value="default">{c.follow}</option>{levels.map(level => <option key={level} value={level}>{c.levelNames[level]}</option>)}</select>}</div>}
+    <h3>{c.savedFiles}</h3>
+    {!item.savedFiles?.length ? <p className="muted">{c.noSavedFiles}</p> : <ul className="saved-files">{item.savedFiles.map(file =>
+      <li key={file.id}><button className="link" disabled={busy} onClick={() => void store.openFile(file.id)}>{file.name}</button>
+        <small className="muted"> · {c.savedOn}{date(file.savedAt)}</small>
+        {file.updated && <span className="pill updated">{c.updatedMarker}</span>}
+        {!file.current && <span className="muted"> · {c.supersededMarker}</span>}</li>)}</ul>}
     <h3>{c.estimate}</h3>
     {state.errors.plan ? <p className="muted">{errorText(state.errors.plan, t)}</p> : !state.work ? <p role="status">{t.loading}</p> : !work ? <p className="muted">{c.notPlanned}</p> : <>
       <div className="field"><span className="k">{c.estimate}</span><span>{work.estimateMinutes === undefined ? <span className="unknown">{c.unestimated}</span> : `${work.estimateMinutes} ${c.minutes}`}</span>
@@ -262,8 +275,9 @@ function Drawer({ store, state, item, policy, t, date, timeZone, onClose, onPres
       {detail.links.map(link => <LinkedItem key={link.sourceItemId} id={link.sourceItemId} store={store} state={state} t={t} />)}
       {state.tasks[item.id]?.map(task => <li key={task.id}>{task.title} <small>{c.tasks}: {task.steps.filter(step => step.done).length}/{task.steps.length} {c.done}</small></li>)}
     </ul>}
-    {(entries.complete || entries.explain) && <div className="preset-row">
-      {entries.complete && <button className="primary" onClick={() => onPreset(presetIds.complete)}>{c.complete}</button>}
+    {(entries.start || entries.complete || entries.explain) && <div className="preset-row">
+      {entries.start && <button className="primary" onClick={() => onPreset(presetIds.start)}>{c.start}</button>}
+      {entries.complete && <button className={entries.start ? undefined : 'primary'} onClick={() => onPreset(presetIds.complete)}>{c.complete}</button>}
       {entries.explain && <button onClick={() => onPreset(presetIds.explain)}>{c.explain}</button>}</div>}
   </dialog>;
 }

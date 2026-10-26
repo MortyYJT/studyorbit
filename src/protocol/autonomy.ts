@@ -38,7 +38,7 @@ export const autonomyContracts = {
   'autonomy.check': { input: z.strictObject({ assessmentId: AuditIdSchema, action: z.enum(['read', 'click', 'fill', 'select', 'submit', 'other']) }),
     output: z.strictObject({ decision: z.enum(['allowed', 'denied']), reason: ReasonSchema }), level: 0 },
   'autonomy.read': { input: z.strictObject({ courseId: AuditIdSchema }), output: AutonomyReadSchema, level: 0 },
-  'autonomy.policy.set': { input: z.strictObject({ courseId: AuditIdSchema, status: PolicySchema.nullable() }), output: receipt, level: 0 },
+  'autonomy.policy.set': { input: z.strictObject({ courseId: AuditIdSchema, assessmentId: AuditIdSchema.optional(), status: PolicySchema.nullable() }), output: receipt, level: 0 },
   'autonomy.default.set': { input: z.strictObject({ courseId: AuditIdSchema, level: WorkLevelSchema }), output: receipt, level: 0 },
   'autonomy.override.set': { input: z.strictObject({ assessmentId: AuditIdSchema, level: WorkLevelSchema }), output: receipt, level: 0 },
   'autonomy.override.clear': { input: z.strictObject({ assessmentId: AuditIdSchema }), output: receipt, level: 0 },

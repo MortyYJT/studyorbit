@@ -36,7 +36,8 @@ export function App({ store }: { store: ShellStore }) {
   const menuRoot = useRef<HTMLDivElement>(null);
   const t = language === 'zh' ? zh : en;
   const rows = useMemo(() => weekModel({ plan: weekState.plan, courses: weekState.courses ?? [], assessments: [], tasks: weekState.tasks ?? [], monday: weekState.today ?? '1970-01-05', timeZone: weekState.timeZone }), [weekState]);
-  const needs = needsYou({ attention: attention(state), overflow: rows.overflow, unestimated: rows.unestimated, assessments: weekState.assessments });
+  const needs = needsYou({ attention: attention(state), overflow: rows.overflow, unestimated: rows.unestimated,
+    conflicts: state.conflicts?.items ?? [], updates: state.updates?.items ?? [] });
   const refreshAll = () => Promise.all([store.refresh(), week.refresh()]);
   const running = state.syncing || state.sync?.running;
   useEffect(() => {
@@ -75,7 +76,9 @@ export function App({ store }: { store: ShellStore }) {
       {!store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
       {state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
       <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onSelect={() => setSelecting(true)}
-        onCourse={courseId => setView({ page: 'course', courseId })} />
+        onCourse={courseId => setView({ page: 'course', courseId })}
+        onResolve={(conflictId, choice) => void store.resolveConflict(conflictId, choice)}
+        onOpenUpdate={savedFileId => void store.openUpdate(savedFileId)} />
       {view.page !== 'course' && <div className="page-heading"><h1>{t[view.page]}</h1><button onClick={() => void refreshAll()}>{t.refresh}</button></div>}
       {view.page === 'agent' ? <AgentPage key={view.navigation} client={store.client} t={t} language={language} preset={view.preset} conversationId={view.conversationId} onPresetDone={() => setView({ page: 'agent' })} />
         : view.page === 'course' ? <CoursePage key={view.courseId} courseId={view.courseId} client={store.client} t={t} language={language}

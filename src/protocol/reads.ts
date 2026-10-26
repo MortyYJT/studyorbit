@@ -240,7 +240,10 @@ export class StoreProtocolReads implements ProtocolRepository {
       const seen = new Set<string>(); const values: ComponentChoice[] = [];
       for (const assessment of assessmentsFor(courseId)) {
         const group = assessment.group;
-        if (group?.role !== 'component' || group.key === undefined || group.name === undefined || seen.has(group.key)) continue;
+        // A component with items is stored only through its items' group (role `item` or `remainder`); the synthetic
+        // ungraded and unassigned groups are not components the owner can pick.
+        if (group?.key === undefined || group.name === undefined || seen.has(group.key)) continue;
+        if (group.key.endsWith(':ungraded') || group.key.endsWith(':unassigned')) continue;
         seen.add(group.key); values.push({ key: group.key, name: group.name });
       }
       return values;

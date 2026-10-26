@@ -29,7 +29,7 @@ export const annotationCommands = {
 const AuditId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_:/.-]{0,255}$/);
 const WorkLevel = z.union([z.literal(0), z.literal(1), z.literal(2)]);
 export const autonomyCommands = {
-  'autonomy.policy.set': { input: z.strictObject({ courseId: AuditId, status: Policy.nullable() }), output: recorded },
+  'autonomy.policy.set': { input: z.strictObject({ courseId: AuditId, assessmentId: AuditId.optional(), status: Policy.nullable() }), output: recorded },
   'autonomy.default.set': { input: z.strictObject({ courseId: AuditId, level: WorkLevel }), output: recorded },
   'autonomy.override.set': { input: z.strictObject({ assessmentId: AuditId, level: WorkLevel }), output: recorded },
   'autonomy.override.clear': { input: z.strictObject({ assessmentId: AuditId }), output: recorded },

@@ -19,10 +19,10 @@ vi.mock('../../web/src/course-store.js', () => ({ CourseStore: class {
   subscribe = () => () => {};
   getSnapshot = () => fixture.state;
 } }));
-const item = (id: string, kind?: 'participation' | 'quiz' | 'assignment' | 'exam', due?: string, weight: number | undefined = 10) => ({
+const item = (id: string, kind?: 'participation' | 'quiz' | 'assignment' | 'presentation' | 'exam' | 'ungraded', due?: string, weight: number | undefined = 10) => ({
   id, courseId: 'c', name: id, kind, due, weight, isFinal: kind === 'exam', status: 'not_started' as const,
 });
-const grouped = (id: string, kind?: 'participation' | 'quiz' | 'assignment' | 'exam', due?: string) => ({
+const grouped = (id: string, kind?: 'participation' | 'quiz' | 'assignment' | 'presentation' | 'exam' | 'ungraded', due?: string) => ({
   ...item(id, kind, due), group: { key: id, name: id, weight: 10 },
 });
 
@@ -33,10 +33,10 @@ it('orders components by kind then due time, and items by actual due instant wit
     { ...item('offset-later', 'quiz', '2026-04-01T01:00:00Z'), group: quiz },
     { ...item('later', 'quiz', '2026-05-01T00:00:00Z'), group: quiz },
     { ...item('earlier', 'quiz', '2026-04-01T11:00:00+11:00'), group: quiz },
-    grouped('participation', 'participation'), grouped('early-quiz', 'quiz', '2026-03-01T00:00:00Z')];
+    grouped('participation', 'participation'), grouped('early-quiz', 'quiz', '2026-03-01T00:00:00Z'), grouped('presentation', 'presentation')];
   expect(assessmentGroups(items).map(group => [group.key, group.items.map(row => row.id)])).toEqual([
     ['participation', ['participation']], ['early-quiz', ['early-quiz']], ['quiz', ['earlier', 'offset-later', 'later', 'undated']], ['undated-quiz', ['undated-quiz']],
-    ['assignment', ['assignment']], ['exam', ['exam']], ['unknown', ['unknown']],
+    ['assignment', ['assignment']], ['presentation', ['presentation']], ['exam', ['exam']], ['unknown', ['unknown']],
   ]);
   expect(items[0]!.id).toBe('unknown');
 });
@@ -57,13 +57,14 @@ function page(items: CourseState['assessments']) {
 
 it('collects only effective zero weights in one native collapsed section after marked work', () => {
   const html = page([{ ...item('attendance', 'participation', undefined, 0), group: { key: 'attendance', name: 'Attendance', weight: 10 } }, item('essay', 'assignment'),
-    { ...item('unknown-weight', 'quiz'), weight: undefined }, item('feedback', 'assignment', undefined, 0)]);
+    { ...item('unknown-weight', 'quiz'), weight: undefined }, item('feedback', 'assignment', undefined, 0), item('ungraded-kind', 'ungraded')]);
   expect(html.match(/<details/g)).toHaveLength(1);
   expect(html).toContain('<details class="no-marks">');
   expect(html).not.toMatch(/<details[^>]*\bopen(?:[ =>])/);
   const folded = html.slice(html.indexOf('<details'));
   expect(folded).toContain('attendance');
   expect(folded).toContain('feedback');
+  expect(folded).toContain('ungraded-kind');
   expect(folded).not.toContain('unknown-weight');
   expect(html.indexOf('essay')).toBeLessThan(html.indexOf('<details'));
   expect(html.indexOf('unknown-weight')).toBeLessThan(html.indexOf('<details'));
@@ -100,4 +101,10 @@ it('shows percentage alone when either or both points are missing, without infer
     expect(html).not.toContain('/5');
     expect(html).not.toContain('4/');
   }
+});
+
+it('locks an assessment by its own prohibited policy while the course page itself stays unlocked', () => {
+  const html = page([{ ...item('essay', 'assignment'), effectivePolicy: { value: 'prohibited', origin: 'owner', level: 'assessment' } }]);
+  expect(html).toContain('L0 · locked');
+  expect(html).toContain('set by you');
 });
