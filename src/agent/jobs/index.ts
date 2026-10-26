@@ -86,7 +86,7 @@ function pageNote(spec: JobSpec): string | undefined {
       '## Page',
       'Call `canvas.capture` with page `courses` and no course key.',
       '',
-      'If the page is a sign-in page, call `courses.offer` with the job id, no courses and `blocked: ["canvas"]`, then stop. If the computer-use tool or Edge is unavailable, call it the same way with `blocked: ["canvas", "ed"]`, then stop.',
+      'If `canvas.capture` is refused because the copied page is a sign-in page, call `courses.offer` with the job id, no courses and `blocked: ["canvas"]`, then stop. If the computer-use tool or Edge is unavailable, call it the same way with `blocked: ["canvas", "ed"]`, then stop.',
     ].join('\n');
   }
   if (spec.kind === 'tabs' || spec.kind === 'groups') {
@@ -126,7 +126,9 @@ function groupRows(stage: unknown): string[] {
     const items = list(group.assignments, 'assignments').flatMap(rawItem => {
       const item = record(rawItem);
       const itemName = item ? text(item.name) : undefined;
-      return itemName ? [itemName] : [];
+      if (!itemName) return [];
+      const id = item ? identifier(item.id) : undefined;
+      return [`${id === undefined ? '' : `[id ${id}] `}${itemName}`];
     });
     return (items.length ? items : ['(no items)'])
       .map(item => `- ${item} — group ${name}${weight === undefined ? '' : ` (weight ${weight})`}`);
@@ -139,8 +141,9 @@ function quizRows(stage: unknown): string[] {
     const quiz = record(raw);
     const name = quiz ? text(quiz.name) ?? text(quiz.title) : undefined;
     if (!name) return [];
+    const id = quiz ? identifier(quiz.id) : undefined;
     const flags = quiz ? quizFlags(quiz) : [];
-    return [`- ${name} — ${flags.length ? flags.join(', ') : 'no special flag'}`];
+    return [`- ${id === undefined ? '' : `[id ${id}] `}${name} — ${flags.length ? flags.join(', ') : 'no special flag'}`];
   });
 }
 
@@ -189,4 +192,12 @@ function text(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const clean = value.replace(/https?:\/\/\S+/gi, '[link]').replace(/\s+/g, ' ').trim();
   return clean ? clean.slice(0, 200) : undefined;
+}
+
+/** Item ids come from stage values, never page text; keep them exact so the classifier can echo them. */
+function identifier(value: unknown): string | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value !== 'string') return undefined;
+  const clean = value.trim();
+  return clean ? clean.slice(0, 256) : undefined;
 }

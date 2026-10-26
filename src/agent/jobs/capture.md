@@ -8,4 +8,4 @@ Open the one API URL in this job in your own Edge window, select all on the page
 
 ## Output
 
-Call `canvas.capture` once with the job id, the course key when this job has one, and the page named in this job. For `courses` the course key is omitted.
+Call `canvas.capture` once with the job id, the course key when this job has one, and the page named in this job. For `courses` the course key is omitted; if `canvas.capture` is refused because the copied page is a sign-in page, call `courses.offer` with the job id, no courses and `blocked: ["canvas"]`, then stop.

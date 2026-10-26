@@ -106,6 +106,47 @@ describe('pipeline job prompts (layered-sync task 5.2)', () => {
     expect(found).toEqual(spec.urls);
   });
 
+  it('saver: opens every URL listed for the job, including a Files folder, not only the modules page', () => {
+    const spec = { ...specFor('saver'), urls: ['https://canvas.test/courses/900001/modules',
+      'https://canvas.test/courses/900001/files/folder/1'] };
+    const text = prompt(spec, context);
+    for (const url of spec.urls) expect(text).toContain(url);
+    expect(new Set(urlsIn(text))).toEqual(new Set(spec.urls));
+    expect(text).toContain('each URL listed');
+    expect(text.toLowerCase()).toContain('files folder');
+    expect(text).not.toMatch(/open the modules page/i);
+  });
+
+  it('rules: allows following file or attachment links on a listed page for the named downloads', () => {
+    const text = prompt(specFor('saver'), context);
+    expect(text).toContain('Following the file or attachment links on a listed page');
+    expect(text).toContain('nothing else');
+  });
+
+  it('courses: after canvas.capture refuses a sign-in page, offers the course list and stops', () => {
+    const text = prompt(specFor('courses'), context);
+    expect(text).toContain('If `canvas.capture` is refused because the copied page is a sign-in page');
+    expect(text).toContain('blocked: ["canvas"]');
+    expect(text).toContain('then stop');
+    expect(text).toContain('for the course list, after `courses.offer` when it is used');
+  });
+
+  it('classifier: names each stage item id so repeated names in different groups stay distinct', () => {
+    const repeated: PipelineJobContext = { ...context, stages: {
+      ...stages,
+      groups: { ...stages.groups, groups: [
+        { id: '10', name: 'Quizzes', weight: { value: 20 }, assignments: [{ id: '500001', name: 'Quiz 1' }] },
+        { id: '11', name: 'Practice', weight: { value: 0 }, assignments: [{ id: '500002', name: 'Quiz 1' }] },
+      ] },
+      quizzes: { quizzes: [{ id: '700001', name: 'Quiz 1' }] },
+    } };
+    const text = prompt(specFor('classify'), repeated);
+    expect(text).toContain('[id 500001] Quiz 1');
+    expect(text).toContain('[id 500002] Quiz 1');
+    expect(text).toContain('[id 700001] Quiz 1');
+    expect(text.toLowerCase()).toContain('echo');
+  });
+
   it('classifier: lists no URL and carries the compact list without page text', () => {
     const text = prompt(specFor('classify'), context);
     expect(text).not.toMatch(/https?:\/\//);

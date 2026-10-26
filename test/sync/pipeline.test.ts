@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentAdapter, AgentEvent, AgentInput, AgentRun, AgentTool } from '../../src/agent/adapter.js';
 import { SqliteRepository } from '../../src/store/sqlite.js';
-import { AgentSync, type JobSpec, type SyncPipeline } from '../../src/sync/agent-job.js';
+import { AgentSync, type JobSpec, type PipelineJobContext, type SyncPipeline } from '../../src/sync/agent-job.js';
 import { canvasApiUrl, type CanvasTab, type GroupsStage, type TabsStage } from '../../src/sync/canvas-api.js';
 import { SyncJobs } from '../../src/sync/jobs.js';
 import { component, document, item } from './course-document.js';
@@ -127,6 +127,7 @@ function scripted(options: BehaviourOptions = {}): Script {
 
 interface SetupOptions extends BehaviourOptions {
   script?: Script;
+  prompt?: SyncPipeline['prompt'];
   runBoundMs?: number;
   jobBoundMs?: number;
   parallel?: number;
@@ -152,7 +153,7 @@ function setup(options: SetupOptions = {}) {
   ];
   const adapter = new PipelineAgent(options.script ?? scripted(options));
   const pipeline: SyncPipeline = {
-    prompt: spec => JSON.stringify(spec),
+    prompt: options.prompt ?? (spec => JSON.stringify(spec)),
     tools: () => tools,
     build: options.build ?? ((key: string) => docFor(key)),
     ...(options.ed ? { ed: options.ed } : {}),
@@ -289,6 +290,16 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     expect(events.indexOf(`start:${keyB}:handbook`)).toBeGreaterThan(events.indexOf(`build:${keyA}`));
     expect(f.adapter.specs.findIndex(spec => spec.courseKey === keyB))
       .toBeGreaterThan(f.adapter.specs.findLastIndex(spec => spec.courseKey === keyA));
+  });
+
+  it('Classify: prompt context carries the groups and skeleton stages written earlier in the same course', async () => {
+    const seen: { spec: JobSpec; ctx?: PipelineJobContext }[] = [];
+    const f = setup({ prompt: (spec, ctx) => { seen.push({ spec, ctx }); return JSON.stringify(spec); } });
+    seed(f.store, keyA);
+    await f.sync.run({});
+    const classify = seen.find(entry => entry.spec.kind === 'classify' && entry.spec.courseKey === keyA);
+    expect(classify?.ctx?.stages.groups).toBeDefined();
+    expect(classify?.ctx?.stages.skeleton).toBeDefined();
   });
 
   it('Handbook unavailable: two failed handbook jobs do not stop the course, and the build sees no skeleton', async () => {

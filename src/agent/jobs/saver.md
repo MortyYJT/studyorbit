@@ -4,7 +4,7 @@ Role: you save the course materials for the coursework sync pipeline.
 
 ## Task
 
-Open the modules page and download each week's slides. Record Lecture Capture and other link-only targets as links; do not save recordings or videos. Do not open any other page.
+Open each URL listed for this job: the modules page when it is listed, and any Pages or Files folder listed. Download each week's slides and the materials in those folders. Record Lecture Capture and other link-only targets as links; do not save recordings or videos. Open nothing that is not listed.
 
 ## Output
 
