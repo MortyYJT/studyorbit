@@ -22,4 +22,4 @@ None.
 ## Impact
 
 - Code: `web/src/CoursePage.tsx`, `web/src/course.ts`, `web/src/style.css`, possibly `web/src/course-store.ts` to reach platform item points; tests under `test/web/`.
-- No data, protocol or dependency change. If the course page cannot already read `pointsEarned` / `pointsPossible`, the implementer asks before touching `src/`.
+- Read contract: the `platform` object of `assessments.list` gains optional `pointsEarned` / `pointsPossible` (`src/protocol/contracts.ts`, `src/protocol/reads.ts` and its platform port). No storage, schema migration or dependency change.
