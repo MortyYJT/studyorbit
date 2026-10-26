@@ -67,6 +67,8 @@ export function prompt(spec: JobSpec, ctx?: PipelineJobContext): string {
     '# This job',
     `Job id: ${spec.jobId}`,
     spec.courseKey === undefined ? 'Course key: none (course list)' : `Course key: ${spec.courseKey}`,
+    // The assignment stage is keyed per Canvas assignment, so the output call must name it.
+    ...(spec.kind === 'assignment' && spec.target !== undefined ? [`Assignment id: ${spec.target}`] : []),
     '',
     '## URLs you may open',
     ...urls,

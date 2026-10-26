@@ -93,6 +93,12 @@ describe('pipeline job prompts (layered-sync task 5.2)', () => {
     expect(text).toContain('courses.offer');
   });
 
+  it('assignment: names the Canvas assignment id the output is stored under', () => {
+    const text = prompt({ ...specFor('assignment'), target: '500123' }, context);
+    expect(text).toContain('Assignment id: 500123');
+    expect(text).toContain('`assignmentId`');
+  });
+
   it('Handbook: lists only the one Handbook assessment URL', () => {
     const spec = specFor('handbook');
     const found = urlsIn(prompt(spec, context));
