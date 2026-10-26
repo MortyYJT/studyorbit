@@ -7,6 +7,7 @@ import { AiPolicySchema, CourseTermSchema } from '../domain/schemas.js';
  */
 export const CANVAS_ORIGIN = 'https://canvas.lms.unimelb.edu.au';
 export const ED_ORIGIN = 'https://edstem.org';
+export const HANDBOOK_ORIGIN = 'https://handbook.unimelb.edu.au';
 export const MAX_SUBMISSIONS = 3;
 
 export const TermSchema = CourseTermSchema;
@@ -14,7 +15,8 @@ export const CourseCodeSchema = z.string().regex(/^[A-Z]{4}\d{5}$/);
 export const PolicyValueSchema = AiPolicySchema;
 export const PlatformSchema = z.enum(['canvas', 'ed']);
 export const PlatformReadSchema = z.enum(['read', 'blocked', 'absent']);
-const KindSchema = z.enum(['quiz', 'ongoing', 'assignment', 'exam']);
+const KindSchema = z.preprocess(value => value === 'ongoing' ? 'participation' : value,
+  z.enum(['exam', 'quiz', 'assignment', 'presentation', 'participation', 'ungraded']));
 const StatusSchema = z.enum(['not_started', 'in_progress', 'submitted', 'graded']);
 const TimeSchema = z.iso.datetime({ offset: true });
 const PercentSchema = z.number().min(0).max(100);
@@ -33,32 +35,44 @@ export const PageUrlSchema = z.url().max(2048).refine(value => {
 export const PagesSchema = z.object({ canvas: CanvasUrlSchema.optional(), ed: EdUrlSchema.optional() });
 
 export const FieldStateSchema = z.enum(['found', 'unknown', 'not_applicable', 'derived']);
-export const ViaSchema = z.enum(['ax', 'screenshot']);
-/** Every page fact is a wrapper; `quoted` facts (due, weight, hurdle, AI policy) carry the page quote and its URL when found. */
+export const ViaSchema = z.enum(['ax', 'screenshot', 'api', 'handbook']);
+/**
+ * Every page fact is a wrapper; `quoted` facts (due, weight, hurdle, AI policy) carry a quote and its URL
+ * when read from a page, or just the API URL when read from an API. A Handbook source is accepted only
+ * with `via: "handbook"`; every other via uses a Canvas or Ed URL.
+ */
 function field<T extends z.ZodType>(value: T, quoted = false) {
   return z.object({ value: value.nullable(), state: FieldStateSchema, via: ViaSchema.optional(), checkedAt: TimeSchema.optional(),
-    quote: z.string().trim().min(1).max(500).optional(), source: PageUrlSchema.optional() }).superRefine((input, ctx) => {
+    quote: z.string().trim().min(1).max(500).optional(), source: z.url().max(2048).optional() }).superRefine((input, ctx) => {
     const issue = (path: string, message: string) => ctx.addIssue({ code: 'custom', path: [path], message });
     const value = (input as { value?: unknown }).value;
     if ((input.state === 'found' || input.state === 'derived') && value === null) issue('value', 'a found value is required');
     if ((input.state === 'unknown' || input.state === 'not_applicable') && value !== null) issue('value', 'must be null unless found');
-    if (input.state === 'found' && input.via === undefined) issue('via', 'say how it was read (ax or screenshot)');
+    if (input.state === 'found' && input.via === undefined) issue('via', 'say how it was read (ax, screenshot, api or handbook)');
     if (input.state === 'unknown' && input.checkedAt === undefined) issue('checkedAt', 'unknown fields need the check time');
     if (quoted && input.state === 'found') {
-      if (input.quote === undefined) issue('quote', 'quote the page text');
-      if (input.source === undefined) issue('source', 'give the page URL of the quote');
+      if (input.source === undefined) issue('source', 'give the URL of the value');
+      if (input.via !== 'api' && input.quote === undefined) issue('quote', 'quote the page text');
+    }
+    if (input.source !== undefined) {
+      let origin: string | undefined;
+      try { origin = new URL(input.source).origin; } catch { origin = undefined; }
+      const allowed = input.via === 'handbook' ? [HANDBOOK_ORIGIN] : [CANVAS_ORIGIN, ED_ORIGIN];
+      if (origin === undefined || !allowed.includes(origin)) issue('source', input.via === 'handbook'
+        ? `Must be a URL on ${HANDBOOK_ORIGIN}` : 'Must be a Canvas or Ed URL');
     }
   });
 }
-export type Field<T> = { value: T | null; state: z.infer<typeof FieldStateSchema>; via?: 'ax' | 'screenshot'; checkedAt?: string; quote?: string; source?: string };
+export type Field<T> = { value: T | null; state: z.infer<typeof FieldStateSchema>; via?: 'ax' | 'screenshot' | 'api' | 'handbook'; checkedAt?: string; quote?: string; source?: string };
 
 const courseFields = {
   code: field(CourseCodeSchema), name: field(NameSchema), term: field(TermSchema), aiPolicy: field(PolicyValueSchema, true),
 };
 export const CourseLevelSchema = z.object({ ...courseFields, pages: PagesSchema,
   platforms: z.object({ canvas: PlatformReadSchema, ed: PlatformReadSchema }), componentsComplete: z.boolean() });
-const itemFields = { name: field(NameSchema), due: field(TimeSchema, true), status: field(StatusSchema),
-  score: field(PointsSchema), outOf: field(PointsSchema), weight: field(PercentSchema, true) };
+const itemFields = { name: field(NameSchema), kind: field(KindSchema).optional(), unlockAt: field(TimeSchema).optional(),
+  due: field(TimeSchema, true), status: field(StatusSchema), score: field(PointsSchema), outOf: field(PointsSchema),
+  weight: field(PercentSchema, true), aiPolicy: field(PolicyValueSchema, true).optional() };
 export const ItemSchema = z.object({ key: z.string().regex(/^[A-Z]{4}\d{5}:(?:canvas|ed):[A-Za-z0-9._:-]{1,160}$/),
   url: PageUrlSchema.optional(), ...itemFields });
 const componentFields = { name: field(NameSchema), kind: field(KindSchema), count: field(z.number().int().min(0).max(300)),
@@ -219,7 +233,7 @@ export function validateCourseDocument(input: unknown, options: { final: boolean
   if (final) {
     // Format issues on wrapper fields were already made unknown above; record them with the degraded checks.
     for (const issue of issues) {
-      const match = /^(course\.(?:code|name|term|aiPolicy)|components\[\d+\](?:\.items\[\d+\])?\.(?:name|due|status|score|outOf|weight|kind|count|isFinal|hurdleMin))(?:\.|$)/.exec(issue.path);
+      const match = /^(course\.(?:code|name|term|aiPolicy)|components\[\d+\]\.(?:name|kind|count|weight|isFinal|hurdleMin)|components\[\d+\]\.items\[\d+\]\.(?:name|kind|unlockAt|due|status|score|outOf|weight|aiPolicy))(?:\.|$)/.exec(issue.path);
       if (match && !dropped.some(path => match[1]!.startsWith(`${path}.`))) unknown.push(match[1]!);
     }
     for (const failure of failures) {

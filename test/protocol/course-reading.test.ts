@@ -8,7 +8,7 @@ import { ProtocolFiles } from '../../src/protocol/files.js';
 import { dispatch } from '../../src/protocol/registry.js';
 import { SyncJobs } from '../../src/sync/jobs.js';
 import { assessmentId } from '../../src/sync/course-import.js';
-import { component, document, found, item, now, quoted, unknown } from '../sync/course-document.js';
+import { api, component, document, found, handbook, item, kinds, now, quoted, unknown } from '../sync/course-document.js';
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); });
@@ -76,6 +76,37 @@ describe('course.import (coursework-sync "Run state is shared through the store"
     // protocol-reads: courses report the time of their last stored document.
     const storedAt = f.store.loadSyncJob(job.id)!.results![key]!.storedAt;
     expect(await f.agentCall('courses.list', {})).toMatchObject({ ok: true, data: { items: [expect.objectContaining({ code: 'SYNA10001', storedAt })] } });
+  });
+
+  it('Valid built document: API and Handbook values, the six kinds and an item aiPolicy import with receipt counts', async () => {
+    const f = setup(); f.select();
+    const job = f.jobs.open([key]);
+    const apiItem = item(1, {
+      kind: found('presentation'), due: api('2026-10-30T12:59:00Z'), unlockAt: api('2026-10-01T00:00:00Z'),
+      weight: api(25), score: api(80), outOf: api(100), aiPolicy: quoted('prohibited', 'No generative AI for this report.'),
+    });
+    const weights = [40, 15, 25, 10, 10, 0];
+    const components = kinds.map((kind, index) => component(kind, weights[index]!, kind === 'assignment' ? [apiItem] : [],
+      { kind: found(kind), ...(kind === 'exam' ? { weight: handbook(weights[index]!, 'Final exam 40 per cent') } : {}) }));
+    expect(await f.agentCall('course.import', { jobId: job.id, document: document(components) })).toMatchObject({ ok: true,
+      data: { stored: true, submission: 1, components: 6, items: 1, unknownFields: [], warnings: [] } });
+    expect(f.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1'))).toMatchObject({ kind: 'presentation',
+      unlockAt: '2026-10-01T00:00:00Z', aiPolicy: 'prohibited', readState: { aiPolicy: { state: 'found', quote: 'No generative AI for this report.' },
+        unlockAt: { state: 'found', via: 'api' } } });
+  });
+
+  it('Agent read without a quote: an item aiPolicy found with ax but no quote is refused, then stored unknown on the final submission', async () => {
+    const f = setup(); f.select();
+    const job = f.jobs.open([key]);
+    const bad = document([component('work', 100, [item(1, { aiPolicy: found('prohibited',
+      { source: 'https://canvas.lms.unimelb.edu.au/courses/900001/assignments/1' }) })], { count: found(1) })]);
+    for (let i = 0; i < 2; i++) expect(await f.agentCall('course.import', { jobId: job.id, document: bad })).toMatchObject({ ok: false,
+      error: { code: 'INVALID_INPUT', message: expect.stringContaining('components[0].items[0].aiPolicy.quote') } });
+    const third = await f.agentCall('course.import', { jobId: job.id, document: bad });
+    expect(third).toMatchObject({ ok: true, data: { submission: 3, unknownFields: expect.arrayContaining(['components[0].items[0].aiPolicy']) } });
+    const stored = f.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1'));
+    expect(stored).toMatchObject({ name: 'Synthetic item 1', readState: { aiPolicy: { state: 'unknown', checkedAt: expect.any(String) } } });
+    expect(stored?.aiPolicy).toBeUndefined();
   });
 
   it('Wrong field shape: INVALID_INPUT names the field path and nothing is stored', async () => {

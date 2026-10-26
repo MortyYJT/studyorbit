@@ -25,6 +25,7 @@ export interface ImportResult {
 }
 
 const known = <T>(field: Field<T>): T | undefined => (field.state === 'found' || field.state === 'derived') && field.value !== null ? field.value : undefined;
+const knownOptional = <T>(field: Field<T> | undefined): T | undefined => field === undefined ? undefined : known(field);
 const entry = (field: Field<unknown>): ReadState[string] => ({ state: field.state, ...(field.via ? { via: field.via } : {}),
   ...(field.checkedAt ? { checkedAt: field.checkedAt } : {}), ...(field.quote ? { quote: field.quote } : {}), ...(field.source ? { source: field.source } : {}) });
 const ownerWeight = (store: SqliteRepository) => (id: string) => {
@@ -130,10 +131,18 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
         if (row.kept) { superseded.add(assessmentId(term, row.item.key)); add(row.weight); continue; }
         const id = assessmentId(term, row.item.key);
         const due = known(row.item.due); const score = percent(row.item);
-        produced.set(id, { id, courseId, name: known(row.item.name)!, ...(kind ? { kind } : {}), ...(row.weight !== undefined ? { weight: row.weight } : {}),
-          ...(score !== undefined ? { score } : {}), ...(due ? { due } : {}), isFinal: false, status: known(row.item.status)!, origin: 'sync', group: { ...group, role: 'item' },
+        const unlockAt = knownOptional(row.item.unlockAt); const itemKindField = row.item.kind;
+        const itemKind = knownOptional(itemKindField) ?? kind;
+        const aiPolicy = knownOptional(row.item.aiPolicy);
+        // Per-assessment policy storage rules (keep last value, component/remainder combination) are task 8.1.
+        const kindState = itemKindField && known(itemKindField) !== undefined ? entry(itemKindField) : entry(component.kind);
+        produced.set(id, { id, courseId, name: known(row.item.name)!, ...(itemKind ? { kind: itemKind } : {}), ...(row.weight !== undefined ? { weight: row.weight } : {}),
+          ...(score !== undefined ? { score } : {}), ...(due ? { due } : {}), ...(unlockAt ? { unlockAt } : {}), ...(aiPolicy ? { aiPolicy } : {}),
+          isFinal: false, status: known(row.item.status)!, origin: 'sync', group: { ...group, role: 'item' },
           readState: { name: entry(row.item.name), due: entry(row.item.due), status: entry(row.item.status), score: entry(row.item.score),
-            outOf: entry(row.item.outOf), weight: row.weightState, kind: entry(component.kind) } });
+            outOf: entry(row.item.outOf), weight: row.weightState, kind: kindState,
+            unlockAt: row.item.unlockAt ? entry(row.item.unlockAt) : { state: 'unknown', checkedAt: at },
+            aiPolicy: row.item.aiPolicy ? entry(row.item.aiPolicy) : { state: 'unknown', checkedAt: at } } });
         link(id, row.sourceId);
         add(annotated(id) ?? row.weight);
       }
@@ -187,7 +196,9 @@ function sourceItem(item: CourseItem, id: string, courseId: string, at: string):
   const [, platform, ...rest] = item.key.split(':') as [string, 'canvas' | 'ed', ...string[]];
   const facts: NonNullable<SourceItem['facts']> = {};
   const due = known(item.due); const outOf = known(item.outOf); const score = known(item.score); const status = known(item.status);
+  const unlockAt = knownOptional(item.unlockAt);
   if (due) facts.due = due;
+  if (unlockAt) facts.unlockAt = unlockAt;
   if (outOf !== undefined) facts.pointsPossible = outOf;
   if (score !== undefined) facts.pointsEarned = score;
   if (status) facts.submitted = status === 'submitted' || status === 'graded';

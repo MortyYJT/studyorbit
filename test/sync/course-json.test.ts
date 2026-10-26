@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { courseDocumentJsonSchema, courseKey, validateCourseDocument } from '../../src/sync/course-json.js';
-import { component, document, found, item, now, quoted, unknown } from './course-document.js';
+import { api, component, document, found, handbook, handbookAssessment, item, kinds, now, quoted, unknown } from './course-document.js';
 
 const check = (input: unknown, final = false) => validateCourseDocument(input, { final, now });
 const paths = (result: ReturnType<typeof check>) => result.errors.map(error => error.path);
@@ -12,6 +12,46 @@ describe('course JSON contract (coursework-sync "Course JSON contract")', () => 
     expect(result.fatal).toBe(false);
     expect(result.key).toBe('SYNA10001:2026:S2');
     expect(result.document?.components).toHaveLength(2);
+  });
+
+  it('API field without a quote: a due found with via api and the API URL as source is accepted', () => {
+    const result = check(document([component('assignments', 100, [item(1, { due: api('2026-10-30T12:59:00Z') })], { count: found(1) })]));
+    expect(result.errors).toEqual([]);
+  });
+
+  it('refuses an api field without a source and a handbook weight without a quote', () => {
+    const noSource = document([component('assignments', 60, [item(1, { due: found('2026-10-30T12:59:00Z', { via: 'api' }) })], { count: found(1) }),
+      component('exam', 40, [], { kind: found('exam') })]);
+    expect(paths(check(noSource))).toContain('components[0].items[0].due.source');
+
+    const noQuote = document([component('exam', 100, [], { kind: found('exam'),
+      weight: found(100, { via: 'handbook', source: handbookAssessment }) })]);
+    expect(paths(check(noQuote))).toContain('components[0].weight.quote');
+
+    // A Handbook URL is a source only for via handbook, not for a page read.
+    const wrongVia = document([component('exam', 100, [], { kind: found('exam'),
+      weight: found(100, { quote: 'Synthetic handbook text', source: handbookAssessment }) })]);
+    expect(paths(check(wrongVia))).toContain('components[0].weight.source');
+  });
+
+  it('accepts the six kinds and reads ongoing as participation', () => {
+    const components = kinds.map((kind, index) => component(kind, index === 0 ? 100 : 0, [], { kind: found(kind) }));
+    expect(check(document(components)).errors).toEqual([]);
+    const old = check(document([component('legacy', 100, [], { kind: found('ongoing') })]), true);
+    expect(old.errors).toEqual([]);
+    expect(old.document?.components[0]?.kind.value).toBe('participation');
+  });
+
+  it('accepts item kind, unlockAt and aiPolicy and reports their failing paths on the final submission', () => {
+    const good = item(1, { kind: found('presentation'), unlockAt: api('2026-10-01T00:00:00Z'), aiPolicy: quoted('prohibited', 'No generative AI.') });
+    expect(check(document([component('work', 100, [good], { count: found(1) })])).errors).toEqual([]);
+
+    const bad = item(1, { unlockAt: quoted('not a time'), aiPolicy: found('prohibited', { source: 'https://canvas.lms.unimelb.edu.au/courses/900001/assignments/1' }) });
+    const result = check(document([component('work', 100, [bad], { count: found(1) })]), true);
+    expect(result.unknown).toEqual(expect.arrayContaining(['components[0].items[0].unlockAt', 'components[0].items[0].aiPolicy']));
+    const stored = result.document!.components[0]!.items[0]!;
+    expect(stored.unlockAt).toMatchObject({ value: null, state: 'unknown', checkedAt: now });
+    expect(stored.aiPolicy).toMatchObject({ value: null, state: 'unknown', checkedAt: now });
   });
 
   it('Wrong field shape: a found due without a quote or with a non-ISO value names the field path', () => {
@@ -100,6 +140,6 @@ describe('course JSON contract (coursework-sync "Course JSON contract")', () => 
 
   it('shares one zod schema with the reading prompt as JSON Schema', () => {
     const schema = JSON.stringify(courseDocumentJsonSchema());
-    for (const name of ['componentsComplete', 'platforms', 'hurdleMin', 'outOf', 'checkedAt', 'quote']) expect(schema).toContain(name);
+    for (const name of ['componentsComplete', 'platforms', 'hurdleMin', 'outOf', 'checkedAt', 'quote', 'unlockAt', 'aiPolicy', 'presentation', 'ungraded']) expect(schema).toContain(name);
   });
 });
