@@ -4,7 +4,7 @@
 > 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 的改法见 #165–#197，PRD 待更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/`（进行中：`layered-sync`，规格已合并，实现中）；决定看 `note/decisions.md`（#1–#214）；进度看 `note/product/roadmap.md`。
 
 - **最后更新：** 2026-10-26 夜，Claude。
-- **模式：** OpenSpec 变更 `layered-sync`（路线图 C-5，**并入了原来的 `canvas-check-item-policy`**），规格已合并，实现中：第 2 组（#186）、第 3 组（#191）、4.1（#193）、4.2（#196）、5.1（#199）、5.2（#202）已合并；下一步 5.3。代码交给 dsh（DeepSeek）写（#209）；需要 Codex 的实测，等额度恢复后再做。
+- **模式：** OpenSpec 变更 `layered-sync`（路线图 C-5，**并入了原来的 `canvas-check-item-policy`**），规格已合并，实现中：第 2 组（#186）、第 3 组（#191）、4.1（#193）、4.2（#196）、5.1（#199）、5.2（#202）、5.3（#205）已合并；下一步 6.1。代码交给 dsh（DeepSeek）写（#209）；需要 Codex 的实测，等额度恢复后再做。
 - **本轮合并（10-26 凌晨）：** #175、#176 重写 README（项目说明、为什么读页面不用 token、功能、计划、进度），同时把决策 #193–#197 和路线图 C-5 带进了 main；GitHub 仓库的 About 说明也已更新；#178 合并了 C-5 规格。
 - **#191 删除隐私检查（沿用）：** 姓名、邮箱、学号、凭证样式的文字、本地路径都会原样存储、原样发给模型。保留引用完整性检查和 `source.record` 的网址规则。仓库和测试数据里仍然不能放真实课程数据、密钥和浏览器配置。
 - **分工（#189）：** 实现和审查优先交给 Codex；Claude 派活、提交、在本机重跑检查、浏览器验证、合并。Codex 额度用完时由 Claude 接手，审查改用只读的 Claude 子代理（#175、#176 就是这样审的）。
@@ -31,7 +31,10 @@
   3f. 5.2（任务 prompt，`src/agent/jobs/`）：issue #201 → PR #202 已合并（1812f4b）。共享规则 `rules.md` 加每个任务一个短文件；`prompt(spec, ctx?)` 只写入 `spec.urls`，分类任务拿到由阶段数据做的精简清单（带条目 id，不含页面文字和网址）；`tools(spec, all)` 只给该任务的输出工具（课程列表另加 `courses.offer`），接线时要包一层闭包。第 1 轮审查 2 个阻塞（saver 只许开 modules 页；清单没有 id），dsh 返工；第 2 轮 1 个阻塞（登录页规则让课程列表兜底走不到），Claude 先写测试再修，顺手收紧了页内下载链接只限本课程、id 里带网址就丢掉。
     - **和计划不同：** `course-reading.md` 和它的测试没删，因为正式同步还在用；删除挪到切换新管线那一步（5.3、6.2 之后）。
     - **留给 5.3：** Ed 兜底任务的输出工具规格里没有名字，现在用占位 `ed.read`（要在 5.3 里补进规格）；`course.map` 链接的 route 取值；`quizzes.read` 阶段的结构和 id 类型；一个 quiz 同时是 Canvas assignment 时的对账。
-  3g. 下一步：5.3 agent 命令（`course.map`、`quizzes.read`、`assignment.saved`、`materials.saved`、`items.classify`，加 Ed 输出命令），参数要和 `src/agent/jobs/*.md` 里写的一致（`assignment.saved` 带 `assignmentId`，`items.classify` 每条带回显的 `id`）。clone `../unimelb-coursework-agent-layered-model` 可以复用（每个 issue 从最新 main 开新的 `dsh/<topic>` 分支）。
+  3g. 5.3（五个阶段写入命令）：issue #204 → PR #205 已合并（6a9b512）。`course.map`、`quizzes.read`、`assignment.saved`（存到 `assignments.<assignmentId>`）、`materials.saved`、`items.classify`，都经 `recordStage` 校验活动任务和课程；输入不合法时把出错字段和「什么都没存」告诉 agent。工具数 34 → 39。dsh 写，Claude 先写测试再补了文件名不能是 `.`/`..`；审查一轮通过，Claude 再补主页只报 Canvas/Ed 链接（不然遇到 Zoom 链接整次被拒）、写明 `policy` 结构。
+    - **和计划不同：** `course.import` 还在 agent 工具里，它的两个旧测试也没改，因为正式同步还在用；挪到 5.2b。Ed 的输出命令规格里没有，挪到 7.2。
+    - **没修（有意）：** `assignment.saved` 不核对 `assignmentId` 是否就是本任务的目标；写错时预期阶段缺失，runner 判失败重试，不会存错。
+  3h. 下一步：6.1 计分规则和 `check.resolve`（owner 命令），然后 6.2 生成课程文档。6.2 之后做 5.2b：在 `src/protocol/production.ts` 接上管线（`tools` 要包闭包 `spec => tools(spec, options.tools())`），删旧读课 prompt 和 `course.import` 工具。clone `../unimelb-coursework-agent-layered-model` 可以复用（每个 issue 从最新 main 开新的 `dsh/<topic>` 分支）。
   4. dsh 的 DeepSeek key 放在 `~/.zshenv` 的 `DEEPSEEK_API_KEY`（10-26 换过一次）；报 `AUTH` 错就是 key 失效。
   5. Codex 额度恢复、你在场时做任务 1.1（接口参数）、1.4（多窗口并行实验），最后做 10.2（实测填表）。
 - **Ed**：edstem-cli 0.8.2 已全局安装；`edstem auth login` 等你粘贴 token（任务 1.2）。它现在的代码只认 Ed API token，不读 cookie。
