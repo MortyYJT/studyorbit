@@ -15,7 +15,12 @@ const source = { sourceItemId: citation.sourceItemId, courseId: 'synthetic-cours
   sourceHash: digest, locator: citation.locator, page: 1, provenance: 'manual' as const };
 const course = { id: 'synthetic-course', moduleId: 'synthetic-module', code: 'SYN10001', name: 'Synthetic course', term: 'Synthetic term', assessmentsComplete: false };
 const assessment = { id: binding.assessmentId, courseId: course.id, name: 'Synthetic assessment', kind: 'assignment' as const,
-  weight: 10, isFinal: false, status: 'not_started' as const };
+  weight: 10, isFinal: false, status: 'not_started' as const,
+  savedFiles: [{ id: 'synthetic-saved-file', name: 'synthetic-guide.html', current: true, savedAt: at, updated: false }] };
+const conflict = { id: 'synthetic-conflict', courseId: course.id, target: { componentKey: 'SYN10001:assignments' },
+  field: 'weight' as const, skeletonValue: 30, canvasValue: 40, state: 'open' as const, checkedAt: at, componentName: 'Assignments' };
+const update = { savedFileId: 'synthetic-saved-file', courseId: course.id, assessmentId: assessment.id,
+  assessmentName: assessment.name, name: 'synthetic-guide.html', savedAt: at };
 const task = { id: 'synthetic-task', moduleId: course.moduleId, courseId: course.id, assessmentId: assessment.id,
   title: 'Read instructions', source: 'coursework' as const, steps: [{ title: 'Read the synthetic guide.', estimateMinutes: 15, done: false, citations: [citation] }] };
 const claim = { text: 'Read the synthetic guide.', citations: [citation] };
@@ -37,6 +42,9 @@ export const examples = {
   'practice.attempt.record': { input: { questionId: practiceQuestion.id, revision, outcome: 'incorrect' as const, at }, output: { recorded: true as const } },
   'courses.list': { input: { limit: 10 }, output: page(course) },
   'assessments.list': { input: { courseId: course.id, limit: 10 }, output: page(assessment) },
+  'conflicts.list': { input: { courseId: course.id, state: 'open' as const, limit: 10 }, output: page(conflict) },
+  'updates.list': { input: { limit: 10 }, output: page(update) },
+  'file.open': { input: { savedFileId: 'synthetic-saved-file' }, output: { opened: true as const, openedAt: at } },
   'tasks.list': { input: { courseId: course.id, limit: 10 }, output: page(task) },
   'sources.get': { input: { sourceItemId: source.sourceItemId }, output: source },
   'materials.list': { input: { courseId: course.id, limit: 10 }, output: page(source) },
@@ -80,7 +88,9 @@ export class FakeServices implements ProtocolServices {
       : { courseId: examples['grant.record'].output.courseId, assessmentId: examples['grant.record'].output.assessmentId };
   }
 }
-export function createFakeRegistry() { return createRegistry(); }
+export function createFakeRegistry() {
+  return createRegistry({ savedFiles: { open: async () => structuredClone(examples['file.open'].output) } });
+}
 export function createFakeContext(options: { owner?: boolean } = {}) {
   const events: AuditEvent[] = []; const runEvents: AuditEvent[] = []; const actionCalls: string[] = [];
   const context: TrustedContext & { events: AuditEvent[]; runEvents: AuditEvent[]; actionCalls: string[] } = {

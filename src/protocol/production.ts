@@ -28,6 +28,8 @@ import { StudyCitationService, type StudyEvidenceProvider } from './citations.js
 import type { TrustedContext } from './context.js';
 import { CourseworkError } from './errors.js';
 import { MemoryService } from '../memory/service.js';
+import { openSavedFile, openWithHostDefaultApp, type FileOpener } from '../sync/saved-files.js';
+import type { CourseFolderOptions } from '../sync/course-folder.js';
 export interface ProductionOptions {
   store?: SqliteRepository; files?: ProtocolFiles; metadata?: readonly EvidenceMetadata[];
   reads?: AuxiliaryReadPorts; study?: { provider: StudyEvidenceProvider; store: StudyRecordStore };
@@ -36,6 +38,16 @@ export interface ProductionOptions {
   clipboard?: ClipboardReader;
   agentAdapter?: AgentAdapter; agentTools?: readonly AgentTool[];
   owner?: TrustedContext['owner'];
+  /** Remembered course-folder location for `file.open`; defaults to COURSEWORK_FILES or ~/Desktop. */
+  courseFolder?: CourseFolderOptions;
+  /** Convenience alias for `courseFolder.root`. */
+  courseFolderRoot?: string;
+  /** Alias for `courseFolderRoot`. */
+  filesRoot?: string;
+  /** Tests inject a recording opener; production opens with the macOS default application. */
+  fileOpener?: FileOpener;
+  /** Alias for `fileOpener`. */
+  opener?: FileOpener;
 }
 /** Compose durable storage and validated revision services once for all transports. */
 export function createProductionProtocol(options: ProductionOptions = {}) {
@@ -116,7 +128,11 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
   // A sync run is an agent job over the chat adapter; adapter and tools are composed below and resolved per run.
   const sync = options.sync ?? new AgentSync({ store, jobs, adapter: () => adapter, tools: () => agentTools });
   const memory = new MemoryService(store);
-  const registry = createRegistry({ memory, autonomy, annotations, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync, courseReading: jobs });
+  const fileRoot = options.courseFolderRoot ?? options.filesRoot;
+  const savedFiles = { open: (input: { savedFileId: string }) => openSavedFile(store, input.savedFileId,
+    { folder: options.courseFolder ?? (fileRoot === undefined ? undefined : { root: fileRoot }),
+      opener: options.fileOpener ?? options.opener ?? openWithHostDefaultApp }) };
+  const registry = createRegistry({ memory, autonomy, annotations, savedFiles, metrics: new MetricsService(store, effectiveKind), planning: new PlanningService(store, annotations), sync, courseReading: jobs });
   // The chat agent gets the same owner-free tool set as MCP; every call still goes through dispatch().
   const agent = registry.agentTools(context);
   const agentTools = options.agentTools ?? agent.registry.list().map(entry => ({ name: entry.name, description: describe(entry),

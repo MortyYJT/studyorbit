@@ -149,7 +149,9 @@ const readNames = new Set<string>(Object.keys(contracts).filter(n => n.endsWith(
 export const writeNames: ReadonlySet<string> = new Set<string>([...Object.keys(contracts), ...Object.keys(planningContracts), ...Object.keys(annotationCommandContracts), ...Object.keys(syncContracts), ...Object.keys(memoryContracts)].filter(n => !readNames.has(n)));
 const uncertain = () => new CourseworkError('UNCERTAIN', safeMessages.UNCERTAIN);
 /** Bind the settled contract surface to injected ports; no production service is selected here. */
-export function createRegistry(options: { autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; courseReading?: CourseReadingCommands; annotations?: AnnotationService; metrics?: MetricsService; memory?: MemoryService } = {}): Registry {
+export function createRegistry(options: { autonomy?: AssessmentAutonomy; planning?: PlanningService; sync?: SyncCommands; courseReading?: CourseReadingCommands; annotations?: AnnotationService; metrics?: MetricsService; memory?: MemoryService;
+  /** Owner-only `file.open`; production injects the stored-path resolver and host opener. */
+  savedFiles?: { open(input: { savedFileId: string }): Promise<{ opened: true; openedAt: string }> } } = {}): Registry {
   const registry = new Registry();
   const handlers = new Map<string, Handler>();
   for (const name of Object.keys(contracts) as CommandName[]) {
@@ -157,6 +159,10 @@ export function createRegistry(options: { autonomy?: AssessmentAutonomy; plannin
     let handler = handlers.get(canonical);
     if (!handler) {
       handler = async (input, context) => {
+        if (canonical === 'file.open') {
+          if (!options.savedFiles) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
+          return options.savedFiles.open(input as { savedFileId: string });
+        }
         if (readNames.has(canonical)) return context.repository.read(canonical as ReadCommand, input as never);
         let target: { courseId?: string; assessmentId?: string } | undefined;
         if (canonical === 'policy.record' || canonical === 'grant.record') {
@@ -183,7 +189,8 @@ export function createRegistry(options: { autonomy?: AssessmentAutonomy; plannin
     }
     const contract = contracts[name];
     const canonicalHandler = handler;
-    registry.register<z.ZodType, z.ZodType>({ name, ...contract, handler: canonicalHandler });
+    registry.register<z.ZodType, z.ZodType>({ name, ...contract,
+      ...(name === 'file.open' ? { authority: 'owner' as const } : {}), handler: canonicalHandler });
   }
   for (const name of Object.keys(autonomyCommandContracts) as (keyof typeof autonomyCommandContracts)[]) {
     // autonomy.read is an L0 read with no authority decision: it skips the audit journal (runs still record it).

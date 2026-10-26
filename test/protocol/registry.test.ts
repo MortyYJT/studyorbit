@@ -7,7 +7,8 @@ import { ok, fail } from '../../src/protocol/envelope.js';
 import { CourseworkError, retryable } from '../../src/protocol/errors.js';
 
 const names = ['courses.list', 'assessments.list', 'tasks.list', 'sources.get', 'materials.list', 'runs.list',
-  'revision.read', 'practice.stats', 'practice.attempt.record', 'source.record', 'revision.list', 'practice.list', 'breakdown.write', 'revision.write', 'practice.write', 'policy.record', 'grant.record', 'audit.list'];
+  'revision.read', 'practice.stats', 'practice.attempt.record', 'source.record', 'revision.list', 'practice.list', 'breakdown.write', 'revision.write', 'practice.write', 'policy.record', 'grant.record', 'audit.list',
+  'conflicts.list', 'updates.list', 'file.open'];
 
 describe('issue A contracts for M3', () => {
   it('exports every command with strict schema-valid synthetic examples and inferred consumer types', () => {
