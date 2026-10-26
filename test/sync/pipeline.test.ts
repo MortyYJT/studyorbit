@@ -285,7 +285,10 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     const kindsB = f.adapter.specs.filter(spec => spec.courseKey === keyB).map(spec => spec.kind);
     expect(kindsB).toEqual(kindsA);
     expect(events.indexOf(`build:${keyA}`)).toBeGreaterThan(events.indexOf(`start:${keyA}:classify`));
+    // Every job of the first course, including its import after classify, finishes before the second course starts.
     expect(events.indexOf(`start:${keyB}:handbook`)).toBeGreaterThan(events.indexOf(`build:${keyA}`));
+    expect(f.adapter.specs.findIndex(spec => spec.courseKey === keyB))
+      .toBeGreaterThan(f.adapter.specs.findLastIndex(spec => spec.courseKey === keyA));
   });
 
   it('Handbook unavailable: two failed handbook jobs do not stop the course, and the build sees no skeleton', async () => {
@@ -314,6 +317,62 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     await f.sync.run({});
     const urls = f.adapter.specs.flatMap(spec => spec.urls);
     for (const forbidden of [gradesUrl, gradescope, echo360]) expect(urls).not.toContain(forbidden);
+  });
+
+  it('Main gets only the normalised home URL: a grades URL or a deeper path never reaches a job', async () => {
+    const gradesPage = `${canvasA}/grades`;
+    const trailing = `${canvasB}/`;
+    const deeper = `${canvasA}/assignments`;
+    const f = setup();
+    f.store.saveCourseSelections([
+      selection(keyA, { canvas: gradesPage }),
+      selection(keyB, { canvas: trailing }),
+      selection('SYNC30003:2026:S2', { canvas: deeper }),
+    ]);
+    await f.sync.run({});
+    const urls = f.adapter.specs.flatMap(spec => spec.urls);
+    for (const raw of [gradesPage, trailing, deeper]) expect(urls).not.toContain(raw);
+    expect(f.adapter.specs.filter(spec => spec.kind === 'main').map(spec => ({ key: spec.courseKey, urls: spec.urls })))
+      .toEqual([{ key: keyB, urls: [canvasB] }]);
+  });
+
+  it('An assignment job never gets the grades tab URL or another course assignment', async () => {
+    const gradesUrl = `${canvasA}/grades`;
+    const otherCourse = `${canvasB}/assignments/9`;
+    const f = setup({ groups: spec => {
+      const stage = groupsFor(spec.courseKey!);
+      const group = stage.groups[0]!;
+      return { ...stage, groups: [{ ...group, assignments: [
+        group.assignments[0]!,
+        { ...group.assignments[0]!, id: '2', htmlUrl: gradesUrl },
+        { ...group.assignments[0]!, id: '3', htmlUrl: otherCourse },
+      ] }] };
+    } });
+    seed(f.store, keyA);
+    await f.sync.run({});
+    const urls = f.adapter.specs.flatMap(spec => spec.urls);
+    expect(urls).not.toContain(gradesUrl);
+    expect(urls).not.toContain(otherCourse);
+    expect(f.adapter.specs.filter(spec => spec.kind === 'assignment').map(spec => spec.urls[0]))
+      .toEqual([`${canvasA}/assignments/1`]);
+  });
+
+  it('Without a Canvas course id, an assignment URL from another course is refused', async () => {
+    const otherCourse = `${canvasB}/assignments/9`;
+    const base = scripted();
+    const f = setup({ script: async function* (spec, call) {
+      if (spec.kind === 'handbook') {
+        const stage = groupsFor(keyB);
+        const group = stage.groups[0]!;
+        await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'groups',
+          value: { ...stage, groups: [{ ...group, assignments: [{ ...group.assignments[0]!, htmlUrl: otherCourse }] }] } });
+      }
+      yield* base(spec, call);
+    } });
+    f.store.saveCourseSelections([selection(keyA, { canvas: `${canvasA}/grades` })]);
+    await f.sync.run({});
+    expect(f.adapter.specs.filter(spec => spec.kind === 'assignment')).toEqual([]);
+    expect(f.adapter.specs.flatMap(spec => spec.urls)).not.toContain(otherCourse);
   });
 
   it('Files only through the home page: a mapped Files folder reaches the saver; without the link no job gets one', async () => {

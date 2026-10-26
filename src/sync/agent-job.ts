@@ -199,9 +199,8 @@ export class AgentSync implements SyncCommands {
       if (signal.aborted) return { steps, turns };
       await run({ kind: 'groups', jobId: job.id, courseKey, urls: [canvasApiUrl('groups', canvasId)] });
       if (signal.aborted) return { steps, turns };
-    }
-    if (course.pages.canvas) {
-      await run({ kind: 'main', jobId: job.id, courseKey, urls: [course.pages.canvas] });
+      // The main job reads only the course home page; the offer's page URL may point anywhere in the course.
+      await run({ kind: 'main', jobId: job.id, courseKey, urls: [`${CANVAS_ORIGIN}/courses/${canvasId}`] });
       if (signal.aborted) return { steps, turns };
     }
 
@@ -281,7 +280,11 @@ export class AgentSync implements SyncCommands {
     if (!this.options.pipeline!.ed && course.pages.ed) {
       specs.push({ kind: 'ed', jobId: job.id, courseKey: course.key, urls: [course.pages.ed] });
     }
-    return specs;
+    // The grades tab stays in `allowed.read` for the routing table, but no routed job may open it.
+    return grades ? specs.flatMap(spec => {
+      const urls = spec.urls.filter(url => url !== grades);
+      return urls.length ? [{ ...spec, urls }] : [];
+    }) : specs;
   }
 
   private homeLinks(map: unknown): HomeLink[] {
@@ -300,7 +303,7 @@ export class AgentSync implements SyncCommands {
       const parsed = new URL(url);
       if (parsed.origin !== CANVAS_ORIGIN || parsed.username || parsed.password || /%2f|%5c/i.test(parsed.pathname)) return false;
       const match = /^\/courses\/(\d+)\/assignments(?:\/|$)/.exec(parsed.pathname);
-      return match !== null && (canvasId === undefined || match[1] === canvasId);
+      return match !== null && match[1] === canvasId;
     } catch { return false; }
   }
 
