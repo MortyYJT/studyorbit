@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import type { Assessment, SavedFile, SourceItem } from '../domain/schemas.js';
-import { normalizeAssessmentKind } from '../domain/schemas.js';
+import { annotatedKind } from '../agent/presets.js';
 import { hash } from '../citations/exact.js';
 import { materialIdentity, sourceURL } from '../revision/sources.js';
 import type { CommandOutput } from '../protocol/contracts.js';
@@ -59,7 +59,7 @@ export class AssessmentFiles {
     const { assessmentId, saved } = parsed.data;
     const assessment = this.store.loadAssessment(assessmentId);
     if (!assessment) throw new AgentFacingError('NOT_FOUND', 'Assessment not found.');
-    if (effectiveKind(this.store, assessment) === 'exam') {
+    if (annotatedKind(this.store, assessment) === 'exam') {
       throw new AgentFacingError('INVALID_INPUT', 'assessment.files is unavailable for an exam; exams have no Start flow.');
     }
     const course = this.store.loadCourse(assessment.courseId);
@@ -242,10 +242,4 @@ function capEncodedText(text: string, maxBytes: number): string {
     else high = middle - 1;
   }
   return text.slice(0, best).trim();
-}
-
-function effectiveKind(store: SqliteRepository, assessment: Assessment): unknown {
-  const rows = store.readAnnotations('assessment', assessment.id).filter(row => row.field === 'kind');
-  const row = rows.filter(row => row.origin === 'owner').at(-1) ?? rows.filter(row => row.origin === 'agent').at(-1);
-  return row ? normalizeAssessmentKind(row.value) : assessment.kind;
 }

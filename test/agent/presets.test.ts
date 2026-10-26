@@ -43,3 +43,16 @@ it('Start a quiz: names its URL and granted level; an assignment points at asses
   expect(f.chat.availablePresets({ courseId: 'c-1', assessmentId: 'exam-1' })).toEqual([]);
   expect(f.chat.availablePresets({ courseId: 'c-1', assessmentId: 'quiz-1' }).map(preset => preset.id)).toContain('start-assessment');
 });
+
+it('the start preset follows the effective kind: an owner-annotated quiz gets the quiz prompt and an annotated exam has none', () => {
+  const f = setup();
+  f.store.appendAnnotation({ id: 'owner-quiz', entity: 'assessment', entityId: 'assignment-1', field: 'kind', value: 'quiz', origin: 'owner', citations: [], at });
+  f.store.appendAssessmentLink({ assessmentId: 'assignment-1', sourceItemId: 'quiz-source', origin: 'sync', at });
+  const quiz = renderPreset(f.store, { preset: 'start-assessment', courseId: 'c-1', assessmentId: 'assignment-1' })!;
+  expect(quiz).toContain(quizUrl);
+  expect(quiz).not.toContain('assessment.files');
+
+  f.store.appendAnnotation({ id: 'owner-exam', entity: 'assessment', entityId: 'quiz-1', field: 'kind', value: 'exam', origin: 'owner', citations: [], at });
+  expect(() => renderPreset(f.store, { preset: 'start-assessment', courseId: 'c-1', assessmentId: 'quiz-1' })).toThrow();
+  expect(f.chat.availablePresets({ courseId: 'c-1', assessmentId: 'quiz-1' })).toEqual([]);
+});

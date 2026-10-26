@@ -5,6 +5,7 @@ import type { CurrentStateReader } from '../store/queries.js';
 import { CourseworkError } from '../protocol/errors.js';
 import { AssessmentAutonomy } from '../protocol/autonomy.js';
 import { packageRoot } from '../config/data-dir.js';
+import { normalizeAssessmentKind, type Assessment } from '../domain/schemas.js';
 
 /** The skill text a preset's agent prompt carries, or '' when none applies. */
 export function presetSkill(preset?: string): string {
@@ -24,6 +25,13 @@ export const presets = Object.freeze([
   { id: 'wrong-answers-only', assessment: false, template: 'Practise wrong answers only using skills/revision' },
   { id: 'review-pending', assessment: false, template: 'Review the pending needs-you item in this context' },
 ]);
+/** The kind the owner or agent annotated (owner first), else the stored kind; Start and its refusals follow it. */
+export function annotatedKind(store: Pick<Repository, 'readAnnotations'>, assessment: Assessment): unknown {
+  const rows = store.readAnnotations('assessment', assessment.id).filter(row => row.field === 'kind');
+  const row = rows.filter(row => row.origin === 'owner').at(-1) ?? rows.filter(row => row.origin === 'agent').at(-1);
+  return row ? normalizeAssessmentKind(row.value) : assessment.kind;
+}
+
 export interface ConversationInput { title?: string; courseId?: string; assessmentId?: string; preset?: string }
 
 /** Reads the same stored authority as `autonomy.read`, without writing an audit event for a preset preview. */
@@ -39,12 +47,12 @@ export function renderPreset(store: PresetStore, input: ConversationInput): stri
   }
   if (!input.preset) return undefined;
   const preset = presets.find(p => p.id === input.preset);
-  if (!preset || !course || preset.assessment && !assessment || assessment?.kind === 'exam') {
+  if (!preset || !course || preset.assessment && !assessment || assessment && annotatedKind(store, assessment) === 'exam') {
     throw new CourseworkError('INVALID_INPUT', 'Preset unavailable for this context.');
   }
   const identity = `Course ${JSON.stringify({ id: course.id, title: course.name })}${assessment ? `; assessment ${JSON.stringify({ id: assessment.id, title: assessment.name })}` : ''}.`;
   if (preset.id === 'start-assessment' && assessment) {
-    if (assessment.kind === 'quiz') {
+    if (annotatedKind(store, assessment) === 'quiz') {
       const url = quizUrl(store, assessment.id);
       const level = grantedLevel(store, course.id, assessment.id);
       return `Start the quiz ${JSON.stringify({ id: assessment.id, title: assessment.name })} at ${url ?? 'the quiz page stored on its Canvas source'}. `

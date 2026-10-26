@@ -5,7 +5,7 @@ import type { SqliteRepository } from '../store/sqlite.js';
 import type { OwnerInteraction } from '../protocol/context.js';
 import { CourseworkError } from '../protocol/errors.js';
 import { AgentEventSchema, type AgentEvent, type AgentAdapter, type AgentRun, type AgentTool, type StoredEvent, type StreamEvent } from './adapter.js';
-import { presets, renderPreset, type ConversationInput } from './presets.js';
+import { annotatedKind, presets, renderPreset, type ConversationInput } from './presets.js';
 
 type ChatStore = SqliteRepository;
 interface ActiveReply { run?: AgentRun; message: Message; conversation: Conversation; events: StoredEvent[]; done: Promise<void>; finish(): void; terminal: boolean }
@@ -35,10 +35,14 @@ export class ConversationService {
   }
   availablePresets(input: Omit<ConversationInput, 'preset' | 'title'>) {
     renderPreset(this.store, input);
-    if (!input.courseId || input.assessmentId && this.store.loadAssessment(input.assessmentId)?.kind === 'exam') return [];
+    if (!input.courseId || input.assessmentId && this.isExam(input.assessmentId)) return [];
     return presets.filter(preset => !preset.assessment || input.assessmentId).map(preset => ({
       id: preset.id, prompt: renderPreset(this.store, { ...input, preset: preset.id })!,
     }));
+  }
+  private isExam(assessmentId: string): boolean {
+    const assessment = this.store.loadAssessment(assessmentId);
+    return assessment !== undefined && annotatedKind(this.store, assessment) === 'exam';
   }
   list(): Conversation[] {
     return this.store.readConversations().reverse().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
