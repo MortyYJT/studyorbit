@@ -262,13 +262,34 @@ describe('job-scoped stage write commands (layered-sync task 5.3)', () => {
     expect(f.store.loadSyncJob(job.id)?.stages?.[otherKey]).toBeUndefined();
   });
 
-  it('lists the six job-scoped stage writes as agent tools, keeps course.import, and adds no owner-only command', () => {
+  it('Stage output outside a run: course.map with an ended job id is refused and nothing is stored', async () => {
+    const f = setup(); f.select();
+    const job = f.jobs.open([key]);
+    f.store.saveSyncJob({ ...job, endedAt: at, outcome: 'OK' });
+    expect(await f.agentCall('course.map', { jobId: job.id, courseKey: key, ...map }))
+      .toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: expect.stringMatching(/No active sync job/) } });
+    expect(stages(f, job.id)).toBeUndefined();
+  });
+
+  it('Stage results shared across processes: a second SyncJobs instance stores course.map and the first reads it', () => {
+    const directory = realpathSync(mkdtempSync(join(tmpdir(), 'stage-shared-')));
+    const file = join(directory, 'coursework.sqlite');
+    const first = new SqliteRepository(file); const second = new SqliteRepository(file);
+    cleanups.push(() => { first.close(); second.close(); rmSync(directory, { recursive: true, force: true }); });
+    const jobs = new SyncJobs(first); const other = new SyncJobs(second);
+    const job = jobs.open([key]);
+    other.recordStage(job.id, key, 'map', map);
+    expect(jobs.load(job.id)?.stages?.[key]?.map).toEqual(map);
+  });
+
+  it('lists the six job-scoped stage writes as agent tools, without the removed course.import, and adds no owner-only command', () => {
     const f = setup();
     const names = f.host.registry.agentTools(f.host.context).registry.list().map(entry => entry.name);
-    for (const name of ['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'ed.read', 'items.classify', 'course.import']) {
+    for (const name of ['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'ed.read', 'items.classify']) {
       expect(names).toContain(name);
       expect(f.host.registry.get(name)).toMatchObject({ level: 0 });
     }
+    expect(names).not.toContain('course.import');
     expect(names.some(name => isOwnerCommand(name))).toBe(false);
   });
 });

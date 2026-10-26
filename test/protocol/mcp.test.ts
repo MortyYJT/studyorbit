@@ -165,8 +165,9 @@ it('lists no browser.* and no owner command (No resident-browser tools)', async 
   expect(names).toContain('canvas.capture');
   expect(names).toContain('handbook.capture');
   expect(names).toContain('assessment.files');
-  // The six job-scoped stage writes (task 5.3 and the Ed fallback in 7.2); course.import stays until 5.2b.
-  expect(names).toEqual(expect.arrayContaining(['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'ed.read', 'items.classify', 'course.import']));
+  // The six job-scoped stage writes (task 5.3 and the Ed fallback in 7.2); code imports the built document.
+  expect(names).toEqual(expect.arrayContaining(['course.map', 'quizzes.read', 'assignment.saved', 'materials.saved', 'ed.read', 'items.classify']));
+  expect(names).not.toContain('course.import');
   expect(names.some(name => name.startsWith('browser.') || name.startsWith('confirmation.'))).toBe(false);
   expect(names.some(name => isOwnerCommand(name))).toBe(false);
 });

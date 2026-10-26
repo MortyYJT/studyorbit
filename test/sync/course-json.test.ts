@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { courseDocumentJsonSchema, courseKey, validateCourseDocument } from '../../src/sync/course-json.js';
+import { courseKey, validateCourseDocument } from '../../src/sync/course-json.js';
 import { api, component, document, found, handbook, handbookAssessment, item, kinds, now, quoted, unknown } from './course-document.js';
 
 const check = (input: unknown, final = false) => validateCourseDocument(input, { final, now });
@@ -138,8 +138,4 @@ describe('course JSON contract (coursework-sync "Course JSON contract")', () => 
     expect(courseKey('SYNA10001', '2026:S2')).toBe('SYNA10001:2026:S2');
   });
 
-  it('shares one zod schema with the reading prompt as JSON Schema', () => {
-    const schema = JSON.stringify(courseDocumentJsonSchema());
-    for (const name of ['componentsComplete', 'platforms', 'hurdleMin', 'outOf', 'checkedAt', 'quote', 'unlockAt', 'aiPolicy', 'presentation', 'ungraded']) expect(schema).toContain(name);
-  });
 });

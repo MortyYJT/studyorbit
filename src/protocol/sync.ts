@@ -122,9 +122,6 @@ export const SyncStatusSchema = z.strictObject({
     storedAt: time.optional(), lastRun: z.strictObject({ stored: z.boolean(), unknownFields: paths, dropped: paths,
       warnings: z.array(warningCode).max(10), weightSum: z.number().optional(), policyChanged: z.boolean() }).optional() })).max(500),
 });
-export const ImportReceiptSchema = z.strictObject({ stored: z.literal(true), key: id, submission: count, courseId: id,
-  components: count, items: count, assessments: count, retired: count, unknownFields: paths, dropped: paths,
-  warnings: z.array(z.strictObject({ code: warningCode, sum: z.number().optional() })).max(10) });
 /** The owner's settled choices, as `check.resolve` returns them for `gradeItems`. */
 export const ResolvedChoicesSchema = z.strictObject({
   weight: z.record(z.string(), z.enum(['skeleton', 'canvas'])),
@@ -168,9 +165,6 @@ export const syncContracts = {
   /** Owner only: settle one weight or unmatched conflict and return the choices `gradeItems` applies. */
   'check.resolve': { input: z.strictObject({ conflictId: id, choice: z.string().trim().min(1).max(500) }),
     output: z.strictObject({ conflict: SyncConflictSchema, choices: ResolvedChoicesSchema }), level: 0 as const },
-  /** Agent write, job-scoped: one course document; the contract is the JSON Schema in the job prompt. */
-  'course.import': { input: z.strictObject({ jobId: id, document: z.record(z.string(), z.unknown()).describe('One course document following the JSON Schema in the job prompt') }),
-    output: ImportReceiptSchema, level: 0 as const },
 };
 export type SyncCommandName = keyof typeof syncContracts;
 type Output<N extends SyncCommandName> = z.output<(typeof syncContracts)[N]['output']>;
@@ -189,5 +183,4 @@ export interface CourseReadingCommands {
   candidates(): CourseSelection[];
   select(input: Input<'courses.select'>): Output<'courses.select'>;
   resolve(input: Input<'check.resolve'>): Output<'check.resolve'>;
-  import(input: Input<'course.import'>): Output<'course.import'>;
 }

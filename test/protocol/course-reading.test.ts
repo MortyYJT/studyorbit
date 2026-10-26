@@ -22,8 +22,14 @@ function setup(file = ':memory:') {
   const agentCall = (name: string, input: unknown) => dispatch(agent.registry, name, input, agent.context);
   const ownerCall = (name: string, input: unknown) => dispatch(host.registry, name, input, host.context);
   const jobs = new SyncJobs(store);
+  // The store-side import (`storeBuilt` uses the same path); agents no longer get a course.import tool.
+  const importCall = (jobId: string, document: unknown) => {
+    try { return { ok: true as const, data: jobs.import({ jobId, document }) }; }
+    catch (error) { const failure = error as { code?: string; message?: string };
+      return { ok: false as const, error: { code: failure.code ?? 'INTERNAL', message: failure.message ?? '' } }; }
+  };
   const select = () => store.saveCourseSelections([{ key, code: 'SYNA10001', term: '2026:S2', pages: {}, offeredAt: now, selected: true, decidedAt: now }]);
-  return { store, host, agentCall, ownerCall, jobs, select };
+  return { store, host, agentCall, ownerCall, jobs, select, importCall };
 }
 const data = <T = Record<string, any>>(envelope: { ok: boolean }) => (envelope as unknown as { data: T }).data;
 const offer = (jobId: string) => ({ jobId, blocked: [], courses: [
@@ -66,11 +72,11 @@ describe('course selection (coursework-sync "Agent discovery and owner course se
   });
 });
 
-describe('course.import (coursework-sync "Run state is shared through the store", "Validation with two retries")', () => {
-  it('Valid document: course.import returns ok with the counts of stored components and items', async () => {
+describe('store-side course import (coursework-sync "Validation with two retries")', () => {
+  it('Valid document: the store-side import returns the counts of stored components and items', async () => {
     const f = setup(); f.select();
     const job = f.jobs.open([key]);
-    expect(await f.agentCall('course.import', { jobId: job.id, document: document() })).toMatchObject({ ok: true,
+    expect(await f.importCall(job.id, document())).toMatchObject({ ok: true,
       data: { stored: true, key, submission: 1, components: 2, items: 1, unknownFields: [], warnings: [] } });
     expect(f.store.loadSyncJob(job.id)).toMatchObject({ submissions: { [key]: 1 }, results: { [key]: { components: 2, items: 1, storedAt: expect.any(String) } } });
     // protocol-reads: courses report the time of their last stored document.
@@ -88,7 +94,7 @@ describe('course.import (coursework-sync "Run state is shared through the store"
     const weights = [40, 15, 25, 10, 10, 0];
     const components = kinds.map((kind, index) => component(kind, weights[index]!, kind === 'assignment' ? [apiItem] : [],
       { kind: found(kind), ...(kind === 'exam' ? { weight: handbook(weights[index]!, 'Final exam 40 per cent') } : {}) }));
-    expect(await f.agentCall('course.import', { jobId: job.id, document: document(components) })).toMatchObject({ ok: true,
+    expect(await f.importCall(job.id, document(components))).toMatchObject({ ok: true,
       data: { stored: true, submission: 1, components: 6, items: 1, unknownFields: [], warnings: [] } });
     expect(f.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1'))).toMatchObject({ kind: 'presentation',
       unlockAt: '2026-10-01T00:00:00Z', aiPolicy: 'prohibited', readState: { aiPolicy: { state: 'found', quote: 'No generative AI for this report.' },
@@ -100,9 +106,9 @@ describe('course.import (coursework-sync "Run state is shared through the store"
     const job = f.jobs.open([key]);
     const bad = document([component('work', 100, [item(1, { aiPolicy: found('prohibited',
       { source: 'https://canvas.lms.unimelb.edu.au/courses/900001/assignments/1' }) })], { count: found(1) })]);
-    for (let i = 0; i < 2; i++) expect(await f.agentCall('course.import', { jobId: job.id, document: bad })).toMatchObject({ ok: false,
+    for (let i = 0; i < 2; i++) expect(await f.importCall(job.id, bad)).toMatchObject({ ok: false,
       error: { code: 'INVALID_INPUT', message: expect.stringContaining('components[0].items[0].aiPolicy.quote') } });
-    const third = await f.agentCall('course.import', { jobId: job.id, document: bad });
+    const third = await f.importCall(job.id, bad);
     expect(third).toMatchObject({ ok: true, data: { submission: 3, unknownFields: expect.arrayContaining(['components[0].items[0].aiPolicy']) } });
     const stored = f.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1'));
     expect(stored).toMatchObject({ name: 'Synthetic item 1', readState: { aiPolicy: { state: 'unknown', checkedAt: expect.any(String) } } });
@@ -113,7 +119,7 @@ describe('course.import (coursework-sync "Run state is shared through the store"
     const f = setup(); f.select();
     const job = f.jobs.open([key]);
     const bad = document([component('assignments', 60, [item(1, { due: quoted('next Friday') })]), component('exam', 40, [], { kind: found('exam') })]);
-    expect(await f.agentCall('course.import', { jobId: job.id, document: bad })).toMatchObject({ ok: false,
+    expect(await f.importCall(job.id, bad)).toMatchObject({ ok: false,
       error: { code: 'INVALID_INPUT', message: expect.stringContaining('components[0].items[0].due.value') } });
     expect(f.store.query('courses', { limit: 10 }).items).toEqual([]);
     expect(f.store.loadSyncJob(job.id)?.submissions).toEqual({ [key]: 1 });
@@ -122,9 +128,9 @@ describe('course.import (coursework-sync "Run state is shared through the store"
   it('Missing name triggers a retry: course.name is refused, then the second submission is stored', async () => {
     const f = setup(); f.select();
     const job = f.jobs.open([key]);
-    expect(await f.agentCall('course.import', { jobId: job.id, document: document(undefined, { name: unknown() }) }))
+    expect(await f.importCall(job.id, document(undefined, { name: unknown() })))
       .toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: expect.stringContaining('course.name') } });
-    expect(await f.agentCall('course.import', { jobId: job.id, document: document() })).toMatchObject({ ok: true, data: { submission: 2 } });
+    expect(await f.importCall(job.id, document())).toMatchObject({ ok: true, data: { submission: 2 } });
     expect(f.store.query('courses', { limit: 10 }).items).toEqual([expect.objectContaining({ name: 'Synthetic Systems' })]);
   });
 
@@ -133,8 +139,8 @@ describe('course.import (coursework-sync "Run state is shared through the store"
     const job = f.jobs.open([key]);
     const bad = document([component('work', 60, [item(1, { due: unknown() }), item(2, { due: quoted('2031-01-01T00:00:00Z') })], { count: found(2) }),
       component('exam', 40, [], { kind: found('exam') })]);
-    for (let i = 0; i < 2; i++) expect(await f.agentCall('course.import', { jobId: job.id, document: bad })).toMatchObject({ ok: false });
-    const third = await f.agentCall('course.import', { jobId: job.id, document: bad });
+    for (let i = 0; i < 2; i++) expect(await f.importCall(job.id, bad)).toMatchObject({ ok: false });
+    const third = await f.importCall(job.id, bad);
     expect(third).toMatchObject({ ok: true, data: { submission: 3, unknownFields: expect.arrayContaining(['components[0].items[0].due', 'components[0].items[1].due']) } });
     for (const id of [1, 2]) expect(f.store.loadAssessment(assessmentId('2026:S2', `SYNA10001:canvas:assignment:${id}`))).toMatchObject({ readState: { due: { state: 'unknown', checkedAt: expect.any(String) } } });
     expect(f.store.loadSyncJob(job.id)?.results?.[key]?.unknownFields).toEqual(expect.arrayContaining(['components[0].items[0].due', 'components[0].items[1].due']));
@@ -143,7 +149,7 @@ describe('course.import (coursework-sync "Run state is shared through the store"
   it('a third submission without a valid code and term is still refused and the course is not read', async () => {
     const f = setup(); f.select();
     const job = f.jobs.open([key]);
-    expect(await f.agentCall('course.import', { jobId: job.id, document: { course: {} } })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await f.importCall(job.id, { course: {} })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
     expect(f.store.loadSyncJob(job.id)?.results).toBeUndefined();
   });
 
@@ -151,43 +157,21 @@ describe('course.import (coursework-sync "Run state is shared through the store"
     const f = setup(); f.select();
     const job = f.jobs.open([key]);
     const ninety = document([component('assignments', 50, [item(1)]), component('exam', 40, [], { kind: found('exam') })]);
-    expect(await f.agentCall('course.import', { jobId: job.id, document: ninety })).toMatchObject({ ok: true, data: { warnings: [{ code: 'WEIGHT_SUM', sum: 90 }] } });
+    expect(await f.importCall(job.id, ninety)).toMatchObject({ ok: true, data: { warnings: [{ code: 'WEIGHT_SUM', sum: 90 }] } });
     expect(f.store.loadSyncJob(job.id)?.results?.[key]).toMatchObject({ warnings: ['WEIGHT_SUM'], weightSum: 90 });
   });
 
-  it('Import outside a run: an ended job id is refused and nothing is stored', async () => {
-    const f = setup(); f.select();
-    const job = f.jobs.open([key]);
-    f.store.saveSyncJob({ ...job, endedAt: now, outcome: 'OK' });
-    expect(await f.agentCall('course.import', { jobId: job.id, document: document() })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: expect.stringContaining('No active sync job') } });
-    expect(await f.agentCall('courses.offer', offer(job.id))).toMatchObject({ ok: false });
-    expect(await f.agentCall('course.import', { jobId: 'unknown-job', document: document() })).toMatchObject({ ok: false });
-    expect(f.store.query('courses', { limit: 10 }).items).toEqual([]);
-    expect(f.store.listCourseSelections()).toHaveLength(1);
-  });
 
   it('a job older than 25 minutes counts as ended, and only selected courses are accepted', async () => {
     const f = setup(); f.select();
     const stale = f.jobs.open([key]);
     f.store.saveSyncJob({ ...stale, startedAt: new Date(Date.now() - 26 * 60_000).toISOString() });
-    expect(await f.agentCall('course.import', { jobId: stale.id, document: document() })).toMatchObject({ ok: false });
+    expect(await f.importCall(stale.id, document())).toMatchObject({ ok: false });
     const job = f.jobs.open([key]);
-    expect(await f.agentCall('course.import', { jobId: job.id, document: document(undefined, {}, 'SYNZ90009') })).toMatchObject({ ok: false,
+    expect(await f.importCall(job.id, document(undefined, {}, 'SYNZ90009'))).toMatchObject({ ok: false,
       error: { message: expect.stringContaining('not selected') } });
   });
 
-  it('Count shared across processes: two refusals in one process make the next submission in another the third', async () => {
-    const directory = realpathSync(mkdtempSync(join(tmpdir(), 'course-reading-shared-')));
-    const file = join(directory, 'coursework.db');
-    const runner = setup(file); const mcp = setup(file);
-    cleanups.push(() => rmSync(directory, { recursive: true, force: true }));
-    runner.select();
-    const job = runner.jobs.open([key]);
-    const bad = document(undefined, { name: unknown() });
-    for (let i = 0; i < 2; i++) expect(await mcp.agentCall('course.import', { jobId: job.id, document: bad })).toMatchObject({ ok: false });
-    expect(await runner.agentCall('course.import', { jobId: job.id, document: bad })).toMatchObject({ ok: true, data: { submission: 3, unknownFields: ['course.name'] } });
-    expect(runner.store.query('courses', { limit: 10 }).items).toEqual([expect.objectContaining({ name: 'SYNA10001' })]);
-  });
 });
 
 describe('review fixes: offers, import failures and closing', () => {

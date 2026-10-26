@@ -29,10 +29,9 @@ function setup() {
   const ownerCall = (name: string, input: unknown) => dispatch(host.registry, name, input, host.context);
   const read = async (doc: Record<string, unknown>) => {
     const job = jobs.open([key]);
-    const result = await agentCall('course.import', { jobId: job.id, document: doc });
+    const receipt = jobs.import({ jobId: job.id, document: doc });
     store.saveSyncJob({ ...store.loadSyncJob(job.id)!, endedAt: now, outcome: 'OK' });
-    expect(result).toMatchObject({ ok: true });
-    return { job: store.loadSyncJob(job.id)!, courseId: (result as unknown as { data: { courseId: string } }).data.courseId };
+    return { job: store.loadSyncJob(job.id)!, courseId: receipt.courseId };
   };
   const autonomy = async (courseId: string) => (await ownerCall('autonomy.read', { courseId }) as unknown as { data: Record<string, any> }).data;
   const coursePolicy = async (courseId: string) => (await agentCall('annotation.read', { entity: 'course', entityId: courseId }) as unknown as { data: { fields: Record<string, any> } }).data.fields.aiPolicy;

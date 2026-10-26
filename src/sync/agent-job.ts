@@ -1,8 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { AgentAdapter, AgentEvent, AgentTool } from '../agent/adapter.js';
-import { packageRoot } from '../config/data-dir.js';
 import { RunSchema, type CourseSelection, type Run, type RunJob, type SyncJob, type SyncOutcome } from '../domain/schemas.js';
 import { CourseworkError } from '../protocol/errors.js';
 import type { ItemsClassifyInput, SyncCommands } from '../protocol/sync.js';
@@ -10,7 +7,7 @@ import type { SqliteRepository } from '../store/sqlite.js';
 import { canvasApiUrl, canvasCourseId, type CanvasAssignmentValue, type GroupsStage, type TabsStage } from './canvas-api.js';
 import { classificationRetryIds, type BuildDocumentResult } from './build-document.js';
 import { resolvedChoices } from './conflicts.js';
-import { CANVAS_ORIGIN, courseDocumentJsonSchema } from './course-json.js';
+import { CANVAS_ORIGIN } from './course-json.js';
 import type { ResolvedChoices } from './grading.js';
 import { handbookUrl } from './handbook.js';
 import { ED_CLI_NOTE_STAGE, ED_CLI_NOT_USED } from './ed-cli.js';
@@ -69,7 +66,7 @@ export interface PipelineBuildContext extends PipelineJobContext {
 
 /**
  * The injected pipeline. 5.2/5.3 supply the prompts and tools; 6.2 supplies the document builder; 7.1/7.2 the hooks.
- * The production host does not pass this yet, so the legacy single reading job remains the production path.
+ * Production always passes it; there is no single-reading-job path.
  */
 export interface SyncPipeline {
   prompt(spec: JobSpec, ctx?: PipelineJobContext): string;
@@ -84,9 +81,9 @@ export interface SyncPipeline {
 export interface AgentSyncOptions {
   store: SqliteRepository; jobs?: SyncJobs;
   /** Resolved per run, so the host can compose the adapter and the agent tools after the registry. */
-  adapter: () => AgentAdapter; tools: () => readonly AgentTool[];
-  /** Absent: today's single reading job. Present: the layered per-course pipeline. */
-  pipeline?: SyncPipeline;
+  adapter: () => AgentAdapter;
+  /** The layered per-course pipeline; production always runs it. */
+  pipeline: SyncPipeline;
   /** Overrides the 10-minute per-job bound (tests). */
   jobBoundMs?: number;
   /** Overrides the computed 20-minute-per-course run bound (tests). */
@@ -128,7 +125,6 @@ function findAssignment(stage: unknown, id: string): Record<string, unknown> | u
   return undefined;
 }
 
-const melbourneDate = (instant: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).format(instant);
 const platforms = ['canvas', 'ed'] as const;
 
 /** A stored classification stage's items, when the value has the shape `items.classify` wrote. */
@@ -147,17 +143,6 @@ function mergeClassification(first: unknown, retry: unknown): { items: ItemsClas
   return { items: [...byId.values()] };
 }
 
-/** The fixed reading prompt plus this job's id, selected courses, date and the course document JSON Schema. */
-export function courseReadingPrompt(job: SyncJob, courses: readonly CourseSelection[], now: Date): string {
-  const rules = readFileSync(join(packageRoot(), 'src', 'agent', 'course-reading.md'), 'utf8').trim();
-  const selected = courses.length ? courses.map(course => `- ${course.key}: code ${course.code}, term ${course.term}`
-    + `${course.name ? `, name ${JSON.stringify(course.name)}` : ''}, Canvas ${course.pages.canvas ?? 'unknown'}, Ed ${course.pages.ed ?? 'unknown'}`).join('\n')
-    : '';
-  return [rules, '', '## This job', '', `Job id: ${job.id}`, `Today: ${melbourneDate(now)} (Australia/Melbourne)`,
-    courses.length ? `Selected courses (read each in full):\n${selected}` : 'Selected courses: none. Offer the courses you see, then stop.',
-    '', '## Course document JSON Schema', '', '```json', JSON.stringify(courseDocumentJsonSchema()), '```', ''].join('\n');
-}
-
 /**
  * A sync run is an agent job over the chat adapter (Codex by default). Only tool results count: the agent's commands
  * write to the store (from the `coursework mcp` process), and the Run is built from the store when the adapter ends.
@@ -172,39 +157,7 @@ export class AgentSync implements SyncCommands {
     const selected = this.jobs.candidates().filter(course => course.selected === true && (input.course === undefined || course.code === input.course));
     if (input.course !== undefined && !selected.length) throw new CourseworkError('INVALID_INPUT', 'Select this course before syncing it.');
     const job = this.jobs.open(selected.map(course => course.key));
-    return this.options.pipeline ? this.pipelineRun(job, selected) : this.legacyRun(job, selected);
-  }
-
-  /** Today's production path: one reading job for every selected course. */
-  private async legacyRun(job: SyncJob, selected: readonly CourseSelection[]) {
-    let turns = 0; let steps = 0; let failure: SyncOutcome | undefined;
-    try {
-      const run = this.options.adapter().start({ prompt: courseReadingPrompt(job, selected, this.now()), tools: this.options.tools(), transcript: [] });
-      const events = run[Symbol.asyncIterator]();
-      let timer: NodeJS.Timeout | undefined;
-      const bound = this.options.runBoundMs ?? this.options.timeoutMs ?? runBoundMs(selected.length);
-      const deadline = new Promise<'timeout'>(resolve => { timer = setTimeout(() => resolve('timeout'), bound); });
-      let finished = false;
-      try {
-        while (true) {
-          const next = await Promise.race([events.next(), deadline]);
-          if (next === 'timeout') {
-            failure = 'TIMEOUT';
-            await run.interrupt();
-            void events.return?.(undefined)?.catch(() => {});
-            break;
-          }
-          if (next.done) break;
-          // Events only count turns and steps; the agent's text is never parsed.
-          const event = next.value;
-          if (event.type === 'tool_step') steps++;
-          else if (event.type === 'result') { turns = event.turns; finished = true; }
-          else if (event.type === 'error') { turns = event.turns ?? turns; failure = event.code === 'AGENT_UNAVAILABLE' ? 'AGENT_UNAVAILABLE' : 'FAILED'; }
-        }
-      } finally { clearTimeout(timer); }
-      if (!failure && !finished) failure = 'FAILED';
-    } catch { failure ??= 'FAILED'; }
-    return this.finish(job, failure, turns, steps);
+    return this.pipelineRun(job, selected);
   }
 
   /**
@@ -212,7 +165,7 @@ export class AgentSync implements SyncCommands {
    * routed jobs, classification, build and import. Every URL is fixed for its kind or permitted by `allowedUrls`.
    */
   private async pipelineRun(job: SyncJob, selected: readonly CourseSelection[]) {
-    const pipeline = this.options.pipeline!;
+    const pipeline = this.options.pipeline;
     const runner = new AgentJobRunner({ jobs: this.jobs, adapter: this.options.adapter,
       ...(this.options.jobBoundMs !== undefined ? { jobBoundMs: this.options.jobBoundMs } : {}) });
     const attempts: RunJob[] = [];
@@ -241,7 +194,7 @@ export class AgentSync implements SyncCommands {
   /** One course, in D1 order. Everything a failed stage leaves out is simply absent from the stored stages. */
   private async courseRun(runner: AgentJobRunner, job: SyncJob, course: CourseSelection, signal: AbortSignal,
     attempts: RunJob[], meta: PipelineMeta): Promise<{ steps: number; turns: number }> {
-    const pipeline = this.options.pipeline!;
+    const pipeline = this.options.pipeline;
     let steps = 0; let turns = 0; let hadOk = false; let hadUnavailable = false; let hadError = false;
     const run = async (spec: JobSpec, produced?: (job: SyncJob) => boolean) => {
       // Read the stages just before this job starts, so the classifier sees what the course has produced so far.
@@ -439,8 +392,8 @@ export class AgentSync implements SyncCommands {
     if (signal.aborted) return undefined;
     let prompt: string; let tools: readonly AgentTool[];
     try {
-      prompt = this.options.pipeline!.prompt(spec, ctx);
-      tools = this.options.pipeline!.tools(spec);
+      prompt = this.options.pipeline.prompt(spec, ctx);
+      tools = this.options.pipeline.tools(spec);
     } catch {
       // A bad injected prompt/tools fails this job like any adapter failure (one retry, two records).
       const failed: RunJob = { kind: spec.kind, ...(spec.courseKey !== undefined ? { courseKey: spec.courseKey } : {}), steps: 0, turns: 0, outcome: 'error' };
@@ -462,7 +415,7 @@ export class AgentSync implements SyncCommands {
     pipeline?: { jobs: RunJob[]; pipeline: PipelineMeta }) {
     return this.jobs.close(job.id, final => this.outcome(job, final, failure, turns, steps, pipeline))!;
   }
-  /** Built from the job as read inside the closing transaction, so a late `course.import` is never missed. */
+  /** Built from the job as read inside the closing transaction, so a late store write is never missed. */
   private outcome(job: SyncJob, final: SyncJob, failure: SyncOutcome | undefined, turns: number, steps: number,
     pipeline?: { jobs: RunJob[]; pipeline: PipelineMeta }) {
     const blocked = new Set(final.blocked ?? []);
