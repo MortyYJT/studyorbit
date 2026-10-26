@@ -72,7 +72,7 @@ export const AuditRecordSchema = z.strictObject({ id: z.uuid(), runId: z.uuid(),
   courseId: IdSchema.optional(), assessmentId: IdSchema.optional(), revision: z.uuid().optional(), policyRef: HashSchema.optional(), grantRef: HashSchema.optional(),
   level: LevelSchema.optional(), decision: z.enum(['allowed', 'denied']).optional(),
   reason: z.enum(['allowed', 'assessment-unavailable', 'policy-missing', 'course-prohibited', 'exam', 'kind-unknown',
-    'grant-missing', 'grant-mismatch', 'grant-revoked', 'grant-level', 'course-cap', 'authorization-unavailable', 'audit-unavailable']).optional(),
+    'grant-missing', 'grant-mismatch', 'grant-revoked', 'grant-level', 'course-cap', 'assessment-prohibited', 'authorization-unavailable', 'audit-unavailable']).optional(),
   conversationId: IdSchema.optional(), submissionState: z.enum(['cancelled', 'expired']).optional(),
   action: z.enum(['click', 'fill', 'select', 'submit', 'other']).optional(), outcome: z.enum(['success', 'failure', 'uncertain', 'violation']).optional(),
   confirmation: z.enum(['owner-chat', 'owner-ui', 'owner-terminal', 'not-required']).optional() });
@@ -87,8 +87,13 @@ export const GrantReceiptSchema = z.strictObject({ recorded: z.literal('grant'),
   courseId: IdSchema, assessmentId: IdSchema, category: GrantRecordSchema.shape.category,
   level: LevelSchema, recordedAt: z.iso.datetime() });
 // `storedAt`: when the agent's last course document for this course was stored (agent-course-reading).
+const effectivePolicy = z.strictObject({ value: z.enum(['allowed', 'prohibited', 'owner-attested', 'unknown']),
+  origin: z.enum(['owner', 'agent', 'none']), level: z.enum(['assessment', 'course', 'none']) });
+const policyRead = { policy: z.enum(['allowed', 'prohibited', 'owner-attested']).nullable().optional(),
+  policyOrigin: z.enum(['owner', 'agent']).nullable().optional(), policyLevel: z.enum(['assessment', 'course']).nullable().optional(),
+  effectivePolicy: effectivePolicy.optional() };
 const courses = { input: z.strictObject({ ...paging, term: text.optional() }), output: page(CourseSchema.strict().extend({ fields: AnnotationFieldsSchema.optional(),
-  storedAt: z.iso.datetime({ offset: true }).optional() })), level: 0 } as const;
+  storedAt: z.iso.datetime({ offset: true }).optional(), ...policyRead })), level: 0 } as const;
 const policy = { input: PolicyRecordSchema, output: PolicyReceiptSchema, level: 0 } as const;
 const grant = { input: GrantRecordSchema, output: GrantReceiptSchema, level: 0 } as const;
 export const contracts = {
@@ -105,7 +110,7 @@ export const contracts = {
   'assessments.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), kind: AssessmentSchema.shape.kind.optional(), status: AssessmentSchema.shape.status.optional() }), output: page(AssessmentSchema.strict().extend({ fields: AnnotationFieldsSchema.optional(),
     // Derived from currently linked platform items; `linked: false` means submission state is unknown.
     platform: z.strictObject({ linked: z.boolean(), submitted: z.boolean(), removed: z.boolean(),
-      pointsEarned: z.number().nonnegative().optional(), pointsPossible: z.number().nonnegative().optional() }).optional() })), level: 0 },
+      pointsEarned: z.number().nonnegative().optional(), pointsPossible: z.number().nonnegative().optional() }).optional(), ...policyRead })), level: 0 },
   'tasks.list': { input: z.strictObject({ ...paging, courseId: IdSchema.optional(), assessmentId: IdSchema.optional(), moduleId: IdSchema.optional() }), output: page(task), level: 0 },
   'sources.get': { input: z.strictObject({ sourceItemId: IdSchema }), output: SourceEvidenceSchema, level: 0 },
   'materials.list': { input: z.strictObject({ ...paging, courseId: IdSchema, sourceItemId: IdSchema.optional(), page: z.number().int().positive().safe().optional() }), output: page(SourceEvidenceSchema), level: 0 },

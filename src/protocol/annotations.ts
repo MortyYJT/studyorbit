@@ -5,6 +5,7 @@ import { hash, citationMismatch, validateCitation } from '../citations/exact.js'
 import type { SqliteRepository } from '../store/sqlite.js';
 import { courseEvidenceSnapshot } from '../revision/sources.js';
 import { IdSchema, HashSchema, CitationInputSchema, VerifiedCitationSchema, AnnotationFieldsSchema, CoverageSchema, CursorSchema } from './contracts.js';
+import { EffectivePolicySchema, PolicySchema, storedPolicy } from './autonomy.js';
 import { TrustedStoreEvidence } from './reads.js';
 import type { TrustedContext } from './context.js';
 import { ok } from './envelope.js';
@@ -20,6 +21,8 @@ const verdicts = z.array(AnnotationVerdictSchema.strict());
 const storedCitations = z.array(z.union([VerifiedCitationSchema, CitationInputSchema]));
 // Read history can contain unavailable evidence; persisted agent rows still require citations.
 const history = z.strictObject({ ...AnnotationSchema.shape, citations: storedCitations, verdicts, coverage: CoverageSchema });
+const readOutput = z.strictObject({ ...target, fields: AnnotationFieldsSchema, history: z.array(history).max(500),
+  nextCursor: CursorSchema.optional(), coverage: CoverageSchema, links: z.array(AssessmentLinkSchema.strict()) });
 export const annotationContracts = {
   'annotation.record': { input: z.strictObject({ ...annotation, citations, sourceRevision: HashSchema }), output: receipt, level: 0 },
   'annotation.owner.record': { input: z.strictObject({ ...annotation, citations: citations.optional(), sourceRevision: HashSchema.optional() }), output: receipt, level: 0 },
@@ -27,13 +30,19 @@ export const annotationContracts = {
     name: citedValue(z.string().trim().min(1).max(100000)), weight: citedValue(AssessmentSchema.shape.weight.unwrap()) }), output: receipt, level: 0 },
   'assessment.link': { input: z.strictObject({ assessmentId: IdSchema, sourceItemId: IdSchema, sourceRevision: HashSchema }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
   'annotation.read': { input: z.strictObject({ ...target, limit: z.number().int().min(0).max(500).default(100), cursor: CursorSchema.optional() }),
-    output: z.strictObject({ ...target, fields: AnnotationFieldsSchema, history: z.array(history).max(500),
-      nextCursor: CursorSchema.optional(), coverage: CoverageSchema, links: z.array(AssessmentLinkSchema.strict()) }), level: 0 },
+    output: readOutput, level: 0 },
   'annotation.confirm': { input: z.strictObject({ ...target, field, annotationId: IdSchema }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
   'annotation.replace': { input: z.strictObject({ ...annotation, annotationId: IdSchema }), output: z.strictObject({ recorded: z.literal(true) }), level: 0 },
 } as const;
-export type AnnotationCommand = keyof typeof annotationContracts;
-const assessmentFields = ['weight', 'kind', 'hurdleMin', 'isFinal', 'name', 'due'] as const;
+const policyRead = { policy: PolicySchema.nullable().optional(), policyOrigin: z.enum(['owner', 'agent']).nullable().optional(),
+  policyLevel: z.enum(['assessment', 'course']).nullable().optional(), effectivePolicy: EffectivePolicySchema.optional() };
+/** Server dispatch adds the effective policy to annotation reads; the browser copy stays unchanged for this issue. */
+export const annotationCommandContracts = {
+  ...annotationContracts,
+  'annotation.read': { ...annotationContracts['annotation.read'], output: readOutput.extend(policyRead) },
+} as const;
+export type AnnotationCommand = keyof typeof annotationCommandContracts;
+const assessmentFields = ['weight', 'kind', 'hurdleMin', 'isFinal', 'name', 'due', 'aiPolicy'] as const;
 const courseFields = ['assessmentsComplete', 'aiPolicy'] as const;
 const invalid = () => new CourseworkError('INVALID_INPUT', 'Invalid annotation or course binding.');
 const conflict = () => new CourseworkError('CONFLICT', 'Annotation target changed; refresh before retrying.');
@@ -52,6 +61,7 @@ export class AnnotationService {
     const schema = entity === 'course'
       // The owner's course policy is one of the policy values, or null to clear it (#180).
       ? field === 'assessmentsComplete' ? z.boolean() : field === 'aiPolicy' ? AiPolicySchema.nullable() : undefined
+      : field === 'aiPolicy' ? AiPolicySchema.nullable()
       : field === 'name' ? z.string().trim().min(1).max(100000)
         : field === 'kind' ? AssessmentSchema.shape.kind.nullable()
           : field === 'due' ? AssessmentSchema.shape.due.nullable()
@@ -71,7 +81,7 @@ export class AnnotationService {
   private safe(value: unknown) {
   }
   read(input: unknown) {
-    const data = annotationContracts['annotation.read'].input.parse(input);
+    const data = annotationCommandContracts['annotation.read'].input.parse(input);
     const { value, courseId } = this.target(data.entity, data.entityId);
     const rows = this.store.readAnnotations(data.entity, data.entityId);
     const sources = new Map<string, ReturnType<TrustedStoreEvidence['getSync']> | null>();
@@ -102,8 +112,8 @@ export class AnnotationService {
     });
     const fields = Object.fromEntries((data.entity === 'assessment' ? assessmentFields : courseFields).map(field => {
       const candidates = history.filter(row => row.field === field);
-      if (data.entity === 'course' && field === 'aiPolicy') {
-        // Owner policy, else the agent-read value stored on the Course; an owner null clears the owner's policy (#180).
+      if (field === 'aiPolicy') {
+        // Owner policy, else the agent-read value stored on the Course or Assessment; an owner null clears the owner's policy (#180, #197).
         const owner = candidates.filter(row => row.origin === 'owner' && (row.value === null || AiPolicySchema.safeParse(row.value).success)).at(-1);
         if (owner && owner.value !== null) return [field, { value: owner.value, origin: 'owner', annotationId: owner.id, citations: owner.citations, verdicts: owner.verdicts }];
         const read = (value as { aiPolicy?: string }).aiPolicy;
@@ -119,8 +129,11 @@ export class AnnotationService {
         origin: fallback === undefined ? null : 'sync', citations: [], verdicts: [] }];
     }));
     const gaps = [...new Map(history.flatMap(row => row.coverage.gaps).map(gap => [gap.reference, gap])).values()];
+    const policy = storedPolicy(this.store, courseId, data.entity === 'assessment' ? data.entityId : undefined);
     const base = { entity: data.entity, entityId: data.entityId, fields, coverage: { complete: gaps.length === 0, gaps },
-      links: data.entity === 'assessment' ? this.store.currentAssessmentLinks(data.entityId) : [] };
+      links: data.entity === 'assessment' ? this.store.currentAssessmentLinks(data.entityId) : [],
+      policy: policy.value === 'unknown' ? null : policy.value, policyOrigin: policy.origin === 'none' ? null : policy.origin,
+      policyLevel: policy.level === 'none' ? null : policy.level, effectivePolicy: { value: policy.value, origin: policy.origin, level: policy.level } };
     const digest = hash([data.entity, data.entityId, rows]);
     let offset = 0;
     if (data.cursor) {
@@ -144,12 +157,16 @@ export class AnnotationService {
     }
     const output = result();
     this.safe(output);
-    return annotationContracts['annotation.read'].output.parse(output);
+    return annotationCommandContracts['annotation.read'].output.parse(output);
   }
   /** List consumers receive effective facts and field provenance; sync storage remains untouched. */
   project(entity: 'assessment' | 'course', value: { id: string }) {
     const detail = this.read({ entity, entityId: value.id, limit: 0 });
-    const result: Record<string, unknown> = { ...value, fields: detail.fields, coverage: detail.coverage };
+    const courseId = entity === 'course' ? value.id : (value as unknown as { courseId: string }).courseId;
+    const policy = storedPolicy(this.store, courseId, entity === 'assessment' ? value.id : undefined);
+    const result: Record<string, unknown> = { ...value, fields: detail.fields, coverage: detail.coverage,
+      policy: policy.value === 'unknown' ? null : policy.value, policyOrigin: policy.origin === 'none' ? null : policy.origin,
+      policyLevel: policy.level === 'none' ? null : policy.level, effectivePolicy: { value: policy.value, origin: policy.origin, level: policy.level } };
     for (const [field, effective] of Object.entries(detail.fields)) {
       if (field === 'aiPolicy') continue; // Policy text is an annotation, not an autonomy grant or Course field.
       if (effective.value === null) {
@@ -160,7 +177,7 @@ export class AnnotationService {
     return result;
   }
   async execute(name: AnnotationCommand, input: unknown, context: TrustedContext): Promise<unknown> {
-    const parsed = annotationContracts[name].input.safeParse(input);
+    const parsed = annotationCommandContracts[name].input.safeParse(input);
     if (!parsed.success) throw invalid();
     const data = parsed.data;
     if (name === 'annotation.read') return this.read(data);
@@ -202,7 +219,7 @@ export class AnnotationService {
     if ('value' in write) {
       this.validateValue(write.entity, write.field, write.value);
       // Policy values (and null, which clears them) change autonomy, which the owner may set only in the frontend.
-      if (owner && write.entity === 'course' && write.field === 'aiPolicy') {
+      if (owner && write.field === 'aiPolicy') {
         await context.owner!.assertOwner('autonomy.policy.set');
       }
     }
