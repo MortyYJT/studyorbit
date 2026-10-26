@@ -42,6 +42,9 @@ export const syncContracts = {
     output: z.strictObject({ page: z.enum(['courses', 'tabs', 'groups']), stored: count.optional(), skipped: count.optional(),
       undecided: count.optional(), selected: count.optional(), tabs: count.optional(), groups: count.optional(),
       assignments: count.optional(), coverage: z.enum(['api', 'partial']).optional() }), level: 0 as const },
+  /** Agent write, job-scoped: parse the copied Handbook assessment page; page text is never an argument. */
+  'handbook.capture': { input: z.strictObject({ jobId: id, courseKey: id }),
+    output: z.strictObject({ components: count }), level: 0 as const },
   /** Owner only (frontend session or TTY). */
   'courses.select': { input: z.strictObject({ selections: z.array(z.strictObject({ key: id, selected: z.boolean() })).min(1).max(100) }),
     output: z.strictObject({ recorded: count }), level: 0 as const },
@@ -56,6 +59,7 @@ export interface SyncCommands { run(input: { course?: string }): Promise<Output<
 export interface CourseReadingCommands {
   offer(input: Input<'courses.offer'>): Output<'courses.offer'>;
   capture(input: Input<'canvas.capture'>): Output<'canvas.capture'>;
+  handbook(input: Input<'handbook.capture'>): Output<'handbook.capture'>;
   candidates(): CourseSelection[];
   select(input: Input<'courses.select'>): Output<'courses.select'>;
   import(input: Input<'course.import'>): Output<'course.import'>;
