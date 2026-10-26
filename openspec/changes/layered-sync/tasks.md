@@ -26,8 +26,8 @@
 
 - [ ] 5.1 Orchestrator in `src/sync/agent-job.ts`: course list, then per course the stages in order; one retry per failed job; per-job records; 10-minute job bound and 20-minute-per-course run bound; job staleness from the run bound; `sync.parallel` (default 1); stage results in the store. Tests with a fake adapter for the sync-start, run-state and pipeline scenarios.
 - [ ] 5.2 Job prompts under `src/agent/jobs/` (main, quiz page, assignment page, saver, classifier, Ed fallback, Handbook capture), each role · task · output, with only allowed URLs; tests that each prompt names its output tool and lists only routed URLs (the Handbook prompt lists only the one Handbook assessment URL).
-- [ ] 5.2b Delete `src/agent/course-reading.md`, `courseReadingPrompt` and its prompt test when production switches to the pipeline in `src/protocol/production.ts` (after 5.3 and 6.2; moved out of 5.2 because production still runs the legacy job).
-- [ ] 5.3 Agent commands `course.map`, `quizzes.read`, `assignment.saved`, `materials.saved`, `items.classify`, each tied to an active job and course; remove `course.import` from the agent tools and update the command-registry tool-list test; rewrite the tests for "Import outside a run" and "Count shared across processes" into the stage-output scenarios; tests.
+- [ ] 5.2b Delete `src/agent/course-reading.md`, `courseReadingPrompt` and its prompt test, remove `course.import` from the agent tools (update the command-registry tool-list test) and rewrite the tests for "Import outside a run" and "Count shared across processes" into the stage-output scenarios, when production switches to the pipeline in `src/protocol/production.ts` (after 5.3 and 6.2; moved out of 5.2 because production still runs the legacy job).
+- [ ] 5.3 Agent commands `course.map`, `quizzes.read`, `assignment.saved`, `materials.saved`, `items.classify`, each tied to an active job and course; tests for the stage-output scenarios.
 
 ## 6. Classification and document build
 
@@ -37,7 +37,7 @@
 ## 7. Course folder and Ed
 
 - [ ] 7.1 `src/sync/course-folder.ts`: folder naming (`UniMelb 26S2`), `COURSEWORK_FILES` override, move from Downloads by exact name and time, fingerprint (with `.mhtml` normalization), superseded copies with date suffix, update notices; never delete; tests in a temp directory.
-- [ ] 7.2 `src/sync/ed-cli.ts`: detect `edstem`, version and auth check, run `units`, `lessons`, `files get` with JSON output, map to Ed items and saved slides; fallback to the Ed job; tests with a fake command runner.
+- [ ] 7.2 `src/sync/ed-cli.ts`: detect `edstem`, version and auth check, run `units`, `lessons`, `files get` with JSON output, map to Ed items and saved slides; fallback to the Ed job, with its output command (`ed.read` placeholder in `src/agent/jobs/index.ts`; name it in the spec); tests with a fake command runner.
 
 ## 8. Per-assessment AI policy (kept from C-5)
 
