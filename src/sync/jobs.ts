@@ -11,7 +11,8 @@ import { canvasApiUrl, canvasCourseId, parseCanvasCourses, parseCanvasGroups, pa
   type CapturePage, type ClipboardReader, type GroupsStage, type TabsStage } from './canvas-api.js';
 import { handbookUrl, parseHandbook, type SkeletonStage } from './handbook.js';
 import { COMPONENT_KEY_PATTERN } from './grading.js';
-import { resolvedChoices } from './conflicts.js';
+import { reconcileConflicts, resolvedChoices, type FoundConflict } from './conflicts.js';
+import type { BuildDocumentResult } from './build-document.js';
 
 /** A run ends within 20 minutes per selected course, and never sooner than 20 minutes. */
 export const RUN_BOUND_PER_COURSE_MS = 20 * 60_000;
@@ -31,6 +32,9 @@ const describeIssues = (issues: readonly DocumentIssue[]) => {
   const shown = issues.slice(0, 100).map(issue => `${issue.path || '(document)'} (${issue.reason})`).join('; ');
   return issues.length > 100 ? `${shown}; and ${issues.length - 100} more` : shown;
 };
+
+const isBuildResult = (value: unknown): value is BuildDocumentResult =>
+  value !== null && typeof value === 'object' && 'document' in value && 'conflicts' in value && 'complete' in value;
 
 const describeStageIssues = (issues: readonly { path: readonly PropertyKey[]; message: string }[]) => {
   const shown = issues.slice(0, 50).map(issue => `${issue.path.map(String).join('.') || '(input)'} (${issue.message})`).join('; ');
@@ -55,6 +59,13 @@ export class SyncJobs {
   storedAt(courseId: string): string | undefined {
     return this.store.listSyncJobs().flatMap(job => Object.values(job.results ?? {})).filter(result => result.courseId === courseId)
       .map(result => result.storedAt).sort().at(-1);
+  }
+  /** The course id of the newest stored document for a course key, for reading its conflicts. */
+  courseIdFor(courseKey: string): string | undefined {
+    return this.store.listSyncJobs().flatMap(job => {
+      const result = job.results?.[courseKey];
+      return result ? [{ id: result.courseId, at: result.storedAt }] : [];
+    }).sort((left, right) => Date.parse(right.at) - Date.parse(left.at))[0]?.id;
   }
 
   /** The store's write lock makes this the cross-process lock: one active job at a time. */
@@ -228,7 +239,8 @@ export class SyncJobs {
   /** Store the home page map; code routes each link by URL, so no route is accepted or stored. */
   map(input: CourseMapInput) {
     const value = this.stageValue(CourseMapInputSchema, input, 'course.map');
-    this.recordStage(value.jobId, value.courseKey, 'map', { lms: value.lms, ed: value.ed, syllabus: value.syllabus, links: value.links });
+    this.recordStage(value.jobId, value.courseKey, 'map', { lms: value.lms, ed: value.ed, syllabus: value.syllabus, links: value.links,
+      ...(value.aiPolicy ? { aiPolicy: value.aiPolicy } : {}) });
     return { links: value.links.length };
   }
 
@@ -332,9 +344,14 @@ export class SyncJobs {
 
   /**
    * Code-side import of a built document: final validation, the same store mapping and `results[courseKey]`
-   * recording as `import()`, but no submission count and no agent-facing refusal.
+   * recording as `import()`, but no submission count and no agent-facing refusal. The grading conflicts are
+   * reconciled with the receipt's course id inside the same transaction, so a failed import leaves no conflicts.
    */
-  storeBuilt(jobId: string, document: unknown) {
+  storeBuilt(jobId: string, input: unknown, conflicts?: readonly FoundConflict[], complete?: boolean) {
+    const built = isBuildResult(input) ? input : undefined;
+    const document = built ? built.document : input;
+    const found = conflicts ?? built?.conflicts ?? [];
+    const fullyCaptured = complete ?? built?.complete ?? false;
     return this.store.transaction(() => {
       const job = this.requireActive(jobId, false);
       const now = this.now().toISOString();
@@ -344,15 +361,17 @@ export class SyncJobs {
       }
       const key = checked.key;
       if (!job.courses.includes(key)) throw new CourseworkError('INVALID_INPUT', `Course ${key} is not selected for this sync job.`);
-      const stored = this.storeChecked(job, checked, now);
+      const stored = this.storeChecked(job, checked, now, undefined, built?.unknown);
       if (!stored) throw new CourseworkError('INTERNAL', `Built document for ${key} could not be stored.`);
+      reconcileConflicts(this.store, stored.receipt.courseId, found, now, fullyCaptured);
       return stored.receipt;
     });
   }
 
   /** The one write path both `import()` and `storeBuilt()` use; the caller has already validated the document. */
-  private storeChecked(job: SyncJob, checked: CheckedDocument, at: string, submission?: number) {
+  private storeChecked(job: SyncJob, checked: CheckedDocument, at: string, submission?: number, extraUnknown?: readonly string[]) {
     const document = checked.document!;
+    const unknownFields = [...new Set([...checked.unknown, ...(extraUnknown ?? [])])].slice(0, 500);
     const key = checked.key!;
     let result: ReturnType<typeof importCourseDocument>;
     try {
@@ -365,11 +384,11 @@ export class SyncJobs {
     const weightSum = checked.warnings.find(warning => warning.code === 'WEIGHT_SUM')?.sum;
     const counted: SyncJob = submission === undefined ? job : { ...job, submissions: { ...job.submissions, [key]: submission } };
     this.store.saveSyncJob({ ...counted, results: { ...counted.results, [key]: { courseId: result.courseId, storedAt: at,
-      components: result.components, items: result.items, unknownFields: checked.unknown.slice(0, 500), dropped: checked.dropped.slice(0, 500),
+      components: result.components, items: result.items, unknownFields, dropped: checked.dropped.slice(0, 500),
       warnings: [...checked.warnings.map(warning => warning.code), ...result.warnings], ...(weightSum !== undefined ? { weightSum } : {}),
       platforms: document.course.platforms, policyChanged: result.policyChanged } } });
     return { key, result, receipt: { stored: true as const, key, courseId: result.courseId, components: result.components, items: result.items,
-      assessments: result.assessments, retired: result.retired, unknownFields: checked.unknown.slice(0, 500), dropped: checked.dropped.slice(0, 500),
+      assessments: result.assessments, retired: result.retired, unknownFields, dropped: checked.dropped.slice(0, 500),
       warnings: [...checked.warnings, ...result.warnings.map(code => ({ code }))] } };
   }
 }
