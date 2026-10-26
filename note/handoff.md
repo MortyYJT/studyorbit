@@ -41,9 +41,8 @@
 
 ## 待开的小 PR
 
-- **等 Codex 额度恢复（10-26 03:41 后）再派：**
-  - [#172](https://github.com/MortyYJT/unimelb-coursework-agent/issues/172) 课程页排序、`得分/满分 · 百分比`、两色圆环（#192）。界面工作，要在真浏览器里验证并截图。
-  - [#173](https://github.com/MortyYJT/unimelb-coursework-agent/issues/173) 读课指令：页面写了单项分值时要读出来，不要留给平均推算。合并后要重新同步才能看到效果。
+- **已完成（10-26）：** [#179](https://github.com/MortyYJT/unimelb-coursework-agent/pull/179) 读课指令会读页面写明的单项分值（积分只在三种情况下换算）；[#180](https://github.com/MortyYJT/unimelb-coursework-agent/pull/180) 课程页按 #192 排序、不计分条目折叠到底部、显示 `得分/满分 · 百分比`、两色圆环（OpenSpec `course-page-display` 已归档；C-5 的增量已同步包含 #192 的规则，模拟归档通过）。**要看到效果：** `npm run build` 后重启 `node dist/cli.js ui`，再点「立即同步」重读一次（单项分值和满分要重新读才有）。
+- **不稳定测试 [#181](https://github.com/MortyYJT/unimelb-coursework-agent/issues/181)：** `test/agent/codex.test.ts` 的「SIGTERM 后 SIGKILL」测试偶尔超时，重跑通过；CI 失败时先看是不是它。
 - **「需要你」面板太挤：** COMP20003 的 12 个「截止时间未知」挤在一行，可以和课程选择那项一起改。
 
 ## 第一次逐门读课的结果（10-25 22:50–23:00）
