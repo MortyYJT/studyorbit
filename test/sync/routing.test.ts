@@ -216,3 +216,30 @@ describe('allowedUrls and isAllowed (layered-sync task 4.2)', () => {
     expect(allowed.read).toEqual([course(12345)]);
   });
 });
+
+describe('routing hardening (#195 review)', () => {
+  const tabs = stage([tab('home', 'Home', course(12345)), tab('files', 'Files', course(12345, '/files'))]);
+
+  it('stores the normalised home link and refuses userinfo and encoded separators', () => {
+    const allowed = allowedUrls(routeTabs(tabs), [
+      { label: 'Upper', url: 'HTTPS://CANVAS.LMS.UNIMELB.EDU.AU:443/courses/12345/files/folder/week1' },
+      { label: 'Userinfo', url: 'https://u:p@canvas.lms.unimelb.edu.au/courses/12345/files/x' },
+      { label: 'Encoded slash', url: course(12345, '/files/..%2Fdiscussion_topics') },
+      { label: 'Encoded backslash', url: course(12345, '/files/..%5Cdiscussion_topics') },
+    ]);
+    expect(allowed.save).toEqual([course(12345, '/files/folder/week1')]);
+  });
+
+  it('routes a label naming two tools to never', () => {
+    const routed = routeTabs(stage([tab('context_external_tool_1', 'Lecture Capture & Zoom', `${origin}/courses/12345/external_tools/1`)]));
+    expect(routed.tabs[0]!.route).toBe('never');
+  });
+
+  it('compares home links with the expected course id when one is given', () => {
+    const odd = stage([tab('home', 'Home', course(12345)), tab('files', 'Files', course(999, '/files'))]);
+    const link = { label: 'Other course', url: course(999, '/files/x') };
+    expect(allowedUrls(routeTabs(odd), [link], { courseId: '12345' }).save).toEqual([]);
+    expect(allowedUrls(routeTabs(tabs), [{ label: 'Own', url: course(12345, '/files/x') }], { courseId: '12345' }).save)
+      .toEqual([course(12345, '/files/x')]);
+  });
+});

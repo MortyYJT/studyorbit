@@ -62,11 +62,11 @@ const EXTERNAL_TOOL_ID = /^context_external_tool_\d+$/;
 
 function toolRoute(label: string): TabRoute | undefined {
   const normal = label.trim().toLowerCase().replace(/\s+/g, ' ');
-  for (const [name, route] of EXTERNAL_TOOLS) {
-    if (normal === name) return route;
-    if (normal.startsWith(name) && !/[a-z0-9]/.test(normal[name.length] ?? '')) return route;
-  }
-  return undefined;
+  const match = EXTERNAL_TOOLS.find(([name]) => normal === name || (normal.startsWith(name) && !/[a-z0-9]/.test(normal[name.length] ?? '')));
+  if (!match) return undefined;
+  // A label naming a second known tool ("Lecture Capture & Zoom") is ambiguous, so it gets the strictest route.
+  const others = EXTERNAL_TOOLS.filter(([name]) => name !== match[0] && new RegExp(`(^|[^a-z0-9])${name}([^a-z0-9]|$)`).test(normal));
+  return others.length ? 'never' : match[1];
 }
 
 function leavesCanvas(url: string | undefined): boolean {
@@ -130,30 +130,33 @@ function sharedCourseId(tabs: readonly RoutedTab[]): string | undefined {
  * `on-home-link` tab, and points into that tab's area. Any other home link (another course, an off-origin
  * URL, a `never` area) returns undefined and is never given to a job.
  */
-function homeLinkSaveUrl(url: string, tabs: readonly RoutedTab[]): string | undefined {
+function homeLinkSaveUrl(url: string, tabs: readonly RoutedTab[], courseId?: string): string | undefined {
   let parsed: URL;
   try { parsed = new URL(url); } catch { return undefined; }
-  if (parsed.origin !== CANVAS_ORIGIN) return undefined;
+  if (parsed.origin !== CANVAS_ORIGIN || parsed.username || parsed.password) return undefined;
+  // Encoded separators could let the server route the path somewhere the parser did not see.
+  if (/%2f|%5c/i.test(parsed.pathname)) return undefined;
   const area = /^\/courses\/(\d+)\/(pages|files)(?:\/|$)/.exec(parsed.pathname);
   if (!area) return undefined;
-  const [, courseId, areaName] = area;
+  const [, linkCourseId, areaName] = area;
   const areaTab = tabs.find(tab => tab.id === areaName && tab.route === 'on-home-link');
   if (!areaTab) return undefined;
-  const tabCourseId = canvasCourseId(areaTab.url) ?? sharedCourseId(tabs);
-  return tabCourseId === courseId ? url : undefined;
+  const expected = courseId ?? canvasCourseId(areaTab.url) ?? sharedCourseId(tabs);
+  // The normalised form is what a job is given and what `isAllowed` compares against.
+  return expected === linkCourseId ? parsed.href : undefined;
 }
 
 /**
  * Collect the URLs a job may receive. `read`, `save` and `link` URLs come from the tabs themselves;
  * Pages and Files contribute no URL of their own, only same-course home links the saver may open.
  */
-export function allowedUrls(routes: TabRouting, homeLinks: readonly HomeLink[]): AllowedUrls {
+export function allowedUrls(routes: TabRouting, homeLinks: readonly HomeLink[], options: { courseId?: string } = {}): AllowedUrls {
   const allowed: AllowedUrls = { read: [], save: [], link: [] };
   for (const tab of routes.tabs) {
     if ((tab.route === 'read' || tab.route === 'save' || tab.route === 'link') && tab.url) addUnique(allowed[tab.route], tab.url);
   }
   for (const link of homeLinks) {
-    const url = homeLinkSaveUrl(link.url, routes.tabs);
+    const url = homeLinkSaveUrl(link.url, routes.tabs, options.courseId);
     if (url) addUnique(allowed.save, url);
   }
   return allowed;
