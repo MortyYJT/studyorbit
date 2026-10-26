@@ -7,6 +7,7 @@ import { CodexAdapter } from '../agent/codex.js';
 import { describe, inputSchema } from './mcp.js';
 import { PlanningService } from '../planning/service.js';
 import { SyncJobs } from '../sync/jobs.js';
+import type { ClipboardReader } from '../sync/canvas-api.js';
 import { AgentSync } from '../sync/agent-job.js';
 import type { SyncCommands } from './sync.js';
 import { SqliteStudyRecordStore } from '../store/study-records.js';
@@ -31,6 +32,8 @@ export interface ProductionOptions {
   store?: SqliteRepository; files?: ProtocolFiles; metadata?: readonly EvidenceMetadata[];
   reads?: AuxiliaryReadPorts; study?: { provider: StudyEvidenceProvider; store: StudyRecordStore };
   sync?: SyncCommands;
+  /** Tests inject a fake clipboard for `canvas.capture`; production uses `pbpaste`. */
+  clipboard?: ClipboardReader;
   agentAdapter?: AgentAdapter; agentTools?: readonly AgentTool[];
   owner?: TrustedContext['owner'];
 }
@@ -56,7 +59,7 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
     const weight = annotations.read({ entity: 'assessment', entityId: id, limit: 0 }).fields.weight;
     return weight && weight.origin !== 'sync' && typeof weight.value === 'number' ? weight.value : undefined;
   };
-  const jobs = new SyncJobs(store, { annotatedWeight });
+  const jobs = new SyncJobs(store, { annotatedWeight, ...(options.clipboard ? { clipboard: options.clipboard } : {}) });
   const repository = new StoreProtocolReads(store, evidence, {
     ...options.reads,
     assessments: { query: input => store.queryEffectiveAssessments(input, effectiveKind) },

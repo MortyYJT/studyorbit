@@ -4,13 +4,16 @@ import type { SqliteRepository } from '../store/sqlite.js';
 import { AgentFacingError, CourseworkError } from '../protocol/errors.js';
 import { courseKey, MAX_SUBMISSIONS, normalizeCourseCode, validateCourseDocument, type DocumentIssue } from './course-json.js';
 import { importCourseDocument, type ImportOptions } from './course-import.js';
+import { canvasApiUrl, canvasCourseId, parseCanvasCourses, parseCanvasGroups, parseCanvasTabs, pbpasteClipboard,
+  type CapturePage, type ClipboardReader, type GroupsStage, type TabsStage } from './canvas-api.js';
 
 /** A job older than this counts as ended (stale lock), above the 20-minute run bound. */
 export const STALE_AFTER_MS = 25 * 60_000;
 export interface OfferInput { jobId: string; courses: { code: string; name?: string; term: string; pages: { canvas?: string; ed?: string } }[]; blocked: ('canvas' | 'ed')[] }
 export interface SelectInput { selections: { key: string; selected: boolean }[] }
 export interface ImportInput { jobId: string; document: unknown }
-export interface SyncJobsOptions { now?: () => Date; annotatedWeight?: ImportOptions['annotatedWeight']; importer?: typeof importCourseDocument }
+export interface CaptureInput { jobId: string; courseKey?: string; page: CapturePage }
+export interface SyncJobsOptions { now?: () => Date; annotatedWeight?: ImportOptions['annotatedWeight']; importer?: typeof importCourseDocument; clipboard?: ClipboardReader }
 
 const describeIssues = (issues: readonly DocumentIssue[]) => {
   const shown = issues.slice(0, 100).map(issue => `${issue.path || '(document)'} (${issue.reason})`).join('; ');
@@ -67,30 +70,84 @@ export class SyncJobs {
       if (!input.courses.length && !input.blocked.length) {
         throw new AgentFacingError('INVALID_INPUT', 'Offer the courses you see, or report the platforms you could not read in `blocked`.');
       }
-      const issues: DocumentIssue[] = [];
-      const offered = input.courses.map((course, index) => {
-        const code = normalizeCourseCode(course.code);
-        if (!code) issues.push({ path: `courses[${index}].code`, reason: 'needs one course code like ABCD10001' });
-        if (!CourseTermSchema.safeParse(course.term).success) issues.push({ path: `courses[${index}].term`, reason: 'use YYYY:S1, YYYY:S2, YYYY:SUMMER or YYYY:WINTER' });
-        const pages = CoursePagesSchema.safeParse(course.pages);
-        if (!pages.success) for (const issue of pages.error.issues) issues.push({ path: `courses[${index}].pages.${issue.path.join('.')}`, reason: 'must be a Canvas or Ed URL on its own platform' });
-        return { code, course, pages: pages.success ? pages.data : {} };
-      });
-      if (issues.length) throw new AgentFacingError('INVALID_INPUT', `Offer refused; nothing was stored. Fix: ${describeIssues(issues)}`);
-      const at = this.now().toISOString();
-      const existing = new Map(this.store.listCourseSelections().map(row => [row.key, row]));
-      const rows = offered.map(({ code, course, pages }) => {
-        const key = courseKey(code!, course.term);
-        const previous = existing.get(key);
-        // An earlier decision stays; the agent never changes a selection.
-        return { ...previous, key, code: code!, term: course.term, pages: { ...previous?.pages, ...pages }, offeredAt: at,
-          ...(course.name ? { name: course.name } : previous?.name ? { name: previous.name } : {}) } satisfies CourseSelection;
-      });
-      this.store.saveCourseSelections(rows);
-      this.store.saveSyncJob({ ...job, blocked: [...new Set([...job.blocked ?? [], ...input.blocked])] });
-      const all = this.store.listCourseSelections();
-      return { stored: rows.length, undecided: all.filter(row => row.selected === undefined).length, selected: all.filter(row => row.selected === true).length };
+      return this.offerWithin(job, input.courses, input.blocked);
     });
+  }
+
+  /** Offer candidates inside an existing transaction; callers decide whether an empty list is a refusal. */
+  private offerWithin(job: SyncJob, courses: OfferInput['courses'], blocked: OfferInput['blocked']) {
+    const issues: DocumentIssue[] = [];
+    const offered = courses.map((course, index) => {
+      const code = normalizeCourseCode(course.code);
+      if (!code) issues.push({ path: `courses[${index}].code`, reason: 'needs one course code like ABCD10001' });
+      if (!CourseTermSchema.safeParse(course.term).success) issues.push({ path: `courses[${index}].term`, reason: 'use YYYY:S1, YYYY:S2, YYYY:SUMMER or YYYY:WINTER' });
+      const pages = CoursePagesSchema.safeParse(course.pages);
+      if (!pages.success) for (const issue of pages.error.issues) issues.push({ path: `courses[${index}].pages.${issue.path.join('.')}`, reason: 'must be a Canvas or Ed URL on its own platform' });
+      return { code, course, pages: pages.success ? pages.data : {} };
+    });
+    if (issues.length) throw new AgentFacingError('INVALID_INPUT', `Offer refused; nothing was stored. Fix: ${describeIssues(issues)}`);
+    const at = this.now().toISOString();
+    const existing = new Map(this.store.listCourseSelections().map(row => [row.key, row]));
+    const rows = offered.map(({ code, course, pages }) => {
+      const key = courseKey(code!, course.term);
+      const previous = existing.get(key);
+      // An earlier decision stays; the agent never changes a selection.
+      return { ...previous, key, code: code!, term: course.term, pages: { ...previous?.pages, ...pages }, offeredAt: at,
+        ...(course.name ? { name: course.name } : previous?.name ? { name: previous.name } : {}) } satisfies CourseSelection;
+    });
+    this.store.saveCourseSelections(rows);
+    this.store.saveSyncJob({ ...job, blocked: [...new Set([...job.blocked ?? [], ...blocked])] });
+    const all = this.store.listCourseSelections();
+    return { stored: rows.length, undecided: all.filter(row => row.selected === undefined).length, selected: all.filter(row => row.selected === true).length };
+  }
+
+  private requireCaptureCourse(job: SyncJob, key: string | undefined, page: CapturePage): { key: string; canvasId: string } {
+    if (!key) throw new AgentFacingError('INVALID_INPUT', `courseKey is required for the ${page} page; use the key of one of this job's selected courses.`);
+    if (!job.courses.includes(key)) throw new AgentFacingError('INVALID_INPUT', `Course ${key} is not selected for this sync job; capture only the courses listed in the prompt.`);
+    const course = this.store.listCourseSelections().find(row => row.key === key);
+    const canvasId = course?.pages.canvas ? canvasCourseId(course.pages.canvas) : undefined;
+    if (!canvasId) throw new AgentFacingError('INVALID_INPUT', `Course ${key} has no Canvas course URL; capture only selected courses with a Canvas source id.`);
+    return { key, canvasId };
+  }
+
+  private saveStage(jobId: string, key: string, page: 'tabs' | 'groups', value: TabsStage | GroupsStage): void {
+    this.store.transaction(() => {
+      const job = this.requireActive(jobId);
+      this.requireCaptureCourse(job, key, page);
+      const stages = { ...job.stages, [key]: { ...job.stages?.[key], [page]: value } } as SyncJob['stages'];
+      this.store.saveSyncJob({ ...job, stages });
+    });
+  }
+
+  /** Read one Canvas API page from the clipboard and store only its parsed values, never the raw text. */
+  capture(input: CaptureInput) {
+    const active = this.requireActive(input.jobId);
+    const target = input.page === 'courses' ? undefined : this.requireCaptureCourse(active, input.courseKey, input.page);
+    let text: string;
+    try {
+      text = (this.options.clipboard ?? pbpasteClipboard).read();
+    } catch {
+      throw new AgentFacingError('INVALID_INPUT', 'Could not read the clipboard. Nothing was stored. Take a fresh copy of the page and call canvas.capture again.');
+    }
+    if (input.page === 'courses') {
+      const parsed = parseCanvasCourses(text);
+      return this.store.transaction(() => {
+        const job = this.requireActive(input.jobId);
+        const offered = this.offerWithin(job, parsed.candidates, []);
+        return { page: 'courses' as const, stored: offered.stored, skipped: parsed.skipped,
+          undecided: offered.undecided, selected: offered.selected };
+      });
+    }
+    const source = canvasApiUrl(input.page, target!.canvasId);
+    if (input.page === 'tabs') {
+      const parsed = parseCanvasTabs(text, { source });
+      this.saveStage(input.jobId, target!.key, 'tabs', parsed);
+      return { page: 'tabs' as const, tabs: parsed.tabs.length };
+    }
+    const parsed = parseCanvasGroups(text, { source, courseId: target!.canvasId, now: () => this.now() });
+    this.saveStage(input.jobId, target!.key, 'groups', parsed);
+    return { page: 'groups' as const, groups: parsed.groups.length,
+      assignments: parsed.groups.reduce((total, group) => total + group.assignments.length, 0), coverage: parsed.coverage };
   }
 
   /** Owner only (the registry gates it): record selected or not for offered candidates, all or nothing. */
