@@ -3,8 +3,8 @@
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。
 > 产品看 `note/product/prd.md`（需求来源；2026-10-24 起课程获取和 agent 的改法见 #165–#197，PRD 待更新）；原型看 `design/prototype/index.html`；规格看 `openspec/specs/`（现行）和 `openspec/changes/`（进行中：`layered-sync`，规格已合并，实现中）；决定看 `note/decisions.md`（#1–#214）；进度看 `note/product/roadmap.md`。
 
-- **最后更新：** 2026-10-26 夜，Claude。
-- **模式：** OpenSpec 变更 `layered-sync`（路线图 C-5，**并入了原来的 `canvas-check-item-policy`**），规格已合并，实现中：第 2 组（#186）、第 3 组（#191）、4.1（#193）、4.2（#196）、5.1（#199）、5.2（#202）、5.3（#205）已合并；下一步 6.1。代码交给 dsh（DeepSeek）写（#209）；需要 Codex 的实测，等额度恢复后再做。
+- **最后更新：** 2026-10-27 凌晨，Claude（连续派活，你说「一口气派完，不要停下来问」）。
+- **模式：** OpenSpec 变更 `layered-sync`（路线图 C-5，**并入了原来的 `canvas-check-item-policy`**），规格已合并，实现中：第 2 组（#186）、第 3 组（#191）、4.1（#193）、4.2（#196）、5.1（#199）、5.2（#202）、5.3（#205）、6.1（#210）、6.2（#211、#218）、7.1（#215）、8.1（#216）、8.2–8.3（#221）、9.4（#217）已合并；在做 7.2（issue #219）、9.1（issue #220）；之后 5.2b（接入正式同步）、9.2–9.3（前端）。代码交给 dsh（DeepSeek）写（#209）；需要 Codex 的实测，等额度恢复后再做。
 - **本轮合并（10-26 凌晨）：** #175、#176 重写 README（项目说明、为什么读页面不用 token、功能、计划、进度），同时把决策 #193–#197 和路线图 C-5 带进了 main；GitHub 仓库的 About 说明也已更新；#178 合并了 C-5 规格。
 - **#191 删除隐私检查（沿用）：** 姓名、邮箱、学号、凭证样式的文字、本地路径都会原样存储、原样发给模型。保留引用完整性检查和 `source.record` 的网址规则。仓库和测试数据里仍然不能放真实课程数据、密钥和浏览器配置。
 - **分工（#189）：** 实现和审查优先交给 Codex；Claude 派活、提交、在本机重跑检查、浏览器验证、合并。Codex 额度用完时由 Claude 接手，审查改用只读的 Claude 子代理（#175、#176 就是这样审的）。
@@ -34,10 +34,18 @@
   3g. 5.3（五个阶段写入命令）：issue #204 → PR #205 已合并（6a9b512）。`course.map`、`quizzes.read`、`assignment.saved`（存到 `assignments.<assignmentId>`）、`materials.saved`、`items.classify`，都经 `recordStage` 校验活动任务和课程；输入不合法时把出错字段和「什么都没存」告诉 agent。工具数 34 → 39。dsh 写，Claude 先写测试再补了文件名不能是 `.`/`..`；审查一轮通过，Claude 再补主页只报 Canvas/Ed 链接（不然遇到 Zoom 链接整次被拒）、写明 `policy` 结构。
     - **和计划不同：** `course.import` 还在 agent 工具里，它的两个旧测试也没改，因为正式同步还在用；挪到 5.2b。Ed 的输出命令规格里没有，挪到 7.2。
     - **没修（有意）：** `assignment.saved` 不核对 `assignmentId` 是否就是本任务的目标；写错时预期阶段缺失，runner 判失败重试，不会存错。
-  3h. 下一步：6.1 计分规则和 `check.resolve`（owner 命令），然后 6.2 生成课程文档。6.2 之后做 5.2b：在 `src/protocol/production.ts` 接上管线（`tools` 要包闭包 `spec => tools(spec, options.tools())`），删旧读课 prompt 和 `course.import` 工具。clone `../unimelb-coursework-agent-layered-model` 可以复用（每个 issue 从最新 main 开新的 `dsh/<topic>` 分支）。
+  3h. 本批（10-26 夜到 10-27 凌晨，dsh 写、只读 Claude 子代理审、两轮后 Claude 先写测试再修并决定合并）：
+    - 6.1 计分规则、冲突、owner 命令 `check.resolve`：#207 → PR #210。Handbook 权重的选择存在冲突行上，由计分时应用（注解不能指向组件，和规格「通过 owner 注解」不同）。
+    - 6.2 第 1 部分（文档契约接受 `via: api/handbook`、六类、`unlockAt`、作业 `aiPolicy`）：#208 → PR #211。第 2 部分（代码从各阶段生成文档、导入和冲突同一事务、分类重试一次、未变作业页跳过、`course.map.aiPolicy`）：#212 → PR #218。
+    - 7.1 课程文件夹、指纹、更新提醒：#209 → PR #215。从不删除、不覆盖；Edge 的 `.mhtml` 去掉随机 `cid:`、csrf 等再算指纹；同名作业文件夹按库里记录定。
+    - 8.1 作业层 AI 政策存储（读不到保留上次值、组件规则、`readState.aiPolicyChanged` 作「需要你」标记，不改 schema）：#213 → PR #216。
+    - 8.2–8.3 按作业解析政策和自主等级：#214 → PR #221（合并时 CI 还没出结果，是我的失误；之后在 main 上补看，CI 通过）。
+    - 9.4 周计划去掉 `ungraded`：PR #217。
+  3i. 进行中：7.2 Ed（issue #219，`edstem` CLI + `ed.read` 兜底命令，分支 `dsh/ed-cli`，clone `../unimelb-coursework-agent-layered-model`）；9.1 `assessment.files` 和 Start 预设（issue #220，分支 `dsh/assessment-files`，clone `../unimelb-coursework-agent-doc-contract`）。
+  3j. 之后：5.2b 接入正式同步（issue 草稿在派活会话的 scratchpad，内容：`production.ts` 用 `pipeline`，删 `legacyRun`、`course-reading.md`、`courseReadingPrompt`，把 `course.import` 从 agent 工具拿掉）；然后 9.2–9.3 前端（「需要你」里的冲突和更新提醒、课程页六类和 Start 按钮），要在真浏览器里验证。clone `../unimelb-coursework-agent-course-folder`、`../unimelb-coursework-agent-autonomy` 也可复用。
   4. dsh 的 DeepSeek key 放在 `~/.zshenv` 的 `DEEPSEEK_API_KEY`（10-26 换过一次）；报 `AUTH` 错就是 key 失效。
   5. Codex 额度恢复、你在场时做任务 1.1（接口参数）、1.4（多窗口并行实验），最后做 10.2（实测填表）。
-- **Ed**：edstem-cli 0.8.2 已全局安装；`edstem auth login` 等你粘贴 token（任务 1.2）。它现在的代码只认 Ed API token，不读 cookie。
+- **Ed**：edstem-cli 0.8.2 已全局安装，**10-27 查到已经登录**（`edstem auth status` 为 authenticated，任务 1.2 看来已完成）。7.2 的 JSON 字段名按真实输出的键名写的，没有读取或保存任何值。
 - **待你复核**：#210、#211、#212 是 Claude 根据审查意见做的细化。
 
 ## 本轮的调研结论（10-26）
@@ -55,6 +63,11 @@
 5. 以后再同步：解锁屏幕、打开 Edge 并登录 Canvas 和 Ed（#185），`npm ci && npm run build`，`node dist/cli.js ui`，点「立即同步」。
 
 ## 等你决定
+
+- **（C-5 新增）Handbook 只在页面底部 hurdle 段写的出勤要求**（例如「出勤 80%」，表格里没有这一行）：现在的计分规则认不出，出勤项会变 `ungraded`。二选一：让分类任务指出 hurdle 段对应哪一项，或代码把 `participation` 类条目对到页面级 hurdle。
+- **（C-5 新增）课程层你设「允许」、页面读到「禁止」时**：现在按规格 #197 处理成「禁止」（只有你在作业上设的值最终有效）。以前的测试是你的课程设置优先。请确认。
+- **（C-5 新增）Start 读 PDF：** 设计写「用现有的 `unpdf`」，但 `unpdf` 在 C-3 已删除。要不要重新加回这个依赖（v1 时批准过）？没加之前 `assessment.files` 只提取网页，PDF 列出但不提取。
+- **（C-5 新增）Start 时作业页还没存：** 规格说「先跑一个作业页任务」，但命令在 agent 自己的 MCP 进程里，不能再启动一个 agent。现在改成让对话里的 agent 自己保存页面，再把文件名交给 `assessment.files`，由代码从下载文件夹搬过去。请确认。
 
 - **仓库现在是公开的（PUBLIC）。** #57 要求"回答或提交作业的代码只在仓库私有后才推送"，而 Q1 和 L1/L2 的代码都已经公开。你还没说是有意公开还是要改回私有（GitHub → Settings → Danger Zone）；改回私有后，要给别人看就得加成 collaborator。
 - **纯文档 PR 要不要跳过 CI：** 在 `.github/workflows/ci.yml` 的 `pull_request` 下加 `paths-ignore`（`**/*.md`、`note/**`、`openspec/**`）。改 CI 要先问你。以后如果开分支保护、要求 CI 必须通过，被跳过的 PR 会卡住。
