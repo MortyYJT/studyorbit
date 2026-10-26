@@ -132,10 +132,10 @@ const assessment = (value: Omit<Assessment, 'origin' | 'isFinal'> & { isFinal?: 
 const found = { state: 'found' as const, via: 'ax' as const, checkedAt: new Date(Date.now() - 3600_000).toISOString() };
 const derived = { state: 'derived' as const };
 const itemRead = (extra: Assessment['readState'] = {}) => ({ name: found, status: found, due: found, weight: found, kind: found, ...extra });
-const quizzes = { key: 'syna10001-quizzes', name: 'Quizzes', weight: 10, count: 2 };
-const assignments = { key: 'syna10001-assignments', name: 'Assignments', weight: 45, count: 2 };
-const written = { key: 'syna10001-written-assignments', name: 'Written assignments', weight: 15, count: 4 };
-const examGroup = { key: 'syna10001-final-exam', name: 'Final exam', weight: 30, count: 1 };
+const quizzes = { key: 'SYNA10001:quizzes', name: 'Quizzes', weight: 10, count: 2 };
+const assignments = { key: 'SYNA10001:assignments', name: 'Assignments', weight: 45, count: 2 };
+const written = { key: 'SYNA10001:written-assignments', name: 'Written assignments', weight: 15, count: 4 };
+const examGroup = { key: 'SYNA10001:final-exam', name: 'Final exam', weight: 30, count: 1 };
 const assessments: Assessment[] = [
   // Graded but its weight stayed unknown after retries, so the Quizzes earned share is unknown (as in the ring).
   assessment({ id: 'syn-a-quiz-1', courseId: 'syn-course-a', name: 'Synthetic Quiz 1', kind: 'quiz', score: 80, due: due(-14), status: 'graded', group: { ...quizzes, role: 'item' },
@@ -255,7 +255,7 @@ for (const file of savedFiles) store.saveSavedFile(file);
 
 // One open weight conflict and one unmatched Canvas item, both resolvable through check.resolve in the UI.
 const conflicts: SyncConflict[] = [
-  { id: 'syn-conflict-weight', courseId: 'syn-course-a', target: { componentKey: 'syna10001-assignments' }, field: 'weight',
+  { id: 'syn-conflict-weight', courseId: 'syn-course-a', target: { componentKey: 'SYNA10001:assignments' }, field: 'weight',
     skeletonValue: 40, canvasValue: 45, state: 'open', checkedAt: fetchedAt },
   { id: 'syn-conflict-unmatched', courseId: 'syn-course-a', target: { canvasAssignmentId: 'syn-canvas-unlisted' }, field: 'unmatched',
     canvasValue: { id: 'syn-canvas-unlisted', name: 'Synthetic unlisted reflection', due: null }, state: 'open', checkedAt: fetchedAt },
