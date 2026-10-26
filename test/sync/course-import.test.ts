@@ -5,7 +5,7 @@ import { TrustedStoreEvidence } from '../../src/protocol/reads.js';
 import { hash } from '../../src/citations/exact.js';
 import { validateCourseDocument } from '../../src/sync/course-json.js';
 import { assessmentId, componentAssessmentId, importCourseDocument, remainderAssessmentId, sourceItemId } from '../../src/sync/course-import.js';
-import { component, document, found, item, now, quoted, unknown } from './course-document.js';
+import { api, apiSource, component, document, found, item, now, quoted, unknown } from './course-document.js';
 
 const stores: SqliteRepository[] = [];
 afterEach(() => { for (const store of stores.splice(0)) store.close(); });
@@ -178,6 +178,26 @@ describe('store mapping and precedence (coursework-sync)', () => {
     const result = f.save(document(undefined, { aiPolicy: unknown(later) }), false, later);
     expect(result.policyChanged).toBe(false);
     expect(f.store.loadCourse(courseId)).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { state: 'found', quote: 'No AI.', checkedAt: later } } });
+  });
+
+  it('Item kind wins over the component kind, a missing item kind falls back, ongoing reads as participation', () => {
+    const f = setup();
+    f.save(document([
+      component('work', 60, [item(1, { kind: found('presentation') }), item(2)], { kind: found('quiz'), count: found(2) }),
+      component('legacy', 40, [item(3, { kind: found('ongoing') })], { kind: found('ongoing'), count: found(1) }),
+    ]));
+    expect(f.get(assessmentId(term, 'SYNA10001:canvas:assignment:1'))).toMatchObject({ kind: 'presentation', readState: { kind: { state: 'found' } } });
+    expect(f.get(assessmentId(term, 'SYNA10001:canvas:assignment:2'))).toMatchObject({ kind: 'quiz', readState: { kind: { state: 'found' } } });
+    expect(f.get(assessmentId(term, 'SYNA10001:canvas:assignment:3'))).toMatchObject({ kind: 'participation' });
+  });
+
+  it('Item unlockAt lands on the Assessment and the SourceItem facts with its read state', () => {
+    const f = setup();
+    const unlockAt = '2026-10-01T00:00:00Z';
+    f.save(document([component('work', 100, [item(1, { unlockAt: api(unlockAt) })], { count: found(1) })]));
+    expect(f.get(assessmentId(term, 'SYNA10001:canvas:assignment:1'))).toMatchObject({ unlockAt,
+      readState: { unlockAt: { state: 'found', via: 'api', source: apiSource } } });
+    expect(f.store.loadSourceItem(sourceItemId(term, 'SYNA10001:canvas:assignment:1'))).toMatchObject({ facts: { unlockAt } });
   });
 
   it('third-submission stand-in: a course without a name shows its code', () => {
