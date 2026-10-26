@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { CoursePagesSchema, CourseTermSchema, type CourseSelection, type Run, type SyncJob, type SyncOutcome } from '../domain/schemas.js';
 import type { SqliteRepository } from '../store/sqlite.js';
 import { AgentFacingError, CourseworkError } from '../protocol/errors.js';
-import { AssignmentSavedInputSchema, CourseMapInputSchema, ItemsClassifyInputSchema, MaterialsSavedInputSchema, QuizzesReadInputSchema,
-  type AssignmentSavedInput, type CourseMapInput, type ItemsClassifyInput, type MaterialsSavedInput, type QuizzesReadInput } from '../protocol/sync.js';
+import { AssignmentSavedInputSchema, CourseMapInputSchema, EdReadInputSchema, ItemsClassifyInputSchema, MaterialsSavedInputSchema, QuizzesReadInputSchema,
+  type AssignmentSavedInput, type CourseMapInput, type EdReadInput, type ItemsClassifyInput, type MaterialsSavedInput, type QuizzesReadInput } from '../protocol/sync.js';
 import { courseKey, MAX_SUBMISSIONS, normalizeCourseCode, validateCourseDocument, type CheckedDocument, type DocumentIssue } from './course-json.js';
 import { importCourseDocument, type ImportOptions } from './course-import.js';
 import { canvasApiUrl, canvasCourseId, parseCanvasCourses, parseCanvasGroups, parseCanvasTabs, pbpasteClipboard,
@@ -264,6 +264,13 @@ export class SyncJobs {
     const value = this.stageValue(MaterialsSavedInputSchema, input, 'materials.saved');
     this.recordStage(value.jobId, value.courseKey, 'materials', { files: value.files, links: value.links });
     return { files: value.files.length, links: value.links.length };
+  }
+
+  /** Store the Ed fallback's lesson list as the `ed` stage, with `via: "ax"` and no raw page text. */
+  edRead(input: EdReadInput) {
+    const value = this.stageValue(EdReadInputSchema, input, 'ed.read');
+    this.recordStage(value.jobId, value.courseKey, 'ed', { via: 'ax', source: 'edstem-page', lessons: value.lessons });
+    return { lessons: value.lessons.length };
   }
 
   /** Store the six-category classification with its evidence; ids are unique within the call. */

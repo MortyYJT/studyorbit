@@ -6,6 +6,7 @@ import type { AgentAdapter, AgentEvent, AgentInput, AgentRun, AgentTool } from '
 import { SqliteRepository } from '../../src/store/sqlite.js';
 import { AgentSync, type JobSpec, type PipelineJobContext, type SyncPipeline } from '../../src/sync/agent-job.js';
 import { canvasApiUrl, type CanvasTab, type GroupsStage, type TabsStage } from '../../src/sync/canvas-api.js';
+import { edHook, type EdCommandResult, type EdRunner } from '../../src/sync/ed-cli.js';
 import { assessmentId } from '../../src/sync/course-import.js';
 import { SyncJobs } from '../../src/sync/jobs.js';
 import { buildCourseDocument } from '../../src/sync/build-document.js';
@@ -43,6 +44,7 @@ afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); });
 const canvasA = 'https://canvas.lms.unimelb.edu.au/courses/900001';
 const canvasB = 'https://canvas.lms.unimelb.edu.au/courses/900002';
 const edA = 'https://edstem.org/au/courses/800001';
+const ok = (stdout: string): EdCommandResult => ({ code: 0, stdout });
 const keyA = 'SYNA10001:2026:S2';
 const keyB = 'SYNB20002:2026:S2';
 const pagesA = { canvas: canvasA };
@@ -541,20 +543,68 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     expect(f.sync.status().courses.find(course => course.key === keyA)!.storedAt).toBe(storedA);
   });
 
-  it('Ed: no hook means one Ed job when the course has an Ed page; a hook replaces it', async () => {
+  it('Ed: no hook or a hook that stores nothing runs one fallback Ed job when the course has an Ed page', async () => {
     const withJob = setup();
     withJob.store.saveCourseSelections([selection(keyA, { canvas: canvasA, ed: edA })]);
-    await withJob.sync.run({});
+    const result = await withJob.sync.run({});
     const edS = withJob.adapter.specs.find(spec => spec.kind === 'ed');
     expect(edS?.urls).toEqual([edA]);
+    // No CLI reader is wired, so the fallback job runs and the run notes that the CLI was not used.
+    expect(withJob.jobs.load(result.run.id)?.stages?.[keyA]?.edCli).toEqual({ cli: 'not-used' });
 
     let hookCalls = 0;
     const withHook = setup({ ed: () => { hookCalls++; } });
     withHook.store.saveCourseSelections([selection(keyA, { canvas: canvasA, ed: edA })]);
     await withHook.sync.run({});
     expect(hookCalls).toBe(1);
-    expect(withHook.adapter.specs.some(spec => spec.kind === 'ed')).toBe(false);
+    // The hook stored no ed stage, so the one fallback job still runs.
+    expect(withHook.adapter.specs.filter(spec => spec.kind === 'ed')).toHaveLength(1);
   });
+
+  it('Ed: CLI unavailable (missing, signed out or non-zero) runs one fallback Ed job and notes the CLI was not used', async () => {
+    const replies: { label: string; runner: EdRunner }[] = [
+      { label: 'missing', runner: async () => { throw new Error('ENOENT edstem'); } },
+      { label: 'signed out', runner: async args => args[0] === '--version' ? ok('0.8.2') : ok('{"authenticated":false}') },
+      { label: 'auth exits non-zero', runner: async args => args[0] === '--version' ? ok('0.8.2') : { code: 1, stdout: '{"authenticated":true}' } },
+    ];
+    for (const { runner } of replies) {
+      let f!: ReturnType<typeof setup>;
+      f = setup({ ed: (key, ctx) => edHook(runner, f.jobs)(key, ctx) });
+      f.store.saveCourseSelections([selection(keyA, { canvas: canvasA, ed: edA })]);
+      const result = await f.sync.run({});
+      expect(f.adapter.specs.filter(spec => spec.kind === 'ed')).toHaveLength(1);
+      expect(f.jobs.load(result.run.id)?.stages?.[keyA]?.edCli).toEqual({ cli: 'not-used' });
+      expect(f.jobs.load(result.run.id)?.stages?.[keyA]?.ed).toBeDefined();
+    }
+  });
+
+  it('Ed: CLI available stores the unit lessons as the ed stage and runs no Ed job', async () => {
+    const calls: string[][] = [];
+    const runner: EdRunner = async args => {
+      calls.push(args);
+      if (args[0] === '--version') return ok('0.8.2');
+      if (args[0] === 'auth') return ok('{"authenticated":true,"region":"au"}');
+      if (args[0] === 'units') return ok(JSON.stringify([{ id: 4101, code: 'SYNA10001 S2 2026', name: 'Synthetic Systems',
+        year: '2026', session: 'Semester 2', status: 'current', role: 'student' }]));
+      if (args[0] === 'lessons') return ok(JSON.stringify([{ id: 7001, courseId: 8001, moduleId: 11, title: 'Synthetic lesson',
+        moduleName: 'Synthetic module', type: 'lesson', kind: 'lesson', state: 'published', status: 'open', slideCount: 1,
+        openable: true, openableWithoutAttempt: true, dueAt: '2026-03-01T23:59:00+11:00' }]));
+      if (args[0] === 'files') return ok('[]');
+      return { code: 1, stdout: '' };
+    };
+    let f!: ReturnType<typeof setup>;
+    f = setup({ ed: (key, ctx) => edHook(runner, f.jobs)(key, ctx) });
+    f.store.saveCourseSelections([selection(keyA, { canvas: canvasA, ed: edA })]);
+    const result = await f.sync.run({});
+    expect(f.adapter.specs.some(spec => spec.kind === 'ed')).toBe(false);
+    expect(f.jobs.load(result.run.id)?.stages?.[keyA]?.ed).toMatchObject({ via: 'api', source: 'edstem-cli', unitId: 4101,
+      lessons: [{ id: '7001', title: 'Synthetic lesson', module: 'Synthetic module', dueAt: '2026-03-01T23:59:00+11:00',
+        url: 'https://edstem.org/au/courses/8001/lessons/7001' }] });
+    expect(f.jobs.load(result.run.id)?.stages?.[keyA]?.edCli).toBeUndefined();
+    expect(calls.some(args => args[0] === 'lessons' && args[1] === 'mark-read')).toBe(false);
+    expect(calls.every(args => !args.includes('--yes'))).toBe(true);
+  });
+
   it('Built document imported: the pipeline builds and stores one document without an agent course.import call', async () => {
     const f = setup({
       build: realBuild,

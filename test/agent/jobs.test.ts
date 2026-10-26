@@ -111,6 +111,11 @@ describe('pipeline job prompts (layered-sync task 5.2)', () => {
     expect(prompt(specFor('saver'), context)).toContain('`links[]`');
     expect(prompt(specFor('classify'), context)).toContain('`items[]`');
     expect(prompt(specFor('classify'), context)).toContain('`id`');
+    const ed = prompt(specFor('ed'), context);
+    expect(ed).toContain('`lessons[]`');
+    expect(ed).toContain('`title`');
+    expect(ed).toContain('`dueAt`');
+    expect(ed).toContain('`quote`');
   });
 
   it('Handbook: lists only the one Handbook assessment URL', () => {
