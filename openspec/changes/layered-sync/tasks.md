@@ -2,7 +2,7 @@
 
 - [ ] 1.1 In the owner's Edge, open the `courses`, `tabs` and `groups` URLs for one selected course, select all and copy; record in `.local/` only (never in git) whether each returns the expected keys for the student session and what text precedes the JSON. Write the content-free result into `design.md` Open Questions. If an include or `tabs` is refused, switch D2 to the #193 URLs (and an agent listing of the navigation) before 3.x.
 - [ ] 1.2 Owner creates an Ed API token and runs `edstem auth login`; then `edstem units` and `edstem lessons <unit>` with JSON output for one course; record which fields hold due dates (content-free) in Open Questions.
-- [ ] 1.3 (Blocked until the owner approves the Handbook fetch.) Fetch one Handbook assessment page by code and confirm the table is in the served HTML (not rendered by script); record the selector in Open Questions.
+- [ ] 1.3 Fetch one Handbook assessment page by code and confirm the table is in the served HTML (not rendered by script); record the selector in Open Questions.
 - [ ] 1.4 Experiment (#206): two Codex jobs at once, each told to open its own Edge window; record whether either took the other's window or pointer. Set the default of `sync.parallel` from the result.
 - [ ] 1.5 After 9.2: count false "content updated" notices over two syncs with no real change.
 
@@ -18,7 +18,7 @@
 
 ## 4. Skeleton and routing
 
-- [ ] 4.1 (Blocked until the owner approves the Handbook fetch.) `src/sync/handbook.ts`: fetch with timeout, parse rows into components (name, weight, timing, hurdle, quote); failure is non-fatal; tests on synthetic HTML.
+- [ ] 4.1 `src/sync/handbook.ts`: fetch with timeout, parse rows into components (name, weight, timing, hurdle, quote); failure is non-fatal; tests on synthetic HTML.
 - [ ] 4.2 `src/sync/routing.ts`: the fixed route table, unknown tabs `never` and listed, home-page links unlock `on-home-link`; tests for the routing scenarios.
 
 ## 5. Pipeline and agent jobs
