@@ -75,13 +75,13 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
     const previousById = new Map(previous.map(assessment => [assessment.id, assessment]));
     const produced = new Map<string, Assessment>(); const sourceItems: SourceItem[] = []; const newLinks: AssessmentLink[] = [];
     const warnings = new Set<'REMAINDER_SHORTFALL' | 'COUNT_MISMATCH'>();
-    // The previous value of an item is the row its current link points at, never a retired row: an item row when it
-    // still links there, the component row once it links to a component (conservative).
+    // The previous value of an item is the row its current link points at: its own row (retired or not) while it links
+    // there, the component row once it links to a component (conservative). Rows it no longer links to are ignored.
     const previousFor = (sourceId: string) => {
       const linkedId = links.get(sourceId)?.assessmentId;
       if (linkedId === undefined) return undefined;
-      const assessment = previousById.get(linkedId);
-      return assessment?.retired ? undefined : assessment;
+      // A retired row the link still points at is the item's (or its component's) last stored value: keep it.
+      return previousById.get(linkedId);
     };
     // Item rows superseded by an agent or owner link: retired whatever the platform state, so no weight counts twice.
     const superseded = new Set<string>();
@@ -131,14 +131,18 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
         const status = scored ? 'graded' : rows.length && statuses.every(value => value === 'submitted' || value === 'graded') ? 'submitted'
           : statuses.some(value => value && value !== 'not_started') ? 'in_progress' : 'not_started';
         const hurdleMin = known(component.hurdleMin);
-        const previousComponent = previousById.get(id);
+        const storedComponent = previousById.get(id);
+        // A retired component row is not the value to compare against: a component that returns starts afresh.
+        const previousComponent = storedComponent?.retired ? undefined : storedComponent;
         // A final or hurdled component mirrors its items: prohibited wins, then the value every known item agrees on.
         // A missed item read falls back to the component's stored prohibited value when the item has no previous row.
         const policies = rows.map(row => row.policy
-          ?? (row.readPolicy === undefined && previousComponent?.aiPolicy === 'prohibited' ? 'prohibited' : undefined))
+          ?? (row.readPolicy === undefined && storedComponent?.aiPolicy === 'prohibited' ? 'prohibited' : undefined))
           .filter((value): value is NonNullable<Assessment['aiPolicy']> => value !== undefined);
-        const componentPolicy = policies.includes('prohibited') ? 'prohibited'
+        const fromItems = policies.includes('prohibited') ? 'prohibited'
           : policies.length > 0 && policies.every(value => value === policies[0]) ? policies[0] : undefined;
+        // No item brought a known value this run (none listed, or all missed): keep the component's last stored value.
+        const componentPolicy = fromItems ?? (rows.every(row => row.readPolicy === undefined) ? storedComponent?.aiPolicy : undefined);
         // The read state comes from the item that decided the component value: a prohibiting item, else an agreeing one.
         const deciding = componentPolicy === undefined ? undefined
           : rows.find(row => row.readPolicy !== undefined && row.readPolicy === componentPolicy);
@@ -147,8 +151,8 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
           .filter((value): value is string => value !== undefined).sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1) ?? at;
         const componentPolicyState: ReadState[string] | undefined = deciding?.item.aiPolicy
           ? entry(deciding.item.aiPolicy)
-          : previousComponent?.readState?.aiPolicy
-            ? { ...previousComponent.readState.aiPolicy, checkedAt: missedAt }
+          : storedComponent?.readState?.aiPolicy
+            ? { ...storedComponent.readState.aiPolicy, checkedAt: missedAt }
             : undefined;
         const componentMarker: ReadState[string] | undefined = componentPolicy === undefined ? undefined
           : componentPolicyChanged

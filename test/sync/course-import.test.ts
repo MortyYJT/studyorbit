@@ -267,7 +267,7 @@ describe('AI policy per assessment with a course default (coursework-sync)', () 
     expect(f.get(id)).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { state: 'found', quote } } });
   });
 
-  it('Component policy: prohibited wins, agreed known values agree, mixed with unknown keeps the known value, none known is absent', () => {
+  it('Component policy: prohibited wins, agreed known values agree, mixed with unknown keeps the known value, all missed keeps the last value, none ever known is absent', () => {
     const f = setup();
     const componentId = componentAssessmentId(term, 'SYNA10001:final');
     f.save(document([final('final', [item(1, { aiPolicy: quoted('prohibited', 'No AI.') })])]));
@@ -276,8 +276,13 @@ describe('AI policy per assessment with a course default (coursework-sync)', () 
     expect(f.get(componentId)?.aiPolicy).toBe('allowed');
     f.save(document([final('final', [item(4, { aiPolicy: quoted('allowed', 'AI allowed.') }), item(5)])]));
     expect(f.get(componentId)?.aiPolicy).toBe('allowed');
+    // Every item missed this run: the last stored value stays (spec "Missed item read keeps the last value").
     f.save(document([final('final', [item(6)])]));
-    expect(f.get(componentId)?.aiPolicy).toBeUndefined();
+    expect(f.get(componentId)?.aiPolicy).toBe('allowed');
+    // Nothing known and nothing stored before: absent.
+    const fresh = setup();
+    fresh.save(document([final('final', [item(7)])]));
+    expect(fresh.get(componentId)?.aiPolicy).toBeUndefined();
   });
 
   it('Component policy survives a missed read and an item that later stands alone', () => {
@@ -301,6 +306,39 @@ describe('AI policy per assessment with a course default (coursework-sync)', () 
     f.save(document([component('final', 100, [item(1, { aiPolicy: unknown(standalone) })], { count: found(1) })]), false, standalone);
     expect(f.get(itemId(1))).toMatchObject({ aiPolicy: 'prohibited',
       readState: { aiPolicy: { state: 'found', quote: detail, checkedAt: standalone } } });
+  });
+
+  it('A final component that lists no item this run keeps its prohibited policy', () => {
+    const f = setup();
+    const detail = 'No generative AI is permitted for this final assessment.';
+    const componentId = componentAssessmentId(term, 'SYNA10001:final');
+    f.save(document([final('final', [item(1, { aiPolicy: quoted('prohibited', detail) })])]));
+    const empty = '2026-10-25T02:00:00Z';
+    f.save(document([final('final', [])]), false, empty);
+    expect(f.get(componentId)).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { quote: detail } } });
+  });
+
+  it('An item whose own row was retired keeps its prohibited policy when it reappears with an unknown read', () => {
+    const f = setup();
+    const detail = 'You must not use generative AI for this report.';
+    f.save(document([work([item(1, { aiPolicy: quoted('prohibited', detail) })])]));
+    f.save(document([work([item(2, { aiPolicy: quoted('allowed', 'AI allowed with citation.') })])]), false, '2026-10-25T02:00:00Z');
+    expect(f.get(itemId(1))?.retired).toBe(true);
+    const back = '2026-10-26T02:00:00Z';
+    f.save(document([work([item(1, { aiPolicy: unknown(back) })])]), false, back);
+    expect(f.get(itemId(1))).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { quote: detail, checkedAt: back } } });
+  });
+
+  it('A component that returns after being retired marks a new prohibited read as a change', () => {
+    const f = setup();
+    const detail = 'No generative AI for this component.';
+    const componentId = componentAssessmentId(term, 'SYNA10001:final');
+    f.save(document([final('final', [item(1, { aiPolicy: quoted('prohibited', detail) })])]));
+    f.save(document([component('final', 100, [item(1, { aiPolicy: quoted('allowed', 'AI allowed.') })], { count: found(1) })]), false, '2026-10-25T02:00:00Z');
+    expect(f.get(componentId)?.retired).toBe(true);
+    const again = '2026-10-26T02:00:00Z';
+    f.save(document([final('final', [item(1, { aiPolicy: quoted('prohibited', detail) })])]), false, again);
+    expect(f.get(componentId)).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicyChanged: { checkedAt: again, quote: detail } } });
   });
 
   it('A retired item row never supplies the previous policy for its component or a later standalone item', () => {
