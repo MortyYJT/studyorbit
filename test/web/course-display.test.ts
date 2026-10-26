@@ -96,7 +96,7 @@ it('shows percentage alone when either or both points are missing, without infer
   for (const points of [{}, { pointsEarned: 4 }, { pointsPossible: 5 }]) {
     const html = page([{ ...item('graded', 'quiz'), score: 80, status: 'graded',
       platform: { linked: true, submitted: true, removed: false, ...points } }]);
-    expect(html).toContain('<span class="num">80%</span>');
+    expect(html).toContain('<span class="num points">80%</span>');
     expect(html).not.toContain('/5');
     expect(html).not.toContain('4/');
   }
