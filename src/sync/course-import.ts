@@ -21,7 +21,7 @@ export interface ImportOptions {
 }
 export interface ImportResult {
   courseId: string; components: number; items: number; assessments: number; retired: number;
-  warnings: ('REMAINDER_SHORTFALL' | 'COUNT_MISMATCH')[]; policyChanged: boolean;
+  warnings: ('REMAINDER_SHORTFALL' | 'COUNT_MISMATCH')[]; policyChanged: boolean; itemPolicyChanges: number;
 }
 
 const known = <T>(field: Field<T>): T | undefined => (field.state === 'found' || field.state === 'derived') && field.value !== null ? field.value : undefined;
@@ -72,6 +72,7 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
 
     const links = currentLinks(store.listAssessmentLinks());
     const previous = all(store, 'assessments', { courseId, includeRetired: true });
+    const previousById = new Map(previous.map(assessment => [assessment.id, assessment]));
     const produced = new Map<string, Assessment>(); const sourceItems: SourceItem[] = []; const newLinks: AssessmentLink[] = [];
     const warnings = new Set<'REMAINDER_SHORTFALL' | 'COUNT_MISMATCH'>();
     // Item rows superseded by an agent or owner link: retired whatever the platform state, so no weight counts twice.
@@ -81,7 +82,7 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
       if (current && (current.origin !== 'sync' || current.assessmentId === assessment)) return;
       newLinks.push({ assessmentId: assessment, sourceItemId: sourceItem, origin: 'sync', at });
     };
-    let itemCount = 0;
+    let itemCount = 0; let itemPolicyChanges = 0;
     for (const component of document.components) {
       const weight = known(component.weight); const count = known(component.count); const kind = known(component.kind);
       const name = known(component.name) ?? component.key;
@@ -100,7 +101,12 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
         const current = links.get(sourceId);
         const itemWeight = stated[index] ?? share;
         const weightState: ReadState[string] = stated[index] !== undefined ? entry(item.weight) : share !== undefined ? { state: 'derived' } : entry(item.weight);
-        return { item, sourceId, kept: current !== undefined && current.origin !== 'sync', weight: itemWeight, weightState };
+        const id = assessmentId(term, item.key);
+        const previousAssessment = previousById.get(id);
+        const readPolicy = knownOptional(item.aiPolicy);
+        // A missed item read (unknown or skipped page) keeps the previously stored agent-read policy.
+        return { item, sourceId, id, previousAssessment, readPolicy, policy: readPolicy ?? previousAssessment?.aiPolicy,
+          kept: current !== undefined && current.origin !== 'sync', weight: itemWeight, weightState };
       });
       if (known(component.isFinal) === true || known(component.hurdleMin) !== undefined) {
         // Finals and hurdled components stay one Assessment so the one-final rule and the hurdle keep working.
@@ -117,9 +123,14 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
         const status = scored ? 'graded' : rows.length && statuses.every(value => value === 'submitted' || value === 'graded') ? 'submitted'
           : statuses.some(value => value && value !== 'not_started') ? 'in_progress' : 'not_started';
         const hurdleMin = known(component.hurdleMin);
+        // A final or hurdled component mirrors its items: prohibited wins, then the value every known item agrees on.
+        const policies = rows.map(row => row.policy).filter((value): value is NonNullable<Assessment['aiPolicy']> => value !== undefined);
+        const componentPolicy = policies.includes('prohibited') ? 'prohibited'
+          : policies.length > 0 && policies.every(value => value === policies[0]) ? policies[0] : undefined;
         produced.set(id, { id, courseId, name, ...(kind ? { kind } : {}), ...(weight !== undefined ? { weight } : {}), ...(score !== undefined ? { score } : {}),
-          ...(dues[0] ? { due: dues[0] } : {}), ...(hurdleMin !== undefined ? { hurdleMin } : {}), isFinal: known(component.isFinal) === true,
-          status, origin: 'sync', group: { ...group, role: 'component' }, readState: { name: entry(component.name), kind: entry(component.kind), weight: entry(component.weight),
+          ...(dues[0] ? { due: dues[0] } : {}), ...(hurdleMin !== undefined ? { hurdleMin } : {}), ...(componentPolicy ? { aiPolicy: componentPolicy } : {}),
+          isFinal: known(component.isFinal) === true, status, origin: 'sync', group: { ...group, role: 'component' },
+          readState: { name: entry(component.name), kind: entry(component.kind), weight: entry(component.weight),
             isFinal: entry(component.isFinal), hurdleMin: entry(component.hurdleMin), ...(dues[0] ? { due: { state: 'derived' } } : {}) } });
         for (const row of rows) if (!row.kept) link(id, row.sourceId);
         continue;
@@ -129,12 +140,20 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
       for (const row of rows) {
         // An item the agent or owner linked elsewhere keeps that link; its weight still counts against the remainder.
         if (row.kept) { superseded.add(assessmentId(term, row.item.key)); add(row.weight); continue; }
-        const id = assessmentId(term, row.item.key);
+        const id = row.id;
         const due = known(row.item.due); const score = percent(row.item);
         const unlockAt = knownOptional(row.item.unlockAt); const itemKindField = row.item.kind;
         const itemKind = knownOptional(itemKindField) ?? kind;
-        const aiPolicy = knownOptional(row.item.aiPolicy);
-        // Per-assessment policy storage rules (keep last value, component/remainder combination) are task 8.1.
+        const aiPolicy = row.policy;
+        const policyState: ReadState[string] = row.readPolicy === undefined && aiPolicy !== undefined
+          ? { ...(row.previousAssessment?.readState?.aiPolicy ?? { state: 'found' }), checkedAt: row.item.aiPolicy?.checkedAt ?? at }
+          : row.item.aiPolicy ? entry(row.item.aiPolicy) : { state: 'unknown', checkedAt: at };
+        const policyChanged = row.readPolicy !== undefined && row.readPolicy !== row.previousAssessment?.aiPolicy;
+        if (policyChanged) itemPolicyChanges++;
+        // "Needs you" reads this marker while its checkedAt is not older than the last run start; an unchanged value keeps an older one.
+        const policyMarker: ReadState[string] | undefined = policyChanged
+          ? { state: 'found', checkedAt: at, ...(row.item.aiPolicy?.quote ? { quote: row.item.aiPolicy.quote } : {}) }
+          : row.previousAssessment?.readState?.aiPolicyChanged;
         const kindState = itemKindField && known(itemKindField) !== undefined ? entry(itemKindField) : entry(component.kind);
         produced.set(id, { id, courseId, name: known(row.item.name)!, ...(itemKind ? { kind: itemKind } : {}), ...(row.weight !== undefined ? { weight: row.weight } : {}),
           ...(score !== undefined ? { score } : {}), ...(due ? { due } : {}), ...(unlockAt ? { unlockAt } : {}), ...(aiPolicy ? { aiPolicy } : {}),
@@ -142,7 +161,7 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
           readState: { name: entry(row.item.name), due: entry(row.item.due), status: entry(row.item.status), score: entry(row.item.score),
             outOf: entry(row.item.outOf), weight: row.weightState, kind: kindState,
             unlockAt: row.item.unlockAt ? entry(row.item.unlockAt) : { state: 'unknown', checkedAt: at },
-            aiPolicy: row.item.aiPolicy ? entry(row.item.aiPolicy) : { state: 'unknown', checkedAt: at } } });
+            aiPolicy: policyState, ...(policyMarker ? { aiPolicyChanged: policyMarker } : {}) } });
         link(id, row.sourceId);
         add(annotated(id) ?? row.weight);
       }
@@ -184,7 +203,7 @@ export function importCourseDocument(store: SqliteRepository, document: CourseDo
     store.saveBatch({ modules: existing || store.loadModule(SCHOOL.id) ? [] : [SCHOOL], courses: [course], sourceItems,
       assessments: [...produced.values(), ...retired], assessmentLinks: newLinks });
     return { courseId, components: document.components.length, items: itemCount, assessments: produced.size, retired: retired.length,
-      warnings: [...warnings], policyChanged };
+      warnings: [...warnings], policyChanged, itemPolicyChanges };
   });
 }
 

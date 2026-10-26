@@ -207,6 +207,89 @@ describe('store mapping and precedence (coursework-sync)', () => {
   });
 });
 
+describe('AI policy per assessment with a course default (coursework-sync)', () => {
+  const work = (items: Record<string, unknown>[], overrides = {}) => component('work', 100, items, { count: found(items.length), ...overrides });
+  const final = (slug: string, items: Record<string, unknown>[], overrides = {}) =>
+    component(slug, 100, items, { kind: found('exam'), isFinal: found(true), count: found(items.length), ...overrides });
+  const itemId = (id: number) => assessmentId(term, `SYNA10001:canvas:assignment:${id}`);
+
+  it('Item policy read: a prohibited item keeps its quote while the course stays allowed and the change marker is set', () => {
+    const f = setup();
+    const quote = 'You must not use generative AI to write this report.';
+    const result = f.save(document([work([item(1, { aiPolicy: quoted('prohibited', quote) })])],
+      { aiPolicy: quoted('allowed', 'This subject allows generative AI with citation.') }));
+    expect(result).toMatchObject({ policyChanged: true, itemPolicyChanges: 1 });
+    expect(f.get(itemId(1))).toMatchObject({ aiPolicy: 'prohibited',
+      readState: { aiPolicy: { state: 'found', via: 'ax', quote, source: 'https://canvas.lms.unimelb.edu.au/courses/900001/assignments/syllabus' },
+        aiPolicyChanged: { state: 'found', checkedAt: now, quote } } });
+    expect(f.store.loadCourse(result.courseId)).toMatchObject({ aiPolicy: 'allowed',
+      readState: { aiPolicy: { state: 'found', quote: 'This subject allows generative AI with citation.' } } });
+  });
+
+  it('an unchanged item policy leaves an older change marker as is and is not counted again', () => {
+    const f = setup();
+    const quote = 'No AI for this report.';
+    const doc = () => document([work([item(1, { aiPolicy: quoted('prohibited', quote) })])]);
+    f.save(doc());
+    const later = '2026-10-25T02:00:00Z';
+    expect(f.save(doc(), false, later).itemPolicyChanges).toBe(0);
+    expect(f.get(itemId(1))?.readState?.aiPolicyChanged).toEqual({ state: 'found', checkedAt: now, quote });
+  });
+
+  it('Missed item read keeps the last value and quote, updates checkedAt and writes no new marker', () => {
+    const f = setup();
+    const quote = 'No AI for this report.';
+    f.save(document([work([item(1, { aiPolicy: quoted('prohibited', quote) })])]));
+    // A value stored before change markers existed: the missed read must not invent one.
+    const stored = f.get(itemId(1))!;
+    const { aiPolicyChanged: _oldMarker, ...readState } = stored.readState!;
+    f.store.saveBatch({ assessments: [{ ...stored, readState }] });
+    const later = '2026-10-25T02:00:00Z';
+    expect(f.save(document([work([item(1, { aiPolicy: unknown(later) })])]), false, later).itemPolicyChanges).toBe(0);
+    expect(f.get(itemId(1))).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { state: 'found', quote, checkedAt: later } } });
+    expect(f.get(itemId(1))?.readState?.aiPolicyChanged).toBeUndefined();
+    // A skipped page has no aiPolicy field at all; the stored value and quote stay and only the check time moves.
+    const skipped = '2026-10-26T02:00:00Z';
+    f.save(document([work([item(1)])]), false, skipped);
+    expect(f.get(itemId(1))).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { quote, checkedAt: skipped } } });
+    expect(f.get(itemId(1))?.readState?.aiPolicyChanged).toBeUndefined();
+  });
+
+  it('Owner item policy kept: an owner allowed annotation stays while the agent-read prohibited and quote are stored', () => {
+    const f = setup();
+    const id = itemId(1);
+    f.save(document([work([item(1)])]));
+    f.store.appendAnnotation({ id: 'owner-policy', entity: 'assessment', entityId: id, field: 'aiPolicy', value: 'allowed', origin: 'owner', citations: [], at: now });
+    const quote = 'No generative AI may be used for this report.';
+    f.save(document([work([item(1, { aiPolicy: quoted('prohibited', quote) })])]));
+    expect(f.store.readAnnotations('assessment', id).filter(row => row.field === 'aiPolicy'))
+      .toEqual([expect.objectContaining({ value: 'allowed', origin: 'owner' })]);
+    expect(f.get(id)).toMatchObject({ aiPolicy: 'prohibited', readState: { aiPolicy: { state: 'found', quote } } });
+  });
+
+  it('Component policy: prohibited wins, agreed known values agree, mixed with unknown keeps the known value, none known is absent', () => {
+    const f = setup();
+    const componentId = componentAssessmentId(term, 'SYNA10001:final');
+    f.save(document([final('final', [item(1, { aiPolicy: quoted('prohibited', 'No AI.') })])]));
+    expect(f.get(componentId)?.aiPolicy).toBe('prohibited');
+    f.save(document([final('final', [item(2, { aiPolicy: quoted('allowed', 'AI allowed.') }), item(3, { aiPolicy: quoted('allowed', 'AI allowed.') })])]));
+    expect(f.get(componentId)?.aiPolicy).toBe('allowed');
+    f.save(document([final('final', [item(4, { aiPolicy: quoted('allowed', 'AI allowed.') }), item(5)])]));
+    expect(f.get(componentId)?.aiPolicy).toBe('allowed');
+    f.save(document([final('final', [item(6)])]));
+    expect(f.get(componentId)?.aiPolicy).toBeUndefined();
+  });
+
+  it('Hurdle components combine their items and remainders store no policy', () => {
+    const f = setup();
+    const hurdle = component('hurdle', 50, [item(1, { aiPolicy: quoted('prohibited', 'No AI.') })],
+      { kind: found('exam'), hurdleMin: quoted(40), count: found(1) });
+    f.save(document([hurdle, component('rest', 50, [item(2, { aiPolicy: quoted('prohibited', 'No AI.') })], { count: found(2) })]));
+    expect(f.get(componentAssessmentId(term, 'SYNA10001:hurdle'))?.aiPolicy).toBe('prohibited');
+    expect(f.get(remainderAssessmentId(term, 'SYNA10001:rest'))?.aiPolicy).toBeUndefined();
+  });
+});
+
 describe('review fixes: no weight counted twice', () => {
   const total = (f: ReturnType<typeof setup>) => f.live().reduce((sum, a) => sum + (a.weight ?? 0), 0);
   it('a component that stops being final retires its component row even without componentsComplete', () => {
