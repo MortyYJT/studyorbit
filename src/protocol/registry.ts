@@ -62,8 +62,8 @@ const safeMessages: Record<ErrorCode, string> = {
   LIMIT_EXCEEDED: 'The response exceeds 64 KiB.', INTERNAL: 'The command could not complete safely.',
 };
 export function safeError(error: unknown, command?: string): CourseworkError {
-  // Course reading and Canvas capture refusals list contract paths so the agent can re-read and resubmit (#170).
-  if (error instanceof AgentFacingError && ['courses.offer', 'course.import', 'canvas.capture'].includes(command ?? '')) return new CourseworkError(error.code, error.message);
+  // Course reading and clipboard capture refusals list contract paths so the agent can re-read and resubmit (#170).
+  if (error instanceof AgentFacingError && ['courses.offer', 'course.import', 'canvas.capture', 'handbook.capture'].includes(command ?? '')) return new CourseworkError(error.code, error.message);
   if (command === 'source.record' && error instanceof CourseworkError && sourceRecordRefusals.includes(error.message)) return new CourseworkError(error.code, error.message);
   if (command?.startsWith('memory.') && error instanceof CourseworkError && memoryRefusals.includes(error.message)) return new CourseworkError(error.code, error.message);
   const code = error instanceof CourseworkError && Object.hasOwn(retryable, error.code) ? error.code : 'INTERNAL';
@@ -217,6 +217,7 @@ export function createRegistry(options: { autonomy?: AssessmentAutonomy; plannin
     if (!reading) throw new CourseworkError('SOURCE_UNAVAILABLE', safeMessages.SOURCE_UNAVAILABLE);
     if (name === 'courses.offer') return reading.offer(input as never);
     if (name === 'canvas.capture') return reading.capture(input as never);
+    if (name === 'handbook.capture') return reading.handbook(input as never);
     if (name === 'courses.candidates') return { items: reading.candidates() };
     if (name === 'courses.select') return reading.select(input as never);
     return reading.import(input as never);

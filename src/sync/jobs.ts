@@ -6,6 +6,7 @@ import { courseKey, MAX_SUBMISSIONS, normalizeCourseCode, validateCourseDocument
 import { importCourseDocument, type ImportOptions } from './course-import.js';
 import { canvasApiUrl, canvasCourseId, parseCanvasCourses, parseCanvasGroups, parseCanvasTabs, pbpasteClipboard,
   type CapturePage, type ClipboardReader, type GroupsStage, type TabsStage } from './canvas-api.js';
+import { handbookUrl, parseHandbook, type SkeletonStage } from './handbook.js';
 
 /** A job older than this counts as ended (stale lock), above the 20-minute run bound. */
 export const STALE_AFTER_MS = 25 * 60_000;
@@ -13,6 +14,7 @@ export interface OfferInput { jobId: string; courses: { code: string; name?: str
 export interface SelectInput { selections: { key: string; selected: boolean }[] }
 export interface ImportInput { jobId: string; document: unknown }
 export interface CaptureInput { jobId: string; courseKey?: string; page: CapturePage }
+export interface HandbookCaptureInput { jobId: string; courseKey: string }
 export interface SyncJobsOptions { now?: () => Date; annotatedWeight?: ImportOptions['annotatedWeight']; importer?: typeof importCourseDocument; clipboard?: ClipboardReader }
 
 const describeIssues = (issues: readonly DocumentIssue[]) => {
@@ -117,6 +119,40 @@ export class SyncJobs {
       const stages = { ...job.stages, [key]: { ...job.stages?.[key], [page]: value } } as SyncJob['stages'];
       this.store.saveSyncJob({ ...job, stages });
     });
+  }
+
+  private requireHandbookCourse(job: SyncJob, key: string): { code: string; term: string } {
+    if (!job.courses.includes(key)) throw new AgentFacingError('INVALID_INPUT', `Course ${key} is not selected for this sync job; capture only the courses listed in the prompt.`);
+    const course = this.store.listCourseSelections().find(row => row.key === key);
+    if (course) return { code: course.code, term: course.term };
+    // The job's course list is authoritative; a key still names its code and term when the selection row is gone.
+    const match = /^([A-Z]{4}\d{5}):(\d{4}:(?:S1|S2|SUMMER|WINTER))$/.exec(key);
+    if (!match) throw new AgentFacingError('INVALID_INPUT', `Course ${key} is not a valid course key; capture only courses of this job.`);
+    return { code: match[1]!, term: match[2]! };
+  }
+
+  private saveSkeleton(jobId: string, key: string, value: SkeletonStage): void {
+    this.store.transaction(() => {
+      const job = this.requireActive(jobId);
+      this.requireHandbookCourse(job, key);
+      const stages = { ...job.stages, [key]: { ...job.stages?.[key], skeleton: value } } as SyncJob['stages'];
+      this.store.saveSyncJob({ ...job, stages });
+    });
+  }
+
+  /** Read the copied Handbook page and store only the parsed skeleton, never the raw text. */
+  handbook(input: HandbookCaptureInput) {
+    const active = this.requireActive(input.jobId);
+    const course = this.requireHandbookCourse(active, input.courseKey);
+    let text: string;
+    try {
+      text = (this.options.clipboard ?? pbpasteClipboard).read();
+    } catch {
+      throw new AgentFacingError('INVALID_INPUT', 'Could not read the clipboard. Nothing was stored. Take a fresh copy of the assessment page and call handbook.capture again.');
+    }
+    const skeleton = parseHandbook(text, { source: handbookUrl(course.code, course.term) });
+    this.saveSkeleton(input.jobId, input.courseKey, skeleton);
+    return { components: skeleton.components.length };
   }
 
   /** Read one Canvas API page from the clipboard and store only its parsed values, never the raw text. */
