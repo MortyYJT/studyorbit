@@ -222,8 +222,9 @@ export class StoreProtocolReads implements ProtocolRepository {
         ?? [];
       for (const row of found) rows.set(row.id, row);
     }
-    // A course row may be missing (for example a conflict stored before import failed): open rows still show.
-    if (rows.size === 0) for (const row of this.store.listOpenSyncConflicts?.() ?? []) rows.set(row.id, row);
+    // A course row may be missing (for example a conflict stored before import failed): its open rows still show,
+    // but only within the requested course.
+    for (const row of this.store.listOpenSyncConflicts?.(input.courseId) ?? []) if (!rows.has(row.id)) rows.set(row.id, row);
     const cutoff = Date.now() - 30 * 24 * 60 * 60_000;
     const visible = [...rows.values()].filter(row => row.state === 'open'
       || input.state === 'all' && row.state === 'resolved' && row.resolvedAt !== undefined

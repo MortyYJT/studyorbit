@@ -132,6 +132,18 @@ describe('layered-sync 9.2-9.3 reads and file.open (issue #225)', () => {
     expect(mcpNames).toEqual(expect.arrayContaining(['conflicts.list', 'updates.list']));
   });
 
+  it('a course filter never returns another course\'s conflicts, even when the filtered course has none', async () => {
+    const f = setup();
+    const other = { ...course, id: 'course-other', code: 'SYNB20002', name: 'Other synthetic course' };
+    f.store.saveCourse(other);
+    reconcileConflicts(f.store, other.id, [{ field: 'weight', componentKey: `${other.code}:assignments`, skeletonValue: 20, canvasValue: 25 }],
+      new Date(Date.now() - 60_000).toISOString(), true);
+    const filtered = data<{ items: ConflictItem[] }>(await f.call('conflicts.list', { courseId: course.id, state: 'open', limit: 10 }));
+    expect(filtered.items).toEqual([]);
+    const everything = data<{ items: ConflictItem[] }>(await f.call('conflicts.list', { state: 'open', limit: 10 }));
+    expect(everything.items).toHaveLength(1);
+  });
+
   it('lists weight and unmatched conflicts with display names, hides a resolved conflict as open, and shows it in all', async () => {
     const f = setup();
     f.store.saveAssessment({ id: 'component:assignments', courseId: course.id, name: 'Assignments', kind: 'assignment',
