@@ -8,7 +8,7 @@ import { describe, inputSchema } from './mcp.js';
 import { PlanningService } from '../planning/service.js';
 import { SyncJobs } from '../sync/jobs.js';
 import type { ClipboardReader } from '../sync/canvas-api.js';
-import { AgentSync } from '../sync/agent-job.js';
+import { AgentSync, type SyncPipeline } from '../sync/agent-job.js';
 import { AssessmentFiles } from '../sync/assessment-files.js';
 import type { CourseFolderOptions } from '../sync/course-folder.js';
 import type { SyncCommands } from './sync.js';
@@ -30,6 +30,12 @@ import { StudyCitationService, type StudyEvidenceProvider } from './citations.js
 import type { TrustedContext } from './context.js';
 import { CourseworkError } from './errors.js';
 import { MemoryService } from '../memory/service.js';
+import { prompt as jobPrompt, tools as jobTools } from '../agent/jobs/index.js';
+import { buildCourseDocument } from '../sync/build-document.js';
+import { archiveCourse } from '../sync/course-folder.js';
+import { assessmentId } from '../sync/course-import.js';
+import { edHook, edItems, execFileEdRunner, type EdRunner, type EdStage } from '../sync/ed-cli.js';
+import type { CourseDocument } from '../sync/course-json.js';
 import { openSavedFile, openWithHostDefaultApp, type FileOpener } from '../sync/saved-files.js';
 export interface ProductionOptions {
   store?: SqliteRepository; files?: ProtocolFiles; metadata?: readonly EvidenceMetadata[];
@@ -42,11 +48,42 @@ export interface ProductionOptions {
   /** Tests may inject the whole deep-layer reader instead of folder options. */
   assessmentFiles?: AssessmentFiles;
   agentAdapter?: AgentAdapter; agentTools?: readonly AgentTool[];
+  /** Tests inject a fake `edstem` runner; production uses the CLI. */
+  edRunner?: EdRunner;
   owner?: TrustedContext['owner'];
   /** Remembered course-folder location for `file.open`; defaults to COURSEWORK_FILES or ~/Desktop. */
   courseFolder?: CourseFolderOptions;
   /** Tests inject a recording opener; production opens with the macOS default application. */
   fileOpener?: FileOpener;
+}
+
+/**
+ * Merge dated Ed lessons into the built document as ungraded items (weight 0) in the course's `<code>:ungraded`
+ * component, never duplicating an item key. Ed lessons are not classified, so they carry no marks until the owner
+ * says otherwise: an unknown weight would hide the weight-sum check, block the grade projection and make every
+ * lesson plannable work.
+ */
+function mergeEdItems(document: CourseDocument, items: ReturnType<typeof edItems>, now: string): void {
+  const existing = new Set(document.components.flatMap(component => component.items.map(item => item.key)));
+  const fresh = items.filter(item => {
+    if (existing.has(item.key)) return false;
+    existing.add(item.key);
+    return true;
+  });
+  if (!fresh.length) return;
+  const key = `${document.course.code.value ?? 'ed'}:ungraded`;
+  let component = document.components.find(candidate => candidate.key === key);
+  if (!component) {
+    component = { key, name: { value: 'Ungraded', state: 'derived' }, kind: { value: 'ungraded', state: 'derived' },
+      count: { value: 0, state: 'derived' }, weight: { value: 0, state: 'derived' }, isFinal: { value: false, state: 'derived' },
+      hurdleMin: { value: null, state: 'not_applicable' }, items: [] };
+    document.components.push(component);
+  }
+  component.items.push(...fresh.map(item => ({ ...item, unlockAt: { value: null, state: 'unknown' as const, checkedAt: now },
+    status: { value: 'not_started' as const, state: 'derived' as const },
+    score: { value: null, state: 'not_applicable' as const }, outOf: { value: null, state: 'not_applicable' as const },
+    weight: { value: 0, state: 'derived' as const } })));
+  component.count = { value: component.items.length, state: 'derived' };
 }
 /** Compose durable storage and validated revision services once for all transports. */
 export function createProductionProtocol(options: ProductionOptions = {}) {
@@ -125,8 +162,35 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
       if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) throw new CourseworkError('INVALID_INPUT', 'Owner terminal required.');
     } },
   };
-  // A sync run is an agent job over the chat adapter; adapter and tools are composed below and resolved per run.
-  const sync = options.sync ?? new AgentSync({ store, jobs, adapter: () => adapter, tools: () => agentTools });
+  // A sync run is the layered pipeline over the chat adapter; the adapter and tools are composed below and resolved per run.
+  const edRunner = options.edRunner ?? execFileEdRunner;
+  const pipeline: SyncPipeline = {
+    prompt: (spec, ctx) => jobPrompt(spec, ctx),
+    tools: spec => jobTools(spec, agentTools),
+    parallel: 1,
+    build: (_courseKey, stages, context) => {
+      if (!context) return undefined;
+      const built = buildCourseDocument({ course: context.course, stages, now: context.now,
+        ...(context.resolved ? { resolved: context.resolved } : {}), ...(context.blocked ? { blocked: context.blocked } : {}) });
+      const edStage = stages.ed as EdStage | undefined;
+      if (edStage?.via === 'api') mergeEdItems(built.document, edItems(edStage, context.course.code, context.now), context.now);
+      return built;
+    },
+    archive: async (courseKey, ctx) => {
+      const job = jobs.load(ctx.jobId);
+      const courseId = jobs.courseIdFor(courseKey);
+      // A course whose build/import failed keeps its old data; there is no new assessment to attach files to.
+      if (!job || !courseId) return;
+      const result = archiveCourse({ store, course: { id: courseId, code: ctx.course.code,
+        ...(ctx.course.name ? { name: ctx.course.name } : {}), term: ctx.course.term }, jobStartedAt: job.startedAt,
+        stages: ctx.stages, assessmentIdFor: target =>
+          assessmentId(ctx.course.term, `${ctx.course.code}:canvas:assignment:${target}`) });
+      jobs.recordStage(ctx.jobId, courseKey, 'archive',
+        { moved: result.moved.length, updated: result.updated.length, missing: result.missing.length, unresolved: result.unresolved.length });
+    },
+    ed: edHook(edRunner, jobs),
+  };
+  const sync = options.sync ?? new AgentSync({ store, jobs, adapter: () => adapter, pipeline });
   const memory = new MemoryService(store);
   const savedFiles = { open: (input: { savedFileId: string }) => openSavedFile(store, input.savedFileId,
     { folder: options.courseFolder ?? options.assessmentFilesOptions, opener: options.fileOpener ?? openWithHostDefaultApp }) };

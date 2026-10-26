@@ -183,9 +183,6 @@ function setup(options: SetupOptions = {}) {
     { name: 'canvas.capture', description: 'Capture a Canvas page', inputSchema: {}, execute: async input => jobs.capture(input as Parameters<SyncJobs['capture']>[0]) },
     { name: 'handbook.capture', description: 'Capture the Handbook', inputSchema: {}, execute: async input => jobs.handbook(input as Parameters<SyncJobs['handbook']>[0]) },
   ];
-  let imports = 0;
-  tools.push({ name: 'course.import', description: 'Agent import must not be used by the pipeline', inputSchema: {},
-    execute: async () => { imports++; return { stored: true }; } });
   const adapter = new PipelineAgent(options.script ?? scripted(options));
   const pipeline: SyncPipeline = {
     prompt: options.prompt ?? (spec => JSON.stringify(spec)),
@@ -195,11 +192,11 @@ function setup(options: SetupOptions = {}) {
     ...(options.archive ? { archive: options.archive } : {}),
     ...(options.parallel !== undefined ? { parallel: options.parallel } : {}),
   };
-  const sync = new AgentSync({ store, jobs, adapter: () => adapter, tools: () => tools, pipeline,
+  const sync = new AgentSync({ store, jobs, adapter: () => adapter, pipeline,
     ...(options.runBoundMs !== undefined ? { runBoundMs: options.runBoundMs } : {}),
     ...(options.jobBoundMs !== undefined ? { jobBoundMs: options.jobBoundMs } : {}) });
   cleanups.push(() => { store.close(); rmSync(directory, { recursive: true, force: true }); });
-  return { store, jobs, sync, adapter, tools, directory, databasePath, importCalls: () => imports };
+  return { store, jobs, sync, adapter, tools, directory, databasePath };
 }
 
 describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
@@ -619,7 +616,7 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     expect(calls.every(args => !args.includes('--yes'))).toBe(true);
   });
 
-  it('Built document imported: the pipeline builds and stores one document without an agent course.import call', async () => {
+  it('Built document imported: the pipeline builds and stores one document without an agent import call', async () => {
     const f = setup({
       build: realBuild,
       skeleton: () => skeletonFor([{ name: 'Assignments', weight: 30 }]),
@@ -630,7 +627,6 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     seed(f.store, keyA);
     const result = await f.sync.run({});
     expect(result.outcome).toBe('OK');
-    expect(f.importCalls()).toBe(0);
     const course = f.store.query('courses', { limit: 10 }).items[0] as { id: string; aiPolicy?: string };
     expect(course).toMatchObject({ code: 'SYNA10001', aiPolicy: 'allowed' });
     expect(f.store.loadAssessment(assessmentId('2026:S2', 'SYNA10001:canvas:assignment:1'))).toMatchObject({

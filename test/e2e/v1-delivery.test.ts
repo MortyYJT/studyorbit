@@ -16,7 +16,6 @@ import { databasePath } from '../../src/config/data-dir.js';
 import type { AgentAdapter, AgentEvent, AgentInput } from '../../src/agent/adapter.js';
 import { hash } from '../../src/citations/exact.js';
 import { SyntheticAdapter } from '../agent/synthetic.js';
-import { component, document, found, item, quoted } from '../sync/course-document.js';
 
 // Locally this file runs in about 2 s; sync and UI bootstrap get headroom on slow CI runners.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -26,20 +25,58 @@ const quizUrl = 'https://canvas.lms.unimelb.edu.au/courses/1/quizzes/7';
 // The quiz is due in two days; the term takes that date's Melbourne year so the document passes the term-year check.
 const due = new Date(Date.now() + 2 * 86_400_000).toISOString();
 const term = `${new Intl.DateTimeFormat('en', { timeZone: 'Australia/Melbourne', year: 'numeric' }).format(new Date(due))}:S2`;
-const pages = { canvas: 'https://canvas.lms.unimelb.edu.au/courses/1', ed: 'https://edstem.org/au/courses/9' };
-const quizCourse = document([component('weekly-quizzes', 30, [item(7, { name: found(quizName), url: quizUrl, due: quoted(due, 'Due in two days', quizUrl) }, 'ABCD10001')],
-  { name: found('Weekly quizzes'), kind: found('quiz') }, 'ABCD10001'), component('final-exam', 70, [], { kind: found('exam'), isFinal: found(true) }, 'ABCD10001')],
-  { name: found('Synthetic Canvas'), pages, platforms: { canvas: 'read', ed: 'absent' } }, 'ABCD10001', term);
-/** Synthetic course reading: offers the course while nothing is selected, then imports it through `course.import`. */
+/** Synthetic course reading: the production pipeline jobs capture the synthetic pages and stages. */
+const clipboard = { text: '', read(): string { return clipboard.text; } };
+const canvasCoursePage = 'https://canvas.lms.unimelb.edu.au/courses/1';
+const termName = term.replace(':S1', ' Semester 1').replace(':S2', ' Semester 2');
 function readCourses(input: AgentInput): AsyncIterable<AgentEvent> {
   const jobId = /Job id: (\S+)/.exec(input.prompt)![1]!;
-  const call = (name: string, args: unknown) => input.tools.find(tool => tool.name === name)!.execute(args) as Promise<{ ok: boolean }>;
+  const tool = (name: string) => input.tools.find(entry => entry.name === name);
+  const call = async (name: string, args: unknown) => {
+    const found = tool(name);
+    if (!found) throw new Error(`missing synthetic tool ${name}`);
+    const result = await found.execute(args) as { ok: boolean; error?: { message: string } };
+    expect(result.ok).toBe(true);
+    return result;
+  };
   return (async function* () {
-    const result = input.prompt.includes('Selected courses: none')
-      ? await call('courses.offer', { jobId, courses: [{ code: 'ABCD10001', name: 'Synthetic Canvas', term, pages }], blocked: [] })
-      : await call('course.import', { jobId, document: quizCourse });
-    yield { type: 'tool_step', tool: 'coursework.sync', outcome: result.ok ? 'ok' : 'error' } as const;
-    yield { type: 'result', turns: 3 } as const;
+    if (tool('courses.offer')) {
+      clipboard.text = JSON.stringify([{ id: 1, name: 'Synthetic Canvas', course_code: 'ABCD10001_2026_SM2', term: { name: termName } }]);
+      await call('canvas.capture', { jobId, page: 'courses' });
+    } else if (tool('handbook.capture')) {
+      clipboard.text = ['The University of Melbourne Handbook', 'ABCD10001 Synthetic Canvas', 'Assessment',
+        'Description\tTiming\tPercentage', 'Weekly quizzes\tWeeks 1-12\t30%', 'Final exam\tExam period\t70%'].join('\n');
+      await call('handbook.capture', { jobId, courseKey: `ABCD10001:${term}` });
+    } else if (tool('course.map')) {
+      await call('course.map', { jobId, courseKey: `ABCD10001:${term}`, lms: { text: 'Synthetic LMS', quote: 'Synthetic LMS quote' },
+        ed: { text: 'Synthetic Ed', quote: 'Synthetic Ed quote' }, syllabus: { where: 'unknown' }, links: [] });
+    } else if (tool('quizzes.read')) {
+      await call('quizzes.read', { jobId, courseKey: `ABCD10001:${term}`, quizzes: [] });
+    } else if (tool('assignment.saved')) {
+      await call('assignment.saved', { jobId, courseKey: `ABCD10001:${term}`, assignmentId: '7', policy: { value: 'unknown' }, files: [] });
+    } else if (tool('materials.saved')) {
+      await call('materials.saved', { jobId, courseKey: `ABCD10001:${term}`, files: [], links: [] });
+    } else if (tool('ed.read')) {
+      await call('ed.read', { jobId, courseKey: `ABCD10001:${term}`, lessons: [] });
+    } else if (tool('items.classify')) {
+      await call('items.classify', { jobId, courseKey: `ABCD10001:${term}`,
+        items: [{ id: '7', category: 'quiz', component: 'Weekly quizzes', evidence: 'Synthetic group name' }] });
+    } else if (tool('canvas.capture')) {
+      const page = input.prompt.includes('page `tabs`') ? 'tabs' : 'groups';
+      clipboard.text = page === 'tabs' ? JSON.stringify([
+        { id: 'home', label: 'Home', type: 'internal', html_url: canvasCoursePage },
+        { id: 'assignments', label: 'Assignments', type: 'internal', html_url: `${canvasCoursePage}/assignments` },
+        { id: 'quizzes', label: 'Quizzes', type: 'internal', html_url: `${canvasCoursePage}/quizzes` },
+        { id: 'grades', label: 'Grades', type: 'internal', html_url: `${canvasCoursePage}/grades` },
+        { id: 'modules', label: 'Modules', type: 'internal', html_url: `${canvasCoursePage}/modules` },
+      ]) : JSON.stringify([{ id: 501, name: 'Weekly quizzes', group_weight: 30, assignments: [{
+        id: 7, name: quizName, course_id: 1, due_at: due, unlock_at: null, points_possible: 10, assignment_group_id: 501,
+        html_url: quizUrl, updated_at: null, submission: null,
+      }] }]);
+      await call('canvas.capture', { jobId, courseKey: `ABCD10001:${term}`, page });
+    }
+    yield { type: 'tool_step', tool: 'coursework.synthetic', outcome: 'ok' } as const;
+    yield { type: 'result', turns: 2 } as const;
   })();
 }
 
@@ -61,7 +98,9 @@ describe('v1 delivery end to end (synthetic)', () => {
     vi.stubEnv('COURSEWORK_HOME', root);
     const ui = join(root, 'ui'); mkdirSync(ui); writeFileSync(join(ui, 'index.html'), '<html>synthetic</html>');
     store = new SqliteRepository(databasePath());
-    host = createProductionProtocol({ store, agentAdapter: adapter, owner: { assertOwner: async () => { throw new Error('No terminal owner in this test.'); } } });
+    host = createProductionProtocol({ store, agentAdapter: adapter, clipboard,
+      edRunner: async () => ({ code: 1, stdout: '' }),
+      owner: { assertOwner: async () => { throw new Error('No terminal owner in this test.'); } } });
     let opened = '';
     transport = await startOwnerUI(host, { staticDirectory: ui, capabilityDirectory: join(root, 'http'), opener: async url => { opened = url; } });
     secret = new URL(opened).hash.slice(3);

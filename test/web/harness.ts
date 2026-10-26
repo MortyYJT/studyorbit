@@ -92,7 +92,8 @@ const term = `${today.slice(0, 4)}:S${Number(today.slice(5, 7)) >= 7 ? 2 : 1}`;
 
 const store = new SqliteRepository(databasePath());
 // Status reads the seeded sync job from the store; running a job would need the real agent and the owner's sign-in.
-const agentSync = new AgentSync({ store, adapter: () => { throw new CourseworkError('SOURCE_UNAVAILABLE', 'No agent in the synthetic harness.'); }, tools: () => [] });
+const agentSync = new AgentSync({ store, adapter: () => { throw new CourseworkError('SOURCE_UNAVAILABLE', 'No agent in the synthetic harness.'); },
+  pipeline: { prompt: () => '', tools: () => [], build: () => undefined } });
 const host = createProductionProtocol({
   store,
   agentAdapter: new ScriptedAdapter(),
@@ -126,7 +127,7 @@ const courses: Course[] = [
       source: 'https://canvas.lms.unimelb.edu.au/courses/900002/assignments/syllabus' } } },
 ];
 const assessment = (value: Omit<Assessment, 'origin' | 'isFinal'> & { isFinal?: boolean }): Assessment => ({ origin: 'sync', isFinal: false, ...value });
-// Course A as course.import stores it: grading components as group tags, per-field read states, an even split (#171)
+// Course A as the store import writes it: grading components as group tags, per-field read states, an even split (#171)
 // and a remainder row for the unpublished share. Item rows carry a `status` read state; component and remainder rows do not.
 const found = { state: 'found' as const, via: 'ax' as const, checkedAt: new Date(Date.now() - 3600_000).toISOString() };
 const derived = { state: 'derived' as const };

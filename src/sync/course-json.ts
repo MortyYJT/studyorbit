@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { AiPolicySchema, CourseTermSchema } from '../domain/schemas.js';
 
 /**
- * The course document contract (#169, #170): one zod schema for `course.import` and the reading prompt,
+ * The course document contract (#169, #170): one zod schema for the built document and the store import,
  * plus the format, sanity and completeness checks and the third-submission degrade. Browser-safe (no Node imports).
  */
 export const CANVAS_ORIGIN = 'https://canvas.lms.unimelb.edu.au';
@@ -85,10 +85,6 @@ export type CourseDocument = z.output<typeof CourseDocumentSchema>;
 export type CourseComponent = CourseDocument['components'][number];
 export type CourseItem = CourseComponent['items'][number];
 
-export function courseDocumentJsonSchema(): Record<string, unknown> {
-  const { $schema: _schema, ...schema } = z.toJSONSchema(CourseDocumentSchema, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>;
-  return schema;
-}
 export function courseKey(code: string, term: string): string { return `${code}:${term}`; }
 /** One normalized University code in the text (for example "ABCD10001_2026_SM2"), else undefined. */
 export function normalizeCourseCode(value: string): string | undefined {
