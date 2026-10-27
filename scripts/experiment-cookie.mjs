@@ -37,7 +37,7 @@ async function main() {
   let result;
   try {
     result = await getCookies({
-      url, browsers: [browser], mode: 'first',
+      url, browsers: [browser], mode: 'first', timeoutMs: 30000,
       ...(profile && browser === 'edge' ? { edgeProfile: profile } : {}),
       ...(profile && browser === 'chrome' ? { chromeProfile: profile } : {}),
       ...(profile && browser === 'firefox' ? { firefoxProfile: profile } : {}),

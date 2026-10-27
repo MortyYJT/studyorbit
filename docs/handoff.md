@@ -12,7 +12,7 @@
 
 用户提供参考项目 [moodle-cli](https://github.com/bunizao/moodle-cli)：它针对 Moodle，可以参考认证、接口优先取数、按课程归档、增量同步与 Agent 接口，但不能直接当作 Canvas 适配器。同作者的 [edstem-cli](https://github.com/bunizao/edstem-cli) 是 Ed 相关参考；是否适用于墨大账户尚未验证。
 
-新增独立的浏览器 Cookie 取数实验 `npm run experiment:cookie`，细节见 [实验说明](cookie-experiment.md)；用户尚未测试，不影响既有前端同步。
+新增独立的浏览器 Cookie 取数实验 `npm run experiment:cookie`，细节见 [实验说明](cookie-experiment.md)。用户首次实验在获取 Cookie 阶段失败；已将钥匙串单次等待时间延长至 30 秒，等待用户复测。此实验不影响既有前端同步。
 
 ## 已完成：第 0 层原型
 
