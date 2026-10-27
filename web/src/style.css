@@ -316,3 +316,9 @@ button.primary:hover:enabled { background:var(--ink); opacity:.9; }
 .local-merge { margin:12px 0; }
 .local-merge label { margin-bottom:4px; }
 .source-components { padding:10px 4px; color:var(--muted); }
+.weight-breakdown { margin:18px 0 8px; }
+.weight-breakdown h2 { font-size:14px; margin-bottom:8px; }
+.weight-breakdown-list { display:flex; flex-wrap:wrap; gap:8px; }
+.weight-breakdown-item { display:flex; align-items:center; gap:8px; padding:7px 10px; border:1px solid var(--line); border-radius:8px; font-size:12px; }
+.weight-breakdown-item span { max-width:280px; overflow-wrap:anywhere; }
+.weight-breakdown-item strong { white-space:nowrap; }
