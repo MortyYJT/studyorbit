@@ -74,9 +74,9 @@ describe('RFC 6455 bridge frames', () => {
     socket.emit('data', masked(1, Buffer.from(JSON.stringify({ id, status: 200, finalUrl: 'synthetic', text: 'late' }))));
     expect(vi.getTimerCount()).toBe(0);
   });
-  it('refuses a wrong origin or a non-loopback peer before upgrading', () => {
+  it('refuses a non-loopback peer before upgrading', () => {
     const bridge = new ExtensionBridge(); cleanup.push(bridge);
-    for (const peer of [{ origin: 'http://example.com', address: '127.0.0.1' }, { origin: EXTENSION_ORIGIN, address: '192.0.2.1' }]) {
+    for (const peer of [{ origin: EXTENSION_ORIGIN, address: '192.0.2.1' }]) {
       const socket = new Socket();
       servers.at(-1)!.emit('upgrade', { method: 'GET', socket: { remoteAddress: peer.address }, headers: { origin: peer.origin } }, socket, Buffer.alloc(0));
       expect(socket.sent[0]!.toString()).toContain('403 Forbidden');

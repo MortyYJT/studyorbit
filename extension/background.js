@@ -6,10 +6,12 @@ let heartbeat;
 async function read(connection, request) {
   try {
     if (typeof request.url !== 'string' || !request.url.startsWith(API_PREFIX)) throw new Error('URL not allowed');
-    const response = await fetch(request.url, { method: 'GET', credentials: 'include', signal: AbortSignal.timeout(5_000) });
-    const text = await response.text();
+    // A signed-out API call redirects to the SSO host; report the redirect instead of following it.
+    const response = await fetch(request.url, { method: 'GET', credentials: 'include', redirect: 'manual', signal: AbortSignal.timeout(5_000) });
+    const redirected = response.type === 'opaqueredirect';
+    const text = redirected ? '' : await response.text();
     if (connection.readyState === WebSocket.OPEN) connection.send(JSON.stringify({
-      id: request.id, status: response.status, finalUrl: response.url, text,
+      id: request.id, status: redirected ? 302 : response.status, finalUrl: redirected ? 'redirect' : response.url, text,
     }));
   } catch (error) {
     if (connection.readyState === WebSocket.OPEN) connection.send(JSON.stringify({ id: request.id, error: error.message }));
@@ -35,6 +37,12 @@ function connect() {
   connection.onerror = () => { connection.close(); };
 }
 
+// Edge does not start the worker on launch by itself, and alarms may not survive a restart.
+async function wake() {
+  if (!await chrome.alarms.get('reconnect')) await chrome.alarms.create('reconnect', { periodInMinutes: 1 });
+  connect();
+}
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'reconnect') connect(); });
-chrome.alarms.create('reconnect', { periodInMinutes: 1 });
-connect();
+chrome.runtime.onStartup.addListener(wake);
+chrome.runtime.onInstalled.addListener(wake);
+void wake();

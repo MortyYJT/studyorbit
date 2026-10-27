@@ -28,7 +28,7 @@ export class ExtensionBridge implements ExtensionReader {
     this.server.on('upgrade', (req, socket, head) => {
       socket.on('error', () => socket.destroy());
       const key = req.headers['sec-websocket-key'];
-      if (req.socket.remoteAddress !== '127.0.0.1' || req.headers.origin !== EXTENSION_ORIGIN || this.socket
+      if (req.socket.remoteAddress !== '127.0.0.1' || req.headers.origin !== EXTENSION_ORIGIN
         || req.method !== 'GET' || req.headers.upgrade?.toLowerCase() !== 'websocket'
         || !req.headers.connection?.toLowerCase().split(/\s*,\s*/).includes('upgrade')
         || req.headers['sec-websocket-version'] !== '13' || typeof key !== 'string'
@@ -37,6 +37,9 @@ export class ExtensionBridge implements ExtensionReader {
       }
       const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
       socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
+      // A new connection replaces a stale one (a worker that died without closing, for example after sleep).
+      const stale = this.socket;
+      if (stale) { this.disconnect(); stale.destroy(); }
       this.socket = socket;
       this.receive(socket, head);
     });

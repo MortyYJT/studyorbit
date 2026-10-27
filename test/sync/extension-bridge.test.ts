@@ -31,11 +31,13 @@ describe('extension bridge', () => {
     await expect(server.read(url)).rejects.toThrow('disconnected');
     expect(Date.now() - started).toBeLessThan(1_000);
   });
-  it('refuses the wrong origin and a second connection', async () => {
+  it('refuses the wrong origin; a new connection replaces a stale one', async () => {
     const server = await bridge();
     await expect(connect(server, 'http://example.com')).rejects.toThrow('upgrade refused');
+    const stale = await connect(server);
+    const closed = new Promise<void>(resolve => stale.addEventListener('close', () => resolve(), { once: true }));
     await connect(server);
-    await expect(connect(server)).rejects.toThrow('upgrade refused');
+    await closed;
   });
   it.each([20, 300, 70_000])('round trips text frames of %i bytes and ignores hello/heartbeat', async size => {
     const server = await bridge(); const ws = await connect(server);

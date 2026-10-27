@@ -25,8 +25,9 @@ else {
     // stdout is reserved for MCP framing, including during production initialization.
     console.log = console.info = console.debug = (...args: unknown[]) => console.error(...args);
   }
-  const extension = isUi ? new ExtensionBridge() : undefined;
-  if (extension && !await extension.start()) process.stderr.write('coursework ui: extension bridge unavailable.\n');
+  // Syncs run in the UI and HTTP hosts; the MCP process only serves agent tools.
+  const extension = isUi || isHttp ? new ExtensionBridge() : undefined;
+  if (extension && !await extension.start()) process.stderr.write('coursework: extension bridge unavailable.\n');
   let host: ReturnType<typeof createProductionProtocol> | undefined;
   try { host = createProductionProtocol({ extension }); }
   catch {
