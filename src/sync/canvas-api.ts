@@ -99,13 +99,33 @@ export interface CanvasAssignmentValue {
 export interface CanvasGroupAssignments extends CanvasGroupValue { assignments: CanvasAssignmentValue[] }
 export interface GroupsStage { source: string; via: 'api'; coverage: 'api' | 'partial'; unweighted: boolean; groups: CanvasGroupAssignments[] }
 
-/** Remove any prefix before the first JSON array or object and parse it. */
+/** Index just past the JSON array or object that opens at `start`, skipping brackets inside strings; -1 if unclosed. */
+function jsonEnd(text: string, start: number): number {
+  let depth = 0; let inString = false;
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+    if (inString) {
+      if (char === '\\') i++;
+      else if (char === '"') inString = false;
+    } else if (char === '"') inString = true;
+    else if (char === '[' || char === '{') depth++;
+    else if ((char === ']' || char === '}') && --depth === 0) return i + 1;
+  }
+  return -1;
+}
+
+/**
+ * Parse the first JSON array or object in the copied page. Text before it (`while(1);`) and after it (the JSON
+ * viewer's "Pretty-print" control that Edge copies with select-all) is dropped.
+ */
 function parseJson(text: string, page: CapturePage): unknown {
   if (Buffer.byteLength(text, 'utf8') > MAX_CAPTURE_BYTES) refuse('The clipboard text is larger than 5 MB.');
   const starts = [text.indexOf('['), text.indexOf('{')].filter(index => index >= 0);
   if (!starts.length) shapeRefuse(page, undefined);
+  const start = Math.min(...starts);
+  const end = jsonEnd(text, start);
   try {
-    return JSON.parse(text.slice(Math.min(...starts)));
+    return JSON.parse(text.slice(start, end < 0 ? undefined : end));
   } catch {
     shapeRefuse(page, undefined);
   }
