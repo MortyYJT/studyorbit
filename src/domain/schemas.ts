@@ -188,6 +188,9 @@ const RunBaseSchema = z.object({
 
 export const SyncOutcomeSchema = z.enum(['OK', 'PARTIAL', 'NEEDS_SELECTION', 'AGENT_UNAVAILABLE', 'TIMEOUT', 'FAILED']);
 export const RunJobSchema = z.object({
+  via: z.literal('extension').optional(),
+  ms: z.number().nonnegative().optional(),
+  reason: z.string().optional(),
   kind: IdSchema,
   courseKey: IdSchema.optional(),
   steps: CountSchema,

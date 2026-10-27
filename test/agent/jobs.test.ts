@@ -287,8 +287,7 @@ describe('pipeline job prompts (layered-sync task 5.2)', () => {
     };
     const sync = new AgentSync({ store, jobs, adapter: () => adapter, pipeline });
     await sync.run({});
-    expect(seen[0]).toBeUndefined();
-    const courseContexts = seen.slice(1);
+    const courseContexts = seen;
     expect(courseContexts.length).toBeGreaterThan(0);
     for (const ctx of courseContexts) {
       expect(ctx).toMatchObject({ jobId: expect.any(String), courseKey, course: { code: 'SYNA10001' } });
