@@ -152,16 +152,12 @@ export function App({ store }: { store: ShellStore }) {
         {courseRun.courses.map(course => <div className="attention-row" key={course.id}>
           <span><b>{course.code}</b> · {({ pending: language === 'zh' ? '等待' : 'Waiting', running: language === 'zh' ? '读取中' : 'Reading',
             completed: language === 'zh' ? '已完成' : 'Completed', partial: language === 'zh' ? '部分完成' : 'Partial', failed: language === 'zh' ? '未完成' : 'Failed' } as Record<string, string>)[course.status] ?? course.status}
-            {course.reason && <small> · {course.reason}</small>}{course.file && <small> · {course.file}</small>}</span>
+            </span>
         </div>)}
         {courseRun.error && <p role="status">{courseRun.error}</p>}
       </section>}
       {view.page === 'agent' && !store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
       {view.page === 'agent' && state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
-      {view.page === 'agent' && <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onSelect={() => setSelecting(true)}
-        onCourse={courseId => setView({ page: 'course', courseId })}
-        onResolve={(conflictId, choice) => void store.resolveConflict(conflictId, choice)}
-        onOpenUpdate={savedFileId => void store.openUpdate(savedFileId)} />}
       {view.page !== 'course' && <div className="page-heading"><h1>{t[view.page]}</h1><button onClick={() => { setCourseRefresh(value => value + 1); void refreshAll(); }}>{t.refresh}</button></div>}
       {view.page === 'agent' ? <AgentPage key={view.navigation} client={store.client} t={t} language={language} preset={view.preset} conversationId={view.conversationId} onPresetDone={() => setView({ page: 'agent' })} />
         : <LocalPlanning language={language} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined}
