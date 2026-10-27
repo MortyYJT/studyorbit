@@ -83,6 +83,14 @@ describe('Canvas API capture parsing (layered-sync task 3.1)', () => {
     expect(JSON.stringify(parsed)).not.toContain('while(1)');
   });
 
+  it('ignores the JSON viewer controls Edge copies after the JSON (live run 2026-10-27)', () => {
+    const courses = JSON.stringify([{ id: 12345, name: 'Synthetic Systems', course_code: 'ABCD10001', term: { name: 'Semester 2 2026' } }]);
+    for (const trailer of ['\nPretty-print', '\n美观输出', '\n\t[x] Pretty print\n']) {
+      expect(parseCanvasCourses(`${courses}${trailer}`).candidates.map(course => course.code)).toEqual(['ABCD10001']);
+      expect(parseCanvasGroups(`${groupsText()}${trailer}`, { source, courseId: '12345', now: () => new Date(now) }).groups).toHaveLength(1);
+    }
+  });
+
   it('refuses a sign-in page or other non-JSON with a fresh-copy hint and never echoes the page', () => {
     const signIn = '<html><body>SYNTHETIC_SIGN_IN_MARKER sign in</body></html>';
     expect(() => parseCanvasGroups(signIn, { source, courseId: '12345', now: () => new Date(now) }))
