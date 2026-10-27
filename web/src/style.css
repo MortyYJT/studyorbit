@@ -302,3 +302,7 @@ button.primary:hover:enabled { background:var(--ink); opacity:.9; }
 .local-score-content .inline select { width:auto; }
 .local-score-content p { margin-bottom:0; font-size:12px; }
 @media(max-width:600px) { .local-score { grid-template-columns:1fr; justify-items:center; } .local-score-content { width:100%; } }
+.local-drawer-overlay { position:fixed; inset:0; z-index:30; background:#0006; display:flex; justify-content:flex-end; }
+.local-drawer { width:min(460px,100vw); height:100dvh; overflow:auto; padding:24px; background:var(--panel); border-left:1px solid var(--line); }
+.local-drawer h2 { margin:0; }
+.local-drawer h3 { font-size:14px; margin:22px 0 6px; }

@@ -63,17 +63,17 @@ function ScoreOverview({ assessments, zh }: { assessments: Assessment[]; zh: boo
   const weight = graded.reduce((sum, item) => sum + item.weightValue!, 0);
   const earned = graded.reduce((sum, item) => sum + item.weightValue! * item.score! / item.outOf!, 0);
   const average = weight ? earned / weight * 100 : undefined;
-  return <section className="card local-score" aria-label={zh ? '分数构成' : 'Score structure'}>
+  return <section className="card score" aria-label={zh ? '分数构成' : 'Score structure'}>
     <svg className="donut" viewBox="0 0 170 170" role="img" aria-label={zh ? '已确认成绩' : 'Confirmed grades'}>
       <circle className="track" cx="85" cy="85" r="70" />
       {weight > 0 && <circle cx="85" cy="85" r="70" fill="none" stroke="#e4c64d" strokeWidth="24" strokeDasharray={`${Math.min(earned, 100) * 4.398} 439.8`} transform="rotate(-90 85 85)" />}
       <text x="85" y="90" className="total">{weight ? earned.toFixed(1) : '—'}</text><text x="85" y="110" className="caption">{zh ? '已确认 / 100' : 'confirmed / 100'}</text>
     </svg>
-    <div className="local-score-content"><h2>{zh ? '分数构成' : 'Score structure'}</h2><div className="facts">
+    <div><div className="facts">
       <div><div className="v">{average === undefined ? '—' : `${average.toFixed(1)}%`}</div><div className="muted">{zh ? '当前平均' : 'Current average'}</div></div>
       <div><div className="v">{weight ? `${weight.toFixed(2).replace(/\.00$/, '')}%` : '—'}</div><div className="muted">{zh ? '已确认出分占比' : 'Confirmed graded weight'}</div></div>
       <div><div className="v small">{zh ? '权重或计分规则待核' : 'Weights or grading rules unverified'}</div><label className="inline muted">{zh ? '期末需要 · 目标' : 'Final needed · target'} <select value={target} onChange={event => setTarget(event.target.value)}>{['H1', 'H2A', 'H2B', 'H3', 'P'].map(band => <option key={band}>{band}</option>)}</select></label></div>
-    </div><p className="muted">{zh ? '只计算有明确单项权重、分数和满分的项目；未包含其他已出分项目，不代表最终成绩。' : 'Only items with verified individual weight and score are included; other grades may be missing.'}</p></div>
+    </div><div className="key"><span><i className="earned" />{zh ? '已得' : 'Earned'}</span><span><i className="not-earned" />{zh ? '未得' : 'Not earned'}</span></div><p className="muted">{zh ? '仅计算已确认单项权重和分数，不代表最终成绩。' : 'Only confirmed individual weights and scores are included.'}</p></div>
   </section>;
 }
 
@@ -85,6 +85,8 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const [capacity, setCapacity] = useState(() => { try { const n = Number(localStorage.getItem(capacityKey)); return Number.isFinite(n) && n > 0 && n <= 1440 ? n : 120; } catch { return 120; } });
   const [week, setWeek] = useState(() => { const today = localDay(); return addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)); });
   const [chosen, setChosen] = useState<Assessment>();
+  const [mode, setMode] = useState<'plan' | 'month'>('plan');
+  const [courseTab, setCourseTab] = useState<'assessments' | 'revision'>('assessments');
   const [saveError, setSaveError] = useState(false);
   useEffect(() => {
     let live = true;
@@ -124,49 +126,79 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     if (!/^\d{4}-\d{2}-\d{2}$/.test(due) || !Number.isFinite(minutes) || minutes <= 0 || minutes > 100000) return;
     if (saveWork([...work.filter(item => item.key !== chosen.key), { key: chosen.key, courseId: selected.course.id, courseCode: selected.course.subjectCode, title: chosen.name, due, minutes }])) setChosen(undefined);
   }
-  if (courseId) return <>
-    <button onClick={onBack}>← {zh ? '返回周计划' : 'Back to week'}</button>
+  if (courseId) return <div className="course-page">
+    <button className="crumb" onClick={onBack}>← {zh ? '本周' : 'This week'}</button>
     {error && <p className="needs">{error}</p>}
-    {selected ? <div className="local-course-detail">
-      <div className="page-heading"><div><p className="muted">{selected.course.subjectCode} · {selected.course.term}</p><h1>{selected.course.name}</h1></div></div>
+    {selected ? <>
+      <div className="chead"><h1>{selected.course.subjectCode}</h1><span className="muted">{selected.course.name}</span><small>{selected.course.term}</small></div>
       {!selected.available && <p className="needs">{zh ? '这门课尚无可用的同步结果。' : 'No sync result is available for this course yet.'}</p>}
-      {syncIssues.filter(item => item.id === selected.course.id && item.status === 'failed').map(item => <p className="needs" key={item.id}>{zh ? '最近一次同步未能完成；如果下方有资料，可能来自之前的结果。' : 'The latest sync failed; any information below may be from an earlier result.'} {item.reason}</p>)}
+      {syncIssues.filter(item => item.id === selected.course.id && item.status === 'failed').map(item => <p className="needs" key={item.id}>{zh ? '最近一次同步未完成，以下资料可能来自之前的结果。' : 'The latest sync failed; information may be from an earlier result.'} {item.reason}</p>)}
       {selected.available && <ScoreOverview assessments={selected.assessments} zh={zh} />}
-      {!!selected.groups.length && <section className="card"><h2>{zh ? '分数构成' : 'Score structure'}</h2><p className="muted">{zh ? '以下是来源中的分组权重；可能包含重复或冲突，暂不自动合计。' : 'Source group weights may overlap or conflict; totals are not calculated.'}</p>
-        {selected.groups.map((group, index) => <div className="local-group" key={index}><span>{text(group['名称'] ?? group['组名原文'] ?? group['组名']) || '—'}</span><strong>{text(group['课程占比'] ?? group['权重'] ?? group['页面原文权重']) || '待核'}{typeof (group['课程占比'] ?? group['权重'] ?? group['页面原文权重']) === 'number' ? '%' : ''}</strong></div>)}</section>}
-      <section className="card"><h2>{zh ? '考核项目' : 'Assessments'}</h2>
+      <section className="policy" title={zh ? '该功能尚未接入' : 'Not connected yet'}><label className="inline">{zh ? 'AI 政策' : 'AI policy'} <select disabled aria-label={zh ? 'AI 政策' : 'AI policy'}><option>{zh ? '未记录' : 'Not recorded'}</option></select></label><label className="inline">{zh ? '默认等级' : 'Default level'} <select disabled aria-label={zh ? '默认等级' : 'Default level'}><option>{zh ? '未接入' : 'Not connected'}</option></select></label></section>
+      <div className="tabs" role="tablist"><button role="tab" aria-selected={courseTab === 'assessments'} onClick={() => setCourseTab('assessments')}>{zh ? '考核' : 'Assessments'}</button><button role="tab" aria-selected={courseTab === 'revision'} onClick={() => setCourseTab('revision')}>{zh ? '复习' : 'Revision'}</button></div>
+      {courseTab === 'assessments' ? <div className="assessment-list">
+        <div className="arow head" aria-hidden="true"><span>{zh ? '名称' : 'Name'}</span><span>{zh ? '截止' : 'Due'}</span><span className="num">{zh ? '权重' : 'Weight'}</span><span className="num">{zh ? '分数' : 'Score'}</span><span>{zh ? '状态' : 'Status'}</span><span>{zh ? '排期' : 'Plan'}</span></div>
         {!selected.assessments.length && <p className="muted">{zh ? '暂未获取考核项目。' : 'No assessments found yet.'}</p>}
-        {[...new Set(selected.assessments.map(item => item.group))].map(group => <div key={group || 'ungrouped'} className="local-assessment-group">
-          <div className="ghead"><b>{group || (zh ? '未归组考核' : 'Other assessments')}</b></div>
-          {selected.assessments.filter(item => item.group === group).map(item => <article className="local-assessment" key={item.key}>
-          <div><strong>{item.name}</strong>{item.link && <> · <a href={item.link} target="_blank" rel="noreferrer">{zh ? '查看来源' : 'Source'}</a></>}
-            <p className="muted">{zh ? '截止时间' : 'Due'}: {item.due || (zh ? '未知' : 'Unknown')} · {zh ? '课程占比' : 'Weight'}: {item.weight || (zh ? '待核' : 'Unverified')} · {zh ? '成绩' : 'Score'}: {item.score === undefined ? '—' : `${item.score}${item.outOf !== undefined ? ` / ${item.outOf}` : ''}`}</p>
-            {item.status && <small>{item.status}</small>}{item.caution && <p className="local-caution">{zh ? '可能是替代或特殊安排，请先确认是否适用于你，再决定是否排期。' : 'This may be an alternative assessment; confirm it applies before scheduling.'}</p>}</div>
-          <button onClick={() => setChosen(item)}>{work.some(entry => entry.key === item.key) ? (zh ? '修改排期' : 'Edit plan') : (zh ? '加入排期' : 'Plan')}</button>
-        </article>)}</div>)}
-      </section>
-      {chosen && <section className="card"><h2>{zh ? '安排学习' : 'Plan study'} · {chosen.name}</h2><p className="muted">{zh ? '请根据来源确认日期，并填写你预计的学习时间；系统按每日可用时间分配。' : 'Confirm the date from the source and enter your estimated study time.'}</p>
-        <form key={chosen.key} onSubmit={schedule} className="local-plan-form"><label>{zh ? '截止日期' : 'Due date'}<input name="due" type="date" required defaultValue={work.find(item => item.key === chosen.key)?.due} /></label>
-          <label>{zh ? '预计学习分钟数' : 'Estimated minutes'}<input name="minutes" type="number" min="1" max="100000" required defaultValue={work.find(item => item.key === chosen.key)?.minutes} /></label>
-          <div><button className="primary" type="submit">{zh ? '保存并排期' : 'Save and plan'}</button> <button type="button" onClick={() => setChosen(undefined)}>{zh ? '取消' : 'Cancel'}</button></div></form></section>}
-      {!!selected.materials.length && <section className="card"><h2>{zh ? '课程资料' : 'Course materials'}</h2><ul className="local-materials">{selected.materials.map((item, index) => { const link = url(item['原始链接'] ?? item['链接']); const name = text(item['名称']) || '资料'; return <li key={index}>{link ? <a href={link} target="_blank" rel="noreferrer">{name}</a> : name}</li>; })}</ul></section>}
-      {!!selected.issues.filter(item => !/按要求|按用户.*限制|没有下载|不读取|not download/i.test(text(item['原因']))).length && <details className="card"><summary>{zh ? '课程资料与待核信息' : 'Course notes and missing information'}</summary>{selected.issues.filter(item => !/按要求|按用户.*限制|没有下载|不读取|not download/i.test(text(item['原因']))).map((item, index) => <p key={index}><strong>{text(item['项目'])}</strong> {text(item['原因'])}</p>)}</details>}
-    </div> : <p>{zh ? '课程不可用或未选中。' : 'Course unavailable or not selected.'}</p>}
+        {[...new Set([...selected.groups.map(group => text(group['名称'] ?? group['组名原文'] ?? group['组名'])), ...selected.assessments.map(item => item.group)])].filter(group => group !== '总计').map(group => {
+          const raw = selected.groups.find(item => text(item['名称'] ?? item['组名原文'] ?? item['组名']) === group);
+          const rawWeight = raw?.['课程占比'] ?? raw?.['权重'] ?? raw?.['页面原文权重'];
+          const rows = selected.assessments.filter(item => item.group === group);
+          return <div className="agroup" key={group || 'ungrouped'}>
+            <div className="ghead"><b>{group || (zh ? '不属于任何分数构成' : 'Other assessments')}</b><span className="muted">{rawWeight === undefined ? (zh ? '权重待核' : 'Weight unverified') : `${text(rawWeight)}${typeof rawWeight === 'number' ? '%' : ''}`}</span></div>
+            {rows.map(item => <button key={item.key} className="arow" onClick={() => setChosen(item)}>
+              <span className="aname">{item.name}{item.caution && <span className="kind">{zh ? '可能为替代' : 'Possible alternative'}</span>}</span>
+              <span className="muted">{item.due || (zh ? '未知' : 'Unknown')}</span><span className="num">{item.weight || (zh ? '待核' : 'Unverified')}</span>
+              <span className="num points">{item.score === undefined ? '—' : `${item.score}${item.outOf !== undefined ? ` / ${item.outOf}` : ''}`}</span>
+              <span>{item.status || (zh ? '未知' : 'Unknown')}</span><span>{work.some(entry => entry.key === item.key) ? (zh ? '已排期' : 'Planned') : '—'}</span>
+            </button>)}
+          </div>;
+        })}
+        <p className="muted">{zh ? '分组来自原始页面，可能存在重复或冲突；单项权重待确认时不参与成绩计算。' : 'Source groups may overlap or conflict; unverified weights are excluded from grade calculations.'}</p>
+      </div> : <section><p className="muted">{zh ? '复习功能尚未接入。' : 'Revision is not connected yet.'}</p>
+        {!!selected.materials.length && <><h2>{zh ? '课程资料' : 'Materials'}</h2><ul className="linked">{selected.materials.map((item, index) => { const link = url(item['原始链接'] ?? item['链接']); const name = text(item['名称']) || '资料'; return <li key={index}>{link ? <a href={link} target="_blank" rel="noreferrer">{name}</a> : name}</li>; })}</ul></>}</section>}
+      {chosen && <div className="local-drawer-overlay" role="presentation"><section className="local-drawer" role="dialog" aria-modal="true" aria-label={chosen.name}>
+        <div className="dialog-heading"><h2>{chosen.name}</h2><button onClick={() => setChosen(undefined)}>{zh ? '关闭' : 'Close'}</button></div>
+        {chosen.caution && <p className="needs">{zh ? '可能是替代或特殊安排，请先确认是否适用于你。' : 'This may be an alternative assessment; confirm it applies.'}</p>}
+        <div className="field"><span className="k">{zh ? '截止' : 'Due'}</span><span>{chosen.due || '—'}</span></div>
+        <div className="field"><span className="k">{zh ? '权重' : 'Weight'}</span><span>{chosen.weight || (zh ? '待核' : 'Unverified')}</span></div>
+        <div className="field"><span className="k">{zh ? '状态' : 'Status'}</span><span>{chosen.status || '—'}</span></div>
+        {chosen.link && <p><a href={chosen.link} target="_blank" rel="noreferrer">{zh ? '查看来源' : 'Source'}</a></p>}
+        <h3>{zh ? '安排学习' : 'Plan study'}</h3><p className="muted">{zh ? '确认截止日期并填写预计学习时间。' : 'Confirm the due date and estimated study time.'}</p>
+        <form key={chosen.key} onSubmit={schedule}><label>{zh ? '截止日期' : 'Due date'}<input name="due" type="date" required defaultValue={work.find(item => item.key === chosen.key)?.due} /></label><label>{zh ? '预计学习分钟数' : 'Estimated minutes'}<input name="minutes" type="number" min="1" max="100000" required defaultValue={work.find(item => item.key === chosen.key)?.minutes} /></label><button className="primary" type="submit">{zh ? '保存并排期' : 'Save and plan'}</button></form>
+      </section></div>}
+      {!!selected.issues.filter(item => !/按要求|按用户.*限制|没有下载|不读取|not download/i.test(text(item['原因']))).length && <details><summary>{zh ? '课程待核信息' : 'Course notes'}</summary>{selected.issues.filter(item => !/按要求|按用户.*限制|没有下载|不读取|not download/i.test(text(item['原因']))).map((item, index) => <p key={index}><strong>{text(item['项目'])}</strong> {text(item['原因'])}</p>)}</details>}
+    </> : <p>{zh ? '课程不可用或未选中。' : 'Course unavailable or not selected.'}</p>}
     {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}
-  </>;
-  return <div className="local-planning">
+  </div>;
+  const today = localDay();
+  const dayName = (day: string) => new Intl.DateTimeFormat(language, { weekday: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`));
+  const shortDate = (day: string) => new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`));
+  const currentMonth = week.slice(0, 7);
+  const first = `${currentMonth}-01`;
+  const monthStart = addDays(first, -((new Date(`${first}T12:00:00Z`).getUTCDay() + 6) % 7));
+  const shift = (direction: number) => {
+    if (mode === 'plan') setWeek(addDays(week, direction * 7));
+    else { const d = new Date(`${first}T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() + direction); setWeek(d.toISOString().slice(0, 10)); }
+  };
+  return <>
     {error && <p className="needs">{error}</p>}
-    <section className="card"><div className="row-heading"><h2>{zh ? '我的课程' : 'My courses'}</h2></div>
-      {!courses.length && <p className="muted">{zh ? '同步并选择课程后，课程会显示在这里。' : 'Sync and select courses to see them here.'}</p>}
-      <div className="local-course-cards">{courses.map(item => <button key={item.course.id} className="local-course-card" onClick={() => onCourse(item.course.id)}><strong>{item.course.subjectCode}</strong><span>{item.course.name}</span><small>{item.available ? `${item.assessments.length} ${zh ? '项考核' : 'assessments'}` : (zh ? '等待课程数据' : 'Waiting for data')} →</small></button>)}</div>
-    </section>
-    <section className="card"><div className="week-toolbar"><div className="week-nav"><button onClick={() => setWeek(addDays(week, -7))}>←</button><strong>{week} — {addDays(week, 6)}</strong><button onClick={() => setWeek(addDays(week, 7))}>→</button><button onClick={() => { const day = localDay(); setWeek(addDays(day, -((new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7))); }}>{zh ? '本周' : 'Today'}</button></div>
-      <label className="inline">{zh ? '每天可用分钟' : 'Minutes per day'} <input style={{ width: 90 }} type="number" min="1" max="1440" value={capacity} onChange={event => { const value = Number(event.target.value); if (value > 0 && value <= 1440) { try { localStorage.setItem(capacityKey, String(value)); setCapacity(value); setSaveError(false); } catch { setSaveError(true); } } }} /></label></div>
-      <p className="muted">{zh ? '在课程中选择考核，填写截止日期和预计时间后，自动按截止日期与每天可用时间分配。排期按日期计算，请另外核对截止当天的具体时间。计划保存在当前浏览器。' : 'Choose an assessment, confirm its due date and estimate; time is allocated according to daily availability. Check the exact deadline time separately. Plans are saved in this browser.'}</p>
-      <div className="local-week-grid">{Array.from({ length: 7 }, (_, index) => { const day = addDays(week, index); const entries = plan.days.get(day) ?? []; return <div className="local-day" key={day}><strong>{day.slice(5)}</strong><small>{['一', '二', '三', '四', '五', '六', '日'][index]}</small>{entries.map(entry => <div className="local-plan-entry" key={entry.work.key}><b>{entry.work.courseCode}</b><span>{entry.work.title}</span><small>{entry.minutes} min</small></div>)}{!entries.length && <small>—</small>}</div>; })}</div>
-      {!!plan.overflow.length && <div className="needs"><strong>{zh ? '时间不足或截止日期已过' : 'Insufficient time or overdue'}</strong>{plan.overflow.map(item => <p key={item.work.key}>{item.work.courseCode} · {item.work.title} · {zh ? '尚未安排' : 'Unscheduled'} {item.minutes} min</p>)}</div>}
+    <div className="week-layout"><div className="week-main">
+      <div className="week-toolbar"><div className="week-nav" role="group" aria-label={zh ? '周切换' : 'Navigate weeks'}>
+        <button onClick={() => shift(-1)}>‹</button><button onClick={() => setWeek(addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)))}>{zh ? '今天' : 'Today'}</button><button onClick={() => shift(1)}>›</button><span className="range">{mode === 'plan' ? `${shortDate(week)} – ${shortDate(addDays(week, 6))}` : currentMonth}</span></div>
+        <div className="week-actions"><span className="muted">{zh ? '学期' : 'Term'}: {courses[0]?.course.term || '—'}</span><div className="seg" role="group" aria-label={zh ? '视图' : 'View'}><button aria-pressed={mode === 'plan'} onClick={() => { setWeek(addDays(week, -((new Date(`${week}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{zh ? '计划' : 'Plan'}</button><button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>{zh ? '月历' : 'Month'}</button></div><button disabled title={zh ? '手动任务尚未接入' : 'Manual tasks are not connected yet'}>{zh ? '添加任务' : 'Add task'}</button></div></div>
+      <div className="card notice"><label className="inline">{zh ? '每天可用分钟' : 'Minutes per day'} <input style={{ width: 90 }} type="number" min="1" max="1440" value={capacity} onChange={event => { const value = Number(event.target.value); if (value > 0 && value <= 1440) { try { localStorage.setItem(capacityKey, String(value)); setCapacity(value); setSaveError(false); } catch { setSaveError(true); } } }} /></label> <small>{zh ? '在课程中选择考核并确认截止日期和预计时间。' : 'Choose an assessment and confirm its due date and estimate.'}</small></div>
+      {mode === 'plan' ? <div className="card week-card"><div className="week-grid">{Array.from({ length: 7 }, (_, index) => {
+        const day = addDays(week, index); const entries = plan.days.get(day) ?? []; const due = work.filter(item => item.due === day && courses.some(course => course.course.id === item.courseId));
+        return <section key={day} className={`day${day === today ? ' today' : ''}${day < today ? ' past' : ''}`}>
+          <div className="day-head"><b>{dayName(day)}</b><span className="hours-used">{Math.round(entries.reduce((sum, item) => sum + item.minutes, 0) / 6) / 10} / {Math.round(capacity / 6) / 10} {zh ? '小时' : 'h'}</span></div>
+          <div className="day-deadlines">{due.map(item => <span className="due" key={item.key}>{zh ? '截止' : 'Due'} · {item.courseCode} · {item.title}</span>)}</div>
+          <div className="day-items">{entries.length ? entries.map(entry => <button className="blk" key={entry.work.key} onClick={() => onCourse(entry.work.courseId)}><span className="tm">{entry.minutes} min</span><span className="tt">{entry.work.title}</span><span className="cr">{entry.work.courseCode}</span></button>) : <span className="muted empty-day">{zh ? '无计划' : 'No plan'}</span>}</div>
+        </section>; })}</div><div className="plan-lists"><section className="plan-list"><h3>{zh ? '超出 — 截止前排不下' : 'Overflow'}</h3>{plan.overflow.length ? <ul>{plan.overflow.map(item => <li key={item.work.key}>{item.work.courseCode} · {item.work.title} · {item.minutes} min</li>)}</ul> : <p className="muted">{zh ? '无。' : 'None.'}</p>}</section><section className="plan-list"><h3>{zh ? '未预估 — 预估后才会排进计划' : 'Unestimated'}</h3><p className="muted">{zh ? '在课程页选择考核并填写预计时间。' : 'Choose an assessment and provide an estimate.'}</p></section></div></div>
+        : <div className="card month" role="grid"><div className="month-row" role="row">{Array.from({ length: 7 }, (_, i) => <div className="dow" key={i}>{dayName(addDays('2026-01-05', i)).replace(/\d+/g, '')}</div>)}</div>{Array.from({ length: 6 }, (_, row) => <div className="month-row" role="row" key={row}>{Array.from({ length: 7 }, (_, col) => { const day = addDays(monthStart, row * 7 + col); return <div role="gridcell" className={`cell${day.slice(0, 7) === currentMonth ? '' : ' out'}${day === today ? ' today' : ''}`} key={day}><button className="num" onClick={() => { setWeek(addDays(day, -((new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{Number(day.slice(8))}</button>{work.filter(item => item.due === day && courses.some(course => course.course.id === item.courseId)).map(item => <span className="due" key={item.key}>{item.courseCode} · {item.title}</span>)}</div>; })}</div>)}</div>}
       {!!work.length && <details><summary>{zh ? '已加入的学习任务' : 'Planned work'}</summary>{work.filter(item => courses.some(course => course.course.id === item.courseId)).map(item => <div className="local-group" key={item.key}><span>{item.courseCode} · {item.title} · {item.due} · {item.minutes} min</span><button onClick={() => saveWork(work.filter(row => row.key !== item.key))}>{zh ? '移除' : 'Remove'}</button></div>)}</details>}
       {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}
-    </section>
-  </div>;
+    </div><aside className="rail card"><h2>{zh ? '课程' : 'Courses'}</h2>{courses.length ? courses.map(item => <button key={item.course.id} className="crs" onClick={() => onCourse(item.course.id)}>
+      <svg className="ring unknown" viewBox="0 0 44 44" role="img" aria-label={zh ? '部分权重未知' : 'Some weights unverified'}><circle className="bg" cx="22" cy="22" r="18" /></svg>
+      <span><b>{item.course.subjectCode}</b><small className="crs-name">{item.course.name}</small><small>{zh ? '下一个' : 'Next'}: {work.filter(entry => entry.courseId === item.course.id && entry.due >= today).sort((a, b) => a.due.localeCompare(b.due))[0]?.title ?? (zh ? '无' : 'None')}</small></span></button>) : <p className="muted">{zh ? '同步并选择课程后显示。' : 'Sync and select courses.'}</p>}</aside></div>
+  </>;
 }
