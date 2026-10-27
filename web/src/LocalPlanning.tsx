@@ -36,6 +36,20 @@ function explicitPercent(value: unknown): number | undefined {
   const result = Number(match[1]);
   return result >= 0 && result <= 100 ? result : undefined;
 }
+function statedPercent(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  const match = /^\s*(\d+(?:\.\d+)?)\s*%/.exec(value);
+  if (!match) return undefined;
+  const result = Number(match[1]);
+  return result >= 0 && result <= 100 ? result : undefined;
+}
+function pointsValue(value: unknown): number | undefined {
+  if (typeof value === 'string') {
+    const match = /^\s*(\d+(?:\.\d+)?)\s*(?:points?|分)\s*$/i.exec(value);
+    if (match) return Number(match[1]);
+  }
+  return number(value);
+}
 function kindOf(value: string, name: string): Kind {
   const explicit = value.trim().toLowerCase();
   if (/^(不计分|ungraded|practice|survey)$/.test(explicit)) return 'ungraded';
@@ -85,14 +99,18 @@ function normalize(course: Course, value: unknown): CourseData {
     const sourceGroup = groups.find(row => text(row['名称'] ?? row['组名原文'] ?? row['组名']) === group);
     const sourceWeight = number(sourceGroup?.['课程占比'] ?? sourceGroup?.['权重']) ?? explicitPercent(sourceGroup?.['权重'] ?? sourceGroup?.['页面原文权重']);
     const singleGroupWeight = group && groupMembers.length === 1 && numericWeight !== undefined && numericWeight > 0 && sourceWeight === numericWeight ? numericWeight : undefined;
+    const evidence = list(item['关键依据']).map(row => text(row['原文'])).join(' ');
+    const participationWeight = /^class participation\b/i.test(name) && /\(50%\)\s*continuous\s*:\s*classroom participation/i.test(evidence) ? 50 : undefined;
     const weightValue = equalFour && /^assignment\s*[1-4]$/i.test(name) ? 3.75
       : /^mid-semester test$/i.test(name) && /mid-semester test[^.]*\(10%\)/i.test(overview) ? 10
-      : explicitPercent(item['权重']) ?? singleGroupWeight;
-    const weight = weightValue === undefined ? '' : `${weightValue}%${weightValue === 3.75 && equalFour ? ' · 平均推算' : ''}`;
+      : explicitPercent(item['权重']) ?? participationWeight ?? singleGroupWeight;
+    const sourceWeightValue = statedPercent(item['权重']);
+    const weight = weightValue !== undefined ? `${weightValue}%${weightValue === 3.75 && equalFour ? ' · 平均推算' : ''}`
+      : sourceWeightValue !== undefined ? `${sourceWeightValue}% · 对应关系待核` : '';
     const result = record(item['已出成绩'] ?? item['成绩']);
     const score = number(result['分数'] ?? result['得分'] ?? item['成绩']);
     const points = record(item['满分']);
-    const outOf = number(result['满分'] ?? points['实际满分'] ?? item['满分']);
+    const outOf = pointsValue(result['满分'] ?? points['实际满分'] ?? item['满分']);
     return { key: `${course.id}:${link || `${index}:${name}`}`, name, due: text(item['截止时间']), weight, weightValue,
       sourceZero: zeroWeight(item['课程占比'] ?? item['权重']), kind: kindOf(text(item['分类'] ?? item['类型']), name),
       score, outOf, group, status: text(item['状态']), link, caution,
@@ -129,7 +147,11 @@ function WeightBreakdown({ course, assessments, zh }: { course: CourseData; asse
     return name && name !== '总计' && weight !== undefined && weight > 0 ? [{ name, weight }] : [];
   });
   const sum = components.reduce((total, item) => total + item.weight, 0);
-  const rows = components.length && sum <= 100 ? components : assessments.filter(item => !item.caution && item.weightValue !== undefined && item.weightValue > 0).map(item => ({ name: item.name, weight: item.weightValue! }));
+  const rows = components.length && sum <= 100 ? components : assessments.flatMap(item => {
+    const weight = item.weightValue ?? statedPercent(item.weight);
+    return !item.caution && weight !== undefined && weight > 0
+      ? [{ name: `${item.name}${item.weightValue === undefined ? (zh ? ' · 对应关系待核' : ' · association unverified') : ''}`, weight }] : [];
+  });
   if (!rows.length) return null;
   return <section className="weight-breakdown"><h2>{zh ? '分数占比' : 'Assessment weights'}</h2><div className="weight-breakdown-list">{rows.map((item, index) => <div className="weight-breakdown-item" key={`${item.name}-${index}`}><span>{item.name.replace(/\s*-\s*Handbook\s+\d{4}$/i, '')}</span><strong>{item.weight}%</strong></div>)}</div></section>;
 }
