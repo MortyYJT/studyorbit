@@ -306,3 +306,4 @@ button.primary:hover:enabled { background:var(--ink); opacity:.9; }
 .local-drawer { width:min(460px,100vw); height:100dvh; overflow:auto; padding:24px; background:var(--panel); border-left:1px solid var(--line); }
 .local-drawer h2 { margin:0; }
 .local-drawer h3 { font-size:14px; margin:22px 0 6px; }
+.source-group { padding:10px 4px; font-weight:400; color:var(--muted); }
