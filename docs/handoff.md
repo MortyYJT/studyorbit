@@ -8,6 +8,10 @@
 
 本地开发并保留 commit；在用户指示之前不上传 GitHub。旧项目和旧架构图可作为参考，历史设计不自动成为新项目需求。
 
+用户已决定放弃 Handbook，后续只从墨大 Canvas LMS 和 Ed 获取信息。同步是一个连续流程：点击同步获取课程列表，用户保存选课后自动继续同步所选课程；课程详情同步尚未实现。
+
+用户提供参考项目 [moodle-cli](https://github.com/bunizao/moodle-cli)：它针对 Moodle，可以参考认证、接口优先取数、按课程归档、增量同步与 Agent 接口，但不能直接当作 Canvas 适配器。同作者的 [edstem-cli](https://github.com/bunizao/edstem-cli) 是 Ed 相关参考；是否适用于墨大账户尚未验证。
+
 ## 已完成：第 0 层原型
 
 1. 前端点击“立即同步”后，Vite 开发服务器启动 macOS 课程脚本；脚本使用系统默认浏览器打开 Canvas 课程 API。也可在终端运行 `npm run sync:courses -- --browser edge` 指定浏览器。
