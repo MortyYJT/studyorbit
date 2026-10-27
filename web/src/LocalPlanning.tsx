@@ -138,6 +138,26 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     return { ...item, kind: validKind, ...(overrideWeight !== undefined && overrideWeight >= 0 && overrideWeight <= 100 ? { weightValue: overrideWeight, weight: `${overrideWeight}% · 本人确认`, sourceZero: overrideWeight === 0 } : {}),
       ...(typeof change.due === 'string' && change.due ? { due: `${change.due} · 本人确认` } : {}) };
   }) };
+  const automaticDuplicates: Record<string, Assessment[]> = {};
+  const primaryItems: Assessment[] = [];
+  for (const item of selected?.assessments ?? []) {
+    if (corrections[item.key]?.mergeInto) continue;
+    const name = item.name.toLowerCase().replace(/\s+/g, ' ').trim();
+    const match = primaryItems.find(previous => {
+      if (item.caution || previous.caution || corrections[item.key] || corrections[previous.key]
+        || work.some(entry => entry.key === item.key || entry.key === previous.key)) return false;
+      if (item.score !== undefined && (previous.score === undefined || item.score !== previous.score || item.outOf !== previous.outOf)) return false;
+      if (item.weightValue !== undefined && item.weightValue !== previous.weightValue) return false;
+      if (item.due && (!previous.due || item.due !== previous.due)) return false;
+      if (item.link && item.link === previous.link) return true;
+      if (item.kind !== 'assignment' || previous.kind !== 'assignment' || !item.link || !previous.link
+        || previous.name.toLowerCase().replace(/\s+/g, ' ').trim() !== name) return false;
+      const platforms = [item.link, previous.link].map(link => link.includes('edstem.org') ? 'ed' : link.includes('canvas.lms.unimelb.edu.au') ? 'canvas' : 'other');
+      if (!platforms.includes('ed') || !platforms.includes('canvas')) return false;
+      return true;
+    });
+    if (match) (automaticDuplicates[match.key] ??= []).push(item); else primaryItems.push(item);
+  }
   function saveCorrections(next: Record<string, Correction>): boolean { try { localStorage.setItem(correctionKey, JSON.stringify(next)); setCorrections(next); setSaveError(false); return true; } catch { setSaveError(true); return false; } }
   const plan = useMemo(() => {
     const days = new Map<string, { work: Work; minutes: number }[]>();
@@ -169,8 +189,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       <div className="chead"><h1>{selected.course.subjectCode}</h1><span className="muted">{selected.course.name}</span><small>{selected.course.term}</small></div>
       {!selected.available && <p className="needs">{zh ? '这门课尚无可用的同步结果。' : 'No sync result is available for this course yet.'}</p>}
       {syncIssues.filter(item => item.id === selected.course.id && item.status === 'failed').map(item => <p className="needs" key={item.id}>{zh ? '最近一次同步未完成，以下资料可能来自之前的结果。' : 'The latest sync failed; information may be from an earlier result.'} {item.reason}</p>)}
-      {selected.available && <ScoreOverview assessments={selected.assessments.filter(item => !corrections[item.key]?.mergeInto)} zh={zh} />}
-      <section className="policy" title={zh ? '该功能尚未接入' : 'Not connected yet'}><label className="inline">{zh ? 'AI 政策' : 'AI policy'} <select disabled aria-label={zh ? 'AI 政策' : 'AI policy'}><option>{zh ? '未记录' : 'Not recorded'}</option></select></label><label className="inline">{zh ? '默认等级' : 'Default level'} <select disabled aria-label={zh ? '默认等级' : 'Default level'}><option>{zh ? '未接入' : 'Not connected'}</option></select></label></section>
+      {selected.available && <ScoreOverview assessments={primaryItems.filter(item => !item.caution)} zh={zh} />}
       <div className="tabs" role="tablist"><button role="tab" aria-selected={courseTab === 'assessments'} onClick={() => setCourseTab('assessments')}>{zh ? '考核' : 'Assessments'}</button><button role="tab" aria-selected={courseTab === 'revision'} onClick={() => setCourseTab('revision')}>{zh ? '复习' : 'Revision'}</button></div>
       {courseTab === 'assessments' ? <div className="assessment-list">
         <div className="arow head" aria-hidden="true"><span>{zh ? '名称' : 'Name'}</span><span>{zh ? '截止' : 'Due'}</span><span className="num">{zh ? '权重' : 'Weight'}</span><span className="num">{zh ? '分数' : 'Score'}</span><span>{zh ? '状态' : 'Status'}</span><span>{zh ? '排期' : 'Plan'}</span></div>
@@ -181,17 +200,16 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
           const groupName = (group: RecordValue) => text(group['名称'] ?? group['组名原文'] ?? group['组名']);
           const groupWeight = (group: RecordValue) => group['课程占比'] ?? group['权重'] ?? group['页面原文权重'];
           const all = selected.assessments;
-          const visible = all.filter(item => !corrections[item.key]?.mergeInto);
+          const visible = primaryItems;
           const row = (item: Assessment) => <details key={item.key} className="assessment-entry"><summary className="arow">
-            <span className="aname">{item.name}{item.caution && <span className="kind">{zh ? '可能为替代' : 'Possible alternative'}</span>}</span>
-            <span className="muted">{item.due || (zh ? '未知' : 'Unknown')}</span><span className="num">{item.sourceZero ? '0%' : item.weight || (zh ? '待确认' : 'Unconfirmed')}</span>
+            <span className="aname">{item.name}</span>
+            <span className="muted">{item.due || (zh ? '未知' : 'Unknown')}</span><span className="num">{item.sourceZero ? '0%' : item.weight || '—'}</span>
             <span className="num points">{item.score === undefined ? '—' : `${item.score}${item.outOf !== undefined ? ` / ${item.outOf}` : ''}`}</span>
-            <span>{item.status || (zh ? '未知' : 'Unknown')}</span><span>{work.some(entry => entry.key === item.key) ? (zh ? '已排期' : 'Planned') : '—'}</span></summary>
+            <span>{item.score !== undefined ? (zh ? '已出分' : 'Graded') : '—'}</span><span>{work.some(entry => entry.key === item.key) ? (zh ? '已排期' : 'Planned') : '—'}</span></summary>
             <div className="assessment-expanded">
-              {item.group && <p>{zh ? '原始分组' : 'Source group'}: {item.group}</p>}
-              {item.link && <p><a href={item.link} target="_blank" rel="noreferrer">{zh ? '查看来源' : 'Source'}</a></p>}
+              {item.link && <p><a href={item.link} target="_blank" rel="noreferrer">{zh ? '查看来源' : 'Source'}</a>{(automaticDuplicates[item.key] ?? []).map(other => other.link && other.link !== item.link ? <> · <a key={other.key} href={other.link} target="_blank" rel="noreferrer">{other.link.includes('edstem.org') ? 'Ed' : 'Canvas'}</a></> : null)}</p>}
               {all.filter(other => corrections[other.key]?.mergeInto === item.key).map(other => <div key={other.key} className="local-group"><span>{zh ? '已合并来源' : 'Merged source'}: {other.name} {other.link && <a href={other.link} target="_blank" rel="noreferrer">{zh ? '查看' : 'View'}</a>}</span><button onClick={() => { const next = { ...corrections }; const change = { ...next[other.key] }; delete change.mergeInto; next[other.key] = change; saveCorrections(next); }}>{zh ? '撤销合并' : 'Undo merge'}</button></div>)}
-              <form className="local-confirm" key={item.key} onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); const rawWeight = String(data.get('weight') ?? '').trim(); const newWeight = rawWeight === '' ? undefined : Number(rawWeight); if (newWeight !== undefined && (!Number.isFinite(newWeight) || newWeight < 0 || newWeight > 100)) return;
+              <details className="assessment-edit"><summary>{zh ? '编辑或合并' : 'Edit or merge'}</summary><form className="local-confirm" key={item.key} onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); const rawWeight = String(data.get('weight') ?? '').trim(); const newWeight = rawWeight === '' ? undefined : Number(rawWeight); if (newWeight !== undefined && (!Number.isFinite(newWeight) || newWeight < 0 || newWeight > 100)) return;
                 const next: Correction = { ...corrections[item.key], kind: String(data.get('kind')) as Kind }; if (newWeight === undefined) delete next.weight; else next.weight = newWeight;
                 const due = String(data.get('due') ?? ''); if (due) next.due = due; else delete next.due; saveCorrections({ ...corrections, [item.key]: next }); }}>
                 <label>{zh ? '确认类型' : 'Confirm type'}<select name="kind" defaultValue={item.kind}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'ungraded', 'unknown'] as Kind[]).map(kind => <option value={kind} key={kind}>{labels[kind]}</option>)}</select></label>
@@ -199,35 +217,27 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
                 <label>{zh ? '确认日期（可选）' : 'Confirm date (optional)'}<input name="due" type="date" defaultValue={corrections[item.key]?.due} /></label><button type="submit">{zh ? '保存确认' : 'Save'}</button>
               </form>
               <div className="local-merge"><label>{zh ? '如果是同一个考核，合并到' : 'If this is the same assessment, merge into'}<select defaultValue="" onChange={event => { const target = event.target.value; if (!target) return; saveCorrections({ ...corrections, [item.key]: { ...corrections[item.key], mergeInto: target } }); }}><option value="">{zh ? '选择考核' : 'Choose assessment'}</option>{visible.filter(other => other.key !== item.key && !all.some(child => corrections[child.key]?.mergeInto === item.key)).map(other => <option value={other.key} key={other.key}>{other.name}</option>)}</select></label><small>{zh ? '仅由你确认相同后合并；来源保留，可撤销。已有排期不会自动移除，请检查重复任务。' : 'Merge only after confirming; sources remain and the merge can be undone. Existing plans are not removed.'}</small></div>
-              <button onClick={() => setChosen(item)}>{zh ? '安排学习' : 'Plan study'}</button>
+              </details><button onClick={() => setChosen(item)}>{zh ? '安排学习' : 'Plan study'}</button>
             </div></details>;
-          const groups = selected.groups.filter(group => groupName(group) !== '总计');
-          const isHurdle = (group: RecordValue) => /hurdle|门槛|must attend/i.test(groupName(group));
-          const groupedItem = (kind: Kind) => visible.filter(item => kind === 'participation' && item.hurdle || item.kind === kind && !item.hurdle && !item.sourceZero && item.kind !== 'ungraded');
-          const visibleGroups = (kind: Kind) => groups.filter(group => kind === 'participation' && isHurdle(group) || !isHurdle(group) && !zeroWeight(groupWeight(group)) && kindOf('', groupName(group)) === kind);
-          const foldedGroups = groups.filter(group => zeroWeight(groupWeight(group)) && !isHurdle(group));
-          const foldedItems = visible.filter(item => !item.hurdle && (item.sourceZero || item.kind === 'ungraded'));
+          const groupedItem = (kind: Kind) => visible.filter(item => !item.caution && (kind === 'participation' && item.hurdle || item.kind === kind && !item.hurdle && !item.sourceZero && item.kind !== 'ungraded'));
+          const foldedItems = visible.filter(item => !item.caution && !item.hurdle && (item.sourceZero || item.kind === 'ungraded'));
+          const alternatives = visible.filter(item => item.caution);
           return <>
-            {kinds.map(kind => { const items = groupedItem(kind); const components = visibleGroups(kind); if (!items.length && !components.length) return null;
-              const open = kind !== 'participation' || items.some(item => item.hurdle) || components.some(group => /hurdle|门槛|must attend/i.test(groupName(group)));
-              return <details className="agroup category" key={kind} open={open || undefined}><summary className="ghead"><b>{labels[kind]}</b><small>{items.length}</small></summary>
-                {items.map(row)}
-                {components.length > 0 && <details className="source-components"><summary>{zh ? '原始分数组（可能重叠）' : 'Source groups (may overlap)'}</summary>{components.map((group, index) => <div className="ghead source-group" key={`${groupName(group)}-${index}`}><span>{groupName(group) || (zh ? '未命名分组' : 'Unnamed group')}</span><span className="muted">{groupWeight(group) === undefined || groupWeight(group) === null ? (zh ? '权重未知' : 'Weight unknown') : `${text(groupWeight(group))}${typeof groupWeight(group) === 'number' ? '%' : ''}`}</span></div>)}</details>}
-              </details>; })}
-            {(foldedGroups.length > 0 || foldedItems.length > 0) && <details className="no-marks"><summary>{zh ? '不计分及 0% 项目' : 'Ungraded and 0%'} ({foldedItems.length + foldedGroups.length})</summary>
-              {foldedGroups.map((group, index) => <div className="ghead source-group" key={`${groupName(group)}-${index}`}><span>{groupName(group)}</span><span className="muted">0%</span></div>)}
-              {foldedItems.map(row)}
-            </details>}
+            {kinds.map(kind => { const items = groupedItem(kind); if (!items.length) return null;
+              const open = kind !== 'participation' || items.some(item => item.hurdle);
+              return <details className="agroup category" key={kind} open={open || undefined}><summary className="ghead"><b>{labels[kind]}</b><small>{items.length}</small></summary>{items.map(row)}</details>; })}
+            {foldedItems.length > 0 && <details className="no-marks"><summary>{zh ? '不计分' : 'Ungraded'} ({foldedItems.length})</summary>{foldedItems.map(row)}</details>}
+            {alternatives.length > 0 && <details className="no-marks"><summary>{zh ? '特殊安排' : 'Alternative arrangements'} ({alternatives.length})</summary>{alternatives.map(row)}</details>}
           </>;
         })()}
-        <p className="muted">{zh ? '点击项目可确认类型、占比和日期，也可以合并重复来源；原始分组可能重叠。' : 'Source groups may overlap or conflict; unverified weights are excluded from grade calculations.'}</p>
+
       </div> : <section><p className="muted">{zh ? '复习功能尚未接入。' : 'Revision is not connected yet.'}</p>
         {!!selected.materials.length && <><h2>{zh ? '课程资料' : 'Materials'}</h2><ul className="linked">{selected.materials.map((item, index) => { const link = url(item['原始链接'] ?? item['链接']); const name = text(item['名称']) || '资料'; return <li key={index}>{link ? <a href={link} target="_blank" rel="noreferrer">{name}</a> : name}</li>; })}</ul></>}</section>}
       {chosen && <div className="local-drawer-overlay" role="presentation"><section className="local-drawer" role="dialog" aria-modal="true" aria-label={chosen.name}>
         <div className="dialog-heading"><h2>{chosen.name}</h2><button onClick={() => setChosen(undefined)}>{zh ? '关闭' : 'Close'}</button></div>
-        {chosen.caution && <p className="needs">{zh ? '可能是替代或特殊安排，请先确认是否适用于你。' : 'This may be an alternative assessment; confirm it applies.'}</p>}
+        {chosen.caution && <p className="needs">{zh ? '特殊安排：请核对是否适用于你。' : 'Alternative arrangement: check whether it applies to you.'}</p>}
         <div className="field"><span className="k">{zh ? '截止' : 'Due'}</span><span>{chosen.due || '—'}</span></div>
-        <div className="field"><span className="k">{zh ? '权重' : 'Weight'}</span><span>{chosen.weight || (zh ? '待核' : 'Unverified')}</span></div>
+        <div className="field"><span className="k">{zh ? '权重' : 'Weight'}</span><span>{chosen.weight || '—'}</span></div>
         <div className="field"><span className="k">{zh ? '状态' : 'Status'}</span><span>{chosen.status || '—'}</span></div>
         {chosen.link && <p><a href={chosen.link} target="_blank" rel="noreferrer">{zh ? '查看来源' : 'Source'}</a></p>}
         <h3>{zh ? '安排学习' : 'Plan study'}</h3><p className="muted">{zh ? '确认截止日期并填写预计学习时间。' : 'Confirm the due date and estimated study time.'}</p>
