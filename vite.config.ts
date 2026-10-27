@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { filterSubjects } from './scripts/lib/course-list.mjs';
@@ -17,6 +19,42 @@ export default defineConfig({
     configureServer(server) {
       let syncRunning = false;
       const courseRunner = createCourseSyncRunner(projectDir);
+      server.middlewares.use('/api/local/course-reports', async (req, res) => {
+        const remote = req.socket.remoteAddress;
+        if (!remote || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)) { res.writeHead(403).end(); return; }
+        if (req.method !== 'GET') { res.writeHead(405).end(); return; }
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        try {
+          const input = JSON.parse(await readFile(courseFile, 'utf8'));
+          if (!Array.isArray(input.courses)) throw new Error('Invalid course file');
+          const candidates = input.courses.filter((item: unknown): item is { id: string; name: string; code?: unknown; term?: string | null } =>
+            !!item && typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string' && typeof (item as { name?: unknown }).name === 'string');
+          const courses = filterSubjects(candidates);
+          const reports = await Promise.all(courses.map(async course => {
+            if (!/^[A-Z]{4}[1-9]\d{4}$/.test(course.subjectCode)) return null;
+            const term = typeof course.term === 'string' ? course.term : '';
+            const match = /(20\d{2}).*?(?:semester|sem)\s*([12])/i.exec(term);
+            const label = match ? `${match[1]} S${match[2]}` : term.replace(/[^\w\u4e00-\u9fff -]/g, '').trim().slice(0, 50) || '未知学期';
+            const dir = join(homedir(), 'Desktop', `墨尔本大学 ${label}`, course.subjectCode);
+            try {
+              const names = (await readdir(dir)).filter(name => /^分数结构(?:-[a-zA-Z0-9-]+)?\.json$/.test(name));
+              const files = await Promise.all(names.map(async name => ({ name, mtime: (await stat(join(dir, name))).mtimeMs })));
+              files.sort((a, b) => b.mtime - a.mtime);
+              for (const file of files) {
+                try {
+                  const data: unknown = JSON.parse(await readFile(join(dir, file.name), 'utf8'));
+                  if (data && typeof data === 'object' && !Array.isArray(data)) return { id: course.id, report: data };
+                } catch { /* Older valid reports may still be usable. */ }
+              }
+            } catch { /* A selected course may not have a report yet. */ }
+            return { id: course.id, report: null };
+          }));
+          res.end(JSON.stringify({ courses, reports: reports.filter(Boolean) }));
+        } catch (error) {
+          res.writeHead((error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500).end(JSON.stringify({ error: 'COURSES_UNAVAILABLE' }));
+        }
+      });
       server.middlewares.use('/api/local/course-sync', async (req, res) => {
         const remote = req.socket.remoteAddress;
         if (!remote || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)) { res.writeHead(403).end(); return; }

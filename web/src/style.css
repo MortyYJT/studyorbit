@@ -275,3 +275,24 @@ button.primary:hover:enabled { background:var(--ink); opacity:.9; }
 .memory-form textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 8px; width: 100%; min-width: 0; resize: vertical; }
 .memory-confirm { border-top: 1px solid var(--line); margin-top: .8rem; padding-top: .5rem; }
 .memory-confirm button + button { margin-inline-start: .5rem; }
+/* Local course overview and planning */
+.local-planning,.local-course-detail { display:grid; gap:16px; }
+.local-course-detail { margin-top:20px; }
+.local-course-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
+.local-course-card { display:grid; gap:8px; text-align:left; padding:18px; min-height:120px; }
+.local-course-card strong { font-size:16px; }
+.local-assessment { display:flex; justify-content:space-between; align-items:start; gap:16px; padding:14px 0; border-top:1px solid var(--line); overflow-wrap:anywhere; }
+.local-assessment p { margin:5px 0; }
+.local-assessment button { flex-shrink:0; }
+.local-caution { color:var(--alert); }
+.local-group { display:flex; justify-content:space-between; gap:12px; border-top:1px solid var(--line); padding:10px 0; overflow-wrap:anywhere; }
+.local-plan-form { display:flex; align-items:end; flex-wrap:wrap; gap:12px; }
+.local-plan-form label { margin:0; }
+.local-materials { columns:2; padding-left:20px; overflow-wrap:anywhere; }
+.local-materials li { margin:8px 0; break-inside:avoid; }
+.local-week-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); border:1px solid var(--line); border-radius:10px; overflow-x:auto; margin:16px 0; }
+.local-day { display:grid; align-content:start; gap:8px; min-height:160px; min-width:115px; padding:10px; border-right:1px solid var(--line); }
+.local-day:last-child { border-right:0; }
+.local-plan-entry { display:grid; gap:3px; padding:8px; background:var(--hover); border-radius:7px; overflow-wrap:anywhere; font-size:12px; }
+.local-plan-entry b { font-size:11px; }
+@media(max-width:600px) { .local-materials { columns:1; } .local-assessment { flex-wrap:wrap; } }

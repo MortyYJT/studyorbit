@@ -11,6 +11,7 @@ import { MetricsPanel } from './MetricsPanel.js';
 import { CoursePage } from './CoursePage.js';
 import { CourseSelect } from './CourseSelect.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
+import { LocalPlanning } from './LocalPlanning.js';
 
 type Panel = 'memory' | 'status' | 'audit' | 'settings' | 'metrics';
 type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; file?: string }[]; error: string | null };
@@ -42,6 +43,7 @@ export function App({ store }: { store: ShellStore }) {
   const [courseRun, setCourseRun] = useState<CourseRun>();
   const [courseRunError, setCourseRunError] = useState('');
   const conversationNavigation = useRef(0);
+  const resultSignature = useRef('');
   const dialog = useRef<HTMLDialogElement>(null);
   const avatar = useRef<HTMLButtonElement>(null);
   const menuRoot = useRef<HTMLDivElement>(null);
@@ -79,6 +81,10 @@ export function App({ store }: { store: ShellStore }) {
     const timer = window.setInterval(() => void refreshRun(), 2000);
     return () => { stopped = true; window.clearInterval(timer); };
   }, []);
+  useEffect(() => {
+    const signature = JSON.stringify(courseRun?.courses.map(course => [course.id, course.status, course.file]) ?? []);
+    if (signature !== resultSignature.current) { resultSignature.current = signature; setCourseRefresh(value => value + 1); }
+  }, [courseRun]);
   useEffect(() => {
     if (!menu) return;
     const dismiss = (event: PointerEvent) => { if (!menuRoot.current?.contains(event.target as Node)) setMenu(false); };
@@ -138,10 +144,10 @@ export function App({ store }: { store: ShellStore }) {
       {localSyncWarning && <p className="needs" role="status">{localSyncWarning}</p>}
       {courseRunError && <p className="needs" role="status">{courseRunError}</p>}
       {view.page === 'week' && (coursePanelOpen
-        ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setCoursePanelOpen(false); setSavedNotice(Date.now()); void startSelectedCourses(ids); }} />
+        ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setCoursePanelOpen(false); setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); void startSelectedCourses(ids); }} />
         : <button className="edit-courses" disabled={courseRun?.running} onClick={() => setCoursePanelOpen(true)}>{language === 'zh' ? '修改选课' : 'Edit courses'}</button>)}
       {savedNotice > 0 && <div className="save-toast" role="status">{language === 'zh' ? '课程已经保存' : 'Courses saved'}</div>}
-      {view.page === 'week' && courseRun && courseRun.courses.length > 0 && <section className="card course-sync-status" aria-live="polite">
+      {view.page === 'week' && courseRun?.running && courseRun.courses.length > 0 && <section className="card course-sync-status" aria-live="polite">
         <h2>{language === 'zh' ? (courseRun.running ? '正在同步课程' : '课程同步结果') : (courseRun.running ? 'Syncing courses' : 'Course sync results')}</h2>
         {courseRun.courses.map(course => <div className="attention-row" key={course.id}>
           <span><b>{course.code}</b> · {({ pending: language === 'zh' ? '等待' : 'Waiting', running: language === 'zh' ? '读取中' : 'Reading',
@@ -150,23 +156,16 @@ export function App({ store }: { store: ShellStore }) {
         </div>)}
         {courseRun.error && <p role="status">{courseRun.error}</p>}
       </section>}
-      {view.page !== 'week' && !store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
-      {state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
-      <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onSelect={() => setSelecting(true)}
+      {view.page === 'agent' && !store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
+      {view.page === 'agent' && state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
+      {view.page === 'agent' && <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onSelect={() => setSelecting(true)}
         onCourse={courseId => setView({ page: 'course', courseId })}
         onResolve={(conflictId, choice) => void store.resolveConflict(conflictId, choice)}
-        onOpenUpdate={savedFileId => void store.openUpdate(savedFileId)} />
-      {view.page !== 'course' && <div className="page-heading"><h1>{t[view.page]}</h1><button onClick={() => void refreshAll()}>{t.refresh}</button></div>}
+        onOpenUpdate={savedFileId => void store.openUpdate(savedFileId)} />}
+      {view.page !== 'course' && <div className="page-heading"><h1>{t[view.page]}</h1><button onClick={() => { setCourseRefresh(value => value + 1); void refreshAll(); }}>{t.refresh}</button></div>}
       {view.page === 'agent' ? <AgentPage key={view.navigation} client={store.client} t={t} language={language} preset={view.preset} conversationId={view.conversationId} onPresetDone={() => setView({ page: 'agent' })} />
-        : view.page === 'course' ? <CoursePage key={view.courseId} courseId={view.courseId} client={store.client} t={t} language={language}
-          timeZone={state.planning?.settings?.timeZone} openAgent={openAgent} onBack={() => setView({ page: 'week' })} /> : <>
-        {state.errors.courses || state.errors.tasks ? <section className="card"><p>{!store.client.hasSession() ? (language === 'zh' ? '本周计划尚未接入。' : 'The weekly plan is not connected yet.') : t.error}</p></section>
-          : !state.courses || !state.tasks ? <p role="status">{t.loading}</p>
-          : emptyStore(state) ? <section className="card empty"><span className="empty-symbol" aria-hidden="true">◇</span><h2>{t.empty}</h2><p>{t.emptyHelp}</p>{syncButton}</section>
-          : <>{!state.courses.coverage.complete || !state.tasks.coverage.complete ? <p>{t.incomplete}</p> : null}
-            <WeekView store={week} t={t} language={language} canWrite={store.client.hasSession()} settingsMissing={!!state.planning && !state.planning.settings}
-              onOpenCourse={courseId => setView({ page: 'course', courseId })} onOpenSettings={() => open('settings')} /></>}
-      </>}
+        : <LocalPlanning language={language} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined}
+          syncIssues={courseRun?.courses ?? []} onCourse={courseId => setView({ page: 'course', courseId })} onBack={() => setView({ page: 'week' })} />}
     </main>
     {selecting && <CourseSelect store={store} t={t} onClose={() => { setSelecting(false); void week.refresh(); }} />}
     <dialog ref={dialog} onCancel={close} onClose={() => { setPanel(undefined); avatar.current?.focus(); }} aria-labelledby="panel-title">
