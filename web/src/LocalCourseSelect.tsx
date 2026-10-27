@@ -11,7 +11,7 @@ function storedIds(): string[] {
 }
 
 /** A small local selection flow for the course discovery prototype. */
-export function LocalCourseSelect({ language, refreshVersion, onSaved }: { language: Language; refreshVersion: number; onSaved: () => void }) {
+export function LocalCourseSelect({ language, refreshVersion, onSaved }: { language: Language; refreshVersion: number; onSaved: (ids: string[]) => void }) {
   const [courses, setCourses] = useState<Course[]>();
   const [selected, setSelected] = useState<string[]>(storedIds);
   const [error, setError] = useState('');
@@ -38,7 +38,8 @@ export function LocalCourseSelect({ language, refreshVersion, onSaved }: { langu
 
   function save() {
     setSaving(true);
-    try { localStorage.setItem(key, JSON.stringify(selected)); setError(''); onSaved(); }
+    try { const ids = (courses ?? []).filter(course => selected.includes(course.id)).map(course => course.id);
+      localStorage.setItem(key, JSON.stringify(ids)); setError(''); onSaved(ids); }
     catch { setError('save'); }
     finally { setSaving(false); }
   }

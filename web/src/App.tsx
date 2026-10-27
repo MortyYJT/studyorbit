@@ -13,6 +13,7 @@ import { CourseSelect } from './CourseSelect.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
 
 type Panel = 'memory' | 'status' | 'audit' | 'settings' | 'metrics';
+type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; file?: string }[]; error: string | null };
 /** Navigation state; a preset is cleared once its conversation exists, so it is never sent twice. */
 export type View = { page: 'week' } | { page: 'agent'; preset?: AgentPreset; conversationId?: string; navigation?: number } | { page: 'course'; courseId: string };
 function preference(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
@@ -38,6 +39,8 @@ export function App({ store }: { store: ShellStore }) {
   const [coursePanelOpen, setCoursePanelOpen] = useState(() => !selectionExists());
   const [savedNotice, setSavedNotice] = useState(0);
   const [localSyncWarning, setLocalSyncWarning] = useState('');
+  const [courseRun, setCourseRun] = useState<CourseRun>();
+  const [courseRunError, setCourseRunError] = useState('');
   const conversationNavigation = useRef(0);
   const dialog = useRef<HTMLDialogElement>(null);
   const avatar = useRef<HTMLButtonElement>(null);
@@ -47,7 +50,7 @@ export function App({ store }: { store: ShellStore }) {
   const needs = needsYou({ attention: attention(state), overflow: rows.overflow, unestimated: rows.unestimated,
     conflicts: state.conflicts?.items ?? [], updates: state.updates?.items ?? [] });
   const refreshAll = () => Promise.all([store.refresh(), week.refresh()]);
-  const running = localSyncing || state.syncing || state.sync?.running;
+  const running = localSyncing || state.syncing || state.sync?.running || courseRun?.running;
   useEffect(() => {
     void refreshAll();
     const timer = window.setInterval(() => { void refreshAll(); }, 30000);
@@ -61,6 +64,21 @@ export function App({ store }: { store: ShellStore }) {
     const timer = window.setTimeout(() => setSavedNotice(0), 3000);
     return () => window.clearTimeout(timer);
   }, [savedNotice]);
+  useEffect(() => {
+    let stopped = false;
+    async function refreshRun() {
+      try {
+        const response = await fetch('/api/local/course-sync', { cache: 'no-store' });
+        if (!response.ok) return;
+        const next: unknown = await response.json();
+        if (!stopped && next && typeof next === 'object' && 'running' in next && typeof next.running === 'boolean'
+          && 'courses' in next && Array.isArray(next.courses)) setCourseRun(next as CourseRun);
+      } catch { /* A later refresh can recover without hiding previous status. */ }
+    }
+    void refreshRun();
+    const timer = window.setInterval(() => void refreshRun(), 2000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, []);
   useEffect(() => {
     if (!menu) return;
     const dismiss = (event: PointerEvent) => { if (!menuRoot.current?.contains(event.target as Node)) setMenu(false); };
@@ -88,6 +106,17 @@ export function App({ store }: { store: ShellStore }) {
     } catch (error) { setLocalSyncError(error instanceof Error ? error.message : t.error); }
     finally { setLocalSyncing(false); }
   }
+  async function startSelectedCourses(ids: string[]) {
+    if (!ids.length) return;
+    setCourseRunError('');
+    try {
+      const response = await fetch('/api/local/course-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+      if (!response.ok) throw new Error(response.status === 409
+        ? (language === 'zh' ? '已有课程同步正在进行，选择已保存，但新同步尚未启动。' : 'A course sync is running. Selection saved, but a new sync was not started.')
+        : (language === 'zh' ? '无法启动课程同步，选择已保存。' : 'Could not start course sync. Your selection was saved.'));
+      setCourseRun(await response.json() as CourseRun);
+    } catch (error) { setCourseRunError(error instanceof Error ? error.message : t.error); }
+  }
   const syncButton = <button disabled={!!running} onClick={() => void syncCourses()} aria-busy={!!running}>{running ? t.syncing : t.sync}</button>;
   function date(value?: string) { return value ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short', timeZone: state.planning?.settings?.timeZone }).format(new Date(value)) : t.never; }
   return <>
@@ -107,10 +136,20 @@ export function App({ store }: { store: ShellStore }) {
     <main>
       {localSyncError && <p className="needs" role="status" style={{ whiteSpace: 'pre-wrap' }}>{localSyncError}</p>}
       {localSyncWarning && <p className="needs" role="status">{localSyncWarning}</p>}
+      {courseRunError && <p className="needs" role="status">{courseRunError}</p>}
       {view.page === 'week' && (coursePanelOpen
-        ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={() => { setCoursePanelOpen(false); setSavedNotice(Date.now()); }} />
-        : <button className="edit-courses" onClick={() => setCoursePanelOpen(true)}>{language === 'zh' ? '修改选课' : 'Edit courses'}</button>)}
+        ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setCoursePanelOpen(false); setSavedNotice(Date.now()); void startSelectedCourses(ids); }} />
+        : <button className="edit-courses" disabled={courseRun?.running} onClick={() => setCoursePanelOpen(true)}>{language === 'zh' ? '修改选课' : 'Edit courses'}</button>)}
       {savedNotice > 0 && <div className="save-toast" role="status">{language === 'zh' ? '课程已经保存' : 'Courses saved'}</div>}
+      {view.page === 'week' && courseRun && courseRun.courses.length > 0 && <section className="card course-sync-status" aria-live="polite">
+        <h2>{language === 'zh' ? (courseRun.running ? '正在同步课程' : '课程同步结果') : (courseRun.running ? 'Syncing courses' : 'Course sync results')}</h2>
+        {courseRun.courses.map(course => <div className="attention-row" key={course.id}>
+          <span><b>{course.code}</b> · {({ pending: language === 'zh' ? '等待' : 'Waiting', running: language === 'zh' ? '读取中' : 'Reading',
+            completed: language === 'zh' ? '已完成' : 'Completed', partial: language === 'zh' ? '部分完成' : 'Partial', failed: language === 'zh' ? '未完成' : 'Failed' } as Record<string, string>)[course.status] ?? course.status}
+            {course.reason && <small> · {course.reason}</small>}{course.file && <small> · {course.file}</small>}</span>
+        </div>)}
+        {courseRun.error && <p role="status">{courseRun.error}</p>}
+      </section>}
       {view.page !== 'week' && !store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
       {state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
       <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onSelect={() => setSelecting(true)}
