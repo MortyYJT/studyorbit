@@ -12,6 +12,8 @@
 
 用户提出每门课使用一个 Luna subagent 进行电脑操作，同一时间仅一个课程任务；同步时产出每门课的分数结构 JSON，放在桌面“学校 + 学期”文件夹的课程子文件夹中；不下载任何课程文件，只记录教学资料链接。任何操作失败最多尝试 2 次。作业仅获取截止、分值、占比等表层字段和链接；用户之后点击“开始学习”时再获取具体要求及附件。页面读取范围和单课程提示词草稿见 [单课程同步提示词](course-sync-prompt.md)。试运行结果见 [同步发现](sync-findings.md)、[同步用量](sync-measurements.md)。
 
+用户要求同步后直接排期与展示课程结构，不以完成/部分完成标签为主要展示；确有问题写在对应课程中，允许不相关或按约定跳过的内容不获取。结构化输出、100% 校验、去重和特殊考试版本的讨论草稿见 [课程结构化输出](structured-output-draft.md)，规则尚未实现或最终确定。
+
 用户提供参考项目 [moodle-cli](https://github.com/bunizao/moodle-cli)：它针对 Moodle，可以参考认证、接口优先取数、按课程归档、增量同步与 Agent 接口，但不能直接当作 Canvas 适配器。同作者的 [edstem-cli](https://github.com/bunizao/edstem-cli) 是 Ed 相关参考；是否适用于墨大账户尚未验证。
 
 新增独立的浏览器 Cookie 取数实验 `npm run experiment:cookie`，细节见 [实验说明](cookie-experiment.md)。用户首次实验在获取 Cookie 阶段失败；已将钥匙串单次等待时间延长至 30 秒，等待用户复测。此实验不影响既有前端同步。
