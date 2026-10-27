@@ -10,6 +10,7 @@ import { MemoryPanel } from './MemoryPanel.js';
 import { MetricsPanel } from './MetricsPanel.js';
 import { CoursePage } from './CoursePage.js';
 import { CourseSelect } from './CourseSelect.js';
+import { LocalCourseSelect } from './LocalCourseSelect.js';
 
 type Panel = 'memory' | 'status' | 'audit' | 'settings' | 'metrics';
 /** Navigation state; a preset is cleared once its conversation exists, so it is never sent twice. */
@@ -73,7 +74,8 @@ export function App({ store }: { store: ShellStore }) {
       </div>
     </header>
     <main>
-      {!store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
+      {view.page === 'week' && <LocalCourseSelect language={language} />}
+      {view.page !== 'week' && !store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
       {state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
       <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onSelect={() => setSelecting(true)}
         onCourse={courseId => setView({ page: 'course', courseId })}
@@ -83,7 +85,7 @@ export function App({ store }: { store: ShellStore }) {
       {view.page === 'agent' ? <AgentPage key={view.navigation} client={store.client} t={t} language={language} preset={view.preset} conversationId={view.conversationId} onPresetDone={() => setView({ page: 'agent' })} />
         : view.page === 'course' ? <CoursePage key={view.courseId} courseId={view.courseId} client={store.client} t={t} language={language}
           timeZone={state.planning?.settings?.timeZone} openAgent={openAgent} onBack={() => setView({ page: 'week' })} /> : <>
-        {state.errors.courses || state.errors.tasks ? <section className="card"><p>{t.error}</p></section>
+        {state.errors.courses || state.errors.tasks ? <section className="card"><p>{!store.client.hasSession() ? (language === 'zh' ? '本周计划尚未接入。' : 'The weekly plan is not connected yet.') : t.error}</p></section>
           : !state.courses || !state.tasks ? <p role="status">{t.loading}</p>
           : emptyStore(state) ? <section className="card empty"><span className="empty-symbol" aria-hidden="true">◇</span><h2>{t.empty}</h2><p>{t.emptyHelp}</p>{syncButton}</section>
           : <>{!state.courses.coverage.complete || !state.tasks.coverage.complete ? <p>{t.incomplete}</p> : null}

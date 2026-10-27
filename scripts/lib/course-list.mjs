@@ -44,3 +44,16 @@ export function normalizeCourses(items) {
     url: `https://canvas.lms.unimelb.edu.au/courses/${item.id}`,
   }])).values()];
 }
+
+/** Identify subject-code candidates in the Canvas course_code, without using the title as evidence. */
+export function subjectCode(code) {
+  if (typeof code !== 'string') return null;
+  return /^([A-Z]{4}[1-9]\d{4})(?:_|$)/i.exec(code.trim())?.[1].toUpperCase() ?? null;
+}
+
+export function filterSubjects(courses) {
+  return courses.flatMap(course => {
+    const subject = subjectCode(course.code);
+    return subject ? [{ ...course, subjectCode: subject }] : [];
+  });
+}

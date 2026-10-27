@@ -5,7 +5,7 @@ import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { parseCoursePage, normalizeCourses } from './lib/course-list.mjs';
+import { filterSubjects, parseCoursePage, normalizeCourses } from './lib/course-list.mjs';
 
 const exec = promisify(execFile);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -126,10 +126,11 @@ async function main() {
   const temporary = `${output}.${runId}.tmp`;
   await writeFile(temporary, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
   await rename(temporary, output);
-  console.log(`\n获取 ${courses.length} 个候选项，用时 ${(result.durationMs / 1000).toFixed(1)} 秒：`);
-  for (const course of courses) console.log(`- ${course.name}${course.term ? ` | ${course.term}` : ''} | ID ${course.id}`);
+  const subjects = filterSubjects(courses);
+  console.log(`\n获取 ${courses.length} 个候选项，筛出 ${subjects.length} 门课程，用时 ${(result.durationMs / 1000).toFixed(1)} 秒：`);
+  for (const course of subjects) console.log(`- ${course.subjectCode} | ${course.name}${course.term ? ` | ${course.term}` : ''}`);
   console.log(`\n结果已保存：${output}`);
-  console.log('与旧扩展一样，仅读取第一页，未验证分页完整性；保留社区等条目供后续选课。');
+  console.log('仅读取第一页，未验证分页完整性；原始候选项保留在结果文件中。');
   if (items.length >= 100) console.log('注意：本页达到 100 条，可能还有下一页；这里的数量不是全部课程总数。');
 }
 
