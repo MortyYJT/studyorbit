@@ -19,10 +19,10 @@ const help = `获取已登录浏览器中的 Canvas 课程列表（Mac 验证版
 
   npm run sync:courses
   npm run sync:courses -- --browser edge
-  npm run sync:courses -- --browser chrome --timeout 60
+  npm run sync:courses -- --browser chrome --wait 3
 
 --browser   default（默认） / edge / chrome / safari / firefox / brave
---timeout   总读取超时秒数，默认 12，最多 120
+--wait      打开页面后等待秒数，默认 1.5；之后只复制一次
 --out       输出 JSON 文件，默认 .local/lms/courses.json
 
 请先在所选浏览器登录 LMS；运行期间不要操作键盘或切换窗口。
@@ -66,18 +66,18 @@ end run`;
 async function main() {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) { console.log(help); return; }
-  const options = { browser: 'default', timeout: '12', out: resolve(root, '.local/lms/courses.json') };
+  const options = { browser: 'default', wait: '1.5', out: resolve(root, '.local/lms/courses.json') };
   while (args.length) {
     const key = args.shift();
-    if (!['--browser', '--timeout', '--out'].includes(key) || !args.length || args[0].startsWith('--')) {
+    if (!['--browser', '--wait', '--out'].includes(key) || !args.length || args[0].startsWith('--')) {
       throw new Error('参数无效。运行 npm run sync:courses -- --help 查看用法。');
     }
     options[key.slice(2)] = args.shift();
   }
   if (process.platform !== 'darwin') throw new Error('这版脚本只实现了 Mac 操作；Windows 适配尚未实现。');
   if (options.browser !== 'default' && !browsers[options.browser]) throw new Error('不支持的浏览器名称，请查看 --help。');
-  const seconds = Number(options.timeout);
-  if (!Number.isFinite(seconds) || seconds < 3 || seconds > 120) throw new Error('--timeout 必须在 3–120 秒之间。');
+  const seconds = Number(options.wait);
+  if (!Number.isFinite(seconds) || seconds < 0.2 || seconds > 120) throw new Error('--wait 必须在 0.2–120 秒之间。');
   const bundle = options.browser === 'default' ? await defaultBrowser() : browsers[options.browser];
   console.log(`使用浏览器：${options.browser} (${bundle})`);
   console.log('打开课程 API，仅读取一次第一页（与旧扩展一致）。请保持浏览器前台。');
@@ -89,39 +89,28 @@ async function main() {
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
   let items;
-  let attempts = 0;
   const runId = randomUUID();
   try {
-    const deadline = Date.now() + seconds * 1000;
     await command('/usr/bin/open', ['-b', bundle, base]);
-    await pause(500);
-    let lastError = '没有复制到页面内容。';
-    while (Date.now() < deadline) {
-      if (stopped) throw new Error('已停止。');
-      attempts++;
-      const marker = `coursework-copy-${runId}`;
-      ownedClipboard = marker;
-      await copyText(marker);
-      try {
-        await command('/usr/bin/osascript', ['-e', selectAndCopy, bundle]);
-      } catch (error) {
-        if (String(error.stderr).includes('BROWSER_NOT_FRONTMOST')) throw new Error('浏览器不在前台，已停止。请重新运行后保持浏览器在前台。');
-        const detail = String(error.stderr || error.message).trim().slice(0, 1000);
-        throw new Error(`复制操作失败。底层错误：${detail}\n若包含“不允许辅助访问 / not allowed assistive access / 1002”，检查辅助功能权限；若为“not authorized / 1743”，检查自动化权限。`);
-      }
-      await pause(100);
-      const text = await clipboard();
-      ownedClipboard = text;
-      try {
-        if (text === marker) throw new Error('复制尚未完成。');
-        if (/^https?:\/\//.test(text.trim())) throw new Error('复制到的是地址栏，未取得页面正文。');
-        items = parseCoursePage(text);
-        break;
-      } catch (error) { lastError = error.message; }
-      if (attempts === 1 || attempts % 3 === 0) console.log(`等待页面（${((Date.now() - started) / 1000).toFixed(1)} 秒）：${lastError}`);
-      await pause(250);
+    await pause(seconds * 1000);
+    if (stopped) throw new Error('已停止。');
+    const marker = `coursework-copy-${runId}`;
+    ownedClipboard = marker;
+    await copyText(marker);
+    try {
+      await command('/usr/bin/osascript', ['-e', selectAndCopy, bundle]);
+    } catch (error) {
+      if (String(error.stderr).includes('BROWSER_NOT_FRONTMOST')) throw new Error('浏览器不在前台，已停止。请重新运行后保持浏览器在前台。');
+      const detail = String(error.stderr || error.message).trim().slice(0, 1000);
+      throw new Error(`复制操作失败。底层错误：${detail}\n若包含“不允许辅助访问 / not allowed assistive access / 1002”，检查辅助功能权限；若为“not authorized / 1743”，检查自动化权限。`);
     }
-    if (!items) throw new Error(`读取超时：${lastError} 已有输出文件未更新。`);
+    await pause(100);
+    const text = await clipboard();
+    ownedClipboard = text;
+    if (text === marker) throw new Error('没有复制到页面内容，已停止，没有自动重试。');
+    if (/^https?:\/\//.test(text.trim())) throw new Error('复制到的是地址栏，未取得页面正文，已停止，没有自动重试。');
+    try { items = parseCoursePage(text); }
+    catch (error) { throw new Error(`${error.message} 此次只读取一次，没有自动重试。若页面尚未加载，可下次加 --wait 3。`); }
   } finally {
     // Do not replace clipboard text the user changed after the last copy.
     if (ownedClipboard !== undefined && await clipboard() === ownedClipboard) await copyText(previous);
@@ -132,7 +121,7 @@ async function main() {
   const courses = normalizeCourses(items);
   const output = resolve(options.out);
   const result = { version: 1, source: base, browser: bundle, fetchedAt: new Date().toISOString(),
-    durationMs: Date.now() - started, attempts, scope: 'first_page', paginationVerified: false, count: courses.length, courses };
+    durationMs: Date.now() - started, attempts: 1, scope: 'first_page', paginationVerified: false, count: courses.length, courses };
   await mkdir(dirname(output), { recursive: true });
   const temporary = `${output}.${runId}.tmp`;
   await writeFile(temporary, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
