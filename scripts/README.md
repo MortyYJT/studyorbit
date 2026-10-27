@@ -21,7 +21,7 @@ npm run sync:courses -- --browser chrome
 还接受 `safari`、`firefox`、`brave` 参数，但这些浏览器尚未经真实页面验证。
 如果有多个浏览器配置，普通打开链接行为可能选中未登录的配置，需要用户确认。
 
-脚本倒计时 3 秒后打开 API 页面。运行期间保持浏览器前台，不操作键盘。
+脚本立即打开 API 页面，随后尝试复制；读取成功即结束，不再等待倒计时或打开第二页。运行期间保持浏览器前台，不操作键盘。
 首次运行可能需要给启动脚本的终端（或承载终端的应用）授予：
 
 - 系统设置 → 隐私与安全性 → 辅助功能。
@@ -35,11 +35,14 @@ npm run sync:courses -- --browser chrome
 脚本在浏览器打开以下接口，通过全选、复制读取文本并由本地 Node.js 解析：
 
 ```text
-https://canvas.lms.unimelb.edu.au/api/v1/courses?enrollment_state=active&include[]=term&per_page=100&page=1
+https://canvas.lms.unimelb.edu.au/api/v1/courses?enrollment_state=active&include[]=term&per_page=100
 ```
 
-此版从 `page=1` 依次读取直到空数组，而非假设不足 100 条就是结束。
-因此通常会额外打开一个空结果页；重复页、超时、无效数据或超过 20 页均报错，不保存部分结果。
+此版与旧扩展保持相同范围：只读取 API 第一页，不额外打开第二页。
+输出用 `scope: "first_page"` 和 `paginationVerified: false` 标记范围，不声称已验证全量。
+达到 100 条时终端提示可能还有下一页；即使不足 100 条，也没有验证服务器分页上限。
+旧版本在第一页成功读到 9 条后，第二页失焦或复制超时，导致整次失败；本次删除了该额外步骤。
+默认总读取超时从 30 秒改为 12 秒，取消 3 秒倒计时和每页 2 秒固定等待。
 读取的是 active enrollment 的 API 候选列表，不保证等同于首页卡片，也不代表账号的所有历史课程。
 保留社区项目和没有标准课程代码的条目，暂不自动筛选。
 
@@ -47,5 +50,5 @@ https://canvas.lms.unimelb.edu.au/api/v1/courses?enrollment_state=active&include
 输出通过临时文件替换，失败不会覆盖旧结果；`.local/` 已排除在 Git 外。
 可用 `--out 路径` 指定其他输出位置，自定义位置不一定被 Git 忽略。
 
-这次需要实际验证：能否打开正确配置、复制到完整 JSON、分页完成，以及第二次运行是否正常。
-解析逻辑和命令入口已检查；实际浏览器流程仍需用户测试。
+这次需要实际验证：能否打开正确配置、复制到第一页 JSON、实际耗时，以及第二次运行是否正常。
+解析逻辑和命令入口已检查；用户已验证旧版本在 Edge 能读到第一页 9 条；本次修改后的浏览器流程仍需用户复测。
