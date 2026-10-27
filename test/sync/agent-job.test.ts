@@ -11,6 +11,7 @@ import { AgentJobRunner, AgentSync, JOB_BOUND_MS, runBoundMs, type JobSpec, type
 import { prompt as jobPrompt } from '../../src/agent/jobs/index.js';
 import type { BuildDocumentResult } from '../../src/sync/build-document.js';
 import type { CourseDocument } from '../../src/sync/course-json.js';
+import type { ExtensionReader } from '../../src/sync/extension-bridge.js';
 import { SyncJobs } from '../../src/sync/jobs.js';
 import { AgentFacingError } from '../../src/protocol/errors.js';
 import { assessmentId } from '../../src/sync/course-import.js';
@@ -61,18 +62,14 @@ const stageTool = (jobs: SyncJobs): AgentTool => ({
     return { ok: true };
   },
 });
-const offerTool = (jobs: SyncJobs): AgentTool => ({
-  name: 'courses.offer', description: 'Offer courses', inputSchema: {},
-  execute: async input => jobs.offer(input as Parameters<SyncJobs['offer']>[0]),
-});
-interface SetupOptions { runBoundMs?: number; jobBoundMs?: number; build?: SyncPipeline['build']; ed?: SyncPipeline['ed'] | false }
+interface SetupOptions { extension?: ExtensionReader; runBoundMs?: number; jobBoundMs?: number; build?: SyncPipeline['build']; ed?: SyncPipeline['ed'] | false }
 function setup(script: Script, options: SetupOptions = {}) {
   const store = new SqliteRepository(':memory:');
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'agent-job-')));
   const host = createProductionProtocol({ store, files: new ProtocolFiles(join(directory, 'journal')), owner: { assertOwner: async () => {} } });
   cleanups.push(() => { store.close(); rmSync(directory, { recursive: true, force: true }); });
   const jobs = new SyncJobs(store);
-  const tools: AgentTool[] = [stageTool(jobs), offerTool(jobs)];
+  const tools: AgentTool[] = [stageTool(jobs)];
   const adapter = new ScriptedAgent(script);
   const ed = options.ed === false ? undefined : options.ed ?? (async (key, ctx) => {
     jobs.recordStage(ctx.jobId, key, 'ed', { via: 'ax', source: 'edstem-page', lessons: [] });
@@ -84,6 +81,9 @@ function setup(script: Script, options: SetupOptions = {}) {
     ...(ed ? { ed } : {}),
   };
   const sync = new AgentSync({ store, jobs, adapter: () => adapter, pipeline,
+    extension: options.extension ?? { read: async url => ({ status: 200, finalUrl: url, text: JSON.stringify(three.map((course, i) => ({
+      id: 900001 + i, course_code: course.code, name: course.name ?? 'Synthetic course', term: { name: 'Semester 2 2026' },
+    }))) }) },
     ...(options.runBoundMs !== undefined ? { runBoundMs: options.runBoundMs } : {}),
     ...(options.jobBoundMs !== undefined ? { jobBoundMs: options.jobBoundMs } : {}) });
   const select = (...keys: string[]) => dispatch(host.registry, 'courses.select', { selections: keys.map(key => ({ key, selected: true })) }, host.context);
@@ -104,11 +104,10 @@ async function writeStage(spec: JobSpec, call: Call): Promise<void> {
     : spec.kind === 'classify' ? 'classification' : spec.kind === 'assignment' ? `assignments.${spec.target}` : spec.kind;
   await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage, value });
 }
-/** Every job succeeds: the course list offers the synthetic courses; every other job writes its stage. */
+/** Every agent job succeeds and writes its expected stage. */
 function stageAll(spec: JobSpec, call: Call): AsyncGenerator<AgentEvent, void> {
   return (async function* () {
-    if (spec.kind === 'courses') await call('courses.offer', { jobId: spec.jobId, courses: three, blocked: [] });
-    else await writeStage(spec, call);
+    await writeStage(spec, call);
     yield { type: 'tool_step', tool: `coursework.${spec.kind}`, outcome: 'ok' };
     yield { type: 'result', turns: 1 };
   })();
@@ -116,12 +115,6 @@ function stageAll(spec: JobSpec, call: Call): AsyncGenerator<AgentEvent, void> {
 /** Every job succeeds and the archive hook records the synthetic counts production writes after a job. */
 function archiveScript(counts: { missing: number; unresolved: number }, extra: Record<string, unknown> = {}): Script {
   return async function* (spec, call) {
-    if (spec.kind === 'courses') {
-      await call('courses.offer', { jobId: spec.jobId, courses: three.slice(0, 1), blocked: [] });
-      yield { type: 'tool_step', tool: 'coursework.courses.offer', outcome: 'ok' };
-      yield { type: 'result', turns: 1 };
-      return;
-    }
     await writeStage(spec, call);
     if (spec.courseKey) await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'archive',
       value: { moved: 1, updated: 0, missing: counts.missing, unresolved: counts.unresolved, ...extra } });
@@ -129,24 +122,17 @@ function archiveScript(counts: { missing: number; unresolved: number }, extra: R
     yield { type: 'result', turns: 1 };
   };
 }
-async function* offerOnly(spec: JobSpec, call: Call): AsyncGenerator<AgentEvent, void> {
-  expect(spec.kind).toBe('courses');
-  expect(await call('courses.offer', { jobId: spec.jobId, courses: three, blocked: [] })).toMatchObject({ stored: 3 });
-  yield { type: 'tool_step', tool: 'coursework.courses.offer', outcome: 'ok' };
-  yield { type: 'result', turns: 3 };
-}
 const graded = document([component('assignments', 60, [item(1), item(2, {}, 'SYNA10001', 'ed')], { count: found(2) }), component('exam', 40, [], { kind: found('exam'), isFinal: found(true) })]);
 
 describe('agent sync job (coursework-sync)', () => {
   it('First run: three offered courses become undecided candidates, nothing is read, and the run ends NEEDS_SELECTION', async () => {
-    const f = setup(offerOnly);
+    const f = setup(stageAll);
     const result = await f.sync.run({});
     expect(result.outcome).toBe('NEEDS_SELECTION');
     expect(f.store.listCourseSelections().map(row => [row.key, row.selected])).toEqual([['SYNA10001:2026:S2', undefined], ['SYNB20002:2026:S2', undefined], ['SYNC30003:2026:S2', undefined]]);
-    expect(f.adapter.specs.map(spec => spec.kind)).toEqual(['courses']);
-    expect(f.adapter.inputs[0]!.prompt).toContain('courses.offer');
+    expect(f.adapter.specs).toEqual([]);
     expect(f.store.query('courses', { limit: 10 }).items).toEqual([]);
-    expect(f.store.loadRun(result.run.id)).toMatchObject({ command: 'sync', syncOutcome: 'NEEDS_SELECTION', turns: 3, steps: 1, courseCoverage: [] });
+    expect(f.store.loadRun(result.run.id)).toMatchObject({ command: 'sync', syncOutcome: 'NEEDS_SELECTION', turns: 0, steps: 0, courseCoverage: [] });
     expect(f.sync.status()).toMatchObject({ running: false, undecided: 3, lastRun: { outcome: 'NEEDS_SELECTION' } });
   });
 
@@ -164,7 +150,7 @@ describe('agent sync job (coursework-sync)', () => {
     await f.sync.run({ course: 'SYNC30003' });
     const limited = f.adapter.specs.slice(beforeCourse);
     const limitedKeys = limited.map(spec => spec.courseKey).filter(Boolean);
-    expect(limitedKeys).toHaveLength(3);
+    expect(limitedKeys).toHaveLength(6);
     expect(new Set(limitedKeys)).toEqual(new Set(['SYNC30003:2026:S2']));
     await expect(f.sync.run({ course: 'SYNB20002' })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
   });
@@ -172,12 +158,6 @@ describe('agent sync job (coursework-sync)', () => {
   it('Sync from the frontend: the run is visible as running and its outcome and coverage are recorded when it ends', async () => {
     let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
     const f = setup(async function* (spec, call) {
-      if (spec.kind === 'courses') {
-        await call('courses.offer', { jobId: spec.jobId, courses: three.slice(0, 1), blocked: [] });
-        yield { type: 'tool_step', tool: 'coursework.courses.offer', outcome: 'ok' };
-        yield { type: 'result', turns: 1 };
-        return;
-      }
       if (spec.kind === 'handbook') await gate;
       await writeStage(spec, call);
       yield { type: 'tool_step', tool: `coursework.${spec.kind}`, outcome: 'ok' };
@@ -192,9 +172,9 @@ describe('agent sync job (coursework-sync)', () => {
     expect(result.outcome).toBe('OK');
     expect(result.run).toMatchObject({ outcome: 'ok', courseCoverage: [{ stored: true, submissions: 0, unknownFields: expect.any(Number),
       platforms: { canvas: 'read', ed: 'read' }, policyChanged: false, courseRef: expect.stringMatching(/^[a-f0-9]{64}$/) }] });
-    expect(result.run.turns).toBe(7);
-    expect(result.run.steps).toBe(7);
-    expect(f.sync.status()).toMatchObject({ running: false, blocked: [], lastRun: { id: result.run.id, outcome: 'OK', turns: 7 },
+    expect(result.run.turns).toBe(6);
+    expect(result.run.steps).toBe(6);
+    expect(f.sync.status()).toMatchObject({ running: false, blocked: [], lastRun: { id: result.run.id, outcome: 'OK', turns: 6 },
       courses: [{ key: 'SYNA10001:2026:S2', storedAt: expect.any(String), courseId: expect.any(String), lastRun: { stored: true, unknownFields: [] } }] });
   });
 
@@ -223,15 +203,14 @@ describe('agent sync job (coursework-sync)', () => {
     let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
     const f = setup(async function* (spec, call) {
       if (spec.kind === 'handbook') await gate;
-      if (spec.kind === 'courses') await call('courses.offer', { jobId: spec.jobId, courses: three, blocked: [] });
-      else await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'map', value: { links: [] } });
+      await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'map', value: { links: [] } });
       yield { type: 'result', turns: 1 };
     });
     f.store.saveCourseSelections([{ key: 'SYNA10001:2026:S2', code: 'SYNA10001', term: '2026:S2', pages: canvasOnly, offeredAt: '2026-10-24T00:00:00Z', selected: true }]);
     const first = f.sync.run({});
     await new Promise(resolve => setTimeout(resolve, 10));
     await expect(f.sync.run({})).rejects.toMatchObject({ code: 'LOCKED' });
-    expect(f.adapter.inputs).toHaveLength(2);
+    expect(f.adapter.inputs).toHaveLength(1);
     release(); await first;
     expect(f.store.listSyncJobs().filter(job => job.endedAt === undefined)).toEqual([]);
   });
@@ -239,15 +218,9 @@ describe('agent sync job (coursework-sync)', () => {
   it('Expired sign-in is not hidden: Canvas blocked and Ed read give PARTIAL, Ed data updates, Canvas data stays and status lists Canvas', async () => {
     let round = 0;
     const f = setup(async function* (spec, call) {
-      if (spec.kind === 'courses') {
-        round++;
-        if (round === 1) await call('courses.offer', { jobId: spec.jobId, courses: [{ code: 'SYNA10001', name: 'Synthetic Systems', term: '2026:S2', pages }], blocked: [] });
-        else await call('courses.offer', { jobId: spec.jobId, courses: [], blocked: ['canvas'] });
-      } else {
-        await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'map', value: { links: [] } });
-      }
+      await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'map', value: { links: [] } });
       yield { type: 'result', turns: 2 };
-    }, { build: () => {
+    }, { extension: { read: async url => ({ status: ++round === 1 ? 200 : 401, finalUrl: url, text: '[]' }) }, build: () => {
       if (round === 1) return built(graded as CourseDocument);
       const edOnly = document([component('assignments', 60, [item(2, { name: found('Renamed on Ed') }, 'SYNA10001', 'ed')], { count: found(2) }),
         component('exam', 40, [], { kind: found('exam'), isFinal: found(true) })], { platforms: { canvas: 'blocked', ed: 'read' } });
@@ -271,34 +244,23 @@ describe('agent sync job (coursework-sync)', () => {
     expect(result.run.courseCoverage).toEqual([expect.objectContaining({ stored: false, submissions: 0, platforms: { canvas: 'unread', ed: 'unread' } })]);
   });
 
-  it('a discovery with every platform blocked and no candidates ends AGENT_UNAVAILABLE, and the prompt says how to report it', async () => {
-    const f = setup(async function* (spec, call) {
-      await call('courses.offer', { jobId: spec.jobId, courses: [], blocked: ['canvas', 'ed'] });
-      yield { type: 'result', turns: 1 };
-    });
+  it('discovery without the extension ends AGENT_UNAVAILABLE without starting an agent', async () => {
+    const f = setup(stageAll, { extension: { read: async () => { throw new Error('extension disconnected'); } } });
     const result = await f.sync.run({});
-    expect(result).toMatchObject({ outcome: 'AGENT_UNAVAILABLE', run: { syncOutcome: 'AGENT_UNAVAILABLE' } });
-    expect(f.sync.status()).toMatchObject({ blocked: ['canvas', 'ed'], lastRun: { outcome: 'AGENT_UNAVAILABLE' } });
-    expect(f.adapter.inputs[0]!.prompt).toMatch(/computer-use tool or Edge is unavailable[^\n]*blocked/);
-    expect(f.adapter.inputs[0]!.prompt).toMatch(/owner's own Microsoft Edge[^\n]*Never open Chrome/);
+    expect(result.outcome).toBe('AGENT_UNAVAILABLE');
+    expect(f.adapter.inputs).toEqual([]);
   });
 
   it('records AGENT_UNAVAILABLE and keeps previously stored data, marked with its last stored time', async () => {
     let round = 0;
     const f = setup(async function* (spec, call) {
-      if (spec.kind === 'courses') {
-        round++;
-        await call('courses.offer', { jobId: spec.jobId, courses: [{ code: 'SYNA10001', name: 'Synthetic Systems', term: '2026:S2', pages: canvasOnly }], blocked: [] });
-        yield { type: 'result', turns: 1 };
-        return;
-      }
       if (round === 1) {
         await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'map', value: { links: [] } });
         yield { type: 'result', turns: 1 };
         return;
       }
       yield { type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Sign in to the installed agent and retry.' };
-    }, { ed: false });
+    }, { ed: false, extension: { read: async url => { round++; return { status: 200, finalUrl: url, text: '[]' }; } } });
     f.store.saveCourseSelections([{ key: 'SYNA10001:2026:S2', code: 'SYNA10001', term: '2026:S2', pages: canvasOnly, offeredAt: '2026-10-24T00:00:00Z', selected: true }]);
     await f.sync.run({});
     const storedAt = f.sync.status().courses[0]!.storedAt;
@@ -310,6 +272,7 @@ describe('agent sync job (coursework-sync)', () => {
 
   it('stops a run after its time bound and records TIMEOUT', async () => {
     const f = setup(async function* () { await new Promise(() => {}); yield { type: 'result', turns: 1 }; }, { runBoundMs: 30 });
+    f.store.saveCourseSelections([{ key: 'SYNA10001:2026:S2', code: 'SYNA10001', term: '2026:S2', pages: canvasOnly, offeredAt: '2026-10-24T00:00:00Z', selected: true }]);
     const result = await f.sync.run({});
     expect(result.outcome).toBe('TIMEOUT');
     expect(f.adapter.interrupted).toBe(1);
@@ -485,7 +448,7 @@ describe('sync job staleness and stage storage (layered-sync task 5.1)', () => {
 
 describe('built document import (layered-sync task 5.1)', () => {
   it('imports a built document without counting a submission and records its result', () => {
-    const f = setup(offerOnly);
+    const f = setup(stageAll);
     const job = f.jobs.open([stageKey]);
     const receipt = f.jobs.storeBuilt(job.id, graded);
     expect(receipt).toMatchObject({ stored: true, key: stageKey, components: 2, items: 2 });
@@ -496,7 +459,7 @@ describe('built document import (layered-sync task 5.1)', () => {
   });
 
   it('uses the final validation, so a built document with an unread field is stored with that field unknown', () => {
-    const f = setup(offerOnly);
+    const f = setup(stageAll);
     const job = f.jobs.open([stageKey]);
     const built = document([component('assignments', 60, [item(1, { due: { value: null, state: 'unknown', checkedAt: '2026-10-24T00:00:00Z' } })]),
       component('exam', 40, [], { kind: found('exam'), isFinal: found(true) })]);
@@ -506,7 +469,7 @@ describe('built document import (layered-sync task 5.1)', () => {
   });
 
   it('refuses an invalid built document without an agent-facing error and stores nothing', () => {
-    const f = setup(offerOnly);
+    const f = setup(stageAll);
     const job = f.jobs.open([stageKey]);
     let caught: unknown;
     try { f.jobs.storeBuilt(job.id, {}); } catch (error) { caught = error; }

@@ -11,6 +11,7 @@ import { CANVAS_ORIGIN } from './course-json.js';
 import type { ResolvedChoices } from './grading.js';
 import { handbookUrl } from './handbook.js';
 import { ED_CLI_NOTE_STAGE, ED_CLI_NOT_USED } from './ed-cli.js';
+import type { ExtensionReader } from './extension-bridge.js';
 import { SyncJobs, runBoundMs } from './jobs.js';
 import { allowedUrls, isAllowed, routeTabs, type AllowedUrls, type HomeLink } from './routing.js';
 
@@ -79,6 +80,7 @@ export interface SyncPipeline {
 }
 
 export interface AgentSyncOptions {
+  extension?: ExtensionReader;
   store: SqliteRepository; jobs?: SyncJobs;
   /** Resolved per run, so the host can compose the adapter and the agent tools after the registry. */
   adapter: () => AgentAdapter;
@@ -174,7 +176,6 @@ export class AgentSync implements SyncCommands {
    * routed jobs, classification, build and import. Every URL is fixed for its kind or permitted by `allowedUrls`.
    */
   private async pipelineRun(job: SyncJob, selected: readonly CourseSelection[]) {
-    const pipeline = this.options.pipeline;
     const runner = new AgentJobRunner({ jobs: this.jobs, adapter: this.options.adapter,
       ...(this.options.jobBoundMs !== undefined ? { jobBoundMs: this.options.jobBoundMs } : {}) });
     const attempts: RunJob[] = [];
@@ -185,10 +186,19 @@ export class AgentSync implements SyncCommands {
     let steps = 0; let turns = 0;
     try {
       // A failed course list does not stop the run: previously selected courses are still processed.
-      const listed = await this.runStage(runner, { kind: 'courses', jobId: job.id, urls: [canvasApiUrl('courses')] },
-        controller.signal, attempts, meta, () => (this.jobs.load(job.id)?.blocked?.length ?? 0) > 0
-          || this.jobs.candidates().some(row => Date.parse(row.offeredAt) >= Date.parse(job.startedAt)));
-      if (listed) { steps += listed.steps; turns += listed.turns; meta.coursesUnavailable = listed.unavailable; }
+      const started = performance.now();
+      let reason: string | undefined;
+      try {
+        if (!this.options.extension) throw new Error('extension disconnected');
+        const response = await this.options.extension.read(canvasApiUrl('courses'));
+        if (response.status !== 200 || !response.finalUrl.startsWith(`${CANVAS_ORIGIN}/api/`)) throw new Error('signed out');
+        this.jobs.capture({ jobId: job.id, page: 'courses', text: response.text });
+      } catch (error) {
+        meta.coursesUnavailable = true;
+        reason = error instanceof Error ? error.message : 'extension read failed';
+      }
+      attempts.push({ kind: 'courses', via: 'extension', ms: Math.max(0, performance.now() - started),
+        steps: 0, turns: 0, outcome: reason === undefined ? 'ok' : 'error', ...(reason === undefined ? {} : { reason }) });
       for (const course of selected) {
         if (controller.signal.aborted) break;
         const courseRun = await this.courseRun(runner, job, course, controller.signal, attempts, meta);

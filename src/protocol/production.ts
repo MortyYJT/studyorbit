@@ -8,6 +8,7 @@ import { describe, inputSchema } from './mcp.js';
 import { PlanningService } from '../planning/service.js';
 import { SyncJobs } from '../sync/jobs.js';
 import type { ClipboardReader } from '../sync/canvas-api.js';
+import type { ExtensionReader } from '../sync/extension-bridge.js';
 import { AgentSync, type SyncPipeline } from '../sync/agent-job.js';
 import { AssessmentFiles } from '../sync/assessment-files.js';
 import type { CourseFolderOptions } from '../sync/course-folder.js';
@@ -37,6 +38,7 @@ import { assessmentId } from '../sync/course-import.js';
 import { edHook, execFileEdRunner, type EdRunner } from '../sync/ed-cli.js';
 import { openSavedFile, openWithHostDefaultApp, type FileOpener } from '../sync/saved-files.js';
 export interface ProductionOptions {
+  extension?: ExtensionReader;
   store?: SqliteRepository; files?: ProtocolFiles; metadata?: readonly EvidenceMetadata[];
   reads?: AuxiliaryReadPorts; study?: { provider: StudyEvidenceProvider; store: StudyRecordStore };
   sync?: SyncCommands;
@@ -159,7 +161,7 @@ export function createProductionProtocol(options: ProductionOptions = {}) {
     },
     ed: edHook(edRunner, jobs),
   };
-  const sync = options.sync ?? new AgentSync({ store, jobs, adapter: () => adapter, pipeline });
+  const sync = options.sync ?? new AgentSync({ store, jobs, adapter: () => adapter, pipeline, extension: options.extension });
   const memory = new MemoryService(store);
   const savedFiles = { open: (input: { savedFileId: string }) => openSavedFile(store, input.savedFileId,
     { folder: options.courseFolder ?? options.assessmentFilesOptions, opener: options.fileOpener ?? openWithHostDefaultApp }) };

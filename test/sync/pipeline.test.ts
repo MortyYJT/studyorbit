@@ -8,6 +8,7 @@ import { AgentSync, type JobSpec, type PipelineJobContext, type SyncPipeline } f
 import { canvasApiUrl, type CanvasTab, type GroupsStage, type TabsStage } from '../../src/sync/canvas-api.js';
 import { edHook, type EdCommandResult, type EdRunner } from '../../src/sync/ed-cli.js';
 import { assessmentId } from '../../src/sync/course-import.js';
+import type { ExtensionReader } from '../../src/sync/extension-bridge.js';
 import { SyncJobs } from '../../src/sync/jobs.js';
 import { buildCourseDocument } from '../../src/sync/build-document.js';
 import type { CourseDocument } from '../../src/sync/course-json.js';
@@ -49,11 +50,6 @@ const keyA = 'SYNA10001:2026:S2';
 const keyB = 'SYNB20002:2026:S2';
 const pagesA = { canvas: canvasA };
 const pagesB = { canvas: canvasB };
-const allCourses = [
-  { code: 'SYNA10001', name: 'Synthetic Systems', term: '2026:S2', pages: pagesA },
-  { code: 'SYNB20002', term: '2026:S2', pages: pagesB },
-];
-
 const selection = (key: string, pages: { canvas?: string; ed?: string } = pagesA) => ({
   key, code: key.split(':')[0]!, term: '2026:S2', pages, offeredAt: '2026-10-24T00:00:00Z', selected: true,
 });
@@ -135,7 +131,6 @@ function scripted(options: BehaviourOptions = {}): Script {
     if (behaviour === 'unavailable') { yield { type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Synthetic unavailable' }; return; }
     if (behaviour === 'result-only') { yield { type: 'result', turns: 1 }; return; }
     switch (spec.kind) {
-      case 'courses': await call('courses.offer', { jobId: spec.jobId, courses: allCourses, blocked: [] }); break;
       case 'handbook': await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'skeleton',
         value: options.skeleton?.(spec) ?? { source: 'synthetic handbook', via: 'handbook', components: [] } }); break;
       case 'tabs': await call('stage.write', { jobId: spec.jobId, courseKey: spec.courseKey, stage: 'tabs',
@@ -158,6 +153,7 @@ function scripted(options: BehaviourOptions = {}): Script {
 }
 
 interface SetupOptions extends BehaviourOptions {
+  extension?: ExtensionReader;
   script?: Script;
   prompt?: SyncPipeline['prompt'];
   runBoundMs?: number;
@@ -179,7 +175,6 @@ function setup(options: SetupOptions = {}) {
       const { jobId, courseKey, stage, value } = input as { jobId: string; courseKey: string; stage: string; value: unknown };
       return jobs.recordStage(jobId, courseKey, stage, value);
     } },
-    { name: 'courses.offer', description: 'Offer courses', inputSchema: {}, execute: async input => jobs.offer(input as Parameters<SyncJobs['offer']>[0]) },
     { name: 'canvas.capture', description: 'Capture a Canvas page', inputSchema: {}, execute: async input => jobs.capture(input as Parameters<SyncJobs['capture']>[0]) },
     { name: 'handbook.capture', description: 'Capture the Handbook', inputSchema: {}, execute: async input => jobs.handbook(input as Parameters<SyncJobs['handbook']>[0]) },
   ];
@@ -192,7 +187,7 @@ function setup(options: SetupOptions = {}) {
     ...(options.archive ? { archive: options.archive } : {}),
     ...(options.parallel !== undefined ? { parallel: options.parallel } : {}),
   };
-  const sync = new AgentSync({ store, jobs, adapter: () => adapter, pipeline,
+  const sync = new AgentSync({ store, jobs, adapter: () => adapter, pipeline, extension: options.extension,
     ...(options.runBoundMs !== undefined ? { runBoundMs: options.runBoundMs } : {}),
     ...(options.jobBoundMs !== undefined ? { jobBoundMs: options.jobBoundMs } : {}) });
   cleanups.push(() => { store.close(); rmSync(directory, { recursive: true, force: true }); });
@@ -231,7 +226,7 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
       { kind: 'main', courseKey: keyA, steps: 0, turns: 0, outcome: 'error' },
     ]);
     expect(result.run.jobs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'courses', steps: 1, turns: 1, outcome: 'ok' }),
+      expect.objectContaining({ kind: 'courses', via: 'extension', steps: 0, turns: 0, outcome: 'error' }),
       expect.objectContaining({ kind: 'tabs', courseKey: keyA, steps: 1, turns: 1, outcome: 'ok' }),
       expect.objectContaining({ kind: 'classify', courseKey: keyA, steps: 1, turns: 1, outcome: 'ok' }),
     ]));
@@ -514,12 +509,12 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     expect(missing.run.courseCoverage?.[0]?.canvasNumbers).toBe('unavailable');
   });
 
-  it('A failed courses job does not stop previously selected courses', async () => {
-    const f = setup({ behaviour: spec => spec.kind === 'courses' ? 'error' : 'ok' });
+  it('A failed extension course list does not stop previously selected courses', async () => {
+    const f = setup();
     seed(f.store, keyA);
     const result = await f.sync.run({});
     expect(result.outcome).toBe('OK');
-    expect(result.run.jobs?.filter(job => job.kind === 'courses').map(job => job.outcome)).toEqual(['error', 'error']);
+    expect(result.run.jobs?.filter(job => job.kind === 'courses').map(job => job.outcome)).toEqual(['error']);
     expect(result.run.courseCoverage?.[0]?.stored).toBe(true);
   });
 
@@ -580,7 +575,7 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
     const runner: EdRunner = async () => { throw new Error('ENOENT edstem'); };
     let f!: ReturnType<typeof setup>;
     f = setup({ ed: (key, ctx) => edHook(runner, f.jobs)(key, ctx),
-      behaviour: spec => spec.kind === 'courses' ? 'ok' : 'error',
+      behaviour: () => 'error',
       build: key => { builds++; return { document: docFor(key), conflicts: [], complete: true, unknown: [], synthetic: {} }; } });
     f.store.saveCourseSelections([selection(keyA, { canvas: canvasA, ed: edA })]);
     const result = await f.sync.run({});
@@ -830,4 +825,49 @@ describe('layered sync pipeline (layered-sync task 5.1, step 2)', () => {
       readState: { aiPolicy: { quote: 'Generative AI is allowed here.' } } });
   });
 
+});
+
+describe('extension course list (extension-course-list)', () => {
+  const url = canvasApiUrl('courses');
+  const text = JSON.stringify([{ id: 900001, course_code: 'SYNA10001', name: 'Synthetic Systems', term: { name: 'Semester 2 2026' } }]);
+  it('captures unchanged courses, preserves selection and starts no courses agent', async () => {
+    const f = setup({ extension: { read: async requested => {
+      expect(requested).toBe(url); return { status: 200, finalUrl: url, text };
+    } } });
+    seed(f.store, keyA);
+    const result = await f.sync.run({});
+    expect(result.outcome).toBe('OK');
+    expect(f.jobs.candidates()).toMatchObject([{ key: keyA, selected: true }]);
+    expect(f.adapter.specs.some(spec => spec.kind === 'courses')).toBe(false);
+    expect(f.adapter.specs.map(spec => spec.kind)).toEqual(expect.arrayContaining(['tabs', 'groups']));
+    expect(f.store.loadRun(result.run.id)?.jobs?.filter(job => job.kind === 'courses')).toEqual([
+      expect.objectContaining({ via: 'extension', ms: expect.any(Number), outcome: 'ok' }),
+    ]);
+  });
+  it.each([
+    { status: 200, finalUrl: 'https://canvas.lms.unimelb.edu.au/login/saml', text },
+    { status: 401, finalUrl: url, text },
+  ])('marks signed-out discovery unavailable and stores no candidates (%j)', async response => {
+    const f = setup({ extension: { read: async () => response } });
+    const result = await f.sync.run({});
+    expect(result.outcome).toBe('AGENT_UNAVAILABLE');
+    expect(f.jobs.candidates()).toEqual([]);
+    expect(f.adapter.specs).toEqual([]);
+    expect(result.run.jobs).toEqual([expect.objectContaining({ via: 'extension', outcome: 'error', reason: 'signed out', ms: expect.any(Number) })]);
+  });
+  it('marks malformed Canvas text unavailable without storing candidates', async () => {
+    const f = setup({ extension: { read: async () => ({ status: 200, finalUrl: url, text: 'not JSON' }) } });
+    const result = await f.sync.run({});
+    expect(result.outcome).toBe('AGENT_UNAVAILABLE');
+    expect(f.jobs.candidates()).toEqual([]);
+    expect(result.run.jobs?.[0]).toMatchObject({ via: 'extension', outcome: 'error', reason: expect.any(String) });
+  });
+  it('continues saved courses immediately when disconnected', async () => {
+    const f = setup(); seed(f.store, keyA);
+    const result = await f.sync.run({});
+    expect(result.run.courseCoverage?.[0]?.stored).toBe(true);
+    expect(result.run.jobs?.[0]).toMatchObject({ via: 'extension', outcome: 'error', reason: 'extension disconnected' });
+    expect(f.adapter.specs.some(spec => spec.kind === 'courses')).toBe(false);
+    expect(result.run.jobs?.[0]?.ms).toBeLessThan(1_000);
+  });
 });

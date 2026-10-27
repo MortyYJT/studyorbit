@@ -253,7 +253,10 @@ it('runs one selected course through the layered pipeline, merges dated Ed lesso
       return { [Symbol.asyncIterator]: () => events, interrupt() {} };
     },
   };
-  const host = createProductionProtocol({ agentAdapter: adapter, clipboard, edRunner, owner: { assertOwner: async () => {} } });
+  const extensionRead = vi.fn(async (url: string) => ({ status: 200, finalUrl: url, text: JSON.stringify([
+    { id: 1, course_code: 'SYNA10001', name: 'Synthetic Systems', term: { name: 'Semester 2 2026' } },
+  ]) }));
+  const host = createProductionProtocol({ extension: { read: extensionRead }, agentAdapter: adapter, clipboard, edRunner, owner: { assertOwner: async () => {} } });
   closes.push(host.close);
   host.store.saveCourseSelections([{ key, code: 'SYNA10001', name: 'Synthetic Systems', term: '2026:S2',
     pages: { canvas: canvasPage, ed: edPage }, offeredAt: '2026-10-24T00:00:00Z', selected: true }]);
@@ -264,7 +267,8 @@ it('runs one selected course through the layered pipeline, merges dated Ed lesso
   await utimes(join(downloads, 'synthetic-week1.pdf'), future, future);
 
   const result = await dispatch(host.registry, 'sync.run', {}, host.context);
-  expect(result).toMatchObject({ ok: true, data: { outcome: 'OK', run: { syncOutcome: 'OK' } } });
+  expect(extensionRead).toHaveBeenCalledExactlyOnceWith('https://canvas.lms.unimelb.edu.au/api/v1/courses?enrollment_state=active&include[]=term&per_page=100');
+  expect(result).toMatchObject({ ok: true, data: { outcome: 'OK', run: { syncOutcome: 'OK', jobs: expect.arrayContaining([expect.objectContaining({ kind: 'courses', via: 'extension', outcome: 'ok' })]) } } });
   const run = (result as unknown as { data: { run: { id: string } } }).data.run;
   const course = host.store.query('courses', { limit: 10 }).items[0] as { id: string };
   expect(host.store.loadCourse(course.id)).toMatchObject({ code: 'SYNA10001', name: 'Synthetic Systems' });

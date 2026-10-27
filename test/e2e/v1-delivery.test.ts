@@ -29,6 +29,9 @@ const term = `${new Intl.DateTimeFormat('en', { timeZone: 'Australia/Melbourne',
 const clipboard = { text: '', read(): string { return clipboard.text; } };
 const canvasCoursePage = 'https://canvas.lms.unimelb.edu.au/courses/1';
 const termName = term.replace(':S1', ' Semester 1').replace(':S2', ' Semester 2');
+/** Layer 0: the extension returns the synthetic course list (no agent job reads it). */
+const extension = { read: async (url: string) => ({ status: 200, finalUrl: url,
+  text: JSON.stringify([{ id: 1, name: 'Synthetic Canvas', course_code: 'ABCD10001_2026_SM2', term: { name: termName } }]) }) };
 function readCourses(input: AgentInput): AsyncIterable<AgentEvent> {
   const jobId = /Job id: (\S+)/.exec(input.prompt)![1]!;
   const tool = (name: string) => input.tools.find(entry => entry.name === name);
@@ -40,10 +43,7 @@ function readCourses(input: AgentInput): AsyncIterable<AgentEvent> {
     return result;
   };
   return (async function* () {
-    if (tool('courses.offer')) {
-      clipboard.text = JSON.stringify([{ id: 1, name: 'Synthetic Canvas', course_code: 'ABCD10001_2026_SM2', term: { name: termName } }]);
-      await call('canvas.capture', { jobId, page: 'courses' });
-    } else if (tool('handbook.capture')) {
+    if (tool('handbook.capture')) {
       clipboard.text = ['The University of Melbourne Handbook', 'ABCD10001 Synthetic Canvas', 'Assessment',
         'Description\tTiming\tPercentage', 'Weekly quizzes\tWeeks 1-12\t30%', 'Final exam\tExam period\t70%'].join('\n');
       await call('handbook.capture', { jobId, courseKey: `ABCD10001:${term}` });
@@ -98,7 +98,7 @@ describe('v1 delivery end to end (synthetic)', () => {
     vi.stubEnv('COURSEWORK_HOME', root);
     const ui = join(root, 'ui'); mkdirSync(ui); writeFileSync(join(ui, 'index.html'), '<html>synthetic</html>');
     store = new SqliteRepository(databasePath());
-    host = createProductionProtocol({ store, agentAdapter: adapter, clipboard,
+    host = createProductionProtocol({ store, agentAdapter: adapter, clipboard, extension,
       edRunner: async () => ({ code: 1, stdout: '' }),
       owner: { assertOwner: async () => { throw new Error('No terminal owner in this test.'); } } });
     let opened = '';

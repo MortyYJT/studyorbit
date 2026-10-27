@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { parseProtocolCLI } from './protocol/cli.js';
 import { fail } from './protocol/envelope.js';
+import { ExtensionBridge } from './sync/extension-bridge.js';
 import { createProductionProtocol } from './protocol/production.js';
 
 const { version } = JSON.parse(
@@ -24,9 +25,12 @@ else {
     // stdout is reserved for MCP framing, including during production initialization.
     console.log = console.info = console.debug = (...args: unknown[]) => console.error(...args);
   }
+  const extension = isUi ? new ExtensionBridge() : undefined;
+  if (extension && !await extension.start()) process.stderr.write('coursework ui: extension bridge unavailable.\n');
   let host: ReturnType<typeof createProductionProtocol> | undefined;
-  try { host = createProductionProtocol(); }
+  try { host = createProductionProtocol({ extension }); }
   catch {
+    await extension?.close();
     process.exitCode = 1;
     process.stderr.write('coursework: production storage is unavailable.\n');
     if (!isMcp && !isHttp && !isUi) console.log(JSON.stringify(fail('unknown', 'INTERNAL', 'Production storage is unavailable.')));
@@ -47,5 +51,5 @@ else {
         return response;
       },
     });
-  } finally { host.close(); }
+  } finally { await extension?.close(); await host.close(); }
 }
