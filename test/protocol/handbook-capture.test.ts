@@ -72,16 +72,16 @@ describe('handbook.capture agent command (layered-sync task 4.1)', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('page text as an argument: an extra key is refused with INVALID_INPUT while the clipboard is not read and nothing is stored', async () => {
+  it('page text as an argument (#218): the copied text is parsed, the system clipboard is not read, and raw text is not stored', async () => {
     const f = setup();
     f.select();
     const job = f.jobs.open([key]);
-    f.clipboard.text = copied('SYNTHETIC_ARGUMENT_MARKER');
-    const result = await f.agentCall('handbook.capture', { jobId: job.id, courseKey: key, text: f.clipboard.text });
-    expect(result).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    f.clipboard.text = 'node dist/cli.js ui';
+    const result = await f.agentCall('handbook.capture', { jobId: job.id, courseKey: key, text: copied('SYNTHETIC_ARGUMENT_MARKER') });
+    expect(result).toMatchObject({ ok: true });
     expect(f.clipboard.reads).toBe(0);
-    expect(f.store.loadSyncJob(job.id)?.stages).toBeUndefined();
-    expect(JSON.stringify(result)).not.toContain('SYNTHETIC_ARGUMENT_MARKER');
+    expect(f.store.loadSyncJob(job.id)?.stages?.[key]?.skeleton).toBeDefined();
+    expect(JSON.stringify(f.store.loadSyncJob(job.id))).not.toContain('SYNTHETIC_ARGUMENT_MARKER');
   });
 
   it('block page copied: INVALID_INPUT asks for a fresh copy and the marker is never echoed or stored', async () => {

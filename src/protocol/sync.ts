@@ -8,6 +8,8 @@ const time = z.iso.datetime({ offset: true });
 const platform = z.enum(['canvas', 'ed']);
 const warningCode = z.enum(['WEIGHT_SUM', 'REMAINDER_SHORTFALL', 'COUNT_MISMATCH']);
 const paths = z.array(z.string().max(200)).max(500);
+/** Copied page text for the capture commands; the parsers enforce the 5 MB byte cap. */
+const captureText = z.string().min(1).max(5 * 1024 * 1024).optional();
 
 // Job-scoped stage writes (layered-sync 5.3). Bounds keep one agent call small; the refinements below
 // carry the domain rules the agent must follow, with contract paths it can re-read and resubmit.
@@ -141,13 +143,16 @@ export const syncContracts = {
     blocked: z.array(platform).max(2).default([]) }),
     output: z.strictObject({ stored: count, undecided: count, selected: count }), level: 0 as const },
   'courses.candidates': { input: z.strictObject({}), output: z.strictObject({ items: z.array(CourseSelectionSchema.strict()).max(500) }), level: 0 as const },
-  /** Agent write, job-scoped: parse one Canvas API page from the clipboard; page text is never an argument. */
-  'canvas.capture': { input: z.strictObject({ jobId: id, courseKey: id.optional(), page: z.enum(['courses', 'tabs', 'groups']) }),
+  /**
+   * Agent write, job-scoped: parse one Canvas API page. `text` is the copied page (decision #218: the agent's browser
+   * clipboard is not the system clipboard); without it the command reads the system clipboard.
+   */
+  'canvas.capture': { input: z.strictObject({ jobId: id, courseKey: id.optional(), page: z.enum(['courses', 'tabs', 'groups']), text: captureText }),
     output: z.strictObject({ page: z.enum(['courses', 'tabs', 'groups']), stored: count.optional(), skipped: count.optional(),
       undecided: count.optional(), selected: count.optional(), tabs: count.optional(), groups: count.optional(),
       assignments: count.optional(), coverage: z.enum(['api', 'partial']).optional() }), level: 0 as const },
-  /** Agent write, job-scoped: parse the copied Handbook assessment page; page text is never an argument. */
-  'handbook.capture': { input: z.strictObject({ jobId: id, courseKey: id }),
+  /** Agent write, job-scoped: parse the copied Handbook assessment page, from `text` or else the system clipboard (#218). */
+  'handbook.capture': { input: z.strictObject({ jobId: id, courseKey: id, text: captureText }),
     output: z.strictObject({ components: count }), level: 0 as const },
   /** Agent write, job-scoped: the home page's statements, syllabus location and links; code routes the links. */
   'course.map': { input: CourseMapInputSchema, output: z.strictObject({ links: count }), level: 0 as const },
