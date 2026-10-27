@@ -22,7 +22,7 @@ const help = `获取已登录浏览器中的 Canvas 课程列表（Mac 验证版
   npm run sync:courses -- --browser chrome --wait 3
 
 --browser   default（默认） / edge / chrome / safari / firefox / brave
---wait      打开页面后等待秒数，默认 1.5；之后只复制一次
+--wait      打开页面后等待秒数，默认 1；之后只复制一次
 --out       输出 JSON 文件，默认 .local/lms/courses.json
 
 请先在所选浏览器登录 LMS；运行期间不要操作键盘或切换窗口。
@@ -66,7 +66,7 @@ end run`;
 async function main() {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) { console.log(help); return; }
-  const options = { browser: 'default', wait: '1.5', out: resolve(root, '.local/lms/courses.json') };
+  const options = { browser: 'default', wait: '1', out: resolve(root, '.local/lms/courses.json') };
   while (args.length) {
     const key = args.shift();
     if (!['--browser', '--wait', '--out'].includes(key) || !args.length || args[0].startsWith('--')) {
