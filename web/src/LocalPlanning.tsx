@@ -4,11 +4,13 @@ import type { Language } from './i18n.js';
 type RecordValue = Record<string, unknown>;
 type Course = { id: string; name: string; subjectCode: string; term?: string };
 type Kind = 'exam' | 'quiz' | 'assignment' | 'presentation' | 'participation' | 'ungraded' | 'unknown';
-type Assessment = { key: string; name: string; due: string; weight: string; weightValue?: number; sourceZero: boolean; kind: Kind; score?: number; outOf?: number; group: string; status: string; link: string; caution: boolean };
+type Assessment = { key: string; name: string; due: string; weight: string; weightValue?: number; sourceZero: boolean; kind: Kind; score?: number; outOf?: number; group: string; status: string; link: string; caution: boolean; hurdle: boolean };
+type Correction = { kind?: Kind; weight?: number; due?: string; mergeInto?: string };
 type CourseData = { course: Course; assessments: Assessment[]; groups: RecordValue[]; materials: RecordValue[]; issues: RecordValue[]; available: boolean };
 type Work = { key: string; courseId: string; courseCode: string; title: string; due: string; minutes: number };
 const workKey = 'coursework.local-planning.work.v1';
 const capacityKey = 'coursework.local-planning.capacity.v1';
+const correctionKey = 'coursework.local-planning.corrections.v1';
 const record = (value: unknown): RecordValue => value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {};
 const list = (value: unknown): RecordValue[] => Array.isArray(value) ? value.map(record) : [];
 function text(value: unknown): string {
@@ -30,6 +32,7 @@ function zeroWeight(value: unknown): boolean {
 function kindOf(value: string, name: string): Kind {
   const explicit = value.trim().toLowerCase();
   if (/^(不计分|ungraded|practice|survey)$/.test(explicit)) return 'ungraded';
+  if (/\b(?:mid[ -]semester|matlab|final)\s+test\b|期中考试|期末考试/i.test(name)) return 'exam';
   if (/^(考试|exam|test)$/.test(explicit)) return 'exam';
   if (/^(测验|小测|quiz)$/.test(explicit)) return 'quiz';
   if (/^(作业|书面作业|论文|报告|项目|assignment|paper|report|project)$/.test(explicit)) return 'assignment';
@@ -61,7 +64,8 @@ function normalize(course: Course, value: unknown): CourseData {
   const equalFour = sources.some(item => /four written assignments equally weighted and worth a total of 15%/i.test(text(item['关键原文'])));
   const assessments = [...list(report['考核项目']), ...list(report['练习与不计分条目'])].map((item, index): Assessment => {
     const name = text(item['名称']) || `未命名考核 ${index + 1}`;
-    const link = url(item['链接'] ?? item['原始链接']);
+    const sourceLinks = Array.isArray(item['来源']) ? item['来源'] : [];
+    const link = url(item['链接'] ?? item['原始链接'] ?? sourceLinks.find(value => typeof value === 'string' && /\/(?:assignments|quizzes)\//.test(value)));
     const caution = /\b(?:aea|special consideration|supplementary|deferred|alternative|replacement)\b|特殊|替代|补考|延期/i.test(`${name} ${text(item['类型'])}`);
     // Historic reports mix group and item weights. Only the explicitly evidenced case is projected.
     const overview = sources.map(source => text(source['关键原文'])).join(' ');
@@ -74,7 +78,8 @@ function normalize(course: Course, value: unknown): CourseData {
     const outOf = number(result['满分'] ?? points['实际满分'] ?? item['满分']);
     return { key: `${course.id}:${link || `${index}:${name}`}`, name, due: text(item['截止时间']), weight, weightValue,
       sourceZero: zeroWeight(item['课程占比'] ?? item['权重']), kind: kindOf(text(item['分类'] ?? item['类型']), name),
-      score, outOf, group: text(item['分组'] ?? item['评分组']), status: text(item['状态']), link, caution };
+      score, outOf, group: text(item['分组'] ?? item['评分组']), status: text(item['状态']), link, caution,
+      hurdle: /\bhurdle\b|门槛|必须.*(?:出勤|参加)|must attend/i.test(`${name} ${text(item['类型'])} ${text(item['备注'])}`) };
   });
   const rawGroups = report['考核分组'];
   return { course, assessments, groups: Array.isArray(rawGroups) ? list(rawGroups) : list(record(rawGroups)['页面原始行'] ?? record(rawGroups)['分组']), materials: list(report['课程资料']), issues: list(report['未能获取']), available: !!value };
@@ -95,7 +100,7 @@ function ScoreOverview({ assessments, zh }: { assessments: Assessment[]; zh: boo
     <div><div className="facts">
       <div><div className="v">{average === undefined ? '—' : `${average.toFixed(1)}%`}</div><div className="muted">{zh ? '当前平均' : 'Current average'}</div></div>
       <div><div className="v">{weight ? `${weight.toFixed(2).replace(/\.00$/, '')}%` : '—'}</div><div className="muted">{zh ? '已确认出分占比' : 'Confirmed graded weight'}</div></div>
-      <div><div className="v small">{zh ? '权重或计分规则待核' : 'Weights or grading rules unverified'}</div><label className="inline muted">{zh ? '期末需要 · 目标' : 'Final needed · target'} <select value={target} onChange={event => setTarget(event.target.value)}>{['H1', 'H2A', 'H2B', 'H3', 'P'].map(band => <option key={band}>{band}</option>)}</select></label></div>
+      <div><div className="v small">{zh ? '权重或计分规则不完整' : 'Weights or grading rules unverified'}</div><label className="inline muted">{zh ? '期末需要 · 目标' : 'Final needed · target'} <select value={target} onChange={event => setTarget(event.target.value)}>{['H1', 'H2A', 'H2B', 'H3', 'P'].map(band => <option key={band}>{band}</option>)}</select></label></div>
     </div><div className="key"><span><i className="earned" />{zh ? '已得' : 'Earned'}</span><span><i className="not-earned" />{zh ? '未得' : 'Not earned'}</span></div><p className="muted">{zh ? '仅计算已确认单项权重和分数，不代表最终成绩。' : 'Only confirmed individual weights and scores are included.'}</p></div>
   </section>;
 }
@@ -105,6 +110,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const [courses, setCourses] = useState<CourseData[]>([]);
   const [error, setError] = useState('');
   const [work, setWork] = useState<Work[]>(readWork);
+  const [corrections, setCorrections] = useState<Record<string, Correction>>(() => { try { return record(JSON.parse(localStorage.getItem(correctionKey) ?? '{}')) as Record<string, Correction>; } catch { return {}; } });
   const [capacity, setCapacity] = useState(() => { try { const n = Number(localStorage.getItem(capacityKey)); return Number.isFinite(n) && n > 0 && n <= 1440 ? n : 120; } catch { return 120; } });
   const [week, setWeek] = useState(() => { const today = localDay(); return addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)); });
   const [chosen, setChosen] = useState<Assessment>();
@@ -125,7 +131,14 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     }
     void load(); return () => { live = false; };
   }, [refreshVersion, zh]);
-  const selected = courses.find(item => item.course.id === courseId);
+  const original = courses.find(item => item.course.id === courseId);
+  const selected = original && { ...original, assessments: original.assessments.map(item => {
+    const change = record(corrections[item.key]); const overrideWeight = number(change.weight);
+    const validKind = ['exam', 'quiz', 'assignment', 'presentation', 'participation', 'ungraded', 'unknown'].includes(String(change.kind)) ? change.kind as Kind : item.kind;
+    return { ...item, kind: validKind, ...(overrideWeight !== undefined && overrideWeight >= 0 && overrideWeight <= 100 ? { weightValue: overrideWeight, weight: `${overrideWeight}% · 本人确认`, sourceZero: overrideWeight === 0 } : {}),
+      ...(typeof change.due === 'string' && change.due ? { due: `${change.due} · 本人确认` } : {}) };
+  }) };
+  function saveCorrections(next: Record<string, Correction>): boolean { try { localStorage.setItem(correctionKey, JSON.stringify(next)); setCorrections(next); setSaveError(false); return true; } catch { setSaveError(true); return false; } }
   const plan = useMemo(() => {
     const days = new Map<string, { work: Work; minutes: number }[]>();
     const used = new Map<string, number>();
@@ -156,40 +169,58 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       <div className="chead"><h1>{selected.course.subjectCode}</h1><span className="muted">{selected.course.name}</span><small>{selected.course.term}</small></div>
       {!selected.available && <p className="needs">{zh ? '这门课尚无可用的同步结果。' : 'No sync result is available for this course yet.'}</p>}
       {syncIssues.filter(item => item.id === selected.course.id && item.status === 'failed').map(item => <p className="needs" key={item.id}>{zh ? '最近一次同步未完成，以下资料可能来自之前的结果。' : 'The latest sync failed; information may be from an earlier result.'} {item.reason}</p>)}
-      {selected.available && <ScoreOverview assessments={selected.assessments} zh={zh} />}
+      {selected.available && <ScoreOverview assessments={selected.assessments.filter(item => !corrections[item.key]?.mergeInto)} zh={zh} />}
       <section className="policy" title={zh ? '该功能尚未接入' : 'Not connected yet'}><label className="inline">{zh ? 'AI 政策' : 'AI policy'} <select disabled aria-label={zh ? 'AI 政策' : 'AI policy'}><option>{zh ? '未记录' : 'Not recorded'}</option></select></label><label className="inline">{zh ? '默认等级' : 'Default level'} <select disabled aria-label={zh ? '默认等级' : 'Default level'}><option>{zh ? '未接入' : 'Not connected'}</option></select></label></section>
       <div className="tabs" role="tablist"><button role="tab" aria-selected={courseTab === 'assessments'} onClick={() => setCourseTab('assessments')}>{zh ? '考核' : 'Assessments'}</button><button role="tab" aria-selected={courseTab === 'revision'} onClick={() => setCourseTab('revision')}>{zh ? '复习' : 'Revision'}</button></div>
       {courseTab === 'assessments' ? <div className="assessment-list">
         <div className="arow head" aria-hidden="true"><span>{zh ? '名称' : 'Name'}</span><span>{zh ? '截止' : 'Due'}</span><span className="num">{zh ? '权重' : 'Weight'}</span><span className="num">{zh ? '分数' : 'Score'}</span><span>{zh ? '状态' : 'Status'}</span><span>{zh ? '排期' : 'Plan'}</span></div>
         {!selected.assessments.length && <p className="muted">{zh ? '暂未获取考核项目。' : 'No assessments found yet.'}</p>}
         {(() => {
-          const kinds: Kind[] = ['exam', 'quiz', 'assignment', 'presentation', 'participation', 'unknown'];
+          const kinds: Kind[] = ['quiz', 'assignment', 'exam', 'presentation', 'participation', 'unknown'];
           const labels: Record<Kind, string> = zh ? { exam: '考试', quiz: '测验', assignment: '作业', presentation: '展示', participation: '参与', ungraded: '不计分', unknown: '类型待确认' } : { exam: 'Exams', quiz: 'Quizzes', assignment: 'Assignments', presentation: 'Presentations', participation: 'Participation', ungraded: 'Ungraded', unknown: 'Type unconfirmed' };
           const groupName = (group: RecordValue) => text(group['名称'] ?? group['组名原文'] ?? group['组名']);
           const groupWeight = (group: RecordValue) => group['课程占比'] ?? group['权重'] ?? group['页面原文权重'];
-          const row = (item: Assessment) => <button key={item.key} className="arow" onClick={() => setChosen(item)}>
+          const all = selected.assessments;
+          const visible = all.filter(item => !corrections[item.key]?.mergeInto);
+          const row = (item: Assessment) => <details key={item.key} className="assessment-entry"><summary className="arow">
             <span className="aname">{item.name}{item.caution && <span className="kind">{zh ? '可能为替代' : 'Possible alternative'}</span>}</span>
-            <span className="muted">{item.due || (zh ? '未知' : 'Unknown')}</span><span className="num">{item.sourceZero ? '0%' : item.weight || (zh ? '待核' : 'Unverified')}</span>
+            <span className="muted">{item.due || (zh ? '未知' : 'Unknown')}</span><span className="num">{item.sourceZero ? '0%' : item.weight || (zh ? '待确认' : 'Unconfirmed')}</span>
             <span className="num points">{item.score === undefined ? '—' : `${item.score}${item.outOf !== undefined ? ` / ${item.outOf}` : ''}`}</span>
-            <span>{item.status || (zh ? '未知' : 'Unknown')}</span><span>{work.some(entry => entry.key === item.key) ? (zh ? '已排期' : 'Planned') : '—'}</span>
-          </button>;
+            <span>{item.status || (zh ? '未知' : 'Unknown')}</span><span>{work.some(entry => entry.key === item.key) ? (zh ? '已排期' : 'Planned') : '—'}</span></summary>
+            <div className="assessment-expanded">
+              {item.group && <p>{zh ? '原始分组' : 'Source group'}: {item.group}</p>}
+              {item.link && <p><a href={item.link} target="_blank" rel="noreferrer">{zh ? '查看来源' : 'Source'}</a></p>}
+              {all.filter(other => corrections[other.key]?.mergeInto === item.key).map(other => <div key={other.key} className="local-group"><span>{zh ? '已合并来源' : 'Merged source'}: {other.name} {other.link && <a href={other.link} target="_blank" rel="noreferrer">{zh ? '查看' : 'View'}</a>}</span><button onClick={() => { const next = { ...corrections }; const change = { ...next[other.key] }; delete change.mergeInto; next[other.key] = change; saveCorrections(next); }}>{zh ? '撤销合并' : 'Undo merge'}</button></div>)}
+              <form className="local-confirm" key={item.key} onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); const rawWeight = String(data.get('weight') ?? '').trim(); const newWeight = rawWeight === '' ? undefined : Number(rawWeight); if (newWeight !== undefined && (!Number.isFinite(newWeight) || newWeight < 0 || newWeight > 100)) return;
+                const next: Correction = { ...corrections[item.key], kind: String(data.get('kind')) as Kind }; if (newWeight === undefined) delete next.weight; else next.weight = newWeight;
+                const due = String(data.get('due') ?? ''); if (due) next.due = due; else delete next.due; saveCorrections({ ...corrections, [item.key]: next }); }}>
+                <label>{zh ? '确认类型' : 'Confirm type'}<select name="kind" defaultValue={item.kind}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'ungraded', 'unknown'] as Kind[]).map(kind => <option value={kind} key={kind}>{labels[kind]}</option>)}</select></label>
+                <label>{zh ? '单项占比 %（留空为未确认）' : 'Item weight % (blank if unknown)'}<input name="weight" type="number" min="0" max="100" step="any" defaultValue={corrections[item.key]?.weight} /></label>
+                <label>{zh ? '确认日期（可选）' : 'Confirm date (optional)'}<input name="due" type="date" defaultValue={corrections[item.key]?.due} /></label><button type="submit">{zh ? '保存确认' : 'Save'}</button>
+              </form>
+              <div className="local-merge"><label>{zh ? '如果是同一个考核，合并到' : 'If this is the same assessment, merge into'}<select defaultValue="" onChange={event => { const target = event.target.value; if (!target) return; saveCorrections({ ...corrections, [item.key]: { ...corrections[item.key], mergeInto: target } }); }}><option value="">{zh ? '选择考核' : 'Choose assessment'}</option>{visible.filter(other => other.key !== item.key && !all.some(child => corrections[child.key]?.mergeInto === item.key)).map(other => <option value={other.key} key={other.key}>{other.name}</option>)}</select></label><small>{zh ? '仅由你确认相同后合并；来源保留，可撤销。已有排期不会自动移除，请检查重复任务。' : 'Merge only after confirming; sources remain and the merge can be undone. Existing plans are not removed.'}</small></div>
+              <button onClick={() => setChosen(item)}>{zh ? '安排学习' : 'Plan study'}</button>
+            </div></details>;
           const groups = selected.groups.filter(group => groupName(group) !== '总计');
-          const groupedItem = (kind: Kind) => selected.assessments.filter(item => item.kind === kind && !item.sourceZero && item.kind !== 'ungraded');
-          const visibleGroups = (kind: Kind) => groups.filter(group => !zeroWeight(groupWeight(group)) && kindOf('', groupName(group)) === kind);
-          const foldedGroups = groups.filter(group => zeroWeight(groupWeight(group)));
-          const foldedItems = selected.assessments.filter(item => item.sourceZero || item.kind === 'ungraded');
+          const isHurdle = (group: RecordValue) => /hurdle|门槛|must attend/i.test(groupName(group));
+          const groupedItem = (kind: Kind) => visible.filter(item => kind === 'participation' && item.hurdle || item.kind === kind && !item.hurdle && !item.sourceZero && item.kind !== 'ungraded');
+          const visibleGroups = (kind: Kind) => groups.filter(group => kind === 'participation' && isHurdle(group) || !isHurdle(group) && !zeroWeight(groupWeight(group)) && kindOf('', groupName(group)) === kind);
+          const foldedGroups = groups.filter(group => zeroWeight(groupWeight(group)) && !isHurdle(group));
+          const foldedItems = visible.filter(item => !item.hurdle && (item.sourceZero || item.kind === 'ungraded'));
           return <>
             {kinds.map(kind => { const items = groupedItem(kind); const components = visibleGroups(kind); if (!items.length && !components.length) return null;
-              return <section className="agroup" key={kind}><div className="ghead"><b>{labels[kind]}</b></div>
-                {components.map((group, index) => <div className="ghead source-group" key={`${groupName(group)}-${index}`}><span>{groupName(group) || (zh ? '未命名分组' : 'Unnamed group')}</span><span className="muted">{groupWeight(group) === undefined || groupWeight(group) === null ? (zh ? '权重待核' : 'Weight unverified') : `${text(groupWeight(group))}${typeof groupWeight(group) === 'number' ? '%' : ''}`}</span></div>)}
-                {items.map(row)}</section>; })}
+              const open = kind !== 'participation' || items.some(item => item.hurdle) || components.some(group => /hurdle|门槛|must attend/i.test(groupName(group)));
+              return <details className="agroup category" key={kind} open={open || undefined}><summary className="ghead"><b>{labels[kind]}</b><small>{items.length}</small></summary>
+                {items.map(row)}
+                {components.length > 0 && <details className="source-components"><summary>{zh ? '原始分数组（可能重叠）' : 'Source groups (may overlap)'}</summary>{components.map((group, index) => <div className="ghead source-group" key={`${groupName(group)}-${index}`}><span>{groupName(group) || (zh ? '未命名分组' : 'Unnamed group')}</span><span className="muted">{groupWeight(group) === undefined || groupWeight(group) === null ? (zh ? '权重未知' : 'Weight unknown') : `${text(groupWeight(group))}${typeof groupWeight(group) === 'number' ? '%' : ''}`}</span></div>)}</details>}
+              </details>; })}
             {(foldedGroups.length > 0 || foldedItems.length > 0) && <details className="no-marks"><summary>{zh ? '不计分及 0% 项目' : 'Ungraded and 0%'} ({foldedItems.length + foldedGroups.length})</summary>
               {foldedGroups.map((group, index) => <div className="ghead source-group" key={`${groupName(group)}-${index}`}><span>{groupName(group)}</span><span className="muted">0%</span></div>)}
               {foldedItems.map(row)}
             </details>}
           </>;
         })()}
-        <p className="muted">{zh ? '分组来自原始页面，可能存在重复或冲突；单项权重待确认时不参与成绩计算。' : 'Source groups may overlap or conflict; unverified weights are excluded from grade calculations.'}</p>
+        <p className="muted">{zh ? '点击项目可确认类型、占比和日期，也可以合并重复来源；原始分组可能重叠。' : 'Source groups may overlap or conflict; unverified weights are excluded from grade calculations.'}</p>
       </div> : <section><p className="muted">{zh ? '复习功能尚未接入。' : 'Revision is not connected yet.'}</p>
         {!!selected.materials.length && <><h2>{zh ? '课程资料' : 'Materials'}</h2><ul className="linked">{selected.materials.map((item, index) => { const link = url(item['原始链接'] ?? item['链接']); const name = text(item['名称']) || '资料'; return <li key={index}>{link ? <a href={link} target="_blank" rel="noreferrer">{name}</a> : name}</li>; })}</ul></>}</section>}
       {chosen && <div className="local-drawer-overlay" role="presentation"><section className="local-drawer" role="dialog" aria-modal="true" aria-label={chosen.name}>
@@ -200,7 +231,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         <div className="field"><span className="k">{zh ? '状态' : 'Status'}</span><span>{chosen.status || '—'}</span></div>
         {chosen.link && <p><a href={chosen.link} target="_blank" rel="noreferrer">{zh ? '查看来源' : 'Source'}</a></p>}
         <h3>{zh ? '安排学习' : 'Plan study'}</h3><p className="muted">{zh ? '确认截止日期并填写预计学习时间。' : 'Confirm the due date and estimated study time.'}</p>
-        <form key={chosen.key} onSubmit={schedule}><label>{zh ? '截止日期' : 'Due date'}<input name="due" type="date" required defaultValue={work.find(item => item.key === chosen.key)?.due} /></label><label>{zh ? '预计学习分钟数' : 'Estimated minutes'}<input name="minutes" type="number" min="1" max="100000" required defaultValue={work.find(item => item.key === chosen.key)?.minutes} /></label><button className="primary" type="submit">{zh ? '保存并排期' : 'Save and plan'}</button></form>
+        <form key={chosen.key} onSubmit={schedule}><label>{zh ? '截止日期' : 'Due date'}<input name="due" type="date" required defaultValue={work.find(item => item.key === chosen.key)?.due ?? corrections[chosen.key]?.due} /></label><label>{zh ? '预计学习分钟数' : 'Estimated minutes'}<input name="minutes" type="number" min="1" max="100000" required defaultValue={work.find(item => item.key === chosen.key)?.minutes} /></label><button className="primary" type="submit">{zh ? '保存并排期' : 'Save and plan'}</button></form>
       </section></div>}
       {!!selected.issues.filter(item => !/按要求|按用户.*限制|没有下载|不读取|not download/i.test(text(item['原因']))).length && <details><summary>{zh ? '课程待核信息' : 'Course notes'}</summary>{selected.issues.filter(item => !/按要求|按用户.*限制|没有下载|不读取|not download/i.test(text(item['原因']))).map((item, index) => <p key={index}><strong>{text(item['项目'])}</strong> {text(item['原因'])}</p>)}</details>}
     </> : <p>{zh ? '课程不可用或未选中。' : 'Course unavailable or not selected.'}</p>}

@@ -307,3 +307,12 @@ button.primary:hover:enabled { background:var(--ink); opacity:.9; }
 .local-drawer h2 { margin:0; }
 .local-drawer h3 { font-size:14px; margin:22px 0 6px; }
 .source-group { padding:10px 4px; font-weight:400; color:var(--muted); }
+.category > summary, .assessment-entry > summary { cursor:pointer; }
+.assessment-entry > summary::marker { color:var(--muted); }
+.assessment-expanded { padding:14px 18px; background:var(--hover); border-bottom:1px solid var(--line); }
+.assessment-expanded p { margin:6px 0; }
+.local-confirm { display:flex; align-items:end; flex-wrap:wrap; gap:10px; margin:12px 0; }
+.local-confirm label { margin:0; min-width:150px; flex:1; }
+.local-merge { margin:12px 0; }
+.local-merge label { margin-bottom:4px; }
+.source-components { padding:10px 4px; color:var(--muted); }
