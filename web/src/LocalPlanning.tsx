@@ -292,11 +292,12 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
               <div className="local-merge"><label>{zh ? '如果是同一个考核，合并到' : 'If this is the same assessment, merge into'}<select defaultValue="" onChange={event => { const target = event.target.value; if (!target) return; saveCorrections({ ...corrections, [item.key]: { ...corrections[item.key], mergeInto: target } }); }}><option value="">{zh ? '选择考核' : 'Choose assessment'}</option>{visible.filter(other => other.key !== item.key && !all.some(child => corrections[child.key]?.mergeInto === item.key)).map(other => <option value={other.key} key={other.key}>{other.name}</option>)}</select></label><small>{zh ? '来源保留，可撤销。已有排期不会自动移除。' : 'Sources remain and merges can be undone. Existing plans are not removed.'}</small></div>
               </details><button onClick={() => setChosen(item)}>{zh ? '安排学习' : 'Plan study'}</button>
             </div></details>;
-          const groupedItem = (kind: Kind) => visible.filter(item => !childKeys.has(item.key) && !item.caution && (kind === 'participation' && item.hurdle || kind !== 'participation' && item.kind === kind && !item.hurdle && !item.sourceZero && item.kind !== 'ungraded'));
-          const foldedItems = visible.filter(item => !childKeys.has(item.key) && (item.caution || !item.hurdle && (item.sourceZero || item.kind === 'ungraded' || item.kind === 'participation')));
+          const scoredParticipation = (item: Assessment) => item.kind === 'participation' && !item.sourceZero && (item.weightValue ?? 0) > 0;
+          const groupedItem = (kind: Kind) => visible.filter(item => !childKeys.has(item.key) && !item.caution && (kind === 'participation' && (item.hurdle || scoredParticipation(item)) || kind !== 'participation' && item.kind === kind && !item.hurdle && !item.sourceZero && item.kind !== 'ungraded'));
+          const foldedItems = visible.filter(item => !childKeys.has(item.key) && (item.caution || !item.hurdle && (item.sourceZero || item.kind === 'ungraded' || item.kind === 'participation' && !scoredParticipation(item))));
           return <>
             {kinds.map(kind => { const items = groupedItem(kind); if (!items.length && !(kind === 'assignment' && parents.length)) return null;
-              const open = kind !== 'participation' || items.some(item => item.hurdle);
+              const open = kind !== 'participation' || items.some(item => item.hurdle || scoredParticipation(item));
               return <details className="agroup category" key={kind} open={open || undefined}><summary className="ghead"><b>{labels[kind]}</b><small>{items.length + (kind === 'assignment' ? parents.length : 0)}</small></summary>
                 {kind === 'assignment' && parents.map(parent => <details className="assessment-parent" key={parent.name}>
                   <summary className="arow"><span className="aname"><strong>{parent.name}</strong></span><span className="muted">{parent.children.length} {zh ? '个子项' : 'items'}</span><span className="num">{parent.weight === undefined ? '—' : `${parent.weight}%`}</span><span className="num">—</span><span>—</span><span>—</span></summary>
