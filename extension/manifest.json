@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Coursework Canvas Reader",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6qkLX4wFXZvWPAkGylTQgcmf9fzkPHm6nJkGSFtaIOtwEzeMaIHHBQNONSMNcxUvxbwORd0239wrhjFCC3bSMqaaSYP/wqpHMs0l7TayVi0E8/Ckmg7pHb/OemU2WE77BJfBDLFxgktkFnAzydlTF/qs24hk1aDhh83nufoEpXPF24qs3zd5agHT/9GLqS/z0Zpf06zT/jd91ZD7IXOTlHfyPz5sJa47JjCxjIVC0REdHwKWzI5daSgPoNcDiv2hO/00dU8c2ggzEY67U/ArdP6afGodNBDMHFObzbpEgHmXuvP/EtjzwbVSjHnMfM0oTwSbkHIcTDKAKxl+at89KwIDAQAB",
+  "permissions": [
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://canvas.lms.unimelb.edu.au/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
