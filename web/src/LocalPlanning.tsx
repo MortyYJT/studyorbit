@@ -7,6 +7,7 @@ type Kind = 'exam' | 'quiz' | 'assignment' | 'presentation' | 'participation' | 
 type Assessment = { key: string; name: string; due: string; weight: string; weightValue?: number; sourceZero: boolean; kind: Kind; score?: number; outOf?: number; group: string; parent: string; status: string; link: string; sources: { platform: string; link: string }[]; caution: boolean; hurdle: boolean };
 type Correction = { kind?: Kind; weight?: number; due?: string; mergeInto?: string };
 type CourseData = { course: Course; assessments: Assessment[]; groups: RecordValue[]; materials: RecordValue[]; issues: RecordValue[]; available: boolean };
+type ParentAssessment = { name: string; weight?: number; children: Assessment[]; scoringRule: string };
 type Work = { key: string; courseId: string; courseCode: string; title: string; due: string; minutes: number };
 const workKey = 'coursework.local-planning.work.v1';
 const capacityKey = 'coursework.local-planning.capacity.v1';
@@ -82,7 +83,11 @@ function addDays(day: string, count: number): string { const date = new Date(`${
 function normalize(course: Course, value: unknown): CourseData {
   const report = record(value);
   const sources = list(report['来源']);
-  const equalFour = sources.some(item => /four written assignments equally weighted and worth a total of 15%/i.test(text(item['关键原文'])));
+  const overview = sources.map(source => text(source['关键原文'])).join(' ');
+  const equalMatch = /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+written assignments?\s+equally weighted\s+and worth a total of\s+(\d+(?:\.\d+)?)%/i.exec(overview);
+  const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+  const equalCount = equalMatch ? (words[equalMatch[1]!.toLowerCase()] ?? Number(equalMatch[1])) : undefined;
+  const equalTotal = equalMatch ? Number(equalMatch[2]) : undefined;
   const rawGroups = report['考核分组'];
   const groups = Array.isArray(rawGroups) ? list(rawGroups) : list(record(rawGroups)['页面原始行'] ?? record(rawGroups)['分组']);
   const rawItems = [...list(report['考核项目']), ...list(report['练习与不计分条目'])];
@@ -92,8 +97,7 @@ function normalize(course: Course, value: unknown): CourseData {
     const itemSources = list(item['来源记录']).flatMap(source => { const link = url(source['链接']); return link ? [{ platform: text(source['平台']) || 'source', link }] : []; });
     const link = url(item['链接'] ?? item['原始链接'] ?? sourceLinks.find(value => typeof value === 'string' && /\/(?:assignments|quizzes)\//.test(value)) ?? itemSources[0]?.link);
     const caution = /\b(?:aea|special consideration|supplementary|deferred|alternative|replacement)\b|特殊|替代|补考|延期/i.test(`${name} ${text(item['类型'])}`);
-    // Historic reports mix group and item weights. Only the explicitly evidenced case is projected.
-    const overview = sources.map(source => text(source['关键原文'])).join(' ');
+    // Historic reports mix group and item weights; keep the group rule separate.
     const group = text(item['分组'] ?? item['评分组']);
     const groupMembers = rawItems.filter(other => text(other['分组'] ?? other['评分组']) === group && !zeroWeight(other['课程占比'] ?? other['权重']) && !/不计分|练习|sample|practice/i.test(`${text(other['分类'])} ${text(other['名称'])}`));
     const numericWeight = number(item['课程占比']);
@@ -101,13 +105,13 @@ function normalize(course: Course, value: unknown): CourseData {
     const sourceWeight = number(sourceGroup?.['课程占比'] ?? sourceGroup?.['权重']) ?? explicitPercent(sourceGroup?.['权重'] ?? sourceGroup?.['页面原文权重']);
     const singleGroupWeight = group && groupMembers.length === 1 && numericWeight !== undefined && numericWeight > 0 && sourceWeight === numericWeight ? numericWeight : undefined;
     const evidence = list(item['关键依据']).map(row => text(row['原文'])).join(' ');
-    const participationWeight = /^class participation\b/i.test(name) && /\(50%\)\s*continuous\s*:\s*classroom participation/i.test(evidence) ? 50 : undefined;
+    const participationMatch = /\((\d+(?:\.\d+)?)%\)\s*(?:continuous|participation)\s*:\s*(?:classroom\s+)?participation/i.exec(evidence);
+    const participationWeight = kindOf(text(item['分类'] ?? item['类型']), name) === 'participation' && participationMatch ? Number(participationMatch[1]) : undefined;
     const directWeight = ['直接', '计算'].includes(text(item['占比依据'])) && numericWeight !== undefined && numericWeight >= 0 && numericWeight <= 100 ? numericWeight : undefined;
-    const weightValue = equalFour && /^assignment\s*[1-4]$/i.test(name) ? 3.75
-      : /^mid-semester test$/i.test(name) && /mid-semester test[^.]*\(10%\)/i.test(overview) ? 10
-      : directWeight ?? explicitPercent(item['权重']) ?? participationWeight ?? singleGroupWeight;
+    const equalWeight = equalCount && equalTotal !== undefined && sourceWeight === equalTotal && groupMembers.length === equalCount && /written assignments?/i.test(group) ? equalTotal / equalCount : undefined;
+    const weightValue = directWeight ?? explicitPercent(item['权重']) ?? participationWeight ?? equalWeight ?? singleGroupWeight;
     const sourceWeightValue = statedPercent(item['权重']);
-    const weight = weightValue !== undefined ? `${weightValue}%${weightValue === 3.75 && equalFour ? ' · 平均推算' : ''}`
+    const weight = weightValue !== undefined ? `${weightValue}%${equalWeight !== undefined && weightValue === equalWeight ? ' · 平均推算' : ''}`
       : sourceWeightValue !== undefined ? `${sourceWeightValue}%` : '';
     const result = record(item['已出成绩'] ?? item['成绩']);
     const score = number(result['分数'] ?? result['得分'] ?? item['成绩']);
@@ -121,11 +125,40 @@ function normalize(course: Course, value: unknown): CourseData {
   return { course, assessments, groups, materials: list(report['课程资料']), issues: list(report['未能获取']), available: !!value };
 }
 
-function ScoreOverview({ assessments, zh }: { assessments: Assessment[]; zh: boolean }) {
+function assessmentParents(course: CourseData, visible: Assessment[]): ParentAssessment[] {
+  const groupName = (group: RecordValue) => text(group['名称'] ?? group['组名原文'] ?? group['组名']);
+  const groupWeight = (group: RecordValue) => group['课程占比'] ?? group['权重'] ?? group['页面原文权重'];
+  const parents: ParentAssessment[] = [];
+  const names = new Set([...course.groups.map(groupName).filter(name => /^(?:assignment|project|assessment|作业)\s+\S+$/i.test(name)), ...visible.map(item => item.parent).filter(Boolean)]);
+  for (const name of names) {
+    const group = course.groups.find(item => groupName(item) === name);
+    const rawWeight = group ? groupWeight(group) : undefined;
+    const weight = number(rawWeight) ?? explicitPercent(rawWeight);
+    const children = visible.filter(item => !item.caution && (item.parent === name || (!item.parent && item.group === name)));
+    if (children.length > 1) parents.push({ name, weight, children, scoringRule: text(group?.['计分规则']) });
+  }
+  return parents;
+}
+function parentGrade(parent: ParentAssessment): { score: number; outOf: number; earned: number } | undefined {
+  if (parent.weight === undefined || parent.weight <= 0) return undefined;
+  if (/drop|lowest|highest|best of|丢弃|最低|最高/i.test(parent.scoringRule)) return undefined;
+  const graded = parent.children.filter(item => !item.sourceZero && item.kind !== 'ungraded');
+  if (!graded.length || graded.some(item => item.score === undefined || item.outOf === undefined || item.outOf <= 0 || item.score < 0 || item.score > item.outOf)) return undefined;
+  const score = graded.reduce((sum, item) => sum + item.score!, 0);
+  const outOf = graded.reduce((sum, item) => sum + item.outOf!, 0);
+  const weighted = graded.filter(item => item.weightValue !== undefined);
+  if (weighted.length && weighted.length !== graded.length) return undefined;
+  if (weighted.length && Math.abs(weighted.reduce((sum, item) => sum + item.weightValue!, 0) - parent.weight) > 0.001) return undefined;
+  const earned = weighted.length ? weighted.reduce((sum, item) => sum + item.weightValue! * item.score! / item.outOf!, 0) : parent.weight * score / outOf;
+  return { score, outOf, earned };
+}
+function ScoreOverview({ assessments, parents, zh }: { assessments: Assessment[]; parents: ParentAssessment[]; zh: boolean }) {
   const [target, setTarget] = useState('H1');
-  const graded = assessments.filter(item => item.weightValue !== undefined && item.score !== undefined && item.outOf !== undefined && item.outOf > 0 && item.score >= 0 && item.score <= item.outOf && !item.caution && !item.sourceZero && item.kind !== 'ungraded');
-  const weight = graded.reduce((sum, item) => sum + item.weightValue!, 0);
-  const earned = graded.reduce((sum, item) => sum + item.weightValue! * item.score! / item.outOf!, 0);
+  const completedParents = parents.flatMap(parent => { const grade = parentGrade(parent); return grade ? [{ parent, grade }] : []; });
+  const countedChildren = new Set(completedParents.flatMap(item => item.parent.children.map(child => child.key)));
+  const graded = assessments.filter(item => !countedChildren.has(item.key) && item.weightValue !== undefined && item.score !== undefined && item.outOf !== undefined && item.outOf > 0 && item.score >= 0 && item.score <= item.outOf && !item.caution && !item.sourceZero && item.kind !== 'ungraded');
+  const weight = graded.reduce((sum, item) => sum + item.weightValue!, 0) + completedParents.reduce((sum, item) => sum + item.parent.weight!, 0);
+  const earned = graded.reduce((sum, item) => sum + item.weightValue! * item.score! / item.outOf!, 0) + completedParents.reduce((sum, item) => sum + item.grade.earned, 0);
   const average = weight ? earned / weight * 100 : undefined;
   return <section className="card score" aria-label={zh ? '分数构成' : 'Score structure'}>
     <svg className="donut" viewBox="0 0 170 170" role="img" aria-label={zh ? '已得成绩' : 'Earned grades'}>
@@ -211,6 +244,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     });
     if (match) (automaticDuplicates[match.key] ??= []).push(item); else primaryItems.push(item);
   }
+  const parents = selected ? assessmentParents(selected, primaryItems) : [];
   function saveCorrections(next: Record<string, Correction>): boolean { try { localStorage.setItem(correctionKey, JSON.stringify(next)); setCorrections(next); setSaveError(false); return true; } catch { setSaveError(true); return false; } }
   const plan = useMemo(() => {
     const days = new Map<string, { work: Work; minutes: number }[]>();
@@ -242,7 +276,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       <div className="chead"><h1>{selected.course.subjectCode}</h1><span className="muted">{selected.course.name}</span><small>{selected.course.term}</small></div>
       {!selected.available && <p className="needs">{zh ? '这门课尚无可用的同步结果。' : 'No sync result is available for this course yet.'}</p>}
       {syncIssues.filter(item => item.id === selected.course.id && item.status === 'failed').map(item => <p className="needs" key={item.id}>{zh ? '最近一次同步未完成，正在显示已保存的课程信息。' : 'The latest sync failed. Showing saved course information.'}</p>)}
-      {selected.available && <ScoreOverview assessments={primaryItems.filter(item => !item.caution)} zh={zh} />}
+      {selected.available && <ScoreOverview assessments={primaryItems.filter(item => !item.caution)} parents={parents} zh={zh} />}
       {selected.available && <WeightBreakdown course={selected} assessments={primaryItems} zh={zh} />}
       <div className="tabs" role="tablist"><button role="tab" aria-selected={courseTab === 'assessments'} onClick={() => setCourseTab('assessments')}>{zh ? '考核' : 'Assessments'}</button><button role="tab" aria-selected={courseTab === 'revision'} onClick={() => setCourseTab('revision')}>{zh ? '复习' : 'Revision'}</button></div>
       {courseTab === 'assessments' ? <div className="assessment-list">
@@ -255,24 +289,6 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
           const groupWeight = (group: RecordValue) => group['课程占比'] ?? group['权重'] ?? group['页面原文权重'];
           const all = selected.assessments;
           const visible = primaryItems;
-          const sourceParents = selected.groups.filter((group, index, groups) => groups.findIndex(other => groupName(other) === groupName(group)) === index).flatMap(group => {
-            const name = groupName(group);
-            const rawWeight = groupWeight(group);
-            const weight = number(rawWeight) ?? explicitPercent(rawWeight);
-            if (!/^assignment\s+\d+$/i.test(name) || weight === undefined || weight <= 0) return [];
-            const children = visible.filter(item => item.group === name && !item.caution);
-            return children.length > 1 ? [{ name, weight, children }] : [];
-          });
-          const parentNames = [...new Set(visible.map(item => item.parent).filter(Boolean))];
-          const declaredParents = parentNames.flatMap(name => {
-            if (sourceParents.some(parent => parent.name === name)) return [];
-            const children = visible.filter(item => item.parent === name && !item.caution);
-            const group = selected.groups.find(item => groupName(item) === name);
-            const rawWeight = group ? groupWeight(group) : undefined;
-            const weight = number(rawWeight) ?? explicitPercent(rawWeight);
-            return children.length > 1 ? [{ name, weight, children }] : [];
-          });
-          const parents = [...sourceParents, ...declaredParents];
           const childKeys = new Set(parents.flatMap(parent => parent.children.map(item => item.key)));
           const row = (item: Assessment) => <details key={item.key} className="assessment-entry"><summary className="arow">
             <span className="aname">{item.name}</span>
@@ -300,7 +316,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
               const open = kind !== 'participation' || items.some(item => item.hurdle || scoredParticipation(item));
               return <details className="agroup category" key={kind} open={open || undefined}><summary className="ghead"><b>{labels[kind]}</b><small>{items.length + (kind === 'assignment' ? parents.length : 0)}</small></summary>
                 {kind === 'assignment' && parents.map(parent => <details className="assessment-parent" key={parent.name}>
-                  <summary className="arow"><span className="aname"><strong>{parent.name}</strong></span><span className="muted">{parent.children.length} {zh ? '个子项' : 'items'}</span><span className="num">{parent.weight === undefined ? '—' : `${parent.weight}%`}</span><span className="num">—</span><span>—</span><span>—</span></summary>
+                  <summary className="arow"><span className="aname"><strong>{parent.name}</strong></span><span className="muted">{parent.children.length} {zh ? '个子项' : 'items'}</span><span className="num">{parent.weight === undefined ? '—' : `${parent.weight}%`}</span><span className="num" title={zh ? '根据子项分数汇总' : 'Summed from item scores'}>{parentGrade(parent) ? `${Number(parentGrade(parent)!.score.toFixed(2))} / ${Number(parentGrade(parent)!.outOf.toFixed(2))}` : '—'}</span><span>{parentGrade(parent) ? (zh ? '已出分' : 'Graded') : '—'}</span><span>—</span></summary>
                   <div className="assessment-children">{parent.children.map(row)}<button onClick={() => setChosen({ key: `${selected.course.id}:group:${parent.name}`, name: parent.name, due: '', weight: parent.weight === undefined ? '' : `${parent.weight}%`, sourceZero: false, kind: 'assignment', group: parent.name, status: '', link: '', sources: [], parent: '', caution: false, hurdle: false })}>{zh ? '安排整个作业' : 'Plan assignment'}</button></div>
                 </details>)}
                 {items.map(row)}</details>; })}
