@@ -31,6 +31,9 @@ export function App({ store }: { store: ShellStore }) {
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState<Panel>();
   const [selecting, setSelecting] = useState(false);
+  const [localSyncing, setLocalSyncing] = useState(false);
+  const [localSyncError, setLocalSyncError] = useState('');
+  const [courseRefresh, setCourseRefresh] = useState(0);
   const conversationNavigation = useRef(0);
   const dialog = useRef<HTMLDialogElement>(null);
   const avatar = useRef<HTMLButtonElement>(null);
@@ -40,7 +43,7 @@ export function App({ store }: { store: ShellStore }) {
   const needs = needsYou({ attention: attention(state), overflow: rows.overflow, unestimated: rows.unestimated,
     conflicts: state.conflicts?.items ?? [], updates: state.updates?.items ?? [] });
   const refreshAll = () => Promise.all([store.refresh(), week.refresh()]);
-  const running = state.syncing || state.sync?.running;
+  const running = localSyncing || state.syncing || state.sync?.running;
   useEffect(() => {
     void refreshAll();
     const timer = window.setInterval(() => { void refreshAll(); }, 30000);
@@ -57,7 +60,22 @@ export function App({ store }: { store: ShellStore }) {
   }, [menu]);
   function open(next: Panel) { setMenu(false); setPanel(next); if (next === 'audit') void store.loadAudit(); }
   function close() { dialog.current?.close(); setPanel(undefined); avatar.current?.focus(); }
-  const syncButton = <button disabled={!!running || !store.client.hasSession()} onClick={() => void store.sync().then(() => week.refresh())} aria-busy={!!running}>{running ? t.syncing : t.sync}</button>;
+  async function syncCourses() {
+    if (running) return;
+    setLocalSyncing(true); setLocalSyncError('');
+    try {
+      const response = await fetch('/api/local/sync-courses', { method: 'POST' });
+      if (!response.ok) {
+        const data: unknown = await response.json().catch(() => undefined);
+        const detail = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : '';
+        throw new Error(detail || (response.status === 409 ? (language === 'zh' ? '同步正在进行中。' : 'A sync is already running.') : t.error));
+      }
+      setCourseRefresh(value => value + 1);
+      setView({ page: 'week' });
+    } catch (error) { setLocalSyncError(error instanceof Error ? error.message : t.error); }
+    finally { setLocalSyncing(false); }
+  }
+  const syncButton = <button disabled={!!running} onClick={() => void syncCourses()} aria-busy={!!running}>{running ? t.syncing : t.sync}</button>;
   function date(value?: string) { return value ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short', timeZone: state.planning?.settings?.timeZone }).format(new Date(value)) : t.never; }
   return <>
     <header>
@@ -74,7 +92,8 @@ export function App({ store }: { store: ShellStore }) {
       </div>
     </header>
     <main>
-      {view.page === 'week' && <LocalCourseSelect language={language} />}
+      {localSyncError && <p className="needs" role="status" style={{ whiteSpace: 'pre-wrap' }}>{localSyncError}</p>}
+      {view.page === 'week' && <LocalCourseSelect language={language} refreshVersion={courseRefresh} />}
       {view.page !== 'week' && !store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
       {state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
       <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onSelect={() => setSelecting(true)}

@@ -11,7 +11,7 @@ function storedIds(): string[] {
 }
 
 /** A small local selection flow for the course discovery prototype. */
-export function LocalCourseSelect({ language }: { language: Language }) {
+export function LocalCourseSelect({ language, refreshVersion }: { language: Language; refreshVersion: number }) {
   const [courses, setCourses] = useState<Course[]>();
   const [selected, setSelected] = useState<string[]>(storedIds);
   const [error, setError] = useState('');
@@ -35,7 +35,7 @@ export function LocalCourseSelect({ language }: { language: Language }) {
       setError(err instanceof Error && err.message === 'missing' ? 'missing' : 'unavailable');
     }
   }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [refreshVersion]);
 
   function save() {
     setSaving(true);
@@ -48,7 +48,7 @@ export function LocalCourseSelect({ language }: { language: Language }) {
       <button onClick={() => { setSaved(false); void load(); }}>{zh ? '刷新列表' : 'Refresh list'}</button></div>
     <p className="muted">{zh ? '勾选你要排期的课程，选择保存在当前浏览器中，可再次修改。' : 'Select courses to plan. Your choices are saved in this browser and can be changed later.'}</p>
     {error && <p role="status">{error === 'missing'
-      ? (zh ? '尚未获取课程，请先在终端运行 npm run sync:courses。' : 'No course list yet. Run npm run sync:courses in your terminal.')
+      ? (zh ? '尚未获取课程，请点击“立即同步”。' : 'No course list yet. Click “Sync now”.')
       : error === 'save' ? (zh ? '保存失败，请检查浏览器存储是否可用。' : 'Could not save your selection in this browser.')
       : (zh ? '无法读取课程列表，请确认开发服务器正在运行并刷新列表。' : 'Could not load the course list. Check the development server and refresh.')}</p>}
     {courses && (courses.length ? <>

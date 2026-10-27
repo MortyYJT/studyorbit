@@ -52,7 +52,8 @@ https://canvas.lms.unimelb.edu.au/api/v1/courses?enrollment_state=active&include
 输出通过临时文件替换，失败不会覆盖旧结果；`.local/` 已排除在 Git 外。
 可用 `--out 路径` 指定其他输出位置，自定义位置不一定被 Git 忽略。
 
-运行 `npm run dev` 后打开本周页面可看到筛选后的选课列表；选择保存在当前浏览器的 localStorage。
+运行 `npm run dev` 后打开本周页面，点击“立即同步”会运行此脚本，随后选课列表读取筛选结果；选择保存在当前浏览器的 localStorage。
+脚本使用系统默认浏览器，并会打开 API 标签页；读取结束后需返回前端页面。启动开发服务器的终端需要对应系统权限。
 这个前端连接目前只由 Vite 开发服务器提供，未接入正式后端或后续排期。
 
 这次需要实际验证：能否打开正确配置、复制到第一页 JSON、实际耗时，以及第二次运行是否正常。

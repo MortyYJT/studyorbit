@@ -10,16 +10,17 @@
 
 ## 已完成：第 0 层原型
 
-1. `npm run sync:courses` 在 macOS 上使用默认浏览器打开 Canvas 课程 API；可用 `--browser edge` 等指定浏览器。
+1. 前端点击“立即同步”后，Vite 开发服务器启动 macOS 课程脚本；脚本使用系统默认浏览器打开 Canvas 课程 API。也可在终端运行 `npm run sync:courses -- --browser edge` 指定浏览器。
 2. 脚本默认等待 1 秒，执行一次全选和复制，解析 JSON，保存到 `.local/lms/courses.json`。使用现有浏览器登录状态，不使用扩展或 Agent。
 3. `scripts/lib/course-list.mjs` 按 `course_code` 筛选：4 个字母、首位为 1–9 的 5 位数字，后接下划线或结束。原始文件保留未筛选的候选项。
-4. Vite 开发服务器提供 `/api/local/course-candidates`，前端本周页面展示筛选结果，用户可勾选并保存。选择保存在该浏览器的 localStorage。
+4. Vite 开发服务器提供 `/api/local/sync-courses` 和 `/api/local/course-candidates`，同步成功后前端本周页面刷新并展示筛选结果，用户可勾选并保存。选择保存在该浏览器的 localStorage。
 
 用户提供的真实数据有 9 个候选项；筛选出的课程是 COMP20003、COMP20008、MAST10007、MUSI20163。用户已认可目前的筛选规则。
 
 ## 验证状态和限制
 
 - 用户已在 Mac 的 Edge 上运行取数脚本，结果文件记录了 9 条候选项、一次读取、约 1.77 秒。
+- 前端按钮启动脚本、自动刷新选课列表的流程已实现，尚未由用户验证。
 - 本轮用户要求之后不再自行测试；后续改动交由用户验证。
 - 取数脚本目前只实现 macOS，Windows 尚未适配。其他浏览器的实际行为尚未由用户验证。
 - API 仅取第一页，未验证是否覆盖全部课程；其返回范围也不保证与首页卡片完全一致。
@@ -32,11 +33,10 @@
 在项目目录：
 
 ```sh
-npm run sync:courses -- --browser edge
 npm run dev
 ```
 
-先在 Edge 登录 LMS，运行取数脚本后打开开发服务器显示的地址。本地运行详情和权限说明见 [脚本说明](../scripts/README.md)。
+先在系统默认浏览器登录 LMS，打开开发服务器显示的地址，点击“立即同步”。脚本打开 API 标签页后，返回前端页面查看课程并保存选择。本地运行详情和权限说明见 [脚本说明](../scripts/README.md)。
 
 ## 下一步
 
