@@ -322,3 +322,6 @@ button.primary:hover:enabled { background:var(--ink); opacity:.9; }
 .weight-breakdown-item { display:flex; align-items:center; gap:8px; padding:7px 10px; border:1px solid var(--line); border-radius:8px; font-size:12px; }
 .weight-breakdown-item span { max-width:280px; overflow-wrap:anywhere; }
 .weight-breakdown-item strong { white-space:nowrap; }
+.assessment-parent > summary { cursor:pointer; }
+.assessment-children { padding-left:20px; border-left:2px solid var(--line); }
+.assessment-children > button { margin:10px 4px; }

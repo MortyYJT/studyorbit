@@ -231,6 +231,15 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
           const groupWeight = (group: RecordValue) => group['课程占比'] ?? group['权重'] ?? group['页面原文权重'];
           const all = selected.assessments;
           const visible = primaryItems;
+          const parents = selected.groups.filter((group, index, groups) => groups.findIndex(other => groupName(other) === groupName(group)) === index).flatMap(group => {
+            const name = groupName(group);
+            const rawWeight = groupWeight(group);
+            const weight = number(rawWeight) ?? explicitPercent(rawWeight);
+            if (!/^assignment\s+\d+$/i.test(name) || weight === undefined || weight <= 0) return [];
+            const children = visible.filter(item => item.group === name && !item.caution);
+            return children.length > 1 ? [{ name, weight, children }] : [];
+          });
+          const childKeys = new Set(parents.flatMap(parent => parent.children.map(item => item.key)));
           const row = (item: Assessment) => <details key={item.key} className="assessment-entry"><summary className="arow">
             <span className="aname">{item.name}</span>
             <span className="muted">{item.due || (zh ? '未知' : 'Unknown')}</span><span className="num">{item.sourceZero ? '0%' : item.weight || '—'}</span>
@@ -249,12 +258,17 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
               <div className="local-merge"><label>{zh ? '如果是同一个考核，合并到' : 'If this is the same assessment, merge into'}<select defaultValue="" onChange={event => { const target = event.target.value; if (!target) return; saveCorrections({ ...corrections, [item.key]: { ...corrections[item.key], mergeInto: target } }); }}><option value="">{zh ? '选择考核' : 'Choose assessment'}</option>{visible.filter(other => other.key !== item.key && !all.some(child => corrections[child.key]?.mergeInto === item.key)).map(other => <option value={other.key} key={other.key}>{other.name}</option>)}</select></label><small>{zh ? '仅由你确认相同后合并；来源保留，可撤销。已有排期不会自动移除，请检查重复任务。' : 'Merge only after confirming; sources remain and the merge can be undone. Existing plans are not removed.'}</small></div>
               </details><button onClick={() => setChosen(item)}>{zh ? '安排学习' : 'Plan study'}</button>
             </div></details>;
-          const groupedItem = (kind: Kind) => visible.filter(item => !item.caution && (kind === 'participation' && item.hurdle || kind !== 'participation' && item.kind === kind && !item.hurdle && !item.sourceZero && item.kind !== 'ungraded'));
-          const foldedItems = visible.filter(item => item.caution || !item.hurdle && (item.sourceZero || item.kind === 'ungraded' || item.kind === 'participation'));
+          const groupedItem = (kind: Kind) => visible.filter(item => !childKeys.has(item.key) && !item.caution && (kind === 'participation' && item.hurdle || kind !== 'participation' && item.kind === kind && !item.hurdle && !item.sourceZero && item.kind !== 'ungraded'));
+          const foldedItems = visible.filter(item => !childKeys.has(item.key) && (item.caution || !item.hurdle && (item.sourceZero || item.kind === 'ungraded' || item.kind === 'participation')));
           return <>
-            {kinds.map(kind => { const items = groupedItem(kind); if (!items.length) return null;
+            {kinds.map(kind => { const items = groupedItem(kind); if (!items.length && !(kind === 'assignment' && parents.length)) return null;
               const open = kind !== 'participation' || items.some(item => item.hurdle);
-              return <details className="agroup category" key={kind} open={open || undefined}><summary className="ghead"><b>{labels[kind]}</b><small>{items.length}</small></summary>{items.map(row)}</details>; })}
+              return <details className="agroup category" key={kind} open={open || undefined}><summary className="ghead"><b>{labels[kind]}</b><small>{items.length + (kind === 'assignment' ? parents.length : 0)}</small></summary>
+                {kind === 'assignment' && parents.map(parent => <details className="assessment-parent" key={parent.name}>
+                  <summary className="arow"><span className="aname"><strong>{parent.name}</strong></span><span className="muted">{parent.children.length} {zh ? '个子项' : 'items'}</span><span className="num">{parent.weight}%</span><span className="num">—</span><span>—</span><span>—</span></summary>
+                  <div className="assessment-children">{parent.children.map(row)}<button onClick={() => setChosen({ key: `${selected.course.id}:group:${parent.name}`, name: parent.name, due: '', weight: `${parent.weight}%`, sourceZero: false, kind: 'assignment', group: parent.name, status: '', link: '', caution: false, hurdle: false })}>{zh ? '安排整个作业' : 'Plan assignment'}</button></div>
+                </details>)}
+                {items.map(row)}</details>; })}
             {foldedItems.length > 0 && <details className="no-marks"><summary>{zh ? '其他项目' : 'Other items'} ({foldedItems.length})</summary>{foldedItems.map(row)}</details>}
           </>;
         })()}
