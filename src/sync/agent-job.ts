@@ -519,6 +519,12 @@ export interface AgentJobResult {
   unavailable?: boolean;
 }
 
+/** The adapter's token totals for one attempt; absent when the adapter reports none (a timeout reports none). */
+function tokensOf(event: { inputTokens?: number; outputTokens?: number }): Pick<RunJob, 'inputTokens' | 'outputTokens'> {
+  return { ...(event.inputTokens !== undefined ? { inputTokens: event.inputTokens } : {}),
+    ...(event.outputTokens !== undefined ? { outputTokens: event.outputTokens } : {}) };
+}
+
 /** How one pipeline stage ended, plus what it contributed to the run's totals. */
 interface StageRun {
   outcome: RunJob['outcome'];
@@ -562,6 +568,7 @@ export class AgentJobRunner {
     if (signal?.aborted) return { job: this.record(request, 0, 0, 'timeout'), unavailable: false };
     let steps = 0;
     let turns = 0;
+    let usage: Pick<RunJob, 'inputTokens' | 'outputTokens'> = {};
     let unavailable = false;
     let failure: 'error' | 'timeout' | undefined;
     let finished = false;
@@ -594,18 +601,18 @@ export class AgentJobRunner {
         // Events only count turns and steps; the agent's text is never parsed.
         const event: AgentEvent = next.value.value;
         if (event.type === 'tool_step') steps++;
-        else if (event.type === 'result') { turns = event.turns; finished = true; }
+        else if (event.type === 'result') { turns = event.turns; usage = tokensOf(event); finished = true; }
         else if (event.type === 'error') {
-          turns = event.turns ?? turns; failure ??= 'error';
+          turns = event.turns ?? turns; usage = tokensOf(event); failure ??= 'error';
           if (event.code === 'AGENT_UNAVAILABLE') unavailable = true;
         }
       }
     } catch { failure = 'error'; }
     finally { clearTimeout(timer); removeAbort?.(); }
-    if (failure) return { job: this.record(request, steps, turns, failure), unavailable: failure === 'error' && unavailable };
-    if (!finished) return { job: this.record(request, steps, turns, 'error'), unavailable: false };
+    if (failure) return { job: { ...this.record(request, steps, turns, failure), ...usage }, unavailable: failure === 'error' && unavailable };
+    if (!finished) return { job: { ...this.record(request, steps, turns, 'error'), ...usage }, unavailable: false };
     const job = this.options.jobs.load(request.jobId);
-    return { job: this.record(request, steps, turns, job && this.produced(request, job) ? 'ok' : 'error'), unavailable: false };
+    return { job: { ...this.record(request, steps, turns, job && this.produced(request, job) ? 'ok' : 'error'), ...usage }, unavailable: false };
   }
 
   /** The store is the only proof: the expected stage, or the caller's check for jobs without one stage. */

@@ -5,13 +5,16 @@ import type { Message } from '../domain/schemas.js';
  * SDK-independent events. Tool metadata stays inside the existing message output part. `screenshotRef` and `viewUrl`
  * stay optional for historical resident-browser steps; stored confirmation events and parts remain readable as JSON.
  */
+/** Token totals an adapter reports for the whole reply; input includes cached input. */
+const tokens = { inputTokens: z.number().int().nonnegative().optional(), outputTokens: z.number().int().nonnegative().optional() };
 export const AgentEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({ type: z.literal('tool_step'), tool: z.string().min(1), outcome: z.enum(['ok', 'error', 'denied', 'waiting']),
     input: z.json().optional(), output: z.json().optional(), screenshotRef: z.string().optional(), viewUrl: z.string().optional() }),
-  z.object({ type: z.literal('result'), turns: z.number().int().nonnegative(), costUsd: z.number().nonnegative().optional(), sessionRef: z.string().min(1).optional() }),
+  z.object({ type: z.literal('result'), turns: z.number().int().nonnegative(), costUsd: z.number().nonnegative().optional(), sessionRef: z.string().min(1).optional(),
+    ...tokens }),
   z.object({ type: z.literal('error'), code: z.enum(['AGENT_UNAVAILABLE', 'INTERNAL']), message: z.string(),
-    turns: z.number().int().nonnegative().optional(), costUsd: z.number().nonnegative().optional() }),
+    turns: z.number().int().nonnegative().optional(), costUsd: z.number().nonnegative().optional(), ...tokens }),
 ]);
 export type AgentEvent = z.infer<typeof AgentEventSchema>;
 export type StreamEvent = AgentEvent | { type: 'stopped' };

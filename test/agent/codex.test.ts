@@ -39,8 +39,20 @@ it('Codex events: streams text, ok and error tool steps, ignores unknown items a
     { type: 'text', text: 'Synthetic reply.' },
     { type: 'tool_step', tool: 'coursework.courses.list', outcome: 'ok' },
     { type: 'tool_step', tool: 'coursework.assessments.get', outcome: 'error' },
-    { type: 'result', turns: 1, sessionRef: 't-1' },
+    { type: 'result', turns: 1, sessionRef: 't-1', inputTokens: 120, outputTokens: 30 },
   ]);
+});
+
+it('Token usage: sums every completed turn and keeps it on a failed run', async () => {
+  const turn = (input: number, output: number) => JSON.stringify({ type: 'turn.completed', usage: { input_tokens: input, cached_input_tokens: 0, output_tokens: output } });
+  const { adapter } = setup([{ stdout: [turn(100, 10), turn(200, 20)], exit: 1 }]);
+  expect((await collect(adapter.start(input))).at(-1)).toMatchObject({ type: 'error', turns: 2, inputTokens: 300, outputTokens: 30 });
+});
+
+it('Model: every run uses gpt-6-luna on the default service tier, whatever the owner config says', async () => {
+  const s = setup([{ fixture: fixture('codex-exec.jsonl') }]);
+  await collect(s.adapter.start(input));
+  expect(configs(s.calls()[0]!.argv)).toEqual(expect.arrayContaining(['model="gpt-6-luna"', 'service_tier="default"']));
 });
 
 it('maps shell and computer-use steps by name and outcome only and never stores raw Codex output', async () => {
@@ -66,7 +78,7 @@ it('maps shell and computer-use steps by name and outcome only and never stores 
 it('Resume: a stored session reference runs codex exec resume t-1 with only the new message', async () => {
   const s = setup([{ fixture: fixture('codex-resume.jsonl') }]);
   const events = await collect(s.adapter.start({ ...input, prompt: 'Second message', sessionRef: 't-1', transcript: [message(0, 'owner', 'Earlier'), message(1, 'agent', 'Reply')] }));
-  expect(events).toEqual([{ type: 'text', text: 'Resumed reply.' }, { type: 'result', turns: 1, sessionRef: 't-1' }]);
+  expect(events).toEqual([{ type: 'text', text: 'Resumed reply.' }, { type: 'result', turns: 1, sessionRef: 't-1', inputTokens: 60, outputTokens: 4 }]);
   const [call] = s.calls();
   expect(call!.argv.slice(0, 3)).toEqual(['exec', 'resume', 't-1']);
   expect(call!.argv).toContain('--json'); expect(call!.argv.at(-1)).toBe('-');
