@@ -296,3 +296,9 @@ button.primary:hover:enabled { background:var(--ink); opacity:.9; }
 .local-plan-entry { display:grid; gap:3px; padding:8px; background:var(--hover); border-radius:7px; overflow-wrap:anywhere; font-size:12px; }
 .local-plan-entry b { font-size:11px; }
 @media(max-width:600px) { .local-materials { columns:1; } .local-assessment { flex-wrap:wrap; } }
+.local-score { display:grid; grid-template-columns:170px minmax(0,1fr); gap:24px; align-items:center; }
+.local-score-content { min-width:0; }
+.local-score-content h2 { margin-bottom:18px; }
+.local-score-content .inline select { width:auto; }
+.local-score-content p { margin-bottom:0; font-size:12px; }
+@media(max-width:600px) { .local-score { grid-template-columns:1fr; justify-items:center; } .local-score-content { width:100%; } }
