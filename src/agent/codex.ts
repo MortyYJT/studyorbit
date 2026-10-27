@@ -10,9 +10,13 @@ import { presetSkill } from './presets.js';
 
 export interface CodexOptions { dataDirectory: string; killAfterMs?: number }
 type Failure = Extract<AgentEvent, { type: 'error' }>;
-interface Attempt { threadId?: string; turns: number; emitted: number; code: number | null; missing: boolean; turnFailed: boolean; auth: boolean }
+interface Attempt { threadId?: string; turns: number; inputTokens?: number; outputTokens?: number; emitted: number; code: number | null; missing: boolean; turnFailed: boolean; auth: boolean }
 const unavailable = (): Failure => ({ type: 'error', code: 'AGENT_UNAVAILABLE', message: 'Sign in to the installed agent and retry.' });
-const failed = (turns = 0): Failure => ({ type: 'error', code: 'INTERNAL', message: 'Agent reply failed.', ...(turns ? { turns } : {}) });
+const usage = (state?: Attempt) => state?.inputTokens === undefined ? {} : { inputTokens: state.inputTokens, outputTokens: state.outputTokens ?? 0 };
+const failed = (state?: Attempt): Failure => ({ type: 'error', code: 'INTERNAL', message: 'Agent reply failed.', ...(state?.turns ? { turns: state.turns } : {}), ...usage(state) });
+/** Pinned for every run so the owner's interactive Codex settings (another model, the priority tier) never apply here. */
+export const CODEX_MODEL = 'gpt-6-luna';
+export const CODEX_SERVICE_TIER = 'default';
 const authFailure = (text: string) => /not (?:signed|logged) in|login required|authentication|unauthorized|\b401\b/i.test(text);
 /** Outside any Git working tree, so no repository AGENTS.md applies; one per data directory. */
 export function codexWorkspace(dataDirectory: string): string {
@@ -24,7 +28,14 @@ function parse(line: string, state: Attempt): AgentEvent | undefined {
   try { event = JSON.parse(line); } catch { return; }
   if (!event || typeof event !== 'object') return;
   if (event.type === 'thread.started' && typeof event.thread_id === 'string' && event.thread_id) state.threadId = event.thread_id;
-  if (event.type === 'turn.completed') state.turns++;
+  if (event.type === 'turn.completed') {
+    state.turns++;
+    const count = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0 ? value as number : 0;
+    if (event.usage && typeof event.usage === 'object') {
+      state.inputTokens = (state.inputTokens ?? 0) + count(event.usage.input_tokens);
+      state.outputTokens = (state.outputTokens ?? 0) + count(event.usage.output_tokens);
+    }
+  }
   if (event.type === 'turn.failed') state.turnFailed = true;
   if ((event.type === 'turn.failed' || event.type === 'error') && authFailure(String(event.error?.message ?? event.message ?? ''))) state.auth = true;
   const item = event.type === 'item.completed' && event.item && typeof event.item === 'object' ? event.item as Record<string, any> : undefined;
@@ -52,6 +63,8 @@ export class CodexAdapter implements AgentAdapter {
     // `codex exec resume` rejects -C and -s, so the sandbox is set by config and the workspace by the child's cwd.
     const common = ['--json', '--skip-git-repo-check', ...[
       'sandbox_mode="workspace-write"',
+      `model=${JSON.stringify(CODEX_MODEL)}`,
+      `service_tier=${JSON.stringify(CODEX_SERVICE_TIER)}`,
       `mcp_servers.coursework.command=${JSON.stringify(process.execPath)}`,
       `mcp_servers.coursework.args=${JSON.stringify([join(packageRoot(), 'dist', 'cli.js'), 'mcp'])}`,
       `mcp_servers.coursework.env.COURSEWORK_HOME=${JSON.stringify(resolve(dataDirectory))}`,
@@ -99,8 +112,8 @@ export class CodexAdapter implements AgentAdapter {
           }
           if (stopped) return;
           if (outcome.missing || outcome.auth) yield unavailable();
-          else if (outcome.code !== 0 || outcome.turnFailed) yield failed(outcome.turns);
-          else yield { type: 'result', turns: outcome.turns, ...(outcome.threadId ? { sessionRef: outcome.threadId } : {}) };
+          else if (outcome.code !== 0 || outcome.turnFailed) yield failed(outcome);
+          else yield { type: 'result', turns: outcome.turns, ...(outcome.threadId ? { sessionRef: outcome.threadId } : {}), ...usage(outcome) };
         } catch { if (!stopped) yield failed(); } finally { stop(); }
       },
       interrupt() { stopped = true; stop(); },

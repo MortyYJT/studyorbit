@@ -366,6 +366,21 @@ describe('agent job runner (layered-sync task 5.1)', () => {
     expect(f.adapter.inputs[0]!.transcript).toEqual([]);
   });
 
+  it('records the input and output tokens an attempt reports, on success and on failure', async () => {
+    let attempt = 0;
+    const f = runnerSetup(async function* (spec, call) {
+      if (attempt++ === 0) { yield { type: 'error', code: 'INTERNAL', message: 'Synthetic failure', turns: 1, inputTokens: 50, outputTokens: 5 }; return; }
+      await call('stage.write', { jobId: spec.jobId, courseKey: stageKey, stage: 'map', value: { links: [] } });
+      yield { type: 'result', turns: 2, inputTokens: 900, outputTokens: 40 };
+    });
+    const result = await f.runner.run({ kind: 'main', jobId: f.job.id, courseKey: stageKey, prompt: `Job id: ${f.job.id}`,
+      tools: [stageTool(f.jobs)], stage: 'map' });
+    expect(result.attempts).toEqual([
+      { kind: 'main', courseKey: stageKey, steps: 0, turns: 1, outcome: 'error', inputTokens: 50, outputTokens: 5 },
+      { kind: 'main', courseKey: stageKey, steps: 0, turns: 2, outcome: 'ok', inputTokens: 900, outputTokens: 40 },
+    ]);
+  });
+
   it('fails a result that stored no expected stage, retries once and records both attempts', async () => {
     const f = runnerSetup(async function* () {
       yield { type: 'text', text: 'I stored the page.' };

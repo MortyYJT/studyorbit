@@ -21,8 +21,8 @@ function errorText(code: string, t: Copy): string {
 }
 export function App({ store }: { store: ShellStore }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  const [language, setLanguage] = useState<Language>(() => preference('coursework.language') === 'zh' ? 'zh' : 'en');
-  const [theme, setTheme] = useState<Theme>(() => { const value = preference('coursework.theme'); return value === 'light' || value === 'dark' ? value : 'system'; });
+  const [language, setLanguage] = useState<Language>(() => preference('coursework.language') === 'en' ? 'en' : 'zh');
+  const [theme, setTheme] = useState<Theme>(() => { const value = preference('coursework.theme'); return value === 'system' || value === 'dark' ? value : 'light'; });
   const [view, setView] = useState<View>(() => { const conversationId = new URLSearchParams(window.location.search).get('conversation'); return conversationId ? { page: 'agent', conversationId } : { page: 'week' }; });
   const [week] = useState(() => new WeekStore(store.client));
   const weekState = useSyncExternalStore(week.subscribe, week.getSnapshot);
