@@ -12,6 +12,8 @@
 
 用户提供参考项目 [moodle-cli](https://github.com/bunizao/moodle-cli)：它针对 Moodle，可以参考认证、接口优先取数、按课程归档、增量同步与 Agent 接口，但不能直接当作 Canvas 适配器。同作者的 [edstem-cli](https://github.com/bunizao/edstem-cli) 是 Ed 相关参考；是否适用于墨大账户尚未验证。
 
+新增独立的浏览器 Cookie 取数实验 `npm run experiment:cookie`，细节见 [实验说明](cookie-experiment.md)；用户尚未测试，不影响既有前端同步。
+
 ## 已完成：第 0 层原型
 
 1. 前端点击“立即同步”后，Vite 开发服务器启动 macOS 课程脚本；脚本使用系统默认浏览器打开 Canvas 课程 API。也可在终端运行 `npm run sync:courses -- --browser edge` 指定浏览器。

@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "sync:courses": "node scripts/get-courses.mjs",
+    "experiment:cookie": "node scripts/experiment-cookie.mjs",
     "build": "tsc -p web/tsconfig.json && vite build",
     "typecheck": "tsc -p web/tsconfig.json"
   },
@@ -16,6 +17,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@steipete/sweet-cookie": "^0.4.4",
     "@types/node": "^24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
