@@ -4,8 +4,8 @@ import { AgentFacingError } from '../protocol/errors.js';
  * The Handbook skeleton (layered-sync task 4.1, #203, #214).
  *
  * The Handbook sits behind bot protection, so code never requests it. One short agent job opens the public
- * assessment page in the owner's Edge, copies the whole page and calls `handbook.capture`; the command reads the
- * clipboard itself and this module parses the copied text. The real copied format is unknown until probe 1.3b,
+ * assessment page in the owner's Edge, copies the whole page and passes it to `handbook.capture` as `text` (#218);
+ * this module parses the copied text. The real copied format is unknown until probe 1.3b,
  * so the parser is deliberately tolerant: a recognized header names the columns, rows are newline-separated and
  * cells are separated by tabs or runs of two or more spaces. Raw page text is never stored.
  */

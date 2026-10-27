@@ -65,14 +65,14 @@ describe('canvas.capture agent command (layered-sync task 3.2)', () => {
     expect(JSON.stringify(f.store.loadSyncJob(job.id))).not.toContain('while(1)');
   });
 
-  it('Page text as an argument: an extra key is refused with INVALID_INPUT while the clipboard is not read and nothing is stored', async () => {
+  it('Page text as an argument (#218): the copied text is parsed, the system clipboard is not read, and raw text is not stored', async () => {
     const f = setup(); f.select();
     const job = f.jobs.open([key]);
-    f.clipboard.text = groupsPage();
-    const result = await f.agentCall('canvas.capture', { jobId: job.id, courseKey: key, page: 'groups', text: f.clipboard.text });
-    expect(result).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    f.clipboard.text = 'node dist/cli.js ui';
+    const result = await f.agentCall('canvas.capture', { jobId: job.id, courseKey: key, page: 'groups', text: groupsPage() });
+    expect(result).toMatchObject({ ok: true });
     expect(f.clipboard.reads).toBe(0);
-    expect(f.store.loadSyncJob(job.id)?.stages).toBeUndefined();
+    expect(f.store.loadSyncJob(job.id)?.stages?.[key]?.groups).toBeDefined();
     expect(JSON.stringify(result)).not.toContain('Synthetic Assignment 1');
   });
 

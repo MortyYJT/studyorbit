@@ -7,9 +7,9 @@ import { CANVAS_ORIGIN } from './course-json.js';
  * Canvas API page capture (layered-sync tasks 3.1 and 3.2, #193, #198, #208).
  *
  * The agent opens one fixed API URL in its own Edge window, copies the page and calls `canvas.capture`.
- * The command reads the clipboard itself, so page text never travels through a tool argument. Only the
- * keys needed for the next pipeline stages are kept; raw clipboard text is never stored, logged or put
- * into an error message.
+ * The agent passes the copied page as `text` (its browser clipboard is not the system clipboard, #218); without it the
+ * command reads the system clipboard. Only the keys needed for the next pipeline stages are kept; raw page text is
+ * never stored, logged or put into an error message.
  */
 
 export const MAX_CAPTURE_BYTES = 5 * 1024 * 1024;

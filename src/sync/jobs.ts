@@ -24,8 +24,8 @@ export function runBoundMs(courseCount: number): number {
 export interface OfferInput { jobId: string; courses: { code: string; name?: string; term: string; pages: { canvas?: string; ed?: string } }[]; blocked: ('canvas' | 'ed')[] }
 export interface SelectInput { selections: { key: string; selected: boolean }[] }
 export interface ImportInput { jobId: string; document: unknown }
-export interface CaptureInput { jobId: string; courseKey?: string; page: CapturePage }
-export interface HandbookCaptureInput { jobId: string; courseKey: string }
+export interface CaptureInput { jobId: string; courseKey?: string; page: CapturePage; text?: string }
+export interface HandbookCaptureInput { jobId: string; courseKey: string; text?: string }
 export interface SyncJobsOptions { now?: () => Date; annotatedWeight?: ImportOptions['annotatedWeight']; importer?: typeof importCourseDocument; clipboard?: ClipboardReader }
 
 const describeIssues = (issues: readonly DocumentIssue[]) => {
@@ -196,9 +196,9 @@ export class SyncJobs {
     const course = this.requireHandbookCourse(active, input.courseKey);
     let text: string;
     try {
-      text = (this.options.clipboard ?? pbpasteClipboard).read();
+      text = input.text ?? (this.options.clipboard ?? pbpasteClipboard).read();
     } catch {
-      throw new AgentFacingError('INVALID_INPUT', 'Could not read the clipboard. Nothing was stored. Take a fresh copy of the assessment page and call handbook.capture again.');
+      throw new AgentFacingError('INVALID_INPUT', 'Could not read the clipboard. Nothing was stored. Pass the copied assessment page as text and call handbook.capture again.');
     }
     const skeleton = parseHandbook(text, { source: handbookUrl(course.code, course.term) });
     this.saveSkeleton(input.jobId, input.courseKey, skeleton);
@@ -211,9 +211,9 @@ export class SyncJobs {
     const target = input.page === 'courses' ? undefined : this.requireCaptureCourse(active, input.courseKey, input.page);
     let text: string;
     try {
-      text = (this.options.clipboard ?? pbpasteClipboard).read();
+      text = input.text ?? (this.options.clipboard ?? pbpasteClipboard).read();
     } catch {
-      throw new AgentFacingError('INVALID_INPUT', 'Could not read the clipboard. Nothing was stored. Take a fresh copy of the page and call canvas.capture again.');
+      throw new AgentFacingError('INVALID_INPUT', 'Could not read the clipboard. Nothing was stored. Pass the copied page as text and call canvas.capture again.');
     }
     if (input.page === 'courses') {
       const parsed = parseCanvasCourses(text);

@@ -90,13 +90,13 @@ function pageNote(spec: JobSpec): string | undefined {
   if (spec.kind === 'courses') {
     return [
       '## Page',
-      'Call `canvas.capture` with page `courses` and no course key.',
+      'Call `canvas.capture` with page `courses`, no course key, and the copied page as `text`.',
       '',
       'If a sign-in page appears (before or after copying), or `canvas.capture` is refused because the copied page is a sign-in page, call `courses.offer` with the job id, no courses and `blocked: ["canvas"]`, then stop. If the computer-use tool or Edge is unavailable, call it the same way with `blocked: ["canvas", "ed"]`, then stop.',
     ].join('\n');
   }
   if (spec.kind === 'tabs' || spec.kind === 'groups') {
-    return `## Page\n\nCall \`canvas.capture\` with page \`${spec.kind}\` and this job's course key.`;
+    return `## Page\n\nCall \`canvas.capture\` with page \`${spec.kind}\`, this job's course key, and the copied page as \`text\`.`;
   }
   return undefined;
 }
