@@ -50,7 +50,8 @@ export default defineConfig({
             } catch { /* A selected course may not have a report yet. */ }
             return { id: course.id, report: null };
           }));
-          res.end(JSON.stringify({ courses, reports: reports.filter(Boolean) }));
+          const edScores = await readFile(join(projectDir, '.local', 'lms', 'ed-scores.json'), 'utf8').then(JSON.parse).catch(() => ({}));
+          res.end(JSON.stringify({ courses, reports: reports.filter(Boolean), edScores }));
         } catch (error) {
           res.writeHead((error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500).end(JSON.stringify({ error: 'COURSES_UNAVAILABLE' }));
         }
