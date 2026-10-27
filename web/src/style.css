@@ -26,6 +26,11 @@ h2 { font-size:18px; margin:0 0 12px; }
 h3 { margin:0 0 12px; }
 .page-heading,.dialog-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; }
 .card { padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); }
+.edit-courses { margin-bottom:20px; }
+.save-toast { position:fixed; z-index:20; left:50%; bottom:28px; transform:translateX(-50%); padding:12px 20px; border-radius:10px; background:var(--ink); color:var(--on-ink); box-shadow:0 8px 24px #0003; animation:toast-appear .25s ease-out, toast-disappear .25s ease-in 2.75s forwards; }
+@keyframes toast-appear { from { opacity:0; transform:translate(-50%, 12px); } to { opacity:1; transform:translate(-50%, 0); } }
+@keyframes toast-disappear { to { opacity:0; transform:translate(-50%, 8px); } }
+@media (prefers-reduced-motion: reduce) { .save-toast { animation:none; } }
 .empty { min-height:340px; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; gap:8px; }
 .empty h2,.empty p { margin:0 0 8px; }
 .empty-symbol { font-size:48px; color:var(--muted); }

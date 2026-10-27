@@ -17,6 +17,7 @@ type Panel = 'memory' | 'status' | 'audit' | 'settings' | 'metrics';
 export type View = { page: 'week' } | { page: 'agent'; preset?: AgentPreset; conversationId?: string; navigation?: number } | { page: 'course'; courseId: string };
 function preference(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
 function remember(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Preferences remain usable in memory. */ } }
+function selectionExists(): boolean { try { return localStorage.getItem('coursework.selected-course-ids') !== null; } catch { return false; } }
 function errorText(code: string, t: Copy): string {
   return code === 'OWNER_SESSION_EXPIRED' ? t.session : code === 'AUTH_EXPIRED' ? t.auth : `${t.error} (${code})`;
 }
@@ -34,6 +35,9 @@ export function App({ store }: { store: ShellStore }) {
   const [localSyncing, setLocalSyncing] = useState(false);
   const [localSyncError, setLocalSyncError] = useState('');
   const [courseRefresh, setCourseRefresh] = useState(0);
+  const [coursePanelOpen, setCoursePanelOpen] = useState(() => !selectionExists());
+  const [savedNotice, setSavedNotice] = useState(0);
+  const [localSyncWarning, setLocalSyncWarning] = useState('');
   const conversationNavigation = useRef(0);
   const dialog = useRef<HTMLDialogElement>(null);
   const avatar = useRef<HTMLButtonElement>(null);
@@ -53,6 +57,11 @@ export function App({ store }: { store: ShellStore }) {
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('coursework.language', language); }, [language]);
   useEffect(() => { if (panel) dialog.current?.showModal(); }, [panel]);
   useEffect(() => {
+    if (!savedNotice) return;
+    const timer = window.setTimeout(() => setSavedNotice(0), 3000);
+    return () => window.clearTimeout(timer);
+  }, [savedNotice]);
+  useEffect(() => {
     if (!menu) return;
     const dismiss = (event: PointerEvent) => { if (!menuRoot.current?.contains(event.target as Node)) setMenu(false); };
     document.addEventListener('pointerdown', dismiss);
@@ -62,7 +71,7 @@ export function App({ store }: { store: ShellStore }) {
   function close() { dialog.current?.close(); setPanel(undefined); avatar.current?.focus(); }
   async function syncCourses() {
     if (running) return;
-    setLocalSyncing(true); setLocalSyncError('');
+    setLocalSyncing(true); setLocalSyncError(''); setLocalSyncWarning('');
     try {
       const response = await fetch('/api/local/sync-courses', { method: 'POST' });
       if (!response.ok) {
@@ -70,7 +79,11 @@ export function App({ store }: { store: ShellStore }) {
         const detail = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : '';
         throw new Error(detail || (response.status === 409 ? (language === 'zh' ? '同步正在进行中。' : 'A sync is already running.') : t.error));
       }
+      const data: unknown = await response.json();
+      if (!data || typeof data !== 'object' || !('ok' in data) || data.ok !== true) throw new Error(t.error);
+      if ('warning' in data && typeof data.warning === 'string') setLocalSyncWarning(data.warning);
       setCourseRefresh(value => value + 1);
+      setCoursePanelOpen(true);
       setView({ page: 'week' });
     } catch (error) { setLocalSyncError(error instanceof Error ? error.message : t.error); }
     finally { setLocalSyncing(false); }
@@ -93,7 +106,11 @@ export function App({ store }: { store: ShellStore }) {
     </header>
     <main>
       {localSyncError && <p className="needs" role="status" style={{ whiteSpace: 'pre-wrap' }}>{localSyncError}</p>}
-      {view.page === 'week' && <LocalCourseSelect language={language} refreshVersion={courseRefresh} />}
+      {localSyncWarning && <p className="needs" role="status">{localSyncWarning}</p>}
+      {view.page === 'week' && (coursePanelOpen
+        ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={() => { setCoursePanelOpen(false); setSavedNotice(Date.now()); }} />
+        : <button className="edit-courses" onClick={() => setCoursePanelOpen(true)}>{language === 'zh' ? '修改选课' : 'Edit courses'}</button>)}
+      {savedNotice > 0 && <div className="save-toast" role="status">{language === 'zh' ? '课程已经保存' : 'Courses saved'}</div>}
       {view.page !== 'week' && !store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
       {state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
       <NeedsYou needs={needs} t={t} onStatus={() => open('status')} onSelect={() => setSelecting(true)}

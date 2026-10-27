@@ -63,6 +63,39 @@ const selectAndCopy = `on run argv
   end tell
 end run`;
 
+// Verify the unique fragment before closing, so a different active tab is never closed.
+const closeCapturedTab = `on run argv
+  tell application "System Events"
+    set activeId to bundle identifier of first application process whose frontmost is true
+    if activeId is not (item 1 of argv) then error "BROWSER_NOT_FRONTMOST"
+    keystroke "l" using command down
+    delay 0.1
+    keystroke "c" using command down
+    delay 0.1
+    set currentAddress to the clipboard as text
+    if currentAddress starts with "https://canvas.lms.unimelb.edu.au/api/v1/courses?" and currentAddress contains ("#coursework-sync-" & (item 2 of argv)) then
+      keystroke "w" using command down
+    else
+      key code 53
+      error "CAPTURE_TAB_NOT_ACTIVE"
+    end if
+  end tell
+end run`;
+
+async function closeApiTab(bundle, runId) {
+  const previous = await clipboard();
+  const marker = `coursework-close-${runId}`;
+  await copyText(marker);
+  let copied;
+  try {
+    await command('/usr/bin/osascript', ['-e', closeCapturedTab, bundle, runId]);
+  } finally {
+    copied = await clipboard();
+    // The close check only writes the marker or its unique API URL; preserve newer user clipboard changes.
+    if (copied === marker || copied.includes(`#coursework-sync-${runId}`)) await copyText(previous);
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) { console.log(help); return; }
@@ -91,7 +124,7 @@ async function main() {
   let items;
   const runId = randomUUID();
   try {
-    await command('/usr/bin/open', ['-b', bundle, base]);
+    await command('/usr/bin/open', ['-b', bundle, `${base}#coursework-sync-${runId}`]);
     await pause(seconds * 1000);
     if (stopped) throw new Error('已停止。');
     const marker = `coursework-copy-${runId}`;
@@ -126,6 +159,8 @@ async function main() {
   const temporary = `${output}.${runId}.tmp`;
   await writeFile(temporary, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
   await rename(temporary, output);
+  try { await closeApiTab(bundle, runId); }
+  catch { console.error('课程已获取，但无法安全关闭 API 标签页，请手动关闭。'); }
   const subjects = filterSubjects(courses);
   console.log(`\n获取 ${courses.length} 个候选项，筛出 ${subjects.length} 门课程，用时 ${(result.durationMs / 1000).toFixed(1)} 秒：`);
   for (const course of subjects) console.log(`- ${course.subjectCode} | ${course.name}${course.term ? ` | ${course.term}` : ''}`);

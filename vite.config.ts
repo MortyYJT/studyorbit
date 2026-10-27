@@ -35,7 +35,7 @@ export default defineConfig({
             return;
           }
           res.writeHead(200);
-          res.end(JSON.stringify({ ok: true }));
+          res.end(JSON.stringify({ ok: true, ...(stderr.trim() ? { warning: stderr.trim().slice(0, 1000) } : {}) }));
         });
       });
       server.middlewares.use('/api/local/course-candidates', async (req, res) => {

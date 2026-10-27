@@ -11,11 +11,10 @@ function storedIds(): string[] {
 }
 
 /** A small local selection flow for the course discovery prototype. */
-export function LocalCourseSelect({ language, refreshVersion }: { language: Language; refreshVersion: number }) {
+export function LocalCourseSelect({ language, refreshVersion, onSaved }: { language: Language; refreshVersion: number; onSaved: () => void }) {
   const [courses, setCourses] = useState<Course[]>();
   const [selected, setSelected] = useState<string[]>(storedIds);
   const [error, setError] = useState('');
-  const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const zh = language === 'zh';
 
@@ -39,13 +38,13 @@ export function LocalCourseSelect({ language, refreshVersion }: { language: Lang
 
   function save() {
     setSaving(true);
-    try { localStorage.setItem(key, JSON.stringify(selected)); setSaved(true); setError(''); }
+    try { localStorage.setItem(key, JSON.stringify(selected)); setError(''); onSaved(); }
     catch { setError('save'); }
     finally { setSaving(false); }
   }
   return <section className="card local-course-select" aria-labelledby="local-course-title">
     <div className="row-heading"><h2 id="local-course-title">{zh ? '选择要排期的课程' : 'Choose courses to plan'}</h2>
-      <button onClick={() => { setSaved(false); void load(); }}>{zh ? '刷新列表' : 'Refresh list'}</button></div>
+      <button onClick={() => void load()}>{zh ? '刷新列表' : 'Refresh list'}</button></div>
     <p className="muted">{zh ? '勾选你要排期的课程，选择保存在当前浏览器中，可再次修改。' : 'Select courses to plan. Your choices are saved in this browser and can be changed later.'}</p>
     {error && <p role="status">{error === 'missing'
       ? (zh ? '尚未获取课程，请点击“立即同步”。' : 'No course list yet. Click “Sync now”.')
@@ -56,13 +55,11 @@ export function LocalCourseSelect({ language, refreshVersion }: { language: Lang
         {courses.map(course => <label key={course.id} className="check-row">
           <input type="checkbox" checked={selected.includes(course.id)} onChange={event => {
             setSelected(previous => event.target.checked ? [...previous, course.id] : previous.filter(id => id !== course.id));
-            setSaved(false);
           }} />
           <span><b>{course.subjectCode}</b> <span className="muted">{course.name}</span> {course.term && <small>{course.term}</small>}</span>
         </label>)}
       </fieldset>
       <button className="primary" onClick={save} disabled={saving}>{zh ? '保存选择' : 'Save selection'}</button>
-      {saved && <p role="status">{zh ? '选择已保存。' : 'Selection saved.'}</p>}
     </> : <p>{zh ? '没有符合课程代码规则的候选项。' : 'No candidates match the subject-code rule.'}</p>)}
   </section>;
 }
