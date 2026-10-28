@@ -25,33 +25,23 @@ const pageState = `on run argv
  end tell
 end run`;
 const select = `on run argv
- tell application "System Events"
-  set activeId to bundle identifier of first application process whose frontmost is true
-  if activeId is not (item 1 of argv) then error "BROWSER_NOT_FRONTMOST"
-  keystroke "l" using command down
-  delay 0.1
-  key code 53
-  delay 0.1
-  keystroke "a" using command down
-  delay 0.1
-  keystroke "c" using command down
+ tell application "Microsoft Edge"
+  if (count of windows) is 0 then error "BROWSER_WINDOW_MISSING"
+  set targetTab to active tab of front window
+  set currentUrl to URL of targetTab
+  if currentUrl does not start with (item 2 of argv) or currentUrl does not contain (item 3 of argv) then error "CAPTURE_TAB_NOT_ACTIVE"
+  if loading of targetTab then error "PAGE_STILL_LOADING"
+  select all targetTab
+  copy selection targetTab
  end tell
 end run`;
 const close = `on run argv
- tell application "System Events"
-  set activeId to bundle identifier of first application process whose frontmost is true
-  if activeId is not (item 1 of argv) then error "BROWSER_NOT_FRONTMOST"
-  keystroke "l" using command down
-  delay 0.1
-  keystroke "c" using command down
-  delay 0.1
-  set currentAddress to the clipboard as text
-  if currentAddress starts with (item 2 of argv) and currentAddress contains (item 3 of argv) then
-   keystroke "w" using command down
-  else
-   key code 53
-   error "CAPTURE_TAB_NOT_ACTIVE"
-  end if
+ tell application "Microsoft Edge"
+  if (count of windows) is 0 then error "BROWSER_WINDOW_MISSING"
+  set targetTab to active tab of front window
+  set currentUrl to URL of targetTab
+  if currentUrl does not start with (item 2 of argv) or currentUrl does not contain (item 3 of argv) then error "CAPTURE_TAB_NOT_ACTIVE"
+  close targetTab
  end tell
 end run`;
 const prefix = `https://canvas.lms.unimelb.edu.au/api/v1/courses/${course}/`;
@@ -76,11 +66,12 @@ try {
     for (let attempt = 0; attempt < 2; attempt++) {
       if (attempt) await pause(500);
       await copy(marker); owned = marker;
-      await run('/usr/bin/osascript', ['-e', select, browser]);
+      await run('/usr/bin/osascript', ['-e', select, browser, prefix, marker]);
       await pause(100);
       const text = await run('/usr/bin/pbpaste', []); owned = text;
       try {
         if (text === marker) throw new Error('未复制到页面内容。');
+        if (/^https?:\/\//i.test(text.trim())) throw new Error('复制到了网址，未读取页面正文。');
         rows = parseCoursePage(text); break;
       } catch (error) { lastError = error; }
     }
@@ -88,9 +79,8 @@ try {
     if (kind === 'groups') captured.groups = rows.map(({ id, name, group_weight, rules }) => ({ id, name, group_weight: group_weight ?? null, rules: rules ?? null }));
     else captured.assignments = rows.map(a => ({ id: a.id, name: a.name ?? null, group_id: a.assignment_group_id ?? null, points_possible: a.points_possible ?? null, due_at: a.due_at ?? null, unlock_at: a.unlock_at ?? null, html_url: a.html_url ?? null, submission: a.submission ? { score: a.submission.score ?? null, workflow_state: a.submission.workflow_state ?? null, submitted_at: a.submission.submitted_at ?? null } : null }));
     captured[`${kind}Ms`] = Date.now() - begin;
-    const closeMarker = `close-${id}`; await copy(closeMarker); owned = closeMarker;
-    try { await run('/usr/bin/osascript', ['-e', close, browser, prefix, marker]); activeMarker = undefined; owned = await run('/usr/bin/pbpaste', []); }
-    catch { console.error(`无法确认实验标签页，未自动关闭 ${kind} 标签。`); owned = await run('/usr/bin/pbpaste', []); }
+    try { await run('/usr/bin/osascript', ['-e', close, browser, prefix, marker]); activeMarker = undefined; }
+    catch { console.error(`无法确认实验标签页，未自动关闭 ${kind} 标签。`); }
     console.log(`${kind}：${rows.length} 条，用时 ${captured[`${kind}Ms`]} ms`);
   }
   const out = resolve('.local', 'experiments', 'hybrid-03', `canvas-auto-${course}.json`);
@@ -100,7 +90,7 @@ try {
   console.log(`已保存实验数据：${out}（仅第一页，分页未验证）`);
 } catch (error) {
   if (activeMarker) {
-    try { await run('/usr/bin/osascript', ['-e', close, browser, prefix, activeMarker]); owned = await run('/usr/bin/pbpaste', []); }
+    try { await run('/usr/bin/osascript', ['-e', close, browser, prefix, activeMarker]); }
     catch { console.error('未能安全关闭本次实验标签页，请手动关闭。'); }
   }
   const detail = String(error.stderr || error.message).trim().slice(0, 500);
