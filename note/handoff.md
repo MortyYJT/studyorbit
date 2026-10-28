@@ -2,7 +2,7 @@
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`。决定看 `note/decisions.md`（#1–#231）。
 
-- **最后更新：** 2026-10-29 凌晨，Claude（主 agent，用户在睡觉）。
+- **最后更新：** 2026-10-29 凌晨（任务 4、2、1 完成，任务 3 进行中），Claude（主 agent，用户在睡觉）。
 - **分支：** `claude/v2-consolidation`（从 `main` 38500e3 开出），**只在本地，没有推送，没有 PR**（#227）。
 
 ## 今晚的任务（用户 10-29 凌晨布置）
@@ -13,21 +13,24 @@
 3. **Agent 对话：** 接入对话，设计由 Claude 按现有需求定（#230）。
 4. **上下文：** 太长就换新会话、写好交接；主 agent 派子代理实现，自己只盯进度（#231）。
 
-## 已完成
+## 已完成（本地提交，均未推送）
 
-- `b696cd2`（分支 `claude/ui-polish`，本地）：v1 前端的黑白灰侧栏改版预览，随 v1 一起归档，不再继续。
-- `0ad59c0`（本分支）：v2 快照成为主实现；v1 移到 `archive/v1/`（含旧 `dist/`、`node_modules/`、未跟踪的 `experiment/`）。
-- `archive/`（被忽略，不推送）：`v1/`、`v2-history.bundle`（v2 完整 Git 历史，`git clone archive/v2-history.bundle` 可恢复）、`v2-private-docs/`（三份含个人成绩的实验记录）、`v2-import/`（导出残留，可删）。
-- v2 的 `.local/lms`、`.local/experiments`、`.local-backups/` 已 mv 到本仓库；三个本地接口（course-reports、course-candidates、sync-usage）在迁移前后返回完全相同的数据。
-- 桌面 v2 已移到 `~/.Trash/unimelb-coursework-v2-20261029`（可恢复）。
-- 开发服务器现在从本仓库跑：`npx vite --port 5173`（用户浏览器的选课存在 localhost:5173 的 localStorage，端口不能换）。
+- `0ad59c0` v2 快照成为主实现；v1 移到 `archive/v1/`。`4b098e9` 决定 #223–#231 与本交接。
+- `4a68245` 清理：删掉依赖 v1 后端的死代码（旧协议客户端、旧 Agent 页、`shared/` 旧契约）；加 vitest，`check` = 类型检查 + 测试；AGENTS.md 项目段改为 v2。
+- `98bf2ff` 任务 2 配色：设置里一键切换 墨/雾蓝/松/石/谷鱼（谷鱼取自 mortyyjt.github.io），各有浅/深色；`--accent` 只用在主按钮、今天、已得环、占比条、同步进度；对比度均 ≥ 4.5:1。
+- `0fd51eb` 任务 1 模型选择：设置「分析模型」可选 DeepSeek / OpenAI 兼容 / Anthropic / Codex；配置存 `.local/config/llm.json`（0600，密钥只写）；环境变量作后备；新上下文子代理审查发现两处密钥路由问题（未知提供方退回 DeepSeek、兼容接口密钥跨 origin），已先写测试再修；31 个测试通过。
+- `archive/`（被忽略）：`v1/`、`v2-history.bundle`（v2 完整历史）、`v2-private-docs/`（三份含个人成绩的实验记录）、`v2-import/`（可删）。桌面 v2 在 `~/.Trash/unimelb-coursework-v2-20261029`。
+- 开发服务器从本仓库跑在 5173（用户浏览器的选课存在这个端口的 localStorage）。
 
-## 下一步（按顺序，每步一个子代理，做完由新上下文子代理审查，主 agent 跑检查、截图、提交）
+## 进行中
 
-1. **清理代码：** 删掉 v2 里依赖 v1 后端的死代码（`web/src/{client,shell,weekStore,week,chat,agent-client,course-contracts}.ts`、`Agent.tsx` 的旧实现、`shared/{domain,protocol,agent,memory,metrics,planning}`），App 不再轮询不存在的 `/api/*`；更新 `AGENTS.md` 的 Project-specific 段为 v2 技术栈；修 `.claude/launch.json`（指向已归档的原型）；加 vitest，`check` = 类型检查 + 测试。
-2. **配色**（#228）。
-3. **模型选择**（#229）。
-4. **Agent 对话**（#230）。
+- **任务 3 Agent 对话（#230）**：子代理在实现（2026-10-29 凌晨派出）。设计：复用 `scripts/lib/llm-config.mjs` 与 `llm-providers.mjs`，新增 `chat()`、`scripts/lib/chat-store.mjs`（`.local/chat/<uuid>.json`）、`chat-context.mjs`（已选课程的课程 JSON 摘要 + 系统提示：只做 L0，不代写不提交）、`/api/local/chats*` 路由（SSE 流式）、Agent 页与课程页「问 Agent」按钮。
+- 若本会话中断：先 `git status` 看工作区是否有未提交的对话功能改动；跑 `npm run check`；用独立临时浏览器截图 Agent 页（不要真的发消息，会花额度）；派新上下文子代理审查（密钥、路由防护、路径穿越、流式取消、不代做作业的边界）；修完再提交。
+
+## 下一步
+
+1. 完成并审查任务 3，提交。
+2. 全部完成后：更新本交接，等用户早上复核 #223–#231 并决定是否推送 / 开 PR（仓库公开，推送前再确认没有个人成绩、密钥、本机路径）。
 
 ## 运行与验证
 
