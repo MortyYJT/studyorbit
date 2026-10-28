@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, type ChildProcess, type ExecFileOptionsWithStringEncoding } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { filterSubjects } from './scripts/lib/course-list.mjs';
 import { createCourseSyncRunner } from './scripts/course-sync-runner.mjs';
@@ -31,7 +31,7 @@ export default defineConfig({
         try {
           const input = JSON.parse(await readFile(courseFile, 'utf8'));
           if (!Array.isArray(input.courses)) throw new Error('Invalid course file');
-          const candidates = input.courses.filter((item: unknown): item is { id: string; name: string; code?: unknown; term?: string | null } =>
+          const candidates: { id: string; name: string; code?: unknown; term?: string | null }[] = input.courses.filter((item: unknown): item is { id: string; name: string; code?: unknown; term?: string | null } =>
             !!item && typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string' && typeof (item as { name?: unknown }).name === 'string');
           const courses = filterSubjects(candidates);
           const reports = await Promise.all(courses.map(async course => {
@@ -99,7 +99,7 @@ export default defineConfig({
         if (syncRunning) { res.writeHead(409).end(); return; }
         syncRunning = true;
         discoveryCancelled = false;
-        discoveryProcess = execFile(process.execPath, [courseScript, 'discover', courseFile], { cwd: projectDir, timeout: 45000, maxBuffer: 1024 * 1024, detached: process.platform !== 'win32' }, (error, _stdout, stderr) => {
+        discoveryProcess = execFile(process.execPath, [courseScript, 'discover', courseFile], { cwd: projectDir, timeout: 45000, maxBuffer: 1024 * 1024, detached: process.platform !== 'win32' } as ExecFileOptionsWithStringEncoding, (error, _stdout, stderr) => {
           syncRunning = false;
           discoveryProcess = undefined;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');

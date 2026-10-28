@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const httpUrl = z.string().url().refine(value => /^https?:\/\//i.test(value), 'URL must use HTTP or HTTPS');
-const source = z.object({ platform: z.enum(['canvas', 'ed', 'user']), url: httpUrl.nullable(), evidence: z.string().nullable() }).strict();
+const source = z.object({ platform: z.enum(['canvas', 'ed', 'handbook', 'user']), url: httpUrl.nullable(), evidence: z.string().nullable() }).strict();
 const assessment = z.object({
   id: z.string().min(1).max(500), name: z.string().min(1),
   kind: z.enum(['quiz', 'assignment', 'test', 'presentation', 'participation', 'hurdle', 'other']),
