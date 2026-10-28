@@ -66,6 +66,21 @@ function assessmentParents(_course: CourseData, visible: Assessment[]): ParentAs
       kind: source.kind, children, scoringRule: source.scoring ?? 'none', score: source.score, outOf: source.outOf, status: source.status, due: source.due }] : [];
   });
 }
+const RING_LENGTH = 2 * Math.PI * 18;
+/** Graded weight out of 100; draws from empty after the first paint so the stroke transition runs. */
+function ProgressRing({ value, label }: { value?: number; label: string }) {
+  const [offset, setOffset] = useState(RING_LENGTH);
+  useEffect(() => {
+    if (value === undefined) return;
+    const target = RING_LENGTH * (1 - Math.min(Math.max(value, 0), 100) / 100);
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => setOffset(target)); });
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+  if (value === undefined) return <svg className="ring unknown" viewBox="0 0 44 44" role="img" aria-label={label}><circle className="bg" cx="22" cy="22" r="18" /></svg>;
+  return <svg className="ring" viewBox="0 0 44 44" role="img" aria-label={`${label} ${Number(value.toFixed(2))}%`}><circle className="bg" cx="22" cy="22" r="18" />
+    <circle className="fg" cx="22" cy="22" r="18" strokeDasharray={RING_LENGTH} strokeDashoffset={offset} /></svg>;
+}
+
 function ScoreOverview({ assessments, parents, zh }: { assessments: Assessment[]; parents: ParentAssessment[]; zh: boolean }) {
   const [target, setTarget] = useState('H1');
   const { weight, earned, average } = calculateGrades(assessments, parents);
@@ -125,7 +140,8 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     void load(); return () => { live = false; };
   }, [refreshVersion, zh]);
   const original = courses.find(item => item.course.id === courseId);
-  const selected = original && { ...original, assessments: [...original.assessments, ...(Array.isArray(manual[original.course.id]) ? manual[original.course.id] : [])].map(item => {
+  // Owner corrections, grouping and grading inputs are shared by the course page and the course rail rings.
+  const withCorrections = (original: CourseData) => ({ ...original, assessments: [...original.assessments, ...(Array.isArray(manual[original.course.id]) ? manual[original.course.id] : [])].map(item => {
     const change = record(corrections[item.key]); const overrideWeight = number(change.weight);
     const validKind = ['exam', 'quiz', 'assignment', 'presentation', 'participation', 'hurdle', 'ungraded', 'unknown'].includes(String(change.kind)) ? change.kind as Kind : item.kind;
     return { ...item, kind: validKind, ...(typeof change.name === 'string' && change.name ? { name: change.name } : {}),
@@ -136,13 +152,31 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       ...(typeof change.nature === 'string' ? { bonus: change.nature === 'bonus', caution: change.nature === 'alternative', ungraded: change.nature === 'ungraded' } : typeof change.bonus === 'boolean' ? { bonus: change.bonus } : {}), ...(typeof change.rule === 'string' ? { rule: change.rule } : {}),
       ...(typeof change.link === 'string' ? { link: url(change.link) } : {}),
       ...(change.due === null ? { due: '' } : typeof change.due === 'string' ? { due: change.due } : {}) };
-  }) };
-  const primaryItems = (selected?.assessments ?? []).filter(item => !corrections[item.key]?.mergeInto && !corrections[item.key]?.hidden && !(item.parent && corrections[item.parent]?.hidden));
-  const parents = selected ? assessmentParents(selected, primaryItems).map(parent => {
-    const change = corrections[`${selected.course.id}:group:${parent.name}`];
+  }) });
+  const visibleItems = (course: CourseData) => course.assessments.filter(item => !corrections[item.key]?.mergeInto && !corrections[item.key]?.hidden && !(item.parent && corrections[item.parent]?.hidden));
+  const groupParents = (course: CourseData, items: Assessment[]) => assessmentParents(course, items).map(parent => {
+    const change = corrections[`${course.course.id}:group:${parent.name}`];
     return change ? { ...parent, displayName: change.name || parent.displayName || parent.name, kind: change.kind ?? parent.kind, scoringRule: change.scoring ?? parent.scoringRule, weight: change.weight === null ? undefined : change.weight ?? parent.weight,
       score: change.score === null ? undefined : change.score ?? parent.score, outOf: change.outOf === null ? undefined : change.outOf ?? parent.outOf, status: change.status ?? parent.status, due: change.due === null ? undefined : change.due ?? parent.due } : parent;
-  }) : [];
+  });
+  const gradingInputs = (items: Assessment[], groups: ParentAssessment[]) => ({
+    assessments: items.filter(item => {
+      const source = item.parent ? items.find(parent => parent.key === item.parent) : undefined;
+      return !item.caution && !(source && (source.bonus || source.caution || source.ungraded || source.kind === 'ungraded' || source.sourceZero));
+    }),
+    parents: groups.filter(parent => {
+      const source = items.find(item => item.key === parent.sourceKey);
+      return source && !source.bonus && !source.caution && !source.ungraded && source.kind !== 'ungraded' && !source.sourceZero;
+    }),
+  });
+  const gradedWeight = (original: CourseData): number | undefined => {
+    if (!original.available) return undefined;
+    const course = withCorrections(original), items = visibleItems(course), inputs = gradingInputs(items, groupParents(course, items));
+    return calculateGrades(inputs.assessments, inputs.parents).weight;
+  };
+  const selected = original && withCorrections(original);
+  const primaryItems = selected ? visibleItems(selected) : [];
+  const parents = selected ? groupParents(selected, primaryItems) : [];
   function saveCorrections(next: Record<string, Correction>): boolean { try { localStorage.setItem(correctionKey, JSON.stringify(next)); setCorrections(next); setSaveError(false); return true; } catch { setSaveError(true); return false; } }
   function saveManual(next: Record<string, Assessment[]>): boolean { try { localStorage.setItem(manualKey, JSON.stringify(next)); setManual(next); setSaveError(false); return true; } catch { setSaveError(true); return false; } }
   function move(key: string, siblings: string[], direction: number) {
@@ -178,13 +212,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       <div className="chead"><h1>{selected.course.subjectCode}</h1><span className="muted">{selected.course.name}</span><small>{selected.course.term}</small></div>
       {!selected.available && <p className="needs">{zh ? '这门课尚无可用的同步结果。' : 'No sync result is available for this course yet.'}</p>}
       {syncIssues.filter(item => item.id === selected.course.id && item.status === 'failed').map(item => <p className="needs" key={item.id}>{zh ? '最近一次同步未完成，正在显示已保存的课程信息。' : 'The latest sync failed. Showing saved course information.'}</p>)}
-      {selected.available && <ScoreOverview assessments={primaryItems.filter(item => {
-        const source = item.parent ? primaryItems.find(parent => parent.key === item.parent) : undefined;
-        return !item.caution && !(source && (source.bonus || source.caution || source.ungraded || source.kind === 'ungraded' || source.sourceZero));
-      })} parents={parents.filter(parent => {
-        const source = primaryItems.find(item => item.key === parent.sourceKey);
-        return source && !source.bonus && !source.caution && !source.ungraded && source.kind !== 'ungraded' && !source.sourceZero;
-      })} zh={zh} />}
+      {selected.available && <ScoreOverview {...gradingInputs(primaryItems, parents)} zh={zh} />}
       {selected.available && <WeightBreakdown assessments={primaryItems} parents={parents} zh={zh} />}
       <div className="tabs" role="tablist"><button role="tab" aria-selected={courseTab === 'assessments'} onClick={() => setCourseTab('assessments')}>{zh ? '考核' : 'Assessments'}</button><button role="tab" aria-selected={courseTab === 'revision'} onClick={() => setCourseTab('revision')}>{zh ? '复习' : 'Revision'}</button></div>
       {courseTab === 'assessments' ? <div className="assessment-list">
@@ -308,7 +336,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       {!!work.length && <details><summary>{zh ? '已加入的学习任务' : 'Planned work'}</summary>{work.filter(item => courses.some(course => course.course.id === item.courseId)).map(item => <div className="local-group" key={item.key}><span>{item.courseCode} · {item.title} · {item.due} · {item.minutes} min</span><button onClick={() => saveWork(work.filter(row => row.key !== item.key))}>{zh ? '移除' : 'Remove'}</button></div>)}</details>}
       {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}
     </div><aside className="rail card"><h2>{zh ? '课程' : 'Courses'}</h2>{courses.length ? courses.map(item => <button key={item.course.id} className="crs" onClick={() => onCourse(item.course.id)}>
-      <svg className="ring unknown" viewBox="0 0 44 44" role="img" aria-label={zh ? '课程' : 'Course'}><circle className="bg" cx="22" cy="22" r="18" /></svg>
+      <ProgressRing value={gradedWeight(item)} label={`${item.course.subjectCode} ${zh ? '已出分占比' : 'graded weight'}`} />
       <span><b>{item.course.subjectCode}</b><small className="crs-name">{item.course.name}</small><small>{zh ? '下一个' : 'Next'}: {work.filter(entry => entry.courseId === item.course.id && entry.due >= today).sort((a, b) => a.due.localeCompare(b.due))[0]?.title ?? (zh ? '无' : 'None')}</small></span></button>) : <p className="muted">{zh ? '同步并选择课程后显示。' : 'Sync and select courses.'}</p>}</aside></div>
   </>;
 }

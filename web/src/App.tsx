@@ -66,6 +66,13 @@ export function App({ store }: { store: ShellStore }) {
   useEffect(() => { document.documentElement.dataset.theme = theme; remember('coursework.theme', theme); }, [theme]);
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('coursework.language', language); }, [language]);
   useEffect(() => { if (panel) dialog.current?.showModal(); }, [panel]);
+  // Page change fades the content in (design prototype motion) without remounting the page state.
+  const mainRef = useRef<HTMLElement>(null);
+  const pageKey = view.page === 'course' ? `course:${view.courseId}` : view.page;
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    mainRef.current?.animate([{ opacity: 0, transform: 'translateY(5px)' }, { opacity: 1, transform: 'none' }], { duration: 350, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  }, [pageKey]);
   useEffect(() => { const element = syncDialog.current; if (!element) return; if (syncModal && !element.open) element.showModal(); else if (!syncModal && element.open) element.close(); }, [syncModal]);
   useEffect(() => {
     if (!savedNotice) return;
@@ -170,7 +177,7 @@ export function App({ store }: { store: ShellStore }) {
         </div>
       </div>
     </header>
-    <main>
+    <main ref={mainRef}>
       {localSyncError && <p className="needs" role="status" style={{ whiteSpace: 'pre-wrap' }}>{localSyncError}</p>}
       {localSyncWarning && <p className="needs" role="status">{localSyncWarning}</p>}
       {courseRunError && <p className="needs" role="status">{courseRunError}</p>}
@@ -204,7 +211,7 @@ export function App({ store }: { store: ShellStore }) {
         {usageError && <p role="status">{language === 'zh' ? '无法读取同步记录。' : 'Could not read sync records.'}</p>}
         {!syncUsage && !usageError && <p>{t.loading}</p>}
         {syncUsage?.length === 0 && <p className="muted">{language === 'zh' ? '暂无同步记录。' : 'No sync records yet.'}</p>}
-        {syncBatches.length > 0 && <><p className="sync-usage-caption">{language === 'zh' ? '最近一次' : 'Latest sync'}</p><SyncBatchRow key={syncBatches[0]!.id} batch={syncBatches[0]!} language={language} initiallyOpen />{syncBatches.length > 1 && <details className="sync-usage-history"><summary>{language === 'zh' ? '历史记录' : 'History'}</summary><div className="sync-batch-list">{syncBatches.slice(1).map(batch => <SyncBatchRow key={batch.id} batch={batch} language={language} />)}</div></details>}</>}
+        {syncBatches.length > 0 && <><SyncKpis batch={syncBatches[0]!} language={language} /><p className="sync-usage-caption">{language === 'zh' ? '最近一次' : 'Latest sync'}</p><SyncBatchRow key={syncBatches[0]!.id} batch={syncBatches[0]!} language={language} initiallyOpen />{syncBatches.length > 1 && <details className="sync-usage-history"><summary>{language === 'zh' ? '历史记录' : 'History'}</summary><div className="sync-batch-list">{syncBatches.slice(1).map(batch => <SyncBatchRow key={batch.id} batch={batch} language={language} />)}</div></details>}</>}
       </>}
       {panel === 'settings' && <>
         <div className="avatar-settings"><span className="avatar-preview">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><div><label className="avatar-upload">{language === 'zh' ? '上传头像' : 'Upload photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
@@ -247,18 +254,40 @@ function usageTokens(row: SyncUsage | undefined): number | null {
   return usage.input + usage.output + (row?.subagents?.input ?? 0) + (row?.subagents?.output ?? 0);
 }
 
-function SyncBatchRow({ batch, language, initiallyOpen = false }: { batch: SyncBatch; language: Language; initiallyOpen?: boolean }) {
-  const zh = language === 'zh';
-  const when = batch.at && !Number.isNaN(Date.parse(batch.at)) ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(batch.at)) : '—';
+function batchSummary(batch: SyncBatch) {
   const selected = batch.selected.length ? batch.selected : batch.courses.map(row => ({ code: row.course, status: row.status }));
   const entries = selected.map(course => ({ ...course, row: batch.courses.find(item => item.course === course.code) }));
   const totals = entries.map(entry => usageTokens(entry.row));
   const tokenTotal = totals.length && totals.every(total => total !== null) ? totals.reduce<number>((sum, total) => sum + (total ?? 0), 0) : null;
-  const seconds = (ms: number | null) => ms === null ? '—' : `${(ms / 1000).toFixed(1)} ${zh ? '秒' : 's'}`;
-  if (entries.length === 1) return <div className="sync-batch sync-batch-single"><span><strong>{entries[0]!.code}</strong><small>{when}{batch.legacy ? (zh ? ' · 早期单课记录' : ' · Earlier record') : ''}</small></span><span>{seconds(batch.durationMs)}</span><span>{tokenTotal?.toLocaleString() ?? '—'} Token</span></div>;
+  return { entries, tokenTotal };
+}
+
+function seconds(ms: number | null, zh: boolean): string { return ms === null ? '—' : `${(ms / 1000).toFixed(1)} ${zh ? '秒' : 's'}`; }
+
+/** Metric cards for the latest batch; every value comes from the usage log, and a missing value shows as a dash. */
+function SyncKpis({ batch, language }: { batch: SyncBatch; language: Language }) {
+  const zh = language === 'zh';
+  const { entries, tokenTotal } = batchSummary(batch);
+  const completed = entries.filter(entry => entry.status === 'completed').length, partial = entries.filter(entry => entry.status === 'partial').length;
+  const durations = entries.map(entry => entry.row?.durationMs).filter((ms): ms is number => typeof ms === 'number');
+  const average = durations.length && durations.length === entries.length ? durations.reduce((sum, ms) => sum + ms, 0) / durations.length : null;
+  const cards: [string, string][] = [
+    [`${batch.recovered && batch.durationMs !== null ? (zh ? '约 ' : '~') : ''}${seconds(batch.durationMs, zh)}`, zh ? '最近一次总耗时' : 'Latest sync time'],
+    [tokenTotal?.toLocaleString() ?? '—', 'Token'],
+    [`${completed} / ${entries.length}`, partial ? (zh ? `完成 · ${partial} 门部分完成` : `completed · ${partial} partial`) : (zh ? '完成' : 'completed')],
+    [seconds(average, zh), zh ? '每门平均耗时（并行运行）' : 'Average per course (run in parallel)'],
+  ];
+  return <div className="kpis">{cards.map(([value, label]) => <div className="kpi" key={label}><div className="kpi-value">{value}</div><p className="muted">{label}</p></div>)}</div>;
+}
+
+function SyncBatchRow({ batch, language, initiallyOpen = false }: { batch: SyncBatch; language: Language; initiallyOpen?: boolean }) {
+  const zh = language === 'zh';
+  const when = batch.at && !Number.isNaN(Date.parse(batch.at)) ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(batch.at)) : '—';
+  const { entries, tokenTotal } = batchSummary(batch);
+  if (entries.length === 1) return <div className="sync-batch sync-batch-single"><span><strong>{entries[0]!.code}</strong><small>{when}{batch.legacy ? (zh ? ' · 早期单课记录' : ' · Earlier record') : ''}</small></span><span>{seconds(batch.durationMs, zh)}</span><span>{tokenTotal?.toLocaleString() ?? '—'} Token</span></div>;
   return <details className="sync-batch" open={initiallyOpen || undefined}>
-    <summary><span><strong>{when}</strong><small>{!batch.ended ? (zh ? '未完成' : 'Incomplete') : `${entries.length} ${zh ? '门课程' : 'courses'}`}</small></span><span>{batch.recovered && batch.durationMs !== null ? (zh ? '约 ' : '~') : ''}{seconds(batch.durationMs)}</span><span>{tokenTotal?.toLocaleString() ?? '—'} Token</span></summary>
-    <div className="sync-batch-courses">{entries.map(({ code, status, row }, index) => <div className="sync-batch-course" key={`${code}-${index}`}><span>{code}{status === 'cancelled' ? (zh ? ' · 已中止' : ' · Stopped') : status === 'failed' ? (zh ? ' · 未完成' : ' · Failed') : ''}</span><span>{seconds(row?.durationMs ?? null)}</span><span>{usageTokens(row)?.toLocaleString() ?? '—'} Token</span></div>)}</div>
+    <summary><span><strong>{when}</strong><small>{!batch.ended ? (zh ? '未完成' : 'Incomplete') : `${entries.length} ${zh ? '门课程' : 'courses'}`}</small></span><span>{batch.recovered && batch.durationMs !== null ? (zh ? '约 ' : '~') : ''}{seconds(batch.durationMs, zh)}</span><span>{tokenTotal?.toLocaleString() ?? '—'} Token</span></summary>
+    <div className="sync-batch-courses">{entries.map(({ code, status, row }, index) => <div className="sync-batch-course" key={`${code}-${index}`}><span>{code}{status === 'cancelled' ? (zh ? ' · 已中止' : ' · Stopped') : status === 'failed' ? (zh ? ' · 未完成' : ' · Failed') : ''}</span><span>{seconds(row?.durationMs ?? null, zh)}</span><span>{usageTokens(row)?.toLocaleString() ?? '—'} Token</span></div>)}</div>
     <p className="sync-batch-note">{batch.recovered ? (zh ? '根据本机采集目录还原；总耗时为估算。' : 'Recovered from local collection folders; duration is approximate.') : (zh ? '耗时从保存选课后开始计算。' : 'Duration starts after courses are selected.')}</p>
   </details>;
 }

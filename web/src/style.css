@@ -378,3 +378,11 @@ button.primary:hover:enabled { background:var(--ink); opacity:.9; }
 .sync-indeterminate span { display:block; width:35%; height:100%; background:#4778b8; animation:sync-progress 1.4s ease-in-out infinite; }
 @keyframes sync-progress { from { transform:translateX(-100%); } to { transform:translateX(300%); } }
 @media (prefers-reduced-motion:reduce) { .sync-indeterminate span { animation:none; } }
+/* Motion and metric cards borrowed from the design prototype. */
+.ring .fg { transition:stroke-dashoffset .9s cubic-bezier(.2,.8,.2,1); }
+.local-drawer-overlay { animation:scrim-in .25s ease; }
+.local-drawer { animation:drawer-in .35s cubic-bezier(.2,.8,.2,1); }
+@keyframes scrim-in { from { background:#0000; } }
+@keyframes drawer-in { from { transform:translateX(104%); } }
+.kpi-value { margin-bottom:2px; }
+@media (prefers-reduced-motion: reduce) { .ring .fg { transition:none; } .local-drawer-overlay,.local-drawer { animation:none; } }
