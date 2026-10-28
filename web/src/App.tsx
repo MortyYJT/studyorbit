@@ -13,8 +13,8 @@ import { LocalPlanning } from './LocalPlanning.js';
 type Panel = 'status' | 'settings';
 type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; phase?: string; file?: string }[]; error: string | null };
 type TokenUsage = { input: number | null; output: number | null; cached: number | null; reasoning: number | null };
-type SyncUsage = { type: string; runId: string; at: string; course: string; courses: { code: string; status: string }[]; model: string; status: string; durationMs: number | null; coordinator: TokenUsage | null; subagents: TokenUsage | null };
-type SyncBatch = { id: string; at: string; durationMs: number | null; ended: boolean; legacy: boolean; selected: { code: string; status: string }[]; courses: SyncUsage[] };
+type SyncUsage = { type: string; runId: string; at: string; course: string; courses: { code: string; status: string }[]; model: string; status: string; durationMs: number | null; coordinator: TokenUsage | null; subagents: TokenUsage | null; recovered: boolean };
+type SyncBatch = { id: string; at: string; durationMs: number | null; ended: boolean; legacy: boolean; recovered: boolean; selected: { code: string; status: string }[]; courses: SyncUsage[] };
 type SyncModal = 'discovery' | 'select' | 'starting' | 'syncing' | 'stopping' | 'finished';
 /** Navigation state; a preset is cleared once its conversation exists, so it is never sent twice. */
 export type View = { page: 'week' } | { page: 'agent'; preset?: AgentPreset; conversationId?: string; navigation?: number } | { page: 'course'; courseId: string };
@@ -229,10 +229,11 @@ function groupSyncUsage(rows: SyncUsage[]): SyncBatch[] {
   const legacy: SyncBatch[] = [];
   for (const [index, row] of rows.entries()) {
     if (!row.runId) {
-      if (row.type === 'course' && row.course) legacy.push({ id: `legacy-${index}-${row.at}`, at: row.at, durationMs: row.durationMs, ended: true, legacy: true, selected: [{ code: row.course, status: row.status }], courses: [row] });
+      if (row.type === 'course' && row.course) legacy.push({ id: `legacy-${index}-${row.at}`, at: row.at, durationMs: row.durationMs, ended: true, legacy: true, recovered: false, selected: [{ code: row.course, status: row.status }], courses: [row] });
       continue;
     }
-    const batch = batches.get(row.runId) ?? { id: row.runId, at: row.at, durationMs: null, ended: false, legacy: false, selected: [], courses: [] };
+    const batch = batches.get(row.runId) ?? { id: row.runId, at: row.at, durationMs: null, ended: false, legacy: false, recovered: row.recovered, selected: [], courses: [] };
+    batch.recovered ||= row.recovered;
     if (row.type === 'batch_start') { batch.at = row.at; if (!batch.selected.length) batch.selected = row.courses; }
     else if (row.type === 'batch_end') { batch.ended = true; batch.durationMs = row.durationMs; batch.selected = row.courses; }
     else if (row.type === 'course' && row.course) batch.courses.push(row);
@@ -256,9 +257,10 @@ function SyncBatchRow({ batch, language, initiallyOpen = false }: { batch: SyncB
   const totals = entries.map(entry => usageTokens(entry.row));
   const tokenTotal = totals.length && totals.every(total => total !== null) ? totals.reduce<number>((sum, total) => sum + (total ?? 0), 0) : null;
   const seconds = (ms: number | null) => ms === null ? '—' : `${(ms / 1000).toFixed(1)} ${zh ? '秒' : 's'}`;
+  if (entries.length === 1) return <div className="sync-batch sync-batch-single"><span><strong>{entries[0]!.code}</strong><small>{when}{batch.legacy ? (zh ? ' · 早期单课记录' : ' · Earlier record') : ''}</small></span><span>{seconds(batch.durationMs)}</span><span>{tokenTotal?.toLocaleString() ?? '—'} Token</span></div>;
   return <details className="sync-batch" open={initiallyOpen || undefined}>
-    <summary><span><strong>{when}</strong><small>{batch.legacy ? (zh ? '早期单课记录' : 'Earlier course record') : !batch.ended ? (zh ? '未完成' : 'Incomplete') : `${entries.length} ${zh ? '门课程' : 'courses'}`}</small></span><span>{seconds(batch.durationMs)}</span><span>{tokenTotal?.toLocaleString() ?? '—'} Token</span></summary>
+    <summary><span><strong>{when}</strong><small>{!batch.ended ? (zh ? '未完成' : 'Incomplete') : `${entries.length} ${zh ? '门课程' : 'courses'}`}</small></span><span>{batch.recovered && batch.durationMs !== null ? (zh ? '约 ' : '~') : ''}{seconds(batch.durationMs)}</span><span>{tokenTotal?.toLocaleString() ?? '—'} Token</span></summary>
     <div className="sync-batch-courses">{entries.map(({ code, status, row }, index) => <div className="sync-batch-course" key={`${code}-${index}`}><span>{code}{status === 'cancelled' ? (zh ? ' · 已中止' : ' · Stopped') : status === 'failed' ? (zh ? ' · 未完成' : ' · Failed') : ''}</span><span>{seconds(row?.durationMs ?? null)}</span><span>{usageTokens(row)?.toLocaleString() ?? '—'} Token</span></div>)}</div>
-    {!batch.legacy && <p className="sync-batch-note">{zh ? '耗时从保存选课后开始计算。' : 'Duration starts after courses are selected.'}</p>}
+    <p className="sync-batch-note">{batch.recovered ? (zh ? '根据本机采集目录还原；总耗时为估算。' : 'Recovered from local collection folders; duration is approximate.') : (zh ? '耗时从保存选课后开始计算。' : 'Duration starts after courses are selected.')}</p>
   </details>;
 }
