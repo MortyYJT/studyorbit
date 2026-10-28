@@ -15,7 +15,7 @@ const copy = async value => new Promise((resolveCopy, reject) => { const p = spa
 const browser = (await run('/usr/bin/osascript', ['-l', 'JavaScript', '-e', 'ObjC.import("AppKit"); var u = $.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL($.NSURL.URLWithString("https://canvas.lms.unimelb.edu.au/")); if (!u) throw new Error("No default browser"); $.NSBundle.bundleWithURL(u).bundleIdentifier.js;'])).trim();
 if (browser !== 'com.microsoft.edgemac') throw new Error('当前加载状态检测只支持 macOS Edge，请将 Edge 设为默认浏览器后使用。');
 const pageState = `on run argv
- tell application id (item 1 of argv)
+ tell application "Microsoft Edge"
   if (count of windows) is 0 then return "waiting"
   set activeTab to active tab of front window
   set currentUrl to URL of activeTab
