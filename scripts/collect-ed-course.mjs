@@ -30,7 +30,26 @@ else {
     try { const result = await cli(process.execPath, [fileURLToPath(new URL('./edstem-scores.mjs', import.meta.url)), ...candidates.map(x => x.id)]); scores = result.results ?? []; }
     catch { scoresError = '部分 Ed 成绩读取不可用'; }
   }
-  result = { status: scoresError ? 'partial' : 'complete', code, term, unitId: unit, lessons, scores, scoresError };
+  // Fetch a small number of course/first-workshop introductions, not assignment bodies.
+  const intro = lessons.find(l => /subject information|subject overview|course overview|subject introduction/i.test(l.title ?? ''));
+  const workshop = lessons.find(l => /workshop|tutorial/i.test(`${l.module ?? ''} ${l.title ?? ''}`) && /week\s*0?1\b/i.test(l.title ?? ''));
+  const targets = [...new Map([intro, workshop].filter(Boolean).map(l => [l.id, l])).values()];
+  const context = []; let contextError = false;
+  for (const lesson of targets) {
+    try {
+      const detail = await cli('edstem', ['lessons', 'show', lesson.id, '--json']);
+      const slides = Array.isArray(detail.slides) ? detail.slides : [];
+      const candidates = slides.filter(slide => /subject overview|course overview|assessment (?:overview|information)|workshop introduction|welcome to .*workshop/i.test(slide.title ?? '')).slice(0, 3);
+      for (const slide of candidates) {
+        if (!/^\d+$/.test(String(slide.id))) continue;
+        const content = await cli('edstem', ['slides', 'show', String(slide.id), '--json']);
+        if (String(content.lessonId) !== lesson.id || String(content.courseId) !== unit || typeof content.content !== 'string') continue;
+        const text = content.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 12000);
+        context.push({ lessonId: lesson.id, lessonTitle: lesson.title, slideId: String(slide.id), slideTitle: slide.title, text, url: `${lesson.url}/slides/${slide.id}` });
+      }
+    } catch { contextError = true; }
+  }
+  result = { status: scoresError || contextError ? 'partial' : 'complete', code, term, unitId: unit, lessons, scores, scoresError, context, contextError };
 }
 const path = resolve(dest); await mkdir(dirname(path), { recursive: true, mode: 0o700 });
 await writeFile(path, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
