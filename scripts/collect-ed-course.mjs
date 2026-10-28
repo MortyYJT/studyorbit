@@ -2,7 +2,8 @@
 // Read-only lesson inventory and final-submission scores from the user's edstem-cli account.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, rename } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const exec = promisify(execFile);
@@ -24,7 +25,8 @@ else {
   const data = await cli('edstem', ['lessons', 'list', unit, '--json', '--module', 'all', '--state', 'all', '--status', 'all']);
   if (!Array.isArray(data)) throw new Error('Ed 课程目录格式错误');
   const lessons = data.filter(l => String(l.courseId) === unit).map(l => ({ id: String(l.id), title: l.title, module: l.moduleName ?? null, due: l.dueAt ?? null, status: l.status ?? null, url: `https://edstem.org/au/courses/${unit}/lessons/${l.id}` }));
-  const candidates = lessons.filter(l => /assignment|assessment|project/i.test(`${l.module ?? ''} ${l.title ?? ''}`) && /^\d+$/.test(l.id)).slice(0, 50);
+  const allCandidates = lessons.filter(l => /assignment|assessment|project/i.test(`${l.module ?? ''} ${l.title ?? ''}`) && /^\d+$/.test(l.id));
+  const candidates = allCandidates.slice(0, 50);
   let scores = [], scoresError = null;
   if (candidates.length) {
     try { const result = await cli(process.execPath, [fileURLToPath(new URL('./edstem-scores.mjs', import.meta.url)), ...candidates.map(x => x.id)]); scores = result.results ?? []; }
@@ -49,8 +51,13 @@ else {
       }
     } catch { contextError = true; }
   }
-  result = { status: scoresError || contextError ? 'partial' : 'complete', code, term, unitId: unit, lessons, scores, scoresError, context, contextError };
+  const unavailableScores = scores.filter(score => score.status === 'unavailable').length;
+  const candidatesTruncated = allCandidates.length > candidates.length;
+  result = { status: scoresError || contextError || unavailableScores || candidatesTruncated ? 'partial' : 'complete', code, term, unitId: unit, lessons, scores, scoresError, context, contextError, coverage: { lessons: lessons.length, scoreCandidates: allCandidates.length, scoresRequested: candidates.length, unavailableScores, candidatesTruncated, contextTargets: targets.length, contextsCollected: context.length } };
 }
+result.capturedAt = new Date().toISOString();
+result.scope = 'lesson_inventory_selected_scores_and_intro';
 const path = resolve(dest); await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-await writeFile(path, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
+const tmp = `${path}.${randomUUID()}.tmp`;
+await writeFile(tmp, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 }); await rename(tmp, path);
 console.log(JSON.stringify({ status: result.status, lessons: result.lessons.length, scores: result.scores.length }));
