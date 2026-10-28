@@ -147,7 +147,6 @@ export function createCourseSyncRunner(projectDir) {
           canvas: canvasData,
           ed: JSON.parse(await readFile(edPath, 'utf8')),
           handbook: JSON.parse(await readFile(handbookPath, 'utf8')),
-          guidance: await readFile(join(projectDir, 'docs', 'course-json.md'), 'utf8'),
         });
         if (cancelled) { row.status = 'cancelled'; return; }
         const provider = process.env.COURSE_ANALYSIS_PROVIDER || 'codex';
