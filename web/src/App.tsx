@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ShellStore, attention, emptyStore } from './shell.js';
+import { ShellStore, attention } from './shell.js';
 import { en, zh, type Copy, type Language, type Theme } from './i18n.js';
 import { WeekStore } from './weekStore.js';
 import { needsYou, weekModel } from './week.js';
-import { NeedsYou, WeekView } from './WeekView.js';
 import { AgentPage } from './Agent.js';
 import type { AgentPreset } from './chat.js';
-import { CoursePage } from './CoursePage.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning } from './LocalPlanning.js';
 

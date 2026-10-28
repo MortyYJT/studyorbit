@@ -1,48 +1,43 @@
-# 项目概览
+# 项目结构与数据流
 
-更新日期：2026-10-27
+更新：2026-10-29。当前项目是本地原型，开发服务同时提供 React 页面和本地 API。
 
-## 项目目标
+## 主流程
 
-重新开发一个本地运行的墨大课业助手，逐步实现课程信息同步、课程选择、排期和学习辅助。同步是当前优先梳理的部分。项目逐步开发，以每一步实际需求为准，不直接继承旧项目的整套架构。
+1. `web/src/App.tsx` 调用 `POST /api/local/sync-courses`；`vite.config.ts` 启动 `scripts/canvas-background.mjs discover` 获取课程，`scripts/lib/course-list.mjs` 按 Canvas 课程代码筛选候选。
+2. `web/src/LocalCourseSelect.tsx` 将选择保存在浏览器 localStorage，调用 `POST /api/local/course-sync`；取消使用 DELETE，GET 读取当前进度。
+3. `scripts/course-sync-runner.mjs` 对课程依次启动 Canvas、Ed、Handbook 采集。浏览器采集串行；已采集课程的模型分析可以与后续课程采集并行。来源缺失时保留状态，并不自动视为零分。
+4. `scripts/lib/course-analysis.mjs` 根据统一提示词和 `shared/course-data.ts` 输出 Schema 生成模型输入。默认 DeepSeek Responses API 原生 JSON Schema；支持 `codex` 和 `openai-compatible` 适配。代码进行关系、计分与部分 Ed 分数一致性检查；校验失败最多修复一次，保存诊断。
+5. 合格的课程 JSON 保存到桌面课程文件夹，`GET /api/local/course-reports` 读取对应课程最新有效文件；`web/src/LocalPlanning.tsx` 展示、允许用户编辑/新增，并使用 `shared/course-calculations.ts` 计算成绩。用户覆盖与学习任务保存在浏览器 localStorage。
 
-## 项目资料
+## 采集范围
 
-- 当前项目：`~/Desktop/unimelb-coursework-v2`。
-- 旧项目：`~/Documents/unimelb-coursework-agent/`，按需参考代码。
-- 旧扩展项目：`~/Documents/unimelb-coursework-agent-extension/`，按需参考取数实现。
-- 旧架构图和复盘：`~/Desktop/Develop/墨大课业agent/`，作为历史设计参考。
+- **Canvas**：`scripts/canvas-background.mjs` 使用已登录 Edge 同源请求读取活动课程、作业分组、作业及本人 submission，按 Link 分页。没有单独读取大纲、测验、公告或作业正文。
+- **Ed**：`scripts/collect-ed-course.mjs` 使用独立的 `edstem` CLI 认证读取课程目录，筛选最多 50 个成绩候选，并有限读取课程 / workshop 介绍；`scripts/edstem-scores.mjs` 读取本人最终提交成绩。接口可能返回 403，不能解释成零分。
+- **Handbook**：`scripts/collect-handbook.mjs` 读取对应年份考核页面文本；模型判断对应学期和考核框架。
 
-## 开发原则
+不下载课程文件，不提交作业，也不读取作业正文、附件、代码或图片。无 Ed 课程不必然是同步失败。采集范围不保证完整；站点页面或接口变化需要重新核对。
 
-- 在本地开发和运行，保留本地 Git commit；待用户决定后再上传 GitHub。
-- 按用户的步骤推进，先解决当前阶段的问题，不提前扩大范围。
-- 兼容不同 Agent：同步和基础取数由本地程序负责，后续 Agent 接入与取数能力分开设计。
-- 课程同步的数据来源为墨大 Canvas LMS、Ed 和对应年份及学期的 Handbook 考核页；Handbook 用于补充考核权重和 hurdle。
-- 点击同步后先获取课程列表，用户保存选择后自动继续同步所选课程，不再要求点击一次同步。
-- 使用用户常用浏览器及其已有的登录状态，不要求使用 Agent 自己的浏览器配置。
-- 用户负责测试；不要自行运行测试或操作界面进行自测。
+## 代码入口
 
-## 当前结构
-
-| 位置 | 内容 |
+| 位置 | 作用 |
 | --- | --- |
-| `web/src/` | React 前端原型与本地选课组件 |
-| `shared/` | 从原型保留的数据结构与接口定义 |
-| `scripts/get-courses.mjs` | macOS 课程列表获取脚本 |
-| `scripts/lib/course-list.mjs` | API 响应解析与课程代码筛选 |
-| `vite.config.ts` | 前端开发服务器及本地候选课程接口 |
-| `.local/lms/courses.json` | 本机获取的候选列表，已由 `.gitignore` 排除 |
-| `docs/` | 项目概览和交接记录 |
+| `web/src/main.tsx`、`App.tsx` | 页面入口、同步弹窗、设置、头像和用量 |
+| `web/src/LocalPlanning.tsx` | 本地课程页、用户编辑和日历；文件较大，是后续拆分候选 |
+| `web/src/Agent.tsx`、`client.ts`、`shell.ts` | 旧协议 / Agent 界面基础；普通 Vite 本地同步没有提供完整 Agent 后端 |
+| `vite.config.ts` | Vite 与 `/api/local/*` 接口；同步不是独立生产服务 |
+| `scripts/course-sync-runner.mjs` | 编排、模型调用、验证、取消、保存和用量 |
+| `scripts/lib/course-analysis.mjs` | 模型无关的提示词与原生输出 Schema |
+| `shared/course-data.ts`、`course-calculations.ts` | 课程契约与确定性分数计算 |
+| `shared/domain/`、`shared/protocol/` 等 | 保留的旧协议和类型；仍有前端引用，不应整体删除 |
 
-## 当前 v1 接口
+## 数据位置
 
-详见 [课程 JSON 契约](course-json.md)、[同步提示词](course-sync-prompt.md)和[数据迁移说明](migration.md)。新同步采用统一 JSON，由代码校验、展示和计算；用户覆盖独立保存在当前浏览器。以下是早期原型背景，不代表当前验证状态。
+- `.local/lms/courses.json`：本机课程候选；`.local/lms/runs/<批次>/<课程ID>/`：采集快照；`.local/lms/sync-errors/`：校验失败输出；`.local/lms/course-sync-usage.jsonl`：用量。
+- `~/Desktop/墨尔本大学 <年份> S<学期>/<课程代码>/分数结构*.json`：模型输出。新文件不覆盖旧文件；页面按修改时间选最新有效 JSON。
+- 浏览器 localStorage：课程选择、考核修正和手动项、学习任务、头像及界面偏好。按浏览器和端口隔离；首次迁移备份行为见 [迁移说明](migration.md)。
+- `.local/` 与 `.local-backups/` 均忽略于 Git，但可能含个人数据；桌面课程文件和浏览器数据也不在 Git 中。交接前应由用户自行决定备份和传递方式。
 
-## 早期实现背景
+## 当前边界
 
-第 0 层以课程选择为目标：前端点击“立即同步”，本地开发服务器启动课程获取脚本；脚本在用户已登录 LMS 的常用浏览器中打开 Canvas 课程 API，等待 1 秒，通过全选复制获取响应；代码解析数据并按课程代码筛选；前端展示筛选结果供用户勾选。
-
-用户此前实际取数结果为 9 个候选项，耗时约 1.77 秒；当前筛选规则匹配其中 4 门课程。前端选择目前保存在当前浏览器的 localStorage。本阶段的接口由 Vite 开发服务器提供，选课后自动串行派发课程任务的试验性接线等待用户测试，尚未接正式后端或后续排期。
-
-详细运行方法见 [课程获取脚本说明](../scripts/README.md)，当前状态和待办见 [交接文档](handoff.md)。
+Node.js 24+；macOS + Edge 已实际试跑，其他平台 / 浏览器未完成。`edstem` 和模型密钥属于外部依赖，不随仓库提供。Vite 重启会丢失内存中的运行状态，运行中不要修改服务端文件。同步批次耗时从保存选课后开始；旧批次只在可用目录元数据唯一匹配时还原，总耗时为估算。

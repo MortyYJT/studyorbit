@@ -1,5 +1,7 @@
 # Canvas 浏览器会话实验
 
+> 历史记录：描述当时的实验或草案，部分命令及结论已过时。当前运行方式见 [README](../README.md)，当前交接见 [handoff](handoff.md)。
+
 目的：参照 moodle-cli，验证是否能读取用户常用浏览器中 Canvas 的登录状态，由程序直接请求课程列表。
 
 在 Edge 登录 LMS 后运行：
