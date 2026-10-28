@@ -108,3 +108,5 @@ npm run dev
 2026-10-29：新增 `COURSE_ANALYSIS_PROVIDER=deepseek`，使用 Responses API 的原生 JSON Schema；优先使用 `COURSE_ANALYSIS_API_KEY`，其次 `DEEPSEEK_API_KEY`，默认模型 `deepseek-flash`。在启动开发服务前配置环境变量，不要将密钥写入项目。一次前端 COMP20008 试跑因 Canvas 登录过期及 Handbook 采集失败仅取得 Ed 数据；见 [模型对比](model-comparison.md)，重新登录后仍需测试。
 
 2026-10-29：用户决定 DeepSeek 为当前默认分析模型，暂缓前端和其他功能调整，先跑数据。四门课试跑和分数错配修正记录于 [第一版四门课数据试跑](first-sync-run-20261029.md)。默认运行需在环境配置 `DEEPSEEK_API_KEY`（或 `COURSE_ANALYSIS_API_KEY`）；仍可通过 `COURSE_ANALYSIS_PROVIDER=codex` 选择 Codex。用户确认了本次所讨论的 MAST 四项等权及 COMP20008 考试判断；不要把它当成所有课程的一般规则。
+
+2026-10-29：计划页删除每日可用时间输入及容量分配、底部超出和未预估说明；顶部“本周”改为“计划”，周视图单独命名，日期标题位于方格上方。当前既有学习任务仅有截止日期、没有用户指定开始日期，因此暂按截止日期归入日历，不再声称自动安排到之前的学习日；旧任务数据未删除。用户菜单暂时保留，后续由用户逐项决定。前端构建通过，需用户检查实际界面与排期体验。

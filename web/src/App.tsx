@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
-import { ShellStore, attention, emptyStore, settingsFromForm, type Settings } from './shell.js';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { ShellStore, attention, emptyStore } from './shell.js';
 import { en, zh, type Copy, type Language, type Theme } from './i18n.js';
 import { WeekStore } from './weekStore.js';
 import { needsYou, weekModel } from './week.js';
@@ -227,29 +227,7 @@ export function App({ store }: { store: ShellStore }) {
       {panel === 'settings' && <>
         <div className="preferences"><label>{t.theme}<select value={theme} onChange={event => setTheme(event.target.value as Theme)}>{(['system', 'light', 'dark'] as const).map(value => <option key={value} value={value}>{t[value]}</option>)}</select></label>
           <label>{t.language}<select value={language} onChange={event => setLanguage(event.target.value as Language)}><option value="en">English</option><option value="zh">中文</option></select></label></div>
-        {state.errors.planning ? <p>{t.settingsLoad}</p> : !state.planning ? <p>{t.loading}</p> : <SettingsForm key={JSON.stringify(state.planning.settings)} previous={state.planning.settings} store={store} t={t} />}
       </>}
     </dialog>
   </>;
-}
-function SettingsForm({ previous, store, t }: { previous?: Settings; store: ShellStore; t: Copy }) {
-  const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  const [message, setMessage] = useState<'invalid' | 'saved'>();
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setMessage(undefined);
-    const data = new FormData(event.currentTarget);
-    let settings: Settings;
-    try { settings = settingsFromForm(previous, Array.from({ length: 7 }, (_, index) => String(data.get(`day${index}`))), String(data.get('timezone')), String(data.get('anchor') ?? ''), String(data.get('breaks') ?? '')); }
-    catch { setMessage('invalid'); return; }
-    if (await store.saveSettings(settings)) setMessage('saved');
-  }
-  return <form onSubmit={event => void submit(event)}>
-    {!previous && <p className="muted">{t.settingsHelp}</p>}
-    <fieldset><legend>{t.hours}</legend><div className="hours">{(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const).map((day, index) => <label key={day}>{t[day]}<input name={`day${index}`} type="number" min="0" max="24" step="any" required defaultValue={previous ? previous.weekdayMinutes[index]! / 60 : ''} placeholder={t.unknown} /></label>)}</div></fieldset>
-    <label>{t.timezone}<input name="timezone" required defaultValue={previous?.timeZone ?? ''} placeholder={t.unknown} /></label>
-    {!previous && <><label>{t.anchor}<input name="anchor" type="date" required /></label><label>{t.breaks}<input name="breaks" /></label></>}
-    <button type="submit" disabled={state.saving || !store.client.hasSession()}>{state.saving ? t.saving : t.save}</button>
-    {message && <p role="status">{t[message]}</p>}
-    {state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
-  </form>;
 }

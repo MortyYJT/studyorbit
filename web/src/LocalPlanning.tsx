@@ -12,7 +12,6 @@ type CourseData = { course: Course; assessments: Assessment[]; materials: Record
 type ParentAssessment = { name: string; displayName?: string; kind?: Kind; weight?: number; children: Assessment[]; scoringRule: string; score?: number; outOf?: number; status?: string; due?: string; sourceKey?: string };
 type Work = { key: string; courseId: string; courseCode: string; title: string; due: string; minutes: number };
 const workKey = 'coursework.local-planning.work.v1';
-const capacityKey = 'coursework.local-planning.capacity.v1';
 const correctionKey = 'coursework.local-planning.corrections.v1';
 const manualKey = 'coursework.local-planning.assessments.v1';
 const orderKey = 'coursework.local-planning.order.v1';
@@ -106,7 +105,6 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const [manual, setManual] = useState<Record<string, Assessment[]>>(() => { try { return record(JSON.parse(localStorage.getItem(manualKey) ?? '{}')) as Record<string, Assessment[]>; } catch { return {}; } });
   const [order, setOrder] = useState<Record<string, string[]>>(() => { try { return record(JSON.parse(localStorage.getItem(orderKey) ?? '{}')) as Record<string, string[]>; } catch { return {}; } });
   const [adding, setAdding] = useState(false);
-  const [capacity, setCapacity] = useState(() => { try { const n = Number(localStorage.getItem(capacityKey)); return Number.isFinite(n) && n > 0 && n <= 1440 ? n : 120; } catch { return 120; } });
   const [week, setWeek] = useState(() => { const today = localDay(); return addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)); });
   const [chosen, setChosen] = useState<Assessment>();
   const [mode, setMode] = useState<'plan' | 'month'>('plan');
@@ -161,20 +159,11 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   }
   const plan = useMemo(() => {
     const days = new Map<string, { work: Work; minutes: number }[]>();
-    const used = new Map<string, number>();
-    const overflow: { work: Work; minutes: number }[] = [];
-    const today = localDay();
     for (const item of [...work].filter(item => courses.some(course => course.course.id === item.courseId)).sort((a, b) => a.due.localeCompare(b.due) || a.key.localeCompare(b.key))) {
-      let remaining = item.minutes;
-      // Bound computation even if a user enters an extremely distant deadline.
-      for (let day = today, i = 0; day <= item.due && i < 366 && remaining > 0; day = addDays(day, 1), i++) {
-        const amount = Math.min(remaining, Math.max(0, capacity - (used.get(day) ?? 0)));
-        if (amount > 0) { days.set(day, [...(days.get(day) ?? []), { work: item, minutes: amount }]); used.set(day, (used.get(day) ?? 0) + amount); remaining -= amount; }
-      }
-      if (remaining > 0) overflow.push({ work: item, minutes: remaining });
+      days.set(item.due, [...(days.get(item.due) ?? []), { work: item, minutes: item.minutes }]);
     }
-    return { days, overflow };
-  }, [work, capacity, courses]);
+    return { days };
+  }, [work, courses]);
   function saveWork(next: Work[]): boolean { try { localStorage.setItem(workKey, JSON.stringify(next)); setWork(next); setSaveError(false); return true; } catch { setSaveError(true); return false; } }
   function schedule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!selected || !chosen) return;
@@ -183,7 +172,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     if (saveWork([...work.filter(item => item.key !== chosen.key), { key: chosen.key, courseId: selected.course.id, courseCode: selected.course.subjectCode, title: chosen.name, due, minutes }])) setChosen(undefined);
   }
   if (courseId) return <div className="course-page">
-    <button className="crumb" onClick={onBack}>← {zh ? '本周' : 'This week'}</button>
+    <button className="crumb" onClick={onBack}>← {zh ? '计划' : 'Plan'}</button>
     {error && <p className="needs">{error}</p>}
     {selected ? <>
       <div className="chead"><h1>{selected.course.subjectCode}</h1><span className="muted">{selected.course.name}</span><small>{selected.course.term}</small></div>
@@ -306,15 +295,15 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     <div className="week-layout"><div className="week-main">
       <div className="week-toolbar"><div className="week-nav" role="group" aria-label={zh ? '周切换' : 'Navigate weeks'}>
         <button onClick={() => shift(-1)}>‹</button><button onClick={() => setWeek(addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)))}>{zh ? '今天' : 'Today'}</button><button onClick={() => shift(1)}>›</button><span className="range">{mode === 'plan' ? `${shortDate(week)} – ${shortDate(addDays(week, 6))}` : currentMonth}</span></div>
-        <div className="week-actions"><span className="muted">{zh ? '学期' : 'Term'}: {courses[0]?.course.term || '—'}</span><div className="seg" role="group" aria-label={zh ? '视图' : 'View'}><button aria-pressed={mode === 'plan'} onClick={() => { setWeek(addDays(week, -((new Date(`${week}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{zh ? '计划' : 'Plan'}</button><button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>{zh ? '月历' : 'Month'}</button></div><button disabled title={zh ? '手动任务尚未接入' : 'Manual tasks are not connected yet'}>{zh ? '添加任务' : 'Add task'}</button></div></div>
-      <div className="card notice"><label className="inline">{zh ? '每天可用分钟' : 'Minutes per day'} <input style={{ width: 90 }} type="number" min="1" max="1440" value={capacity} onChange={event => { const value = Number(event.target.value); if (value > 0 && value <= 1440) { try { localStorage.setItem(capacityKey, String(value)); setCapacity(value); setSaveError(false); } catch { setSaveError(true); } } }} /></label> <small>{zh ? '在课程中选择考核并填写截止日期和预计时间。' : 'Choose an assessment and enter its due date and estimate.'}</small></div>
-      {mode === 'plan' ? <div className="card week-card"><div className="week-grid">{Array.from({ length: 7 }, (_, index) => {
+        <div className="week-actions"><span className="muted">{zh ? '学期' : 'Term'}: {courses[0]?.course.term || '—'}</span><div className="seg" role="group" aria-label={zh ? '视图' : 'View'}><button aria-pressed={mode === 'plan'} onClick={() => { setWeek(addDays(week, -((new Date(`${week}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{zh ? '周视图' : 'Week'}</button><button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>{zh ? '月历' : 'Month'}</button></div><button disabled title={zh ? '手动任务尚未接入' : 'Manual tasks are not connected yet'}>{zh ? '添加任务' : 'Add task'}</button></div></div>
+      {mode === 'plan' ? <div className="local-week-grid">{Array.from({ length: 7 }, (_, index) => {
         const day = addDays(week, index); const entries = plan.days.get(day) ?? []; const due = work.filter(item => item.due === day && courses.some(course => course.course.id === item.courseId));
-        return <section key={day} className={`day${day === today ? ' today' : ''}${day < today ? ' past' : ''}`}>
-          <div className="day-head"><b>{dayName(day)}</b><span className="hours-used">{Math.round(entries.reduce((sum, item) => sum + item.minutes, 0) / 6) / 10} / {Math.round(capacity / 6) / 10} {zh ? '小时' : 'h'}</span></div>
-          <div className="day-deadlines">{due.map(item => <span className="due" key={item.key}>{zh ? '截止' : 'Due'} · {item.courseCode} · {item.title}</span>)}</div>
+        return <section key={day} className={`local-week-day${day === today ? ' today' : ''}${day < today ? ' past' : ''}`}>
+          <div className="local-week-heading"><b>{dayName(day)}</b></div>
+          <div className="local-week-body"><div className="day-deadlines">{due.map(item => <span className="due" key={item.key}>{zh ? '截止' : 'Due'} · {item.courseCode} · {item.title}</span>)}</div>
           <div className="day-items">{entries.length ? entries.map(entry => <button className="blk" key={entry.work.key} onClick={() => onCourse(entry.work.courseId)}><span className="tm">{entry.minutes} min</span><span className="tt">{entry.work.title}</span><span className="cr">{entry.work.courseCode}</span></button>) : <span className="muted empty-day">{zh ? '无计划' : 'No plan'}</span>}</div>
-        </section>; })}</div><div className="plan-lists"><section className="plan-list"><h3>{zh ? '超出 — 截止前排不下' : 'Overflow'}</h3>{plan.overflow.length ? <ul>{plan.overflow.map(item => <li key={item.work.key}>{item.work.courseCode} · {item.work.title} · {item.minutes} min</li>)}</ul> : <p className="muted">{zh ? '无。' : 'None.'}</p>}</section><section className="plan-list"><h3>{zh ? '未预估 — 预估后才会排进计划' : 'Unestimated'}</h3><p className="muted">{zh ? '在课程页选择考核并填写预计时间。' : 'Choose an assessment and provide an estimate.'}</p></section></div></div>
+          </div>
+        </section>; })}</div>
         : <div className="card month" role="grid"><div className="month-row" role="row">{Array.from({ length: 7 }, (_, i) => <div className="dow" key={i}>{dayName(addDays('2026-01-05', i)).replace(/\d+/g, '')}</div>)}</div>{Array.from({ length: 6 }, (_, row) => <div className="month-row" role="row" key={row}>{Array.from({ length: 7 }, (_, col) => { const day = addDays(monthStart, row * 7 + col); return <div role="gridcell" className={`cell${day.slice(0, 7) === currentMonth ? '' : ' out'}${day === today ? ' today' : ''}`} key={day}><button className="num" onClick={() => { setWeek(addDays(day, -((new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{Number(day.slice(8))}</button>{work.filter(item => item.due === day && courses.some(course => course.course.id === item.courseId)).map(item => <span className="due" key={item.key}>{item.courseCode} · {item.title}</span>)}</div>; })}</div>)}</div>}
       {!!work.length && <details><summary>{zh ? '已加入的学习任务' : 'Planned work'}</summary>{work.filter(item => courses.some(course => course.course.id === item.courseId)).map(item => <div className="local-group" key={item.key}><span>{item.courseCode} · {item.title} · {item.due} · {item.minutes} min</span><button onClick={() => saveWork(work.filter(row => row.key !== item.key))}>{zh ? '移除' : 'Remove'}</button></div>)}</details>}
       {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}

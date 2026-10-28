@@ -1,5 +1,5 @@
 export const en = {
-  week: 'This week', agent: 'Agent', sync: 'Sync now', syncing: 'Syncing…', menu: 'Owner menu',
+  week: 'Plan', agent: 'Agent', sync: 'Sync now', syncing: 'Syncing…', menu: 'Owner menu',
   memory: 'Memory', memoryCopy: { empty: 'Nothing is remembered yet.', general: 'General', agent: 'Agent', owner: 'Owner', source: 'Open source conversation', deleted: 'Conversation deleted', noSource: 'No source conversation', add: 'Add memory', edit: 'Edit memory', kind: 'Kind', text: 'Memory text', save: 'Save memory', cancel: 'Cancel', confirm: 'Delete this memory?', kinds: { habit: 'Habit', weakness: 'Weakness', preference: 'Preference', other: 'Other' } },
   status: 'Sync & sign-in', audit: 'Audit records', settings: 'Settings', metrics: 'Metrics',
   close: 'Close', refresh: 'Refresh', needs: 'Needs you', signin: 'Sign-in expired', syncFailed: 'Sync needs attention',
@@ -104,7 +104,7 @@ export const en = {
 };
 export const zh: typeof en = {
   memory: '记忆', memoryCopy: { empty: '尚未记住任何内容。', general: '通用', agent: 'Agent', owner: '本人', source: '打开来源对话', deleted: '对话已删除', noSource: '未记录来源对话', add: '新增记忆', edit: '编辑记忆', kind: '类别', text: '记忆内容', save: '保存记忆', cancel: '取消', confirm: '删除这条记忆？', kinds: { habit: '习惯', weakness: '薄弱点', preference: '偏好', other: '其他' } },
-  week: '本周', agent: 'Agent', sync: '立即同步', syncing: '同步中…', menu: '用户菜单',
+  week: '计划', agent: 'Agent', sync: '立即同步', syncing: '同步中…', menu: '用户菜单',
   status: '同步与登录', audit: '审计记录', settings: '设置', metrics: '指标',
   close: '关闭', refresh: '刷新', needs: '需要你', signin: '登录已过期', syncFailed: '同步需要处理',
   empty: '尚未同步任何数据。', emptyHelp: '同步 Canvas 和 Ed，将课程内容汇集到这里。',
