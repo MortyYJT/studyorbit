@@ -3,11 +3,11 @@ import type { Language } from './i18n.js';
 
 type RecordValue = Record<string, unknown>;
 type Course = { id: string; name: string; subjectCode: string; term?: string };
-type Kind = 'exam' | 'quiz' | 'assignment' | 'presentation' | 'participation' | 'ungraded' | 'unknown';
+type Kind = 'exam' | 'quiz' | 'assignment' | 'presentation' | 'participation' | 'hurdle' | 'ungraded' | 'unknown';
 type Assessment = { key: string; name: string; due: string; weight: string; weightValue?: number; sourceZero: boolean; kind: Kind; score?: number; outOf?: number; group: string; parent: string; status: string; link: string; sources: { platform: string; link: string }[]; caution: boolean; hurdle: boolean; edScore?: { score: number; outOf: number; url: string } };
 type Correction = { kind?: Kind; weight?: number | null; due?: string | null; name?: string; score?: number | null; outOf?: number | null; parent?: string; status?: string; link?: string; mergeInto?: string };
 type CourseData = { course: Course; assessments: Assessment[]; groups: RecordValue[]; materials: RecordValue[]; issues: RecordValue[]; available: boolean };
-type ParentAssessment = { name: string; displayName?: string; kind?: Kind; weight?: number; children: Assessment[]; scoringRule: string; score?: number; outOf?: number; status?: string; due?: string };
+type ParentAssessment = { name: string; displayName?: string; kind?: Kind; weight?: number; children: Assessment[]; scoringRule: string; score?: number; outOf?: number; status?: string; due?: string; sourceKey?: string };
 type Work = { key: string; courseId: string; courseCode: string; title: string; due: string; minutes: number };
 const workKey = 'coursework.local-planning.work.v1';
 const capacityKey = 'coursework.local-planning.capacity.v1';
@@ -82,7 +82,7 @@ function readWork(): Work[] {
 }
 function localDay(date = new Date()): string { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date); }
 function addDays(day: string, count: number): string { const date = new Date(`${day}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + count); return date.toISOString().slice(0, 10); }
-function normalize(course: Course, value: unknown, edData: unknown): CourseData {
+function normalize(course: Course, value: unknown, edData: unknown, observations: unknown): CourseData {
   const report = record(value);
   const sources = list(report['来源']);
   const overview = sources.map(source => text(source['关键原文'])).join(' ');
@@ -93,6 +93,17 @@ function normalize(course: Course, value: unknown, edData: unknown): CourseData 
   const rawGroups = report['考核分组'];
   const groups = Array.isArray(rawGroups) ? list(rawGroups) : list(record(rawGroups)['页面原始行'] ?? record(rawGroups)['分组']);
   const rawItems = [...list(report['考核项目']), ...list(report['练习与不计分条目'])];
+  for (const observation of list(record(observations)['考核项目'])) {
+    const observedLink = url(observation['链接'] ?? observation['原始链接']);
+    const index = observedLink ? rawItems.findIndex(item => url(item['链接'] ?? item['原始链接']) === observedLink) : -1;
+    if (index < 0) rawItems.push(observation);
+    else {
+      const current = rawItems[index]!;
+      rawItems[index] = { ...observation, ...current, '父考核': current['父考核'] ?? observation['父考核'],
+        '成绩': current['成绩'] ?? observation['成绩'], '已出成绩': current['已出成绩'] ?? observation['已出成绩'],
+        '满分': current['满分'] ?? observation['满分'] };
+    }
+  }
   const assessments = rawItems.map((item, index): Assessment => {
     const name = text(item['名称']) || `未命名考核 ${index + 1}`;
     const sourceLinks = Array.isArray(item['来源']) ? item['来源'] : [];
@@ -113,7 +124,7 @@ function normalize(course: Course, value: unknown, edData: unknown): CourseData 
     const equalWeight = equalCount && equalTotal !== undefined && sourceWeight === equalTotal && groupMembers.length === equalCount && /written assignments?/i.test(group) ? equalTotal / equalCount : undefined;
     const weightValue = directWeight ?? explicitPercent(item['权重']) ?? participationWeight ?? equalWeight ?? singleGroupWeight;
     const sourceWeightValue = statedPercent(item['权重']);
-    const weight = weightValue !== undefined ? `${weightValue}%${equalWeight !== undefined && weightValue === equalWeight ? ' · 平均推算' : ''}`
+    const weight = weightValue !== undefined ? `${weightValue}%`
       : sourceWeightValue !== undefined ? `${sourceWeightValue}%` : '';
     const result = record(item['已出成绩'] ?? item['成绩']);
     const ed = record(record(edData)[name]);
@@ -135,13 +146,15 @@ function assessmentParents(course: CourseData, visible: Assessment[]): ParentAss
   const groupName = (group: RecordValue) => text(group['名称'] ?? group['组名原文'] ?? group['组名']);
   const groupWeight = (group: RecordValue) => group['课程占比'] ?? group['权重'] ?? group['页面原文权重'];
   const parents: ParentAssessment[] = [];
-  const names = new Set([...course.groups.map(groupName).filter(name => /^(?:assignment|project|assessment|作业)\s+\S+$/i.test(name)), ...visible.map(item => item.parent).filter(Boolean)]);
+  const names = new Set([...course.groups.map(groupName).filter(name => /^(?:assignment|project|assessment|作业)\s+\S+$/i.test(name) || /equally weighted|平均分配|均分/i.test(name)), ...visible.map(item => item.parent).filter(Boolean)]);
   for (const name of names) {
     const group = course.groups.find(item => groupName(item) === name);
     const rawWeight = group ? groupWeight(group) : undefined;
-    const weight = number(rawWeight) ?? explicitPercent(rawWeight);
+    const source = visible.find(item => item.name === name && !item.parent);
+    const weight = number(rawWeight) ?? explicitPercent(rawWeight) ?? source?.weightValue;
     const children = visible.filter(item => !item.caution && (item.parent === name || (!item.parent && item.group === name)));
-    if (children.length > 1) parents.push({ name, weight, children, scoringRule: text(group?.['计分规则']) });
+    if (children.length > 1) parents.push({ name, weight, children, kind: source?.kind ?? (children.every(item => item.kind === 'participation') ? 'participation' : 'assignment'),
+      displayName: source?.name ?? (/written assignments?/i.test(name) ? 'Written assignments' : undefined), sourceKey: source?.key, scoringRule: text(group?.['计分规则']) });
   }
   return parents;
 }
@@ -162,7 +175,7 @@ function parentGrade(parent: ParentAssessment): { score: number; outOf: number; 
 function ScoreOverview({ assessments, parents, zh }: { assessments: Assessment[]; parents: ParentAssessment[]; zh: boolean }) {
   const [target, setTarget] = useState('H1');
   const completedParents = parents.flatMap(parent => { const grade = parentGrade(parent); return grade ? [{ parent, grade }] : []; });
-  const countedChildren = new Set(completedParents.flatMap(item => item.parent.children.map(child => child.key)));
+  const countedChildren = new Set(completedParents.flatMap(item => [...item.parent.children.map(child => child.key), ...(item.parent.sourceKey ? [item.parent.sourceKey] : [])]));
   const graded = assessments.filter(item => !countedChildren.has(item.key) && item.weightValue !== undefined && item.score !== undefined && item.outOf !== undefined && item.outOf > 0 && item.score >= 0 && item.score <= item.outOf && !item.caution && !item.sourceZero && item.kind !== 'ungraded');
   const weight = graded.reduce((sum, item) => sum + item.weightValue!, 0) + completedParents.reduce((sum, item) => sum + item.parent.weight!, 0);
   const earned = graded.reduce((sum, item) => sum + item.weightValue! * item.score! / item.outOf!, 0) + completedParents.reduce((sum, item) => sum + item.grade.earned, 0);
@@ -219,10 +232,10 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       try {
         const response = await fetch('/api/local/course-reports', { cache: 'no-store' });
         if (!response.ok) throw new Error('unavailable');
-        const data: { courses: Course[]; reports: { id: string; report: unknown }[]; edScores?: Record<string, unknown> } = await response.json();
+        const data: { courses: Course[]; reports: { id: string; report: unknown }[]; edScores?: Record<string, unknown>; observations?: Record<string, unknown> } = await response.json();
         let ids: string[] = [];
         try { const selected: unknown = JSON.parse(localStorage.getItem('coursework.selected-course-ids') ?? '[]'); if (Array.isArray(selected)) ids = selected.filter((id): id is string => typeof id === 'string'); } catch { /* No saved selection. */ }
-        if (live) { setCourses(data.courses.filter(course => ids.includes(course.id)).map(course => normalize(course, data.reports.find(item => item.id === course.id)?.report, data.edScores?.[course.id]))); setError(''); }
+        if (live) { setCourses(data.courses.filter(course => ids.includes(course.id)).map(course => normalize(course, data.reports.find(item => item.id === course.id)?.report, data.edScores?.[course.id], data.observations?.[course.id]))); setError(''); }
       } catch { if (live) setError(zh ? '无法读取本地课程数据，请先同步课程。' : 'Could not load local course data. Sync courses first.'); }
     }
     void load(); return () => { live = false; };
@@ -230,7 +243,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const original = courses.find(item => item.course.id === courseId);
   const selected = original && { ...original, assessments: [...original.assessments, ...(Array.isArray(manual[original.course.id]) ? manual[original.course.id] : [])].map(item => {
     const change = record(corrections[item.key]); const overrideWeight = number(change.weight);
-    const validKind = ['exam', 'quiz', 'assignment', 'presentation', 'participation', 'ungraded', 'unknown'].includes(String(change.kind)) ? change.kind as Kind : item.kind;
+    const validKind = ['exam', 'quiz', 'assignment', 'presentation', 'participation', 'hurdle', 'ungraded', 'unknown'].includes(String(change.kind)) ? change.kind as Kind : item.kind;
     return { ...item, kind: validKind, ...(typeof change.name === 'string' && change.name ? { name: change.name } : {}),
       ...(change.weight === null ? { weightValue: undefined, weight: '', sourceZero: false } : overrideWeight !== undefined && overrideWeight >= 0 && overrideWeight <= 100 ? { weightValue: overrideWeight, weight: `${overrideWeight}%`, sourceZero: overrideWeight === 0 } : {}),
       ...(change.score === null ? { score: undefined } : number(change.score) !== undefined ? { score: number(change.score) } : {}),
@@ -261,7 +274,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   }
   const parents = selected ? assessmentParents(selected, primaryItems).map(parent => {
     const change = corrections[`${selected.course.id}:group:${parent.name}`];
-    return change ? { ...parent, displayName: change.name || parent.name, kind: change.kind, weight: change.weight === null ? undefined : change.weight ?? parent.weight,
+    return change ? { ...parent, displayName: change.name || parent.displayName || parent.name, kind: change.kind ?? parent.kind, weight: change.weight === null ? undefined : change.weight ?? parent.weight,
       score: change.score ?? undefined, outOf: change.outOf ?? undefined, status: change.status, due: change.due ?? undefined } : parent;
   }) : [];
   function saveCorrections(next: Record<string, Correction>): boolean { try { localStorage.setItem(correctionKey, JSON.stringify(next)); setCorrections(next); setSaveError(false); return true; } catch { setSaveError(true); return false; } }
@@ -324,13 +337,13 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         <div className="arow head" aria-hidden="true"><span>{zh ? '名称' : 'Name'}</span><span>{zh ? '截止' : 'Due'}</span><span className="num">{zh ? '权重' : 'Weight'}</span><span className="num">{zh ? '分数' : 'Score'}</span><span>{zh ? '状态' : 'Status'}</span><span>{zh ? '排期' : 'Plan'}</span></div>
         {!selected.assessments.length && <p className="muted">{zh ? '暂未获取考核项目。' : 'No assessments found yet.'}</p>}
         {(() => {
-          const kinds: Kind[] = ['quiz', 'assignment', 'exam', 'presentation', 'participation', 'unknown'];
-          const labels: Record<Kind, string> = zh ? { exam: '考试', quiz: '测验', assignment: '作业', presentation: '展示', participation: '参与', ungraded: '不计分', unknown: '其他' } : { exam: 'Exams', quiz: 'Quizzes', assignment: 'Assignments', presentation: 'Presentations', participation: 'Participation', ungraded: 'Ungraded', unknown: 'Other' };
+          const kinds: Kind[] = ['quiz', 'assignment', 'exam', 'presentation', 'participation', 'hurdle', 'unknown'];
+          const labels: Record<Kind, string> = zh ? { exam: '考试', quiz: '测验', assignment: '作业', presentation: '展示', participation: '参与', hurdle: 'Hurdle', ungraded: '不计分', unknown: '其他' } : { exam: 'Exams', quiz: 'Quizzes', assignment: 'Assignments', presentation: 'Presentations', participation: 'Participation', hurdle: 'Hurdles', ungraded: 'Ungraded', unknown: 'Other' };
           const groupName = (group: RecordValue) => text(group['名称'] ?? group['组名原文'] ?? group['组名']);
           const groupWeight = (group: RecordValue) => group['课程占比'] ?? group['权重'] ?? group['页面原文权重'];
           const all = selected.assessments;
           const visible = primaryItems;
-          const childKeys = new Set(parents.flatMap(parent => parent.children.map(item => item.key)));
+          const childKeys = new Set(parents.flatMap(parent => [...parent.children.map(item => item.key), ...(parent.sourceKey ? [parent.sourceKey] : [])]));
           const row = (item: Assessment, siblings: string[]) => <details key={item.key} className="assessment-entry"><summary className="arow">
             <span className="aname">{item.name}</span>
             <span className="muted">{item.due || (zh ? '未知' : 'Unknown')}</span><span className="num">{item.sourceZero ? '0%' : item.weight || '—'}</span>
@@ -348,7 +361,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
                 const next: Correction = { ...corrections[item.key], name, kind: String(data.get('kind')) as Kind, weight: newWeight ?? null, score, outOf, due: String(data.get('due') ?? '') || null, parent: String(data.get('parent') ?? '').trim(), status: String(data.get('status') ?? '').trim(), link: String(data.get('link') ?? '').trim() };
                 saveCorrections({ ...corrections, [item.key]: next }); }}>
                 <label>{zh ? '名称' : 'Name'}<input name="name" required defaultValue={item.name} /></label>
-                <label>{zh ? '类型' : 'Type'}<select name="kind" defaultValue={item.kind}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'ungraded', 'unknown'] as Kind[]).map(kind => <option value={kind} key={kind}>{labels[kind]}</option>)}</select></label>
+                <label>{zh ? '类型' : 'Type'}<select name="kind" defaultValue={item.kind}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'hurdle', 'ungraded', 'unknown'] as Kind[]).map(kind => <option value={kind} key={kind}>{labels[kind]}</option>)}</select></label>
                 <label>{zh ? '单项占比 %' : 'Item weight %'}<input name="weight" type="number" min="0" max="100" step="any" defaultValue={item.weightValue} /></label>
                 <label>{zh ? '得分' : 'Score'}<input name="score" type="number" min="0" step="any" defaultValue={item.score} /></label><label>{zh ? '满分' : 'Out of'}<input name="outOf" type="number" min="0.01" step="any" defaultValue={item.outOf} /></label>
                 <label>{zh ? '截止时间' : 'Due'}<input name="due" defaultValue={item.due} placeholder="YYYY-MM-DD" /></label><label>{zh ? '父考核名称' : 'Parent name'}<input name="parent" defaultValue={item.parent || item.group} /></label><label>{zh ? '状态' : 'Status'}<input name="status" defaultValue={corrections[item.key]?.status ?? ''} /></label><label>{zh ? '链接' : 'Link'}<input type="url" name="link" defaultValue={item.link} /></label><button type="submit">{zh ? '保存' : 'Save'}</button>
@@ -357,14 +370,15 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
               </details><button onClick={() => setChosen(item)}>{zh ? '安排学习' : 'Plan study'}</button>
             </div></details>;
           const scoredParticipation = (item: Assessment) => item.kind === 'participation' && !item.sourceZero && (item.weightValue ?? 0) > 0;
-          const groupedItem = (kind: Kind) => visible.filter(item => !childKeys.has(item.key) && !item.caution && (kind === 'participation' && (item.hurdle || scoredParticipation(item)) || kind !== 'participation' && item.kind === kind && !item.hurdle && !item.sourceZero && item.kind !== 'ungraded'));
-          const foldedItems = visible.filter(item => !childKeys.has(item.key) && (item.caution || !item.hurdle && (item.sourceZero || item.kind === 'ungraded' || item.kind === 'participation' && !scoredParticipation(item))));
+          const standaloneHurdle = (item: Assessment) => item.kind === 'hurdle' || item.hurdle && (item.sourceZero || item.kind === 'ungraded' || item.weightValue === undefined);
+          const groupedItem = (kind: Kind) => visible.filter(item => !childKeys.has(item.key) && !item.caution && (kind === 'hurdle' ? standaloneHurdle(item) : !standaloneHurdle(item) && (kind === 'participation' ? scoredParticipation(item) : item.kind === kind && !item.sourceZero && item.kind !== 'ungraded')));
+          const foldedItems = visible.filter(item => !childKeys.has(item.key) && (item.caution || !standaloneHurdle(item) && (item.sourceZero || item.kind === 'ungraded' || item.kind === 'participation' && !scoredParticipation(item))));
           return <>
             {kinds.map(kind => { const items = groupedItem(kind); const combined: { key: string; item?: Assessment; parent?: ParentAssessment }[] = [
               ...parents.filter(parent => (parent.kind ?? 'assignment') === kind).map(parent => ({ key: `${selected.course.id}:group:${parent.name}`, parent })), ...items.map(item => ({ key: item.key, item })) ];
               const ordered = sorted(combined, entry => entry.key); if (!ordered.length) return null;
               const siblingKeys = ordered.map(entry => entry.key);
-              const open = kind !== 'participation' || items.some(item => item.hurdle || scoredParticipation(item));
+              const open = kind !== 'participation' || items.some(item => item.hurdle || scoredParticipation(item)) || ordered.some(entry => (entry.parent?.weight ?? 0) > 0);
               return <details className="agroup category" key={kind} open={open || undefined}><summary className="ghead"><b>{labels[kind]}</b><small>{ordered.length}</small></summary>
                 {ordered.map(entry => entry.item ? row(entry.item, siblingKeys) : (() => { const parent = entry.parent!; const grade = parentGrade(parent); const children = sorted(parent.children, item => item.key); const childOrder = children.map(item => item.key);
                   return <details className="assessment-parent" key={entry.key}><summary className="arow"><span className="aname"><strong>{parent.displayName || parent.name}</strong></span><span className="muted">{parent.due || `${parent.children.length} ${zh ? '个子项' : 'items'}`}</span><span className="num">{parent.weight === undefined ? '—' : `${parent.weight}%`}</span><span className="num">{grade ? `${Number(grade.score.toFixed(2))} / ${Number(grade.outOf.toFixed(2))}` : '—'}</span><span>{parent.status || (grade ? (zh ? '已出分' : 'Graded') : '—')}</span><span>—</span></summary>
@@ -374,7 +388,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
                       const w = String(data.get('weight') ?? '').trim(), n = String(data.get('score') ?? '').trim(), m = String(data.get('outOf') ?? '').trim(); const weight = w ? Number(w) : null, score = n ? Number(n) : null, outOf = m ? Number(m) : null;
                       if ((weight !== null && (!Number.isFinite(weight) || weight < 0 || weight > 100)) || (score !== null && (!Number.isFinite(score) || score < 0)) || (outOf !== null && (!Number.isFinite(outOf) || outOf <= 0)) || (score !== null && outOf !== null && score > outOf)) return;
                       saveCorrections({ ...corrections, [entry.key]: { ...corrections[entry.key], name, kind: String(data.get('kind')) as Kind, weight, score, outOf, due: String(data.get('due') ?? '') || null, status: String(data.get('status') ?? '').trim() } }); }}>
-                      <label>{zh ? '名称' : 'Name'}<input name="name" required defaultValue={parent.displayName || parent.name} /></label><label>{zh ? '类型' : 'Type'}<select name="kind" defaultValue={parent.kind ?? 'assignment'}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'unknown'] as Kind[]).map(value => <option key={value} value={value}>{labels[value]}</option>)}</select></label><label>{zh ? '占比 %' : 'Weight %'}<input type="number" min="0" max="100" step="any" name="weight" defaultValue={parent.weight} /></label><label>{zh ? '得分' : 'Score'}<input type="number" min="0" step="any" name="score" defaultValue={parent.score} /></label><label>{zh ? '满分' : 'Out of'}<input type="number" min="0.01" step="any" name="outOf" defaultValue={parent.outOf} /></label><label>{zh ? '日期' : 'Due date'}<input type="date" name="due" defaultValue={parent.due} /></label><label>{zh ? '状态' : 'Status'}<input name="status" defaultValue={parent.status} /></label><button type="submit">{zh ? '保存' : 'Save'}</button></form></details>
+                      <label>{zh ? '名称' : 'Name'}<input name="name" required defaultValue={parent.displayName || parent.name} /></label><label>{zh ? '类型' : 'Type'}<select name="kind" defaultValue={parent.kind ?? 'assignment'}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'hurdle', 'unknown'] as Kind[]).map(value => <option key={value} value={value}>{labels[value]}</option>)}</select></label><label>{zh ? '占比 %' : 'Weight %'}<input type="number" min="0" max="100" step="any" name="weight" defaultValue={parent.weight} /></label><label>{zh ? '得分' : 'Score'}<input type="number" min="0" step="any" name="score" defaultValue={parent.score} /></label><label>{zh ? '满分' : 'Out of'}<input type="number" min="0.01" step="any" name="outOf" defaultValue={parent.outOf} /></label><label>{zh ? '日期' : 'Due date'}<input type="date" name="due" defaultValue={parent.due} /></label><label>{zh ? '状态' : 'Status'}<input name="status" defaultValue={parent.status} /></label><button type="submit">{zh ? '保存' : 'Save'}</button></form></details>
                     <button onClick={() => setChosen({ key: entry.key, name: parent.displayName || parent.name, due: parent.due || '', weight: parent.weight === undefined ? '' : `${parent.weight}%`, sourceZero: false, kind: 'assignment', group: parent.name, status: parent.status || '', link: '', sources: [], parent: '', caution: false, hurdle: false })}>{zh ? '安排整个作业' : 'Plan assignment'}</button></div></details>;
                 })())}
               </details>; })}

@@ -51,7 +51,8 @@ export default defineConfig({
             return { id: course.id, report: null };
           }));
           const edScores = await readFile(join(projectDir, '.local', 'lms', 'ed-scores.json'), 'utf8').then(JSON.parse).catch(() => ({}));
-          res.end(JSON.stringify({ courses, reports: reports.filter(Boolean), edScores }));
+          const observations = await readFile(join(projectDir, '.local', 'lms', 'course-observations.json'), 'utf8').then(JSON.parse).catch(() => ({}));
+          res.end(JSON.stringify({ courses, reports: reports.filter(Boolean), edScores, observations }));
         } catch (error) {
           res.writeHead((error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500).end(JSON.stringify({ error: 'COURSES_UNAVAILABLE' }));
         }
