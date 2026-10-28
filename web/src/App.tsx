@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { en, zh, type Language, type Theme } from './i18n.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning, type SidebarCourse } from './LocalPlanning.js';
+import { palettes, parsePalette, type Palette } from './palette.js';
 
 type Panel = 'status' | 'settings';
 type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; phase?: string; file?: string }[]; error: string | null };
@@ -17,6 +18,7 @@ function selectionExists(): boolean { try { return localStorage.getItem('coursew
 export function App() {
   const [language, setLanguage] = useState<Language>(() => preference('coursework.language') === 'en' ? 'en' : 'zh');
   const [theme, setTheme] = useState<Theme>(() => { const value = preference('coursework.theme'); return value === 'system' || value === 'dark' ? value : 'light'; });
+  const [palette, setPalette] = useState<Palette>(() => parsePalette(preference('coursework.palette')));
   const [avatarImage, setAvatarImage] = useState(() => preference('coursework.avatar') ?? '');
   const [avatarError, setAvatarError] = useState('');
   const [syncUsage, setSyncUsage] = useState<SyncUsage[]>();
@@ -46,6 +48,7 @@ export function App() {
   const t = language === 'zh' ? zh : en;
   const running = localSyncing || courseRun?.running;
   useEffect(() => { document.documentElement.dataset.theme = theme; remember('coursework.theme', theme); }, [theme]);
+  useEffect(() => { document.documentElement.dataset.palette = palette; remember('coursework.palette', palette); }, [palette]);
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('coursework.language', language); }, [language]);
   useEffect(() => { if (panel) dialog.current?.showModal(); }, [panel]);
   // Page change fades the content in (design prototype motion) without remounting the page state.
@@ -228,6 +231,10 @@ export function App() {
         {avatarError && <p role="alert">{avatarError}</p>}
         <div className="preferences"><label>{t.theme}<select value={theme} onChange={event => setTheme(event.target.value as Theme)}>{(['system', 'light', 'dark'] as const).map(value => <option key={value} value={value}>{t[value]}</option>)}</select></label>
           <label>{t.language}<select value={language} onChange={event => setLanguage(event.target.value as Language)}><option value="en">English</option><option value="zh">中文</option></select></label></div>
+        <fieldset className="palette-picker"><legend>{t.palette}</legend><div className="palette-options">
+          {palettes.map(value => <button key={value} type="button" className="palette-swatch" data-palette={value} aria-pressed={palette === value} onClick={() => setPalette(value)}>
+            <span className="palette-chip" aria-hidden="true"><i /><i /><i /></span>{t.palettes[value]}</button>)}
+        </div></fieldset>
       </>}
     </dialog>
   </div>;
