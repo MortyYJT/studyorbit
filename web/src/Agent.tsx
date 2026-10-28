@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import type { Conversation } from '../../src/domain/schemas.js';
+import type { Conversation } from '../../shared/domain/schemas.js';
 import { ClientError, type Client } from './client.js';
 import { createAgentClient } from './agent-client.js';
 import { applyEvents, chatItems, fromOpen, launchPresetOnce, runStream, type AgentPreset, type ChatItem, type ChatState } from './chat.js';

@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { ConversationSchema, MessageSchema } from '../../src/domain/schemas.js';
-import { FailureEnvelopeSchema } from '../../src/protocol/contracts.js';
+import { ConversationSchema, MessageSchema } from '../../shared/domain/schemas.js';
+import { FailureEnvelopeSchema } from '../../shared/protocol/contracts.js';
 import { ClientError, type Client } from './client.js';
 import { StoredEventSchema, sseParser, type AgentPreset, type StoredEvent } from './chat.js';
 

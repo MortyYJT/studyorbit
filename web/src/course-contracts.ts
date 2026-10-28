@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { AnnotationFieldsSchema, CitationInputSchema, CoverageSchema, CursorSchema, IdSchema, VerifiedCitationSchema } from '../../src/protocol/contracts.js';
-import { AnnotationSchema, AnnotationVerdictSchema, AssessmentLinkSchema } from '../../src/domain/schemas.js';
-import { planningInputs } from '../../src/planning/contracts.js';
+import { AnnotationFieldsSchema, CitationInputSchema, CoverageSchema, CursorSchema, IdSchema, VerifiedCitationSchema } from '../../shared/protocol/contracts.js';
+import { AnnotationSchema, AnnotationVerdictSchema, AssessmentLinkSchema } from '../../shared/domain/schemas.js';
+import { planningInputs } from '../../shared/planning/contracts.js';
 
 // Browser copies of the annotation and autonomy contracts: their server modules import Node built-ins.
 // test/web/course-contracts.test.ts keeps them identical to src/protocol/{annotations,autonomy}.ts.

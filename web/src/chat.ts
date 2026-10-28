@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { AgentEventSchema } from '../../src/agent/adapter.js';
-import type { Conversation, Message } from '../../src/domain/schemas.js';
+import { AgentEventSchema } from '../../shared/agent/adapter.js';
+import type { Conversation, Message } from '../../shared/domain/schemas.js';
 
 // Journals written before the submit-confirmation flow was removed may hold confirmation events; they parse and are not shown.
 const HistoricalConfirmationSchema = z.object({ type: z.literal('confirmation'), confirmationId: z.string().min(1) });

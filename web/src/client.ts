@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import { contracts, FailureEnvelopeSchema } from '../../src/protocol/contracts.js';
-import { syncContracts } from '../../src/protocol/sync.js';
-import { planningContracts, planningInputs, settingsInput } from '../../src/planning/contracts.js';
+import { contracts, FailureEnvelopeSchema } from '../../shared/protocol/contracts.js';
+import { syncContracts } from '../../shared/protocol/sync.js';
+import { planningContracts, planningInputs, settingsInput } from '../../shared/planning/contracts.js';
 import { annotationCommands, autonomyCommands, autonomyReads, workCommands } from './course-contracts.js';
-import { memoryContracts } from '../../src/memory/contracts.js';
-import { metricsContracts } from '../../src/metrics/contracts.js';
+import { memoryContracts } from '../../shared/memory/contracts.js';
+import { metricsContracts } from '../../shared/metrics/contracts.js';
 
 const commands = {
   'courses.list': contracts['courses.list'],

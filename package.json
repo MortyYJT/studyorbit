@@ -1,10 +1,20 @@
 {
   "name": "coursework",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "sync:courses": "node scripts/canvas-background.mjs discover .local/lms/courses.json",
+    "build": "tsc -p web/tsconfig.json && vite build",
+    "typecheck": "tsc -p web/tsconfig.json",
+    "check": "tsc -p web/tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
@@ -14,20 +24,6 @@
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "typescript": "^7.0.2",
-    "vite": "8.3.4",
-    "vitest": "^5.0.3"
-  },
-  "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.300",
-    "@modelcontextprotocol/sdk": "^1.32.1",
-    "commander": "^15.0.0",
-    "zod": "^4.6.5"
-  },
-  "bin": {
-    "coursework": "dist/cli.js"
-  },
-  "scripts": {
-    "build": "tsc -p tsconfig.build.json && tsc -p web/tsconfig.json && vite build",
-    "check": "tsc --noEmit && tsc -p web/tsconfig.json && vitest run"
+    "vite": "8.3.4"
   }
 }

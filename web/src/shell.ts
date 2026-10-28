@@ -1,5 +1,5 @@
 import { type Client, type Output, ClientError } from './client.js';
-import { settingsInput } from '../../src/planning/contracts.js';
+import { settingsInput } from '../../shared/planning/contracts.js';
 import type { Copy } from './i18n.js';
 export type Settings = NonNullable<Output<'planning.settings.read'>['settings']>;
 export type Site = 'canvas' | 'ed';

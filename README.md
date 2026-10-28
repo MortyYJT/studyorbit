@@ -1,128 +1,36 @@
-# coursework
+# UniMelb coursework · 本地原型
 
-A local-first coursework assistant for University of Melbourne students. An agent reads your Canvas and Ed
-courses in your own signed-in browser; fixed code checks what it read, stores it, plans your week, keeps revision
-material and memory, and limits what the agent may do for each assessment. Everything runs on your machine and is
-used through a local web UI.
+这是一个本地优先的墨大课程同步与计划原型。当前主流程：从 Canvas 发现课程，用户选课后读取 Canvas、Ed 和 Handbook，用 DeepSeek 整理成课程 JSON，再在前端展示、编辑和计划。
 
-It is a single-user project for the owner's own courses: private data stays in `.local/` and never enters git.
+## 启动
 
-## Why it works this way
-
-The university forbids students from issuing their own Canvas API tokens, so there is no token-based sync. Instead,
-Codex works through its computer use in the owner's Microsoft Edge, where the owner has already signed in: it
-reads course pages, fills one structured course document, and hands it to `coursework`. Our code calls no model API
-directly and holds no API key or Canvas token (#123); the agent never sees or types a password. Fixed code does what
-must be the same every time: validation, storage, planning, views and guardrails.
-
-## What it does
-
-- **Course reading.** Codex lists your current courses, you pick which to follow, and it reads each one: grading
-  components, weights, hurdles, due dates, status, scores and the course's AI policy. Due dates, weights, hurdles
-  and policies carry the page quote and URL. Code checks format, common sense (dates in term, weights summing to
-  100) and required fields, sends errors back for up to two retries, and marks what stays unread as unknown.
-- **Week planning.** A seven-day view with each day's deadlines and planned work, scheduled deadline-first within
-  the hours you say you have each day. Estimates, actual time, start times, manual tasks and overflow work are
-  shown, and nothing is dropped silently. A month calendar shows deadlines.
-- **Course pages.** A score ring by weight, each grading component with its earned share, the current average and
-  the final-exam score you still need, with every value marked by origin (platform, agent or you).
-- **Revision.** Cited exam scope, study notes, practice statistics, and "tutor me" / "wrong answers only" sessions.
-- **Agent chat and memory.** A chat page that runs Codex with course context; long-term memory where code
-  summarises facts (progress, mistakes, time) and the agent records observations you can view, edit and delete.
-- **Graded autonomy.** L0 read (information, planning, revision), L1 complete quizzes, L2 complete assignments and
-  essays (#120). Each course has a default level with per-assessment overrides, set only by you in the UI; courses
-  whose policy prohibits AI are locked at L0 (#124). Codex's workspace rules make it stop before any final submit,
-  so you press submit yourself (#173). These rules are instructions to Codex, not code-enforced on the screen (#168).
-- **One command registry.** The same commands, validation and authorization are exposed as CLI, MCP (for the
-  agent) and HTTP (for the web UI).
-
-## Planned
-
-- **Canvas check of exact numbers** (in design, #193–#194): after each course read, Codex opens two fixed Canvas
-  `/api/v1` pages in Edge and passes the raw JSON to fixed code, which compares due dates, points, status, scores
-  and assignment-group weights with what the agent read; mismatches go to "needs you" for you to decide.
-- **Per-assessment AI policy** (in design, #195–#197): policy attaches to each assessment, with the course value as
-  a default; a `prohibited` read at any level wins unless you set that assessment yourself.
-- **Email as a source** (#99).
-- **Second version:** read-only Notion integration (#71); fetch scripts that Codex repairs when validation fails;
-  minimal-change re-planning and learning your own pace from estimate-versus-actual time; automatic sign-in that
-  still keeps passwords away from the model, for example through a password manager (#179).
-- **Third version:** separate planning, execution in a sandbox and three-level acceptance (executable checks,
-  rubric coverage, your review) for completing larger assignments.
-
-## Commands
+需要 Node.js **24 或更新版本**。在项目目录运行：
 
 ```bash
 npm ci
+npm run dev
 ```
 
-```bash
-npm run build
-```
+打开终端显示的本地地址，通常是 `http://localhost:5173/`。保持开发服务器运行。只看已有前端数据不必重新同步；完整同步还需准备：
 
-```bash
-node dist/cli.js ui
-```
+1. 在 **macOS Microsoft Edge** 中登录墨大 Canvas，并保留一个浏览器窗口；Canvas 和 Handbook 采集依赖 Edge 的 Apple Events JavaScript 和系统自动化权限。
+2. 安装并登录澳区 `edstem` CLI；Ed 使用其独立认证，**不是**自动复用 Edge 登录。当前本机曾使用 0.8.2；未确认其他版本。
+3. 在启动开发服务器的进程环境配置 `DEEPSEEK_API_KEY`（或 `COURSE_ANALYSIS_API_KEY`）。不要把密钥写进仓库或截图。默认使用 DeepSeek Responses API 与 `deepseek-flash`；课程和成绩数据会发送给配置的模型服务，模型调用可能产生费用。
 
-`npm run check` (type checks for the CLI and the web UI, then `vitest run`) is what CI and `.claude/check.sh` run.
-Other entry points after a build:
+配置完成后，从页面点击“立即同步”，选择课程并保存。只采集课程列表也可执行 `npm run sync:courses`；它使用相同的 Edge 后台采集器。
 
-- `node dist/cli.js mcp`: stdio MCP server for the agent.
-- `node dist/cli.js http`: local HTTP host.
-- `node dist/cli.js <group> <command> --json`: generated protocol commands (for example `courses list`).
+`npm run build` 检查 TypeScript 并构建静态资源；**静态构建不包含同步 API**，目前同步接口由 Vite 开发服务器提供。
 
-To sync, unlock the screen, open Edge signed in to Canvas and Ed, run `node dist/cli.js ui` and press "Sync now".
+## 文档
 
-## Layout
+- [接手文档](docs/handoff.md)：当前状态、下一步、限制与注意事项。
+- [项目结构和数据流](docs/overview.md)：入口、来源、保存位置。
+- [JSON 契约](docs/course-json.md)与[提示词](docs/course-sync-prompt.md)。
+- [四门课采集快照](docs/collection-snapshot.md)、[第一版试跑](docs/first-sync-run-20261029.md)：实验记录，不等同于其他课程的验证。含个人成绩的模型对比与混合同步实验只保存在本机，不入库。
+- [历史交接记录](docs/handoff-history.md)：保留讨论和过程，可能描述旧实现。
 
-| Path | What it holds |
-| --- | --- |
-| `src/domain/` | zod domain schemas, progress and grade projection |
-| `src/store/` | repository interface, `node:sqlite` implementation, migrations (only place that opens SQLite) |
-| `src/sync/` | course JSON contract, import and sync jobs |
-| `src/protocol/` | command registry, contracts, reads, writes, autonomy, audit, CLI/HTTP/MCP transports |
-| `src/agent/` | Codex and Claude adapters, conversations, and the agent's reading and workspace instructions |
-| `src/planning/`, `src/revision/`, `src/memory/`, `src/metrics/` | week planning, revision records, long-term memory, metrics |
-| `src/citations/` | exact citation validation |
-| `web/` | React frontend served by `coursework ui` |
-| `skills/` | agent skills for assessments and revision |
-| `test/` | vitest suites; fixtures are synthetic only |
-| `openspec/` | current specs and in-progress changes: proposal, design, spec deltas, tasks |
-| `docs/engineering/` | engineering reference (below) |
-| `note/` | Chinese planning notes: product, decisions, handoff, interview quizzes |
-| `design/prototype/` | static UI prototype on synthetic data |
+本项目仍是原型：当前采集器以 macOS + Edge 为主；Windows 和其他浏览器尚未实现完整兼容。不要把四门课的一次结果视为普遍正确。
 
-## Documents
+## 仓库历史
 
-| Document | Purpose |
-| --- | --- |
-| [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md) | Rules for agents and contributors |
-| [docs/engineering/v1-technical-design.md](docs/engineering/v1-technical-design.md) | Standing v1 design: architecture, stack, autonomy, milestones |
-| [docs/engineering/protocol.md](docs/engineering/protocol.md) | How the protocol seams fit together |
-| [docs/engineering/canvas-student-session-spike.md](docs/engineering/canvas-student-session-spike.md) | Historical Canvas student-session spike (its Playwright harness was removed in C-3) |
-| [docs/engineering/agent-guidelines.md](docs/engineering/agent-guidelines.md) | Detailed agent guidelines, read per task |
-| [note/product/](note/product/) | Vision, roadmap (progress), backlog, Ed findings |
-| [note/decisions.md](note/decisions.md) | Every decision with who made it and why |
-| [note/handoff.md](note/handoff.md) | Current state for the next session |
-
-## Progress
-
-Full milestone table: [note/product/roadmap.md](note/product/roadmap.md).
-
-| Stage | State |
-| --- | --- |
-| Foundation, domain model, SQLite store, command registry (M0, M2) | Done |
-| First real assessment: an Ed workshop quiz completed with the agent (Q1) | Done |
-| v1 delivery: data model, sync, annotations, planning, revision, agent chat, web UI, metrics (V-A to V-M) | Done |
-| Codex rework: Codex chat, agent course reading, browser clean-up, long-term memory (C-1 to C-4) | Code done |
-| Owner acceptance on real courses (#186) | In progress: four courses read and stored, week view working |
-| Canvas check and per-assessment AI policy (C-5) | In design |
-| Email source | Not started |
-
-Known limits from the first real read:
-
-- Course reading needs the screen unlocked and Edge open (#185), so it cannot run unattended overnight.
-- Each course took three submissions before it was stored; some fields (one final-exam weight, three assignment
-  statuses) were missed, which the planned Canvas check targets.
-- Course-level AI policy was read as "allowed" where the restriction applies to specific assessments, which the
-  planned per-assessment policy addresses.
+2026-10-29 起，本仓库以这个本地原型（原桌面 `unimelb-coursework-v2`）为准。早先的 v1 实现（Codex 读页面、`coursework` CLI、SQLite 存储、OpenSpec 规格）已从主线移除，仍可在 Git 历史中查看。协作规则见 [AGENTS.md](AGENTS.md) 与 [CONTRIBUTING.md](CONTRIBUTING.md)，决定记录见 `note/decisions.md`。
