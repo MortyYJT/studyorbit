@@ -4,8 +4,8 @@ import type { Language } from './i18n.js';
 type RecordValue = Record<string, unknown>;
 type Course = { id: string; name: string; subjectCode: string; term?: string };
 type Kind = 'exam' | 'quiz' | 'assignment' | 'presentation' | 'participation' | 'hurdle' | 'ungraded' | 'unknown';
-type Assessment = { key: string; name: string; due: string; weight: string; weightValue?: number; sourceZero: boolean; kind: Kind; score?: number; outOf?: number; group: string; parent: string; status: string; link: string; sources: { platform: string; link: string }[]; caution: boolean; hurdle: boolean; edScore?: { score: number; outOf: number; url: string } };
-type Correction = { kind?: Kind; weight?: number | null; due?: string | null; name?: string; score?: number | null; outOf?: number | null; parent?: string; status?: string; link?: string; mergeInto?: string };
+type Assessment = { key: string; name: string; due: string; weight: string; weightValue?: number; sourceZero: boolean; kind: Kind; score?: number; outOf?: number; group: string; parent: string; status: string; link: string; sources: { platform: string; link: string }[]; caution: boolean; hurdle: boolean; bonus?: boolean; rule?: string; edScore?: { score: number; outOf: number; url: string } };
+type Correction = { kind?: Kind; weight?: number | null; due?: string | null; name?: string; score?: number | null; outOf?: number | null; parent?: string; status?: string; link?: string; mergeInto?: string; bonus?: boolean; rule?: string };
 type CourseData = { course: Course; assessments: Assessment[]; groups: RecordValue[]; materials: RecordValue[]; issues: RecordValue[]; available: boolean };
 type ParentAssessment = { name: string; displayName?: string; kind?: Kind; weight?: number; children: Assessment[]; scoringRule: string; score?: number; outOf?: number; status?: string; due?: string; sourceKey?: string };
 type Work = { key: string; courseId: string; courseCode: string; title: string; due: string; minutes: number };
@@ -136,6 +136,7 @@ function normalize(course: Course, value: unknown, edData: unknown, observations
     return { key: `${course.id}:${link || `${index}:${name}`}`, name, due: text(item['截止时间']), weight, weightValue,
       sourceZero: zeroWeight(item['课程占比'] ?? item['权重']), kind: kindOf(text(item['分类'] ?? item['类型']), name),
       score, outOf, group, parent: text(item['父考核']), status: text(item['状态']), link, sources: itemSources, caution,
+      bonus: /^(?:bonus|加分)$/i.test(text(item['性质'])), rule: text(item['规则说明']),
       ...(edScore !== undefined && edOutOf !== undefined && edUrl ? { edScore: { score: edScore, outOf: edOutOf, url: edUrl } } : {}),
       hurdle: /\bhurdle\b|门槛|必须.*(?:出勤|参加)|must attend/i.test(`${name} ${text(item['类型'])} ${text(item['备注'])}`) };
   });
@@ -162,7 +163,7 @@ function parentGrade(parent: ParentAssessment): { score: number; outOf: number; 
   if (parent.weight === undefined || parent.weight <= 0) return undefined;
   if (parent.score !== undefined && parent.outOf !== undefined && parent.outOf > 0 && parent.score >= 0 && parent.score <= parent.outOf) return { score: parent.score, outOf: parent.outOf, earned: parent.weight * parent.score / parent.outOf };
   if (/drop|lowest|highest|best of|丢弃|最低|最高/i.test(parent.scoringRule)) return undefined;
-  const graded = parent.children.filter(item => !item.sourceZero && item.kind !== 'ungraded');
+  const graded = parent.children.filter(item => !item.bonus && !item.sourceZero && item.kind !== 'ungraded');
   if (!graded.length || graded.some(item => item.score === undefined || item.outOf === undefined || item.outOf <= 0 || item.score < 0 || item.score > item.outOf)) return undefined;
   const score = graded.reduce((sum, item) => sum + item.score!, 0);
   const outOf = graded.reduce((sum, item) => sum + item.outOf!, 0);
@@ -176,10 +177,11 @@ function ScoreOverview({ assessments, parents, zh }: { assessments: Assessment[]
   const [target, setTarget] = useState('H1');
   const completedParents = parents.flatMap(parent => { const grade = parentGrade(parent); return grade ? [{ parent, grade }] : []; });
   const countedChildren = new Set(completedParents.flatMap(item => [...item.parent.children.map(child => child.key), ...(item.parent.sourceKey ? [item.parent.sourceKey] : [])]));
-  const graded = assessments.filter(item => !countedChildren.has(item.key) && item.weightValue !== undefined && item.score !== undefined && item.outOf !== undefined && item.outOf > 0 && item.score >= 0 && item.score <= item.outOf && !item.caution && !item.sourceZero && item.kind !== 'ungraded');
+  const graded = assessments.filter(item => !item.bonus && !countedChildren.has(item.key) && item.weightValue !== undefined && item.score !== undefined && item.outOf !== undefined && item.outOf > 0 && item.score >= 0 && item.score <= item.outOf && !item.caution && !item.sourceZero && item.kind !== 'ungraded');
   const weight = graded.reduce((sum, item) => sum + item.weightValue!, 0) + completedParents.reduce((sum, item) => sum + item.parent.weight!, 0);
-  const earned = graded.reduce((sum, item) => sum + item.weightValue! * item.score! / item.outOf!, 0) + completedParents.reduce((sum, item) => sum + item.grade.earned, 0);
-  const average = weight ? earned / weight * 100 : undefined;
+  const baseEarned = graded.reduce((sum, item) => sum + item.weightValue! * item.score! / item.outOf!, 0) + completedParents.reduce((sum, item) => sum + item.grade.earned, 0);
+  const earned = baseEarned;
+  const average = weight ? baseEarned / weight * 100 : undefined;
   return <section className="card score" aria-label={zh ? '分数构成' : 'Score structure'}>
     <svg className="donut" viewBox="0 0 170 170" role="img" aria-label={zh ? '已得成绩' : 'Earned grades'}>
       <circle className="track" cx="85" cy="85" r="70" />
@@ -204,7 +206,7 @@ function WeightBreakdown({ course, assessments, zh }: { course: CourseData; asse
   const sum = components.reduce((total, item) => total + item.weight, 0);
   const rows = components.length && sum <= 100 ? components : assessments.flatMap(item => {
     const weight = item.weightValue ?? statedPercent(item.weight);
-    return !item.caution && weight !== undefined && weight > 0
+    return !item.bonus && !item.caution && weight !== undefined && weight > 0
       ? [{ name: item.name, weight }] : [];
   });
   if (!rows.length) return null;
@@ -249,6 +251,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       ...(change.score === null ? { score: undefined } : number(change.score) !== undefined ? { score: number(change.score) } : {}),
       ...(change.outOf === null ? { outOf: undefined } : number(change.outOf) !== undefined ? { outOf: number(change.outOf) } : {}),
       ...(typeof change.parent === 'string' ? { parent: change.parent } : {}), ...(typeof change.status === 'string' ? { status: change.status } : {}),
+      ...(typeof change.bonus === 'boolean' ? { bonus: change.bonus } : {}), ...(typeof change.rule === 'string' ? { rule: change.rule } : {}),
       ...(typeof change.link === 'string' ? { link: url(change.link) } : {}),
       ...(change.due === null ? { due: '' } : typeof change.due === 'string' ? { due: change.due } : {}) };
   }) };
@@ -331,9 +334,9 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
           if (weight !== undefined && (!Number.isFinite(weight) || weight < 0 || weight > 100)) return;
           const scoreText = String(data.get('score') ?? '').trim(); const maxText = String(data.get('outOf') ?? '').trim(); const score = scoreText ? Number(scoreText) : undefined; const outOf = maxText ? Number(maxText) : undefined;
           if ((score !== undefined && (!Number.isFinite(score) || score < 0)) || (outOf !== undefined && (!Number.isFinite(outOf) || outOf <= 0)) || (score !== undefined && outOf !== undefined && score > outOf)) return;
-          const item: Assessment = { key: `${selected.course.id}:manual:${crypto.randomUUID()}`, name, kind, due: String(data.get('due') ?? ''), weight: weight === undefined ? '' : `${weight}%`, weightValue: weight, sourceZero: weight === 0, score, outOf, group: '', parent: String(data.get('parent') ?? '').trim(), status: '', link: url(data.get('link')), sources: [], caution: false, hurdle: false };
+          const item: Assessment = { key: `${selected.course.id}:manual:${crypto.randomUUID()}`, name, kind, due: String(data.get('due') ?? ''), weight: weight === undefined ? '' : `${weight}%`, weightValue: weight, sourceZero: weight === 0, score, outOf, group: '', parent: String(data.get('parent') ?? '').trim(), status: '', link: url(data.get('link')), sources: [], caution: false, hurdle: false, bonus: data.get('nature') === 'bonus' };
           if (saveManual({ ...manual, [selected.course.id]: [...(manual[selected.course.id] ?? []), item] })) setAdding(false);
-        }}><label>{zh ? '名称' : 'Name'}<input name="name" required /></label><label>{zh ? '类型' : 'Type'}<select name="kind"><option value="assignment">{zh ? '作业' : 'Assignment'}</option><option value="quiz">Quiz</option><option value="exam">Test</option><option value="presentation">{zh ? '展示' : 'Presentation'}</option><option value="participation">{zh ? '参与' : 'Participation'}</option><option value="ungraded">{zh ? '不计分' : 'Ungraded'}</option></select></label><label>{zh ? '占比 %' : 'Weight %'}<input type="number" name="weight" min="0" max="100" step="any" /></label><label>{zh ? '得分' : 'Score'}<input type="number" name="score" min="0" step="any" /></label><label>{zh ? '满分' : 'Out of'}<input type="number" name="outOf" min="0.01" step="any" /></label><label>{zh ? '截止日期' : 'Due date'}<input type="date" name="due" /></label><label>{zh ? '父考核名称' : 'Parent name'}<input name="parent" /></label><label>{zh ? '链接' : 'Link'}<input type="url" name="link" /></label><button type="submit">{zh ? '保存' : 'Save'}</button></form>}
+        }}><label>{zh ? '名称' : 'Name'}<input name="name" required /></label><label>{zh ? '类型' : 'Type'}<select name="kind"><option value="assignment">{zh ? '作业' : 'Assignment'}</option><option value="quiz">Quiz</option><option value="exam">Test</option><option value="presentation">{zh ? '展示' : 'Presentation'}</option><option value="participation">{zh ? '参与' : 'Participation'}</option><option value="ungraded">{zh ? '不计分' : 'Ungraded'}</option></select></label><label>{zh ? '性质' : 'Nature'}<select name="nature"><option value="regular">{zh ? '普通考核' : 'Regular'}</option><option value="bonus">{zh ? '加分' : 'Bonus'}</option></select></label><label>{zh ? '占比 %' : 'Weight %'}<input type="number" name="weight" min="0" max="100" step="any" /></label><label>{zh ? '得分' : 'Score'}<input type="number" name="score" min="0" step="any" /></label><label>{zh ? '满分' : 'Out of'}<input type="number" name="outOf" min="0.01" step="any" /></label><label>{zh ? '截止日期' : 'Due date'}<input type="date" name="due" /></label><label>{zh ? '父考核名称' : 'Parent name'}<input name="parent" /></label><label>{zh ? '链接' : 'Link'}<input type="url" name="link" /></label><button type="submit">{zh ? '保存' : 'Save'}</button></form>}
         <div className="arow head" aria-hidden="true"><span>{zh ? '名称' : 'Name'}</span><span>{zh ? '截止' : 'Due'}</span><span className="num">{zh ? '权重' : 'Weight'}</span><span className="num">{zh ? '分数' : 'Score'}</span><span>{zh ? '状态' : 'Status'}</span><span>{zh ? '排期' : 'Plan'}</span></div>
         {!selected.assessments.length && <p className="muted">{zh ? '暂未获取考核项目。' : 'No assessments found yet.'}</p>}
         {(() => {
@@ -345,12 +348,13 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
           const visible = primaryItems;
           const childKeys = new Set(parents.flatMap(parent => [...parent.children.map(item => item.key), ...(parent.sourceKey ? [parent.sourceKey] : [])]));
           const row = (item: Assessment, siblings: string[]) => <details key={item.key} className="assessment-entry"><summary className="arow">
-            <span className="aname">{item.name}</span>
-            <span className="muted">{item.due || (zh ? '未知' : 'Unknown')}</span><span className="num">{item.sourceZero ? '0%' : item.weight || '—'}</span>
-            <span className="num points">{item.score !== undefined ? `${item.score}${item.outOf !== undefined ? ` / ${item.outOf}` : ''}` : item.edScore ? `Ed ${item.edScore.score} / ${item.edScore.outOf}` : '—'}</span>
+            <span className="aname">{item.name}{item.bonus && <span className="kind">{zh ? '加分' : 'Bonus'}</span>}</span>
+            <span className="muted">{item.due || (zh ? '未知' : 'Unknown')}</span><span className="num">{item.bonus ? (item.outOf !== undefined ? `${zh ? '最多' : 'Up to'} ${item.outOf} ${zh ? '分' : 'pts'}` : '—') : item.sourceZero ? '0%' : item.weight || '—'}</span>
+            <span className="num points">{item.score !== undefined ? `${item.score}${item.outOf !== undefined ? ` / ${item.outOf}` : ''}` : item.edScore ? `Ed ${item.edScore.score} / ${item.edScore.outOf}` : item.bonus && item.outOf !== undefined ? `— / ${item.outOf}` : '—'}</span>
             <span>{corrections[item.key]?.status || (item.score !== undefined ? (zh ? '已出分' : 'Graded') : '—')}</span><span>{work.some(entry => entry.key === item.key) ? (zh ? '已排期' : 'Planned') : '—'}</span></summary>
             <div className="assessment-expanded">
               <div className="assessment-order"><button type="button" disabled={siblings.indexOf(item.key) <= 0} onClick={() => move(item.key, siblings, -1)}>{zh ? '上移' : 'Move up'}</button><button type="button" disabled={siblings.indexOf(item.key) >= siblings.length - 1} onClick={() => move(item.key, siblings, 1)}>{zh ? '下移' : 'Move down'}</button></div>
+              {item.rule && <p>{item.rule}</p>}
               {item.edScore && <p><a href={item.edScore.url} target="_blank" rel="noreferrer">Ed Submissions Overall · {item.edScore.score} / {item.edScore.outOf}</a></p>}
               {(item.link || item.sources.length > 0) && <p>{item.sources.length ? item.sources.map((source, index) => <span key={`${source.link}-${index}`}>{index > 0 && ' · '}<a href={source.link} target="_blank" rel="noreferrer">{source.platform.toLowerCase() === 'ed' ? 'Ed' : source.platform.toLowerCase() === 'canvas' ? 'Canvas' : (zh ? '来源' : 'Source')}</a></span>) : <a href={item.link} target="_blank" rel="noreferrer">{zh ? '查看来源' : 'Source'}</a>}{(automaticDuplicates[item.key] ?? []).map(other => other.link && other.link !== item.link ? <span key={other.key}> · <a href={other.link} target="_blank" rel="noreferrer">{other.link.includes('edstem.org') ? 'Ed' : 'Canvas'}</a></span> : null)}</p>}
               {all.filter(other => corrections[other.key]?.mergeInto === item.key).map(other => <div key={other.key} className="local-group"><span>{zh ? '已合并来源' : 'Merged source'}: {other.name} {other.link && <a href={other.link} target="_blank" rel="noreferrer">{zh ? '查看' : 'View'}</a>}</span><button onClick={() => { const next = { ...corrections }; const change = { ...next[other.key] }; delete change.mergeInto; next[other.key] = change; saveCorrections(next); }}>{zh ? '撤销合并' : 'Undo merge'}</button></div>)}
@@ -358,10 +362,11 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
                 const name = String(data.get('name') ?? '').trim(); if (!name) return;
                 const scoreText = String(data.get('score') ?? '').trim(), maxText = String(data.get('outOf') ?? '').trim(); const score = scoreText ? Number(scoreText) : null, outOf = maxText ? Number(maxText) : null;
                 if ((score !== null && (!Number.isFinite(score) || score < 0)) || (outOf !== null && (!Number.isFinite(outOf) || outOf <= 0)) || (score !== null && outOf !== null && score > outOf)) return;
-                const next: Correction = { ...corrections[item.key], name, kind: String(data.get('kind')) as Kind, weight: newWeight ?? null, score, outOf, due: String(data.get('due') ?? '') || null, parent: String(data.get('parent') ?? '').trim(), status: String(data.get('status') ?? '').trim(), link: String(data.get('link') ?? '').trim() };
+                const next: Correction = { ...corrections[item.key], name, kind: String(data.get('kind')) as Kind, bonus: data.get('nature') === 'bonus', rule: String(data.get('rule') ?? '').trim(), weight: newWeight ?? null, score, outOf, due: String(data.get('due') ?? '') || null, parent: String(data.get('parent') ?? '').trim(), status: String(data.get('status') ?? '').trim(), link: String(data.get('link') ?? '').trim() };
                 saveCorrections({ ...corrections, [item.key]: next }); }}>
                 <label>{zh ? '名称' : 'Name'}<input name="name" required defaultValue={item.name} /></label>
                 <label>{zh ? '类型' : 'Type'}<select name="kind" defaultValue={item.kind}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'hurdle', 'ungraded', 'unknown'] as Kind[]).map(kind => <option value={kind} key={kind}>{labels[kind]}</option>)}</select></label>
+                <label>{zh ? '性质' : 'Nature'}<select name="nature" defaultValue={item.bonus ? 'bonus' : 'regular'}><option value="regular">{zh ? '普通考核' : 'Regular'}</option><option value="bonus">{zh ? '加分' : 'Bonus'}</option></select></label><label>{zh ? '规则' : 'Rule'}<input name="rule" defaultValue={item.rule ?? ''} /></label>
                 <label>{zh ? '单项占比 %' : 'Item weight %'}<input name="weight" type="number" min="0" max="100" step="any" defaultValue={item.weightValue} /></label>
                 <label>{zh ? '得分' : 'Score'}<input name="score" type="number" min="0" step="any" defaultValue={item.score} /></label><label>{zh ? '满分' : 'Out of'}<input name="outOf" type="number" min="0.01" step="any" defaultValue={item.outOf} /></label>
                 <label>{zh ? '截止时间' : 'Due'}<input name="due" defaultValue={item.due} placeholder="YYYY-MM-DD" /></label><label>{zh ? '父考核名称' : 'Parent name'}<input name="parent" defaultValue={item.parent || item.group} /></label><label>{zh ? '状态' : 'Status'}<input name="status" defaultValue={corrections[item.key]?.status ?? ''} /></label><label>{zh ? '链接' : 'Link'}<input type="url" name="link" defaultValue={item.link} /></label><button type="submit">{zh ? '保存' : 'Save'}</button>
@@ -369,10 +374,10 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
               <div className="local-merge"><label>{zh ? '如果是同一个考核，合并到' : 'If this is the same assessment, merge into'}<select defaultValue="" onChange={event => { const target = event.target.value; if (!target) return; saveCorrections({ ...corrections, [item.key]: { ...corrections[item.key], mergeInto: target } }); }}><option value="">{zh ? '选择考核' : 'Choose assessment'}</option>{visible.filter(other => other.key !== item.key && !all.some(child => corrections[child.key]?.mergeInto === item.key)).map(other => <option value={other.key} key={other.key}>{other.name}</option>)}</select></label><small>{zh ? '来源保留，可撤销。已有排期不会自动移除。' : 'Sources remain and merges can be undone. Existing plans are not removed.'}</small></div>
               </details><button onClick={() => setChosen(item)}>{zh ? '安排学习' : 'Plan study'}</button>
             </div></details>;
-          const scoredParticipation = (item: Assessment) => item.kind === 'participation' && !item.sourceZero && (item.weightValue ?? 0) > 0;
+          const scoredParticipation = (item: Assessment) => item.kind === 'participation' && (item.bonus === true || !item.sourceZero && (item.weightValue ?? 0) > 0);
           const standaloneHurdle = (item: Assessment) => item.kind === 'hurdle' || item.hurdle && (item.sourceZero || item.kind === 'ungraded' || item.weightValue === undefined);
           const groupedItem = (kind: Kind) => visible.filter(item => !childKeys.has(item.key) && !item.caution && (kind === 'hurdle' ? standaloneHurdle(item) : !standaloneHurdle(item) && (kind === 'participation' ? scoredParticipation(item) : item.kind === kind && !item.sourceZero && item.kind !== 'ungraded')));
-          const foldedItems = visible.filter(item => !childKeys.has(item.key) && (item.caution || !standaloneHurdle(item) && (item.sourceZero || item.kind === 'ungraded' || item.kind === 'participation' && !scoredParticipation(item))));
+          const foldedItems = visible.filter(item => !childKeys.has(item.key) && (item.caution || !standaloneHurdle(item) && (!item.bonus && item.sourceZero || item.kind === 'ungraded' || item.kind === 'participation' && !scoredParticipation(item))));
           return <>
             {kinds.map(kind => { const items = groupedItem(kind); const combined: { key: string; item?: Assessment; parent?: ParentAssessment }[] = [
               ...parents.filter(parent => (parent.kind ?? 'assignment') === kind).map(parent => ({ key: `${selected.course.id}:group:${parent.name}`, parent })), ...items.map(item => ({ key: item.key, item })) ];
