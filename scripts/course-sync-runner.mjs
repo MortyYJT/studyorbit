@@ -81,6 +81,8 @@ export function createCourseSyncRunner(projectDir) {
     active = true;
     cancelled = false;
     try {
+      const provider = process.env.COURSE_ANALYSIS_PROVIDER || 'deepseek';
+      if (provider === 'deepseek' && !(process.env.COURSE_ANALYSIS_API_KEY || process.env.DEEPSEEK_API_KEY)) throw new Error('DEEPSEEK_KEY_MISSING');
       if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some(id => typeof id !== 'string' || !/^\d+$/.test(id)) || new Set(ids).size !== ids.length) throw new Error('INVALID_SELECTION');
       const input = JSON.parse(await readFile(join(projectDir, '.local', 'lms', 'courses.json'), 'utf8'));
       if (!Array.isArray(input.courses)) throw new Error('COURSES_UNAVAILABLE');
@@ -143,13 +145,14 @@ export function createCourseSyncRunner(projectDir) {
           row.phase = 'analysis'; const analysisStarted = Date.now();
           try {
         const canvasData = JSON.parse(await readFile(canvasPath, 'utf8'));
+        const edData = JSON.parse(await readFile(edPath, 'utf8'));
         const instructions = buildAnalysisPrompt({ course, term,
           canvas: canvasData,
-          ed: JSON.parse(await readFile(edPath, 'utf8')),
+          ed: edData,
           handbook: JSON.parse(await readFile(handbookPath, 'utf8')),
         });
         if (cancelled) { row.status = 'cancelled'; return; }
-        const provider = process.env.COURSE_ANALYSIS_PROVIDER || 'codex';
+        const provider = process.env.COURSE_ANALYSIS_PROVIDER || 'deepseek';
         let result, report, parsed;
         const attempts = [];
         for (let attempt = 0; attempt < 2; attempt++) {
@@ -169,6 +172,17 @@ export function createCourseSyncRunner(projectDir) {
               const children = items.filter(child => child.parentId === item.id && child.nature === 'regular');
               if (item.scoring !== 'none' && (item.parentId !== null || children.length === 0)) result.issues.push(`assessments.${index}.scoring: 只有有计分子项的顶层父项可使用 points 或 weighted`);
               if (item.scoring === 'weighted' && children.some(child => child.weight === null || child.weight <= 0)) result.issues.push(`assessments.${index}.scoring: weighted 要求每个计分子项有明确正权重`);
+              if (!children.length && item.score !== null && item.maxScore !== null) {
+                const lessons = Array.isArray(edData.lessons) ? edData.lessons : [];
+                const scores = Array.isArray(edData.scores) ? edData.scores : [];
+                const matched = lessons.filter(lesson => item.sources.some(source => source.platform === 'ed' && source.url === lesson.url))
+                  .flatMap(lesson => scores.filter(score => String(score.lessonId) === String(lesson.id) && score.status === 'graded'));
+                const canvasMatches = (Array.isArray(canvasData.assignments) ? canvasData.assignments : []).some(assignment =>
+                  item.sources.some(source => source.platform === 'canvas' && source.url === assignment.html_url)
+                  && assignment.submission?.score === item.score && assignment.points_possible === item.maxScore);
+                if (matched.length === 1 && matched[0].score === item.score && matched[0].maxScore !== item.maxScore && !canvasMatches)
+                  result.issues.push(`assessments.${index}: Ed 已得 ${matched[0].score}/${matched[0].maxScore}，请使用同一来源的得分和满分`);
+              }
             }
           }
           const validReport = report && typeof report.reason === 'string' && ['completed', 'partial', 'failed'].includes(report.status) && (report.status === 'failed' ? report.document === null : parsed.success && result.issues.length === 0 && parsed.data.course.id === course.id && parsed.data.course.code === course.subjectCode);
@@ -188,7 +202,7 @@ export function createCourseSyncRunner(projectDir) {
           row.status = 'cancelled';
           const child = await childUsage(result.threadId, start);
           await mkdir(dirname(usagePath), { recursive: true, mode: 0o700 });
-          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || (process.env.COURSE_ANALYSIS_PROVIDER === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'), durationMs: Date.now() - start.getTime(), status: 'cancelled', phases: phaseDurations, coordinator: result.usage, subagents: child })}\n`, { mode: 0o600 });
+          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || ((process.env.COURSE_ANALYSIS_PROVIDER || 'deepseek') === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'), durationMs: Date.now() - start.getTime(), status: 'cancelled', phases: phaseDurations, coordinator: result.usage, subagents: child })}\n`, { mode: 0o600 });
           return;
         }
         row.phase = 'saving';
@@ -199,7 +213,7 @@ export function createCourseSyncRunner(projectDir) {
         if (result.exitCode === 0 && report && typeof report.reason === 'string' && allowed.includes(report.status) && (report.status === 'failed' ? report.document === null : validCourse)) {
           row.status = report.status;
           row.reason = typeof report.reason === 'string' ? report.reason.slice(0, 500) : '';
-          if (canvas.code !== 0 || canvasData.paginationVerified === false || ed.code !== 0 || handbook.code !== 0) { if (row.status === 'completed') row.status = 'partial'; row.reason = `${canvas.code !== 0 ? 'Canvas 数据未能读取；' : canvasData.paginationVerified === false ? 'Canvas 仅采集第一页；' : ''}${ed.code !== 0 ? 'Ed 数据未能读取；' : ''}${handbook.code !== 0 ? 'Handbook 数据未能读取；' : ''}${row.reason}`; }
+          if (canvas.code !== 0 || canvasData.paginationVerified === false || ed.code !== 0 || edData.status === 'partial' || handbook.code !== 0) { if (row.status === 'completed') row.status = 'partial'; row.reason = `${canvas.code !== 0 ? 'Canvas 数据未能读取；' : canvasData.paginationVerified === false ? 'Canvas 分页未验证；' : ''}${ed.code !== 0 ? 'Ed 数据未能读取；' : edData.status === 'partial' ? '部分 Ed 数据未能读取；' : ''}${handbook.code !== 0 ? 'Handbook 数据未能读取；' : ''}${row.reason}`; }
           if (report.status === 'failed') {
             const diagnosticDir = join(projectDir, '.local', 'lms', 'sync-errors');
             await mkdir(diagnosticDir, { recursive: true, mode: 0o700 });
@@ -220,7 +234,7 @@ export function createCourseSyncRunner(projectDir) {
         }
         try {
           await mkdir(dirname(usagePath), { recursive: true, mode: 0o700 });
-          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || (process.env.COURSE_ANALYSIS_PROVIDER === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'),
+          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || ((process.env.COURSE_ANALYSIS_PROVIDER || 'deepseek') === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'),
             durationMs: Date.now() - start.getTime(), status: row.status, phases: phaseDurations, coordinator: result.usage, subagents: child })}\n`, { mode: 0o600 });
         } catch { row.reason += ' 用量记录写入失败。'; }
           } catch {
@@ -233,7 +247,7 @@ export function createCourseSyncRunner(projectDir) {
         row.status = 'failed'; row.reason = '无法启动或记录课程任务，请检查本地环境。';
         try {
           await mkdir(dirname(usagePath), { recursive: true, mode: 0o700 });
-          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || (process.env.COURSE_ANALYSIS_PROVIDER === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'),
+          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || ((process.env.COURSE_ANALYSIS_PROVIDER || 'deepseek') === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'),
             durationMs: Date.now() - start.getTime(), status: row.status, coordinator: null, subagents: null })}\n`, { mode: 0o600 });
         } catch { row.reason += ' 用量记录写入失败。'; }
       }
@@ -305,7 +319,7 @@ function runCodex(prompt, courseDir, schemaPath, cwd, registerStop, onPhase) {
   return new Promise(resolveRun => {
     let threadId = null, usage = null, lastMessage = '', completed = false, code = null;
     const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only',
-      '-m', process.env.COURSE_ANALYSIS_MODEL || (process.env.COURSE_ANALYSIS_PROVIDER === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'), '-c', 'agents.enabled=false', '--output-schema', schemaPath, '-'];
+      '-m', process.env.COURSE_ANALYSIS_MODEL || ((process.env.COURSE_ANALYSIS_PROVIDER || 'deepseek') === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'), '-c', 'agents.enabled=false', '--output-schema', schemaPath, '-'];
     const proc = spawn('codex', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
     let hardStop;
     const signal = name => { try { if (process.platform === 'win32') { spawn('taskkill', ['/pid', String(proc.pid), '/t', '/f'], { stdio: 'ignore' }); } else if (proc.pid) process.kill(-proc.pid, name); } catch { /* Process already exited. */ } };
