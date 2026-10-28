@@ -8,3 +8,7 @@ export function anthropicSchema(schema: unknown): unknown;
 export function buildAnthropicRequest(input: { model: string; apiKey: string; prompt: string; schema?: unknown; maxTokens?: number }): { url: string; headers: Record<string, string>; body: string };
 export function analyse(config: AnalysisConfig, prompt: string, options: { schema: unknown; schemaPath: string; cwd: string; registerStop: (stop: () => void) => () => void; onPhase?: (phase: string) => void }): Promise<AnalysisResult>;
 export function testConnection(config: AnalysisConfig): Promise<ConnectionTest>;
+export type ChatTurn = { role: 'user' | 'assistant'; content: string };
+export type ChatResult = { ok: boolean; text: string; usage: TokenCounts | null; model: string | null; stopped?: true; error?: string };
+export function buildChatRequest(config: AnalysisConfig, input: { system: string; messages: ChatTurn[] }): { url: string; headers: Record<string, string>; body: string };
+export function chat(config: AnalysisConfig, input: { system: string; messages: ChatTurn[] }, options?: { signal?: AbortSignal; onDelta?: (text: string) => void; cwd?: string }): Promise<ChatResult>;

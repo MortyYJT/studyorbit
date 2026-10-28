@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { en, zh, type Language, type Theme } from './i18n.js';
+import { AgentChat, type AgentRequest } from './Agent.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning, type SidebarCourse } from './LocalPlanning.js';
 import { palettes, parsePalette, type Palette } from './palette.js';
@@ -25,6 +26,7 @@ export function App() {
   const [syncUsage, setSyncUsage] = useState<SyncUsage[]>();
   const [usageError, setUsageError] = useState(false);
   const [view, setView] = useState<View>({ page: 'week' });
+  const [agentRequest, setAgentRequest] = useState<AgentRequest>();
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState<Panel>();
   const [localSyncing, setLocalSyncing] = useState(false);
@@ -169,7 +171,7 @@ export function App() {
       <div className="sidebar-body" id="sidebar-body">
         <nav className="nav" aria-label="coursework">
           <button className="nav-item" aria-current={view.page === 'week' ? 'page' : undefined} onClick={() => go({ page: 'week' })}>{isZh ? '本周' : 'This week'}</button>
-          <button className="nav-item" aria-current={view.page === 'agent' ? 'page' : undefined} onClick={() => go({ page: 'agent' })}>{t.agent}</button>
+          <button className="nav-item" aria-current={view.page === 'agent' ? 'page' : undefined} onClick={() => { setAgentRequest(undefined); go({ page: 'agent' }); }}>{t.agent}</button>
         </nav>
         <div className="nav-group">
           <h2 className="nav-label">{t.courses}</h2>
@@ -194,11 +196,12 @@ export function App() {
       {localSyncError && <p className="error-line" role="status" style={{ whiteSpace: 'pre-wrap' }}><i className="signal" aria-hidden="true" />{localSyncError}</p>}
       {localSyncWarning && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{localSyncWarning}</p>}
       {courseRunError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{courseRunError}</p>}
-      {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1><button className="ghost" onClick={() => setCourseRefresh(value => value + 1)}>{t.refresh}</button></div>}
+      {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1>{view.page !== 'agent' && <button className="ghost" onClick={() => setCourseRefresh(value => value + 1)}>{t.refresh}</button>}</div>}
       {savedNotice > 0 && <div className="save-toast" role="status">{isZh ? '课程已经保存' : 'Courses saved'}</div>}
-      {view.page === 'agent' ? <p className="muted">{t.agentComing}</p>
+      {view.page === 'agent' ? <AgentChat language={language} courses={sidebarCourses} request={agentRequest} onOpenSettings={() => open('settings')} />
         : <LocalPlanning language={language} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined} onCourses={setSidebarCourses}
-          syncIssues={courseRun?.courses ?? []} onCourse={courseId => go({ page: 'course', courseId })} onBack={() => go({ page: 'week' })} />}
+          syncIssues={courseRun?.courses ?? []} onCourse={courseId => go({ page: 'course', courseId })} onBack={() => go({ page: 'week' })}
+          onAsk={courseId => { setAgentRequest(current => ({ nonce: (current?.nonce ?? 0) + 1, courseId })); go({ page: 'agent' }); }} />}
     </main>
     <dialog ref={selectDialog} className="select-dialog" aria-labelledby="select-title" onCancel={event => { event.preventDefault(); setCoursePanelOpen(false); }}>
       <div className="dialog-heading"><h2 id="select-title" tabIndex={-1} autoFocus>{isZh ? '修改选课' : 'Edit courses'}</h2><button className="ghost" onClick={() => setCoursePanelOpen(false)}>{t.close}</button></div>

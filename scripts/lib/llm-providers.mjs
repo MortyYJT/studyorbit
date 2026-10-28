@@ -2,6 +2,7 @@
 // Every adapter returns { exitCode, lastMessage, usage, threadId?, error? }, stops after 15 minutes and can be
 // cancelled through `registerStop`. Keys are sent only in the provider's auth header and never logged or echoed.
 import { execFile, spawn } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { isAllowedEndpoint } from './llm-config.mjs';
 
@@ -224,4 +225,155 @@ export async function testConnection(config) {
   } catch (error) {
     return result(false, error.name === 'AbortError' ? '请求超时。' : '无法连接模型接口。');
   } finally { done(); }
+}
+
+// ---- Agent chat (decision #230) ----------------------------------------------------------------------------
+// `chat(config, {system, messages}, {signal, onDelta})` streams one assistant reply. HTTP providers use their
+// streaming APIs; Codex runs `codex exec` read-only and emits its final message once. The result is
+// { ok, text, usage, model, stopped?, error? }; partial text is kept on errors and when the caller aborts.
+
+const CHAT_TIMEOUT_MS = 5 * 60 * 1000;
+const CHAT_MAX_TOKENS = 16000;
+const DEEPSEEK_RESPONSES_URL = 'https://api.deepseek.com/responses';
+
+/** Drop leading assistant turns: every provider expects the conversation to open with the user. */
+function chatMessages(messages) {
+  const start = messages.findIndex(message => message.role === 'user');
+  return start < 0 ? [] : messages.slice(start).map(({ role, content }) => ({ role, content }));
+}
+
+/** Build the streaming HTTP request for one chat reply. Pure: no network. Not used for codex. */
+export function buildChatRequest(config, { system, messages }) {
+  const history = chatMessages(messages);
+  if (config.provider === 'deepseek') {
+    return { url: DEEPSEEK_RESPONSES_URL, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({ model: config.model, instructions: system, input: history, stream: true }) };
+  }
+  if (config.provider === 'openai-compatible') {
+    return { url: config.baseUrl, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({ model: config.model, messages: [{ role: 'system', content: system }, ...history], stream: true, stream_options: { include_usage: true } }) };
+  }
+  if (config.provider === 'anthropic') {
+    // The system block (instructions + course context) is the stable prefix, so it carries the cache breakpoint.
+    return { url: ANTHROPIC_URL, headers: { 'content-type': 'application/json', 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: config.model, max_tokens: CHAT_MAX_TOKENS, stream: true, system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages: history }) };
+  }
+  throw new Error(`UNSUPPORTED_PROVIDER:${config.provider}`);
+}
+
+/** Per-provider stream state: feed parsed SSE payloads in, then ask for the outcome when the body ends. */
+function chatParser(provider, key, emit) {
+  let text = '', usage = null, finished = false, failure = null;
+  const add = delta => { if (typeof delta === 'string' && delta) { text += delta; emit(delta); } };
+  const fail = message => { failure ??= redact(message, key); };
+  if (provider === 'deepseek') return {
+    event(event) {
+      if (event.type === 'response.output_text.delta') add(event.delta);
+      else if (event.type === 'response.completed') { finished = true; usage = counts(event.response?.usage); }
+      else if (event.type === 'response.incomplete') { usage = counts(event.response?.usage); fail(`DeepSeek 回复未完成：${event.response?.incomplete_details?.reason ?? '未知'}`); }
+      else if (event.type === 'response.failed') fail(`DeepSeek 接口出错：${event.response?.error?.message ?? '未知'}`);
+      else if (event.type === 'error') fail(`DeepSeek 接口出错：${event.message ?? event.error?.message ?? '未知'}`);
+    },
+    result: () => ({ text, usage, error: failure ?? (finished ? null : 'DeepSeek 回复中断。') }),
+  };
+  if (provider === 'openai-compatible') {
+    let reason = null;
+    return {
+      event(event) {
+        if (event.error) { fail(`模型接口出错：${event.error.message ?? event.error}`); return; }
+        const choice = event.choices?.[0];
+        add(choice?.delta?.content);
+        if (choice?.finish_reason) reason = choice.finish_reason;
+        if (event.usage) usage = counts(event.usage) ?? usage;
+      },
+      result: () => ({ text, usage, error: failure ?? (reason === 'stop' ? null : reason === 'length' ? '回复超出长度上限。' : reason ? `回复未完成：${reason}` : '模型回复中断。') }),
+    };
+  }
+  let raw = null, stopReason = null;
+  return {
+    event(event) {
+      if (event.type === 'message_start') raw = { ...event.message?.usage };
+      else if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') add(event.delta.text);
+      else if (event.type === 'message_delta') { stopReason = event.delta?.stop_reason ?? stopReason; raw = { ...raw, ...event.usage }; }
+      else if (event.type === 'message_stop') finished = true;
+      else if (event.type === 'error') fail(`Anthropic 接口出错：${event.error?.message ?? event.error?.type ?? '未知'}`);
+    },
+    result: () => ({ text, usage: anthropicUsage(raw), error: failure
+      ?? (stopReason === 'end_turn' || stopReason === 'stop_sequence' ? null
+        : stopReason === 'refusal' ? 'Claude 拒绝了这次请求。' : stopReason === 'max_tokens' ? '回复超出长度上限。'
+          : stopReason ? `Claude 回复未完成：${stopReason}` : finished ? 'Claude 回复未完成。' : 'Claude 回复中断。') }),
+  };
+}
+
+async function chatHttp(config, input, signal, onDelta) {
+  if (config.provider === 'openai-compatible' && !isAllowedEndpoint(config.baseUrl ?? '')) return { ok: false, text: '', usage: null, error: '模型接口必须使用 HTTPS 或本机地址。' };
+  const request = buildChatRequest(config, input);
+  const combined = AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(CHAT_TIMEOUT_MS)]);
+  const parser = chatParser(config.provider, config.apiKey, delta => onDelta?.(delta));
+  try {
+    const response = await fetch(request.url, { method: 'POST', signal: combined, headers: request.headers, body: request.body });
+    if (!response.ok || !response.body) return { ok: false, text: '', usage: null, error: `模型接口返回 HTTP ${response.status}${await providerError(response, config.apiKey)}。` };
+    await readEvents(response.body, event => parser.event(event));
+    const { text, usage, error } = parser.result();
+    return error ? { ok: false, text, usage, error } : { ok: true, text, usage };
+  } catch (error) {
+    const { text, usage } = parser.result();
+    if (signal?.aborted) return { ok: false, text, usage, stopped: true };
+    return { ok: false, text, usage, error: error?.name === 'AbortError' || error?.name === 'TimeoutError' ? '模型回复超时。' : '无法连接模型接口。' };
+  }
+}
+
+/** Render the conversation as one prompt for Codex, which takes a single stdin message per run. */
+function codexPrompt({ system, messages }) {
+  const turns = chatMessages(messages).map(message => `${message.role === 'user' ? '用户' : '助手'}：\n${message.content}`);
+  return `${system}\n\n# 对话记录\n\n${turns.join('\n\n')}\n\n# 任务\n\n只回复最后一条用户消息。不要读取或修改任何文件，不要运行命令。`;
+}
+
+function chatCodex(config, input, signal, onDelta, cwd) {
+  return new Promise(resolveChat => {
+    let usage = null, text = '', failed = false, completed = false;
+    const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', ...(config.model ? ['-m', config.model] : []), '-c', 'agents.enabled=false', '-'];
+    let proc;
+    try { proc = spawn('codex', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' }); }
+    catch { resolveChat({ ok: false, text: '', usage: null, error: '无法运行 codex 命令，请确认已安装 Codex CLI。' }); return; }
+    let hardStop;
+    const kill = name => { try { if (process.platform === 'win32') spawn('taskkill', ['/pid', String(proc.pid), '/t', '/f'], { stdio: 'ignore' }); else if (proc.pid) process.kill(-proc.pid, name); } catch { /* Process already exited. */ } };
+    const stop = () => { kill('SIGTERM'); if (!hardStop) hardStop = setTimeout(() => kill('SIGKILL'), 5000); };
+    const timer = setTimeout(stop, CHAT_TIMEOUT_MS);
+    signal?.addEventListener('abort', stop, { once: true });
+    const done = exitCode => {
+      if (completed) return; completed = true;
+      clearTimeout(timer); clearTimeout(hardStop); signal?.removeEventListener('abort', stop);
+      if (signal?.aborted) { resolveChat({ ok: false, text: '', usage, stopped: true }); return; }
+      if (exitCode === null) { resolveChat({ ok: false, text: '', usage, error: '无法运行 codex 命令，请确认已安装 Codex CLI。' }); return; }
+      if (failed || exitCode !== 0 || !text) { resolveChat({ ok: false, text: '', usage, error: 'Codex 没有完成回复。' }); return; }
+      onDelta?.(text);
+      resolveChat({ ok: true, text, usage });
+    };
+    proc.on('error', () => done(null));
+    proc.stderr.resume();
+    proc.stdin.on('error', () => {});
+    proc.stdin.end(codexPrompt(input));
+    const lines = createInterface({ input: proc.stdout, crlfDelay: Infinity });
+    lines.on('line', line => {
+      let event; try { event = JSON.parse(line); } catch { return; }
+      if (event.type === 'turn.completed') usage = counts(event.usage);
+      if (event.type === 'turn.failed' || event.type === 'error') failed = true;
+      if (event.type === 'item.completed' && event.item?.type === 'agent_message' && typeof event.item.text === 'string') text = event.item.text;
+    });
+    proc.on('close', exitCode => done(exitCode));
+  });
+}
+
+/**
+ * Stream one assistant reply.
+ * @param {{provider: string, model: string|null, baseUrl: string|null, apiKey: string|null}} config
+ * @param {{system: string, messages: {role: 'user'|'assistant', content: string}[]}} input
+ * @param {{signal?: AbortSignal, onDelta?: (text: string) => void, cwd?: string}} options
+ */
+export async function chat(config, input, { signal, onDelta, cwd } = {}) {
+  const base = { model: config.model };
+  if (config.provider === 'codex') return { ...base, ...(await chatCodex(config, input, signal, onDelta, cwd ?? tmpdir())) };
+  if (['deepseek', 'openai-compatible', 'anthropic'].includes(config.provider)) return { ...base, ...(await chatHttp(config, input, signal, onDelta)) };
+  return { ...base, ok: false, text: '', usage: null, error: `未知分析提供方：${config.provider}` };
 }

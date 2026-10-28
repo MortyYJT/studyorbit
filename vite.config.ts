@@ -1,15 +1,19 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFile, spawn, type ChildProcess, type ExecFileOptionsWithStringEncoding } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { filterSubjects } from './scripts/lib/course-list.mjs';
 import { createCourseSyncRunner } from './scripts/course-sync-runner.mjs';
-import { LlmConfigValidationError, publicLlmConfig, readLlmConfig, resolveAnalysisConfig, saveLlmConfig } from './scripts/lib/llm-config.mjs';
-import { testConnection } from './scripts/lib/llm-providers.mjs';
-import { CourseDocumentSchema } from './shared/course-data.js';
+import { LlmConfigValidationError, configProblem, publicLlmConfig, readLlmConfig, resolveAnalysisConfig, saveLlmConfig } from './scripts/lib/llm-config.mjs';
+import { chat as streamChat, testConnection, type ChatTurn } from './scripts/lib/llm-providers.mjs';
+import { appendMessages, createChat, deleteChat, isChatId, listChats, readChat } from './scripts/lib/chat-store.mjs';
+import { buildChatContext, chatSystemPrompt } from './scripts/lib/chat-context.mjs';
+import { loadCourseReports } from './scripts/lib/course-reports.mjs';
+import { createReplyRegistry } from './scripts/lib/chat-replies.mjs';
+import { foreignOrigin } from './scripts/lib/local-origin.mjs';
+import type { CourseDocument } from './shared/course-data.js';
 
 const courseFile = fileURLToPath(new URL('./.local/lms/courses.json', import.meta.url));
 const projectDir = fileURLToPath(new URL('./', import.meta.url));
@@ -24,6 +28,11 @@ export default defineConfig({
       let discoveryProcess: ChildProcess | undefined;
       let discoveryCancelled = false;
       const courseRunner = createCourseSyncRunner(projectDir);
+      // Every local API route, GET included, refuses requests from any other origin (other local ports too).
+      server.middlewares.use('/api/local', (req, res, next) => {
+        if (foreignOrigin({ origin: req.headers.origin, host: req.headers.host })) { res.writeHead(403).end(); return; }
+        next();
+      });
       server.middlewares.use('/api/local/sync-usage', async (req, res) => {
         const remote = req.socket.remoteAddress;
         if (!remote || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)) { res.writeHead(403).end(); return; }
@@ -123,33 +132,105 @@ export default defineConfig({
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.setHeader('Cache-Control', 'no-store');
         try {
-          const input = JSON.parse(await readFile(courseFile, 'utf8'));
-          if (!Array.isArray(input.courses)) throw new Error('Invalid course file');
-          const candidates: { id: string; name: string; code?: unknown; term?: string | null }[] = input.courses.filter((item: unknown): item is { id: string; name: string; code?: unknown; term?: string | null } =>
-            !!item && typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string' && typeof (item as { name?: unknown }).name === 'string');
-          const courses = filterSubjects(candidates);
-          const reports = await Promise.all(courses.map(async course => {
-            if (!/^[A-Z]{4}[1-9]\d{4}$/.test(course.subjectCode)) return null;
-            const term = typeof course.term === 'string' ? course.term : '';
-            const match = /(20\d{2}).*?(?:semester|sem)\s*([12])/i.exec(term);
-            const label = match ? `${match[1]} S${match[2]}` : term.replace(/[^\w\u4e00-\u9fff -]/g, '').trim().slice(0, 50) || '未知学期';
-            const dir = join(homedir(), 'Desktop', `墨尔本大学 ${label}`, course.subjectCode);
-            try {
-              const names = (await readdir(dir)).filter(name => /^分数结构(?:-[a-zA-Z0-9-]+)?\.json$/.test(name));
-              const files = await Promise.all(names.map(async name => ({ name, mtime: (await stat(join(dir, name))).mtimeMs })));
-              files.sort((a, b) => b.mtime - a.mtime);
-              for (const file of files) {
-                try {
-                  const data = CourseDocumentSchema.safeParse(JSON.parse(await readFile(join(dir, file.name), 'utf8')));
-                  if (data.success && data.data.course.id === course.id) return { id: course.id, report: data.data };
-                } catch { /* Older valid reports may still be usable. */ }
-              }
-            } catch { /* A selected course may not have a report yet. */ }
-            return { id: course.id, report: null };
-          }));
-          res.end(JSON.stringify({ courses, reports: reports.filter(Boolean) }));
+          res.end(JSON.stringify(await loadCourseReports(projectDir)));
         } catch (error) {
           res.writeHead((error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500).end(JSON.stringify({ error: 'COURSES_UNAVAILABLE' }));
+        }
+      });
+      // Agent chat (decision #230). Conversations live in .local/chat; replies stream as Server-Sent Events.
+      const chatReplies = createReplyRegistry();
+      server.middlewares.use('/api/local/chats', async (req, res) => {
+        const remote = req.socket.remoteAddress;
+        if (!remote || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)) { res.writeHead(403).end(); return; }
+        res.setHeader('Cache-Control', 'no-store');
+        const json = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(value)); };
+        const parts = (req.url ?? '/').split('?')[0]!.split('/').filter(Boolean);
+        const [id, action] = parts;
+        if (parts.length > 2 || (action && action !== 'messages' && action !== 'stop')) { json(404, { error: 'NOT_FOUND' }); return; }
+        if (id && !isChatId(id)) { json(400, { error: 'INVALID_CHAT_ID' }); return; }
+        const allowed = !id ? ['GET', 'POST'] : !action ? ['GET', 'DELETE'] : ['POST'];
+        if (!allowed.includes(req.method ?? '')) { json(405, { error: 'METHOD_NOT_ALLOWED' }); return; }
+        if (req.method !== 'GET' && (!req.headers.origin || req.headers.origin !== `http://${req.headers.host}`
+          || req.headers['content-type']?.split(';')[0] !== 'application/json')) { res.writeHead(403).end(); return; }
+        try {
+          let body: Record<string, unknown> = {};
+          if (req.method === 'POST') {
+            let raw = '';
+            for await (const chunk of req) {
+              raw += chunk.toString();
+              if (raw.length > 40000) { json(413, { error: 'TOO_LARGE' }); return; }
+            }
+            try { const parsed: unknown = raw.trim() ? JSON.parse(raw) : {}; if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('shape'); body = parsed as Record<string, unknown>; }
+            catch { json(400, { error: 'INVALID_JSON' }); return; }
+          }
+          const courseIds = body.courseIds === undefined ? undefined
+            : Array.isArray(body.courseIds) && body.courseIds.length <= 100 && body.courseIds.every(value => typeof value === 'string' && value.length > 0 && value.length <= 200) ? body.courseIds as string[] : null;
+          if (courseIds === null) { json(400, { error: 'INVALID_COURSE_IDS' }); return; }
+          if (!id && req.method === 'GET') { json(200, { chats: (await listChats(projectDir)).map(chat => ({ ...chat, running: chatReplies.running(chat.id) })) }); return; }
+          if (!id) { json(201, await createChat(projectDir, { courseIds, title: typeof body.title === 'string' ? body.title : undefined })); return; }
+          if (req.method === 'DELETE') {
+            // Let a running reply save its partial text first, so it cannot recreate the file after deletion.
+            await chatReplies.stopAndWait(id);
+            if (await deleteChat(projectDir, id)) json(200, { ok: true }); else json(404, { error: 'CHAT_NOT_FOUND' });
+            return;
+          }
+          const chat = await readChat(projectDir, id);
+          if (!chat) { json(404, { error: 'CHAT_NOT_FOUND' }); return; }
+          if (req.method === 'GET') { json(200, { ...chat, running: chatReplies.running(id) }); return; }
+          if (action === 'stop') { json(200, { ok: true, stopped: chatReplies.stop(id) }); return; }
+
+          // POST /:id/messages
+          const content = typeof body.content === 'string' ? body.content.trim() : '';
+          if (!content) { json(400, { error: 'CONTENT_EMPTY' }); return; }
+          if (content.length > 8000) { json(400, { error: 'CONTENT_TOO_LONG' }); return; }
+          // Claim the chat before any await so concurrent sends cannot both pass the check.
+          const controller = chatReplies.begin(id);
+          if (!controller) { json(409, { error: 'REPLY_RUNNING' }); return; }
+          // A closed tab stops the reply at any point, even before the event stream starts.
+          res.on('close', () => { if (!res.writableFinished) controller.abort(); });
+          try {
+            const config = await resolveAnalysisConfig(projectDir, process.env);
+            const problem = configProblem(config);
+            if (problem) { json(400, { error: problem }); return; }
+            if (controller.signal.aborted) return;
+            const scope = courseIds ?? chat.courseIds;
+            const userMessage = { role: 'user' as const, content, at: new Date().toISOString() };
+            const updated = await appendMessages(projectDir, id, [userMessage], { courseIds: scope });
+            if (!updated) { json(404, { error: 'CHAT_NOT_FOUND' }); return; }
+            if (controller.signal.aborted) { res.end(); return; }
+            let documents: CourseDocument[] = [], known: { id: string; code?: string; name?: string }[] = [];
+            try {
+              const loaded = await loadCourseReports(projectDir);
+              documents = loaded.reports.flatMap(item => item.report ? [item.report] : []);
+              known = loaded.courses.map(course => ({ id: course.id, code: course.subjectCode, name: course.name }));
+            } catch { /* No synced courses yet: the context says so per course. */ }
+            const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+            const language = body.language === 'en' ? 'en' : 'zh';
+            const system = `${chatSystemPrompt(language)}\n\n# 课程数据\n\n${buildChatContext(documents, { today, courseIds: scope, courses: known })}`;
+            // Keep the most recent turns within a fixed budget so long chats do not grow without bound.
+            const history: ChatTurn[] = [];
+            let budget = 60000;
+            for (const message of [...updated.messages].reverse()) {
+              if (!message.content) continue;
+              budget -= message.content.length;
+              if (budget < 0 && history.length) break;
+              history.unshift({ role: message.role, content: message.content });
+            }
+            res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+            const send = (event: string, data: unknown) => { if (!res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
+            const result = await streamChat(config, { system, messages: history }, { signal: controller.signal, onDelta: text => send('delta', { text }) });
+            const status = result.stopped ? 'stopped' as const : result.ok ? undefined : 'error' as const;
+            const assistant = result.text || result.ok
+              ? { role: 'assistant' as const, content: result.text, at: new Date().toISOString(), usage: result.usage, model: result.model, ...(status ? { status } : {}) }
+              : null;
+            if (assistant) await appendMessages(projectDir, id, [assistant]);
+            if (result.ok || result.stopped) send('done', { message: assistant, usage: result.usage, model: result.model, stopped: !!result.stopped });
+            else send('error', { error: 'MODEL_ERROR', message: result.error ?? '模型没有完成回复。', message_saved: !!assistant });
+            res.end();
+          } finally { chatReplies.end(id, controller); }
+        } catch (error) {
+          if (res.headersSent) { if (!res.writableEnded) res.end(`event: error\ndata: ${JSON.stringify({ error: 'CHAT_UNAVAILABLE', message: '对话出错，请重试。' })}\n\n`); return; }
+          json((error as Error).message === 'INVALID_CHAT_ID' ? 400 : 500, { error: (error as Error).message === 'INVALID_CHAT_ID' ? 'INVALID_CHAT_ID' : 'CHAT_UNAVAILABLE' });
         }
       });
       server.middlewares.use('/api/local/course-sync', async (req, res) => {
@@ -230,5 +311,7 @@ export default defineConfig({
       });
     },
   }],
+  // No CORS: the local API is same-origin only (see the /api/local guard). HMR uses the WebSocket, not CORS.
+  server: { cors: false },
   build: { outDir: '../dist', emptyOutDir: true },
 });

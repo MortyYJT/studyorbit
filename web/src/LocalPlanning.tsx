@@ -97,7 +97,7 @@ function WeightBreakdown({ assessments, parents, zh }: { assessments: Assessment
     </div><strong>{Number(total.toFixed(2))}/100</strong></div><div className="weight-legend">{rows.map((item, index) => <span key={item.key}><i className={`weight-color-${index % 6}`} />{item.name} {item.weight}%</span>)}</div></section>;
 }
 
-export function LocalPlanning({ language, refreshVersion, courseId, onCourse, onBack, onCourses, syncIssues }: { language: Language; refreshVersion: number; courseId?: string; onCourse: (id: string) => void; onBack: () => void; onCourses?: (courses: SidebarCourse[]) => void; syncIssues: { id: string; status: string; reason: string }[] }) {
+export function LocalPlanning({ language, refreshVersion, courseId, onCourse, onBack, onCourses, onAsk, syncIssues }: { language: Language; refreshVersion: number; courseId?: string; onCourse: (id: string) => void; onBack: () => void; onCourses?: (courses: SidebarCourse[]) => void; onAsk?: (courseId: string) => void; syncIssues: { id: string; status: string; reason: string }[] }) {
   const zh = language === 'zh';
   const [courses, setCourses] = useState<CourseData[]>([]);
   const [error, setError] = useState('');
@@ -205,7 +205,8 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     <button className="crumb" onClick={onBack}>← {zh ? '计划' : 'Plan'}</button>
     {error && <p className="needs">{error}</p>}
     {selected ? <>
-      <div className="chead"><h1>{selected.course.subjectCode}</h1><span className="muted">{selected.course.name}</span><small>{selected.course.term}</small></div>
+      <div className="chead"><h1>{selected.course.subjectCode}</h1><span className="muted">{selected.course.name}</span><small>{selected.course.term}</small>
+        {onAsk && <button className="small ask-agent" onClick={() => onAsk(selected.course.id)}>{zh ? '问 Agent' : 'Ask Agent'}</button>}</div>
       {!selected.available && <p className="needs">{zh ? '这门课尚无可用的同步结果。' : 'No sync result is available for this course yet.'}</p>}
       {syncIssues.filter(item => item.id === selected.course.id && item.status === 'failed').map(item => <p className="needs" key={item.id}>{zh ? '最近一次同步未完成，正在显示已保存的课程信息。' : 'The latest sync failed. Showing saved course information.'}</p>)}
       {selected.available && <div className="course-summary card">
