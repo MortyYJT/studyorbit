@@ -1,11 +1,7 @@
 import { createRoot } from 'react-dom/client';
-import { createClient, takeOwnerSession } from './client.js';
-import { ShellStore } from './shell.js';
 import { App } from './App.js';
 import './style.css';
 
-// Consume the secret before rendering, fetching, or reading presentation preferences.
-const store = new ShellStore(createClient(takeOwnerSession(window.location, window.history)));
 // Move previous prototype data aside once; keep a recoverable copy in this browser.
 try {
   const marker = 'coursework.canonical-reset-v1';
@@ -17,4 +13,4 @@ try {
     localStorage.setItem(marker, 'done');
   }
 } catch { /* Keep existing data if a recoverable backup cannot be stored. */ }
-createRoot(document.getElementById('root')!).render(<App store={store} />);
+createRoot(document.getElementById('root')!).render(<App />);

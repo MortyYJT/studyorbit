@@ -19,11 +19,11 @@ npm run dev
 
 配置完成后，从页面点击“立即同步”，选择课程并保存。只采集课程列表也可执行 `npm run sync:courses`；它使用相同的 Edge 后台采集器。
 
-`npm run build` 检查 TypeScript 并构建静态资源；**静态构建不包含同步 API**，目前同步接口由 Vite 开发服务器提供。
+`npm run check`（与 CI 相同）运行类型检查和 `test/` 下的 vitest 测试。`npm run build` 检查 TypeScript 并构建静态资源；**静态构建不包含同步 API**，目前同步接口由 Vite 开发服务器提供。
 
 ## 文档
 
-- [接手文档](docs/handoff.md)：当前状态、下一步、限制与注意事项。
+- [当前交接](note/handoff.md)：当前状态、下一步、限制与注意事项；[v2 合并前交接](docs/handoff.md)保留旧记录。
 - [项目结构和数据流](docs/overview.md)：入口、来源、保存位置。
 - [JSON 契约](docs/course-json.md)与[提示词](docs/course-sync-prompt.md)。
 - [四门课采集快照](docs/collection-snapshot.md)、[第一版试跑](docs/first-sync-run-20261029.md)：实验记录，不等同于其他课程的验证。含个人成绩的模型对比与混合同步实验只保存在本机，不入库。

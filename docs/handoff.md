@@ -1,3 +1,5 @@
+> This is the pre-merge v2 handoff, kept for history. The current handoff is [`note/handoff.md`](../note/handoff.md).
+
 # 项目交接
 
 更新：2026-10-29。接手时先读 [README](../README.md) 和 [项目结构与数据流](overview.md)；历史过程保留在 [历史交接记录](handoff-history.md)，与本文件冲突时以代码和本文件为准。

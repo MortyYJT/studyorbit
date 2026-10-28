@@ -1,9 +1,5 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ShellStore } from './shell.js';
-import { en, zh, type Copy, type Language, type Theme } from './i18n.js';
-import { WeekStore } from './weekStore.js';
-import { AgentPage } from './Agent.js';
-import type { AgentPreset } from './chat.js';
+import { useEffect, useRef, useState } from 'react';
+import { en, zh, type Language, type Theme } from './i18n.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning, type SidebarCourse } from './LocalPlanning.js';
 
@@ -13,25 +9,19 @@ type TokenUsage = { input: number | null; output: number | null; cached: number 
 type SyncUsage = { type: string; runId: string; at: string; course: string; courses: { code: string; status: string }[]; model: string; status: string; durationMs: number | null; coordinator: TokenUsage | null; subagents: TokenUsage | null; recovered: boolean };
 type SyncBatch = { id: string; at: string; durationMs: number | null; ended: boolean; legacy: boolean; recovered: boolean; selected: { code: string; status: string }[]; courses: SyncUsage[] };
 type SyncModal = 'discovery' | 'select' | 'starting' | 'syncing' | 'stopping' | 'finished';
-/** Navigation state; a preset is cleared once its conversation exists, so it is never sent twice. */
-export type View = { page: 'week' } | { page: 'agent'; preset?: AgentPreset; conversationId?: string; navigation?: number } | { page: 'course'; courseId: string };
+/** Navigation state for the three pages of the shell. */
+export type View = { page: 'week' } | { page: 'agent' } | { page: 'course'; courseId: string };
 function preference(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
 function remember(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Preferences remain usable in memory. */ } }
 function selectionExists(): boolean { try { return localStorage.getItem('coursework.selected-course-ids') !== null; } catch { return false; } }
-function errorText(code: string, t: Copy): string {
-  return code === 'OWNER_SESSION_EXPIRED' ? t.session : code === 'AUTH_EXPIRED' ? t.auth : `${t.error} (${code})`;
-}
-export function App({ store }: { store: ShellStore }) {
-  const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+export function App() {
   const [language, setLanguage] = useState<Language>(() => preference('coursework.language') === 'en' ? 'en' : 'zh');
   const [theme, setTheme] = useState<Theme>(() => { const value = preference('coursework.theme'); return value === 'system' || value === 'dark' ? value : 'light'; });
   const [avatarImage, setAvatarImage] = useState(() => preference('coursework.avatar') ?? '');
   const [avatarError, setAvatarError] = useState('');
   const [syncUsage, setSyncUsage] = useState<SyncUsage[]>();
   const [usageError, setUsageError] = useState(false);
-  const [view, setView] = useState<View>(() => { const conversationId = new URLSearchParams(window.location.search).get('conversation'); return conversationId ? { page: 'agent', conversationId } : { page: 'week' }; });
-  const [week] = useState(() => new WeekStore(store.client));
-  const openAgent = (preset?: AgentPreset) => setView({ page: 'agent', preset });
+  const [view, setView] = useState<View>({ page: 'week' });
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState<Panel>();
   const [localSyncing, setLocalSyncing] = useState(false);
@@ -54,13 +44,7 @@ export function App({ store }: { store: ShellStore }) {
   const avatar = useRef<HTMLButtonElement>(null);
   const menuRoot = useRef<HTMLDivElement>(null);
   const t = language === 'zh' ? zh : en;
-  const refreshAll = () => Promise.all([store.refresh(), week.refresh()]);
-  const running = localSyncing || state.syncing || state.sync?.running || courseRun?.running;
-  useEffect(() => {
-    void refreshAll();
-    const timer = window.setInterval(() => { void refreshAll(); }, 30000);
-    return () => window.clearInterval(timer);
-  }, [store, week]);
+  const running = localSyncing || courseRun?.running;
   useEffect(() => { document.documentElement.dataset.theme = theme; remember('coursework.theme', theme); }, [theme]);
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('coursework.language', language); }, [language]);
   useEffect(() => { if (panel) dialog.current?.showModal(); }, [panel]);
@@ -175,7 +159,7 @@ export function App({ store }: { store: ShellStore }) {
       <div className="sidebar-body" id="sidebar-body">
         <nav className="nav" aria-label="coursework">
           <button className="nav-item" aria-current={view.page === 'week' ? 'page' : undefined} onClick={() => go({ page: 'week' })}>{isZh ? '本周' : 'This week'}</button>
-          <button className="nav-item" aria-current={view.page === 'agent' ? 'page' : undefined} onClick={() => { openAgent(); setNavOpen(false); }}>{t.agent}</button>
+          <button className="nav-item" aria-current={view.page === 'agent' ? 'page' : undefined} onClick={() => go({ page: 'agent' })}>{t.agent}</button>
         </nav>
         <div className="nav-group">
           <h2 className="nav-label">{t.courses}</h2>
@@ -200,11 +184,9 @@ export function App({ store }: { store: ShellStore }) {
       {localSyncError && <p className="error-line" role="status" style={{ whiteSpace: 'pre-wrap' }}><i className="signal" aria-hidden="true" />{localSyncError}</p>}
       {localSyncWarning && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{localSyncWarning}</p>}
       {courseRunError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{courseRunError}</p>}
-      {view.page === 'agent' && !store.client.hasSession() && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{t.session}</p>}
-      {view.page === 'agent' && state.errors.action && <p className="error-line" role="status">{errorText(state.errors.action, t)}</p>}
-      {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1><button className="ghost" onClick={() => { setCourseRefresh(value => value + 1); void refreshAll(); }}>{t.refresh}</button></div>}
+      {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1><button className="ghost" onClick={() => setCourseRefresh(value => value + 1)}>{t.refresh}</button></div>}
       {savedNotice > 0 && <div className="save-toast" role="status">{isZh ? '课程已经保存' : 'Courses saved'}</div>}
-      {view.page === 'agent' ? <AgentPage key={view.navigation} client={store.client} t={t} language={language} preset={view.preset} conversationId={view.conversationId} onPresetDone={() => setView({ page: 'agent' })} />
+      {view.page === 'agent' ? <p className="muted">{t.agentComing}</p>
         : <LocalPlanning language={language} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined} onCourses={setSidebarCourses}
           syncIssues={courseRun?.courses ?? []} onCourse={courseId => go({ page: 'course', courseId })} onBack={() => go({ page: 'week' })} />}
     </main>

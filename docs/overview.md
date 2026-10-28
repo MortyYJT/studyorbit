@@ -24,12 +24,11 @@
 | --- | --- |
 | `web/src/main.tsx`、`App.tsx` | 页面入口、同步弹窗、设置、头像和用量 |
 | `web/src/LocalPlanning.tsx` | 本地课程页、用户编辑和日历；文件较大，是后续拆分候选 |
-| `web/src/Agent.tsx`、`client.ts`、`shell.ts` | 旧协议 / Agent 界面基础；普通 Vite 本地同步没有提供完整 Agent 后端 |
 | `vite.config.ts` | Vite 与 `/api/local/*` 接口；同步不是独立生产服务 |
 | `scripts/course-sync-runner.mjs` | 编排、模型调用、验证、取消、保存和用量 |
 | `scripts/lib/course-analysis.mjs` | 模型无关的提示词与原生输出 Schema |
 | `shared/course-data.ts`、`course-calculations.ts` | 课程契约与确定性分数计算 |
-| `shared/domain/`、`shared/protocol/` 等 | 保留的旧协议和类型；仍有前端引用，不应整体删除 |
+| `test/` | vitest 单元测试（只用合成数据） |
 
 ## 数据位置
 
