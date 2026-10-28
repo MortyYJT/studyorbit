@@ -15,6 +15,8 @@ import { LocalPlanning } from './LocalPlanning.js';
 
 type Panel = 'memory' | 'status' | 'audit' | 'settings' | 'metrics';
 type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; phase?: string; file?: string }[]; error: string | null };
+type TokenUsage = { input: number | null; output: number | null; cached: number | null; reasoning: number | null };
+type SyncUsage = { at: string; course: string; model: string; status: string; durationMs: number | null; coordinator: TokenUsage | null; subagents: TokenUsage | null };
 type SyncModal = 'discovery' | 'select' | 'starting' | 'syncing' | 'stopping' | 'finished';
 /** Navigation state; a preset is cleared once its conversation exists, so it is never sent twice. */
 export type View = { page: 'week' } | { page: 'agent'; preset?: AgentPreset; conversationId?: string; navigation?: number } | { page: 'course'; courseId: string };
@@ -28,6 +30,10 @@ export function App({ store }: { store: ShellStore }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const [language, setLanguage] = useState<Language>(() => preference('coursework.language') === 'en' ? 'en' : 'zh');
   const [theme, setTheme] = useState<Theme>(() => { const value = preference('coursework.theme'); return value === 'system' || value === 'dark' ? value : 'light'; });
+  const [avatarImage, setAvatarImage] = useState(() => preference('coursework.avatar') ?? '');
+  const [avatarError, setAvatarError] = useState('');
+  const [syncUsage, setSyncUsage] = useState<SyncUsage[]>();
+  const [usageError, setUsageError] = useState(false);
   const [view, setView] = useState<View>(() => { const conversationId = new URLSearchParams(window.location.search).get('conversation'); return conversationId ? { page: 'agent', conversationId } : { page: 'week' }; });
   const [week] = useState(() => new WeekStore(store.client));
   const weekState = useSyncExternalStore(week.subscribe, week.getSnapshot);
@@ -97,7 +103,17 @@ export function App({ store }: { store: ShellStore }) {
     document.addEventListener('pointerdown', dismiss);
     return () => document.removeEventListener('pointerdown', dismiss);
   }, [menu]);
-  function open(next: Panel) { setMenu(false); setPanel(next); if (next === 'audit') void store.loadAudit(); }
+  async function loadSyncUsage() {
+    setUsageError(false);
+    try {
+      const response = await fetch('/api/local/sync-usage', { cache: 'no-store' });
+      if (!response.ok) throw new Error('unavailable');
+      const data = await response.json() as { items: SyncUsage[] };
+      if (!Array.isArray(data.items)) throw new Error('unavailable');
+      setSyncUsage(data.items);
+    } catch { setUsageError(true); }
+  }
+  function open(next: Panel) { setMenu(false); setPanel(next); if (next === 'audit') void store.loadAudit(); if (next === 'status') void loadSyncUsage(); }
   function close() { dialog.current?.close(); setPanel(undefined); avatar.current?.focus(); }
   async function syncCourses() {
     if (running) return;
@@ -154,9 +170,9 @@ export function App({ store }: { store: ShellStore }) {
       </nav>
       <div className="header-actions">{syncButton}
         <div className="avatar-wrap" ref={menuRoot} onKeyDown={event => { if (event.key === 'Escape') { setMenu(false); avatar.current?.focus(); } }}>
-          <button className="avatar" ref={avatar} aria-label={t.menu} aria-expanded={menu} aria-controls="owner-menu" onClick={() => setMenu(!menu)}>Y</button>
+          <button className="avatar" ref={avatar} aria-label={t.menu} aria-expanded={menu} aria-controls="owner-menu" onClick={() => setMenu(!menu)}>{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</button>
           {!!needs.length && <span className="badge" />}
-          {menu && <div id="owner-menu" className="menu">{(['status', 'metrics', 'memory', 'audit', 'settings'] as const).map(item => <button key={item} onClick={() => open(item)}>{t[item]}</button>)}</div>}
+          {menu && <div id="owner-menu" className="menu">{(['status', 'metrics', 'memory', 'audit', 'settings'] as const).map(item => <button key={item} onClick={() => open(item)}>{item === 'status' ? (language === 'zh' ? '同步数据' : 'Sync data') : t[item]}</button>)}</div>}
         </div>
       </div>
     </header>
@@ -189,27 +205,17 @@ export function App({ store }: { store: ShellStore }) {
     </dialog>
     {selecting && <CourseSelect store={store} t={t} onClose={() => { setSelecting(false); void week.refresh(); }} />}
     <dialog ref={dialog} onCancel={close} onClose={() => { setPanel(undefined); avatar.current?.focus(); }} aria-labelledby="panel-title">
-      <div className="dialog-heading"><h2 id="panel-title">{panel ? t[panel] : ''}</h2><button onClick={close}>{t.close}</button></div>
-      {panel === 'status' && <><button onClick={() => void store.refresh()}>{t.refresh}</button>
-        {(['canvas', 'ed'] as const).map(site => <section className="provider" key={site}><h3>{site === 'ed' ? 'Ed' : 'Canvas'}</h3>
-          <dl><dt>{t.syncNeeds.lastRun}</dt><dd>{state.errors.sync ? t.unavailable : !state.sync?.lastRun ? t.never
-              : state.sync.blocked.includes(site) ? <b>{t.syncNeeds.blocked}</b> : t.syncNeeds.outcomes[state.sync.lastRun.outcome]}</dd></dl>
-          {state.sync?.blocked.includes(site) && <p className="muted">{t.syncNeeds.blockedHelp.join(site === 'ed' ? 'Ed' : 'Canvas')}</p>}
+      <div className="dialog-heading"><h2 id="panel-title">{panel === 'status' ? (language === 'zh' ? '同步数据' : 'Sync data') : panel ? t[panel] : ''}</h2><button onClick={close}>{t.close}</button></div>
+      {panel === 'status' && <>
+        <button onClick={() => void loadSyncUsage()}>{t.refresh}</button>
+        {usageError && <p role="status">{language === 'zh' ? '无法读取同步记录。' : 'Could not read sync records.'}</p>}
+        {!syncUsage && !usageError && <p>{t.loading}</p>}
+        {syncUsage?.length === 0 && <p className="muted">{language === 'zh' ? '暂无同步记录。' : 'No sync records yet.'}</p>}
+        {syncUsage?.map((row, index) => <section className="sync-usage" key={`${row.at}-${row.course}-${index}`}>
+          <div className="sync-usage-heading"><strong>{row.course || '—'}</strong><span>{row.at && !Number.isNaN(Date.parse(row.at)) ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(row.at)) : '—'}</span></div>
+          <p>{row.model || '—'} · {row.durationMs === null ? '—' : `${(row.durationMs / 1000).toFixed(1)} ${language === 'zh' ? '秒' : 's'}`}</p>
+          {[{ label: language === 'zh' ? '模型' : 'Model', usage: row.coordinator }, ...(row.subagents ? [{ label: language === 'zh' ? '子任务' : 'Subtasks', usage: row.subagents }] : [])].map(({ label, usage }) => <p key={label}>{label} · {language === 'zh' ? '输入' : 'Input'} {usage?.input?.toLocaleString() ?? '—'} · {language === 'zh' ? '输出' : 'Output'} {usage?.output?.toLocaleString() ?? '—'}{usage?.cached != null ? ` · ${language === 'zh' ? '缓存' : 'Cached'} ${usage.cached.toLocaleString()}` : ''}{usage?.reasoning != null ? ` · ${language === 'zh' ? '推理' : 'Reasoning'} ${usage.reasoning.toLocaleString()}` : ''}</p>)}
         </section>)}
-        {state.sync && <section className="provider"><h3>{t.syncNeeds.lastRun}</h3>
-          {state.sync.running && <p role="status">{t.syncNeeds.running}</p>}
-          {!state.sync.lastRun ? <p className="muted">{t.never}</p> : <dl>
-            <dt>{t.syncNeeds.outcome}</dt><dd>{t.syncNeeds.outcomes[state.sync.lastRun.outcome]}</dd>
-            <dt>{t.syncNeeds.ended}</dt><dd>{date(state.sync.lastRun.endedAt)}</dd>
-            <dt>{t.syncNeeds.turns} · {t.syncNeeds.steps}</dt><dd>{state.sync.lastRun.turns} · {state.sync.lastRun.steps}</dd>
-            <dt>{t.syncNeeds.blocked}</dt><dd>{state.sync.blocked.length ? state.sync.blocked.map(site => site === 'ed' ? 'Ed' : 'Canvas').join(', ') : t.syncNeeds.none}</dd>
-          </dl>}
-          <div className="row-heading"><h3>{t.syncNeeds.selected}</h3><button disabled={!store.client.hasSession()} onClick={() => { close(); setSelecting(true); }}>{t.syncNeeds.choose}</button></div>
-          {!state.sync.courses.length ? <p className="muted">{t.syncNeeds.noSelected}</p> : <dl>{state.sync.courses.flatMap(course => [
-            <dt key={`${course.key}-t`}>{course.code}{course.name ? ` · ${course.name}` : ''}</dt>,
-            <dd key={`${course.key}-d`}>{course.storedAt ? date(course.storedAt) : t.syncNeeds.notStored}</dd>])}</dl>}
-        </section>}
-        {state.errors.sync && <p role="status">{t.error}</p>}
       </>}
       {panel === 'memory' && <MemoryPanel client={store.client} t={t} language={language} courses={state.courses?.items ?? []} timeZone={state.planning?.settings?.timeZone}
         onConversation={conversationId => { close(); setView({ page: 'agent', conversationId, navigation: ++conversationNavigation.current }); }} />}
@@ -225,6 +231,14 @@ export function App({ store }: { store: ShellStore }) {
         {state.auditLoading && <p role="status">{t.loading}</p>}
       </>}
       {panel === 'settings' && <>
+        <div className="avatar-settings"><span className="avatar-preview">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><div><label className="avatar-upload">{language === 'zh' ? '上传头像' : 'Upload photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
+          const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!file) return;
+          if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) { setAvatarError(language === 'zh' ? '请选择不超过 2 MB 的 JPG、PNG 或 WebP 图片。' : 'Choose a JPG, PNG or WebP image up to 2 MB.'); return; }
+          const reader = new FileReader(); reader.onerror = () => setAvatarError(language === 'zh' ? '图片读取失败。' : 'Could not read the image.');
+          reader.onload = () => { if (typeof reader.result !== 'string') return; try { localStorage.setItem('coursework.avatar', reader.result); setAvatarImage(reader.result); setAvatarError(''); } catch { setAvatarError(language === 'zh' ? '头像保存失败，请检查浏览器存储。' : 'Could not save the photo in this browser.'); } };
+          reader.readAsDataURL(file);
+        }} /></label>{avatarImage && <button onClick={() => { try { localStorage.removeItem('coursework.avatar'); setAvatarImage(''); setAvatarError(''); } catch { setAvatarError(language === 'zh' ? '头像移除失败。' : 'Could not remove the photo.'); } }}>{language === 'zh' ? '移除' : 'Remove'}</button>}</div></div>
+        {avatarError && <p role="alert">{avatarError}</p>}
         <div className="preferences"><label>{t.theme}<select value={theme} onChange={event => setTheme(event.target.value as Theme)}>{(['system', 'light', 'dark'] as const).map(value => <option key={value} value={value}>{t[value]}</option>)}</select></label>
           <label>{t.language}<select value={language} onChange={event => setLanguage(event.target.value as Language)}><option value="en">English</option><option value="zh">中文</option></select></label></div>
       </>}

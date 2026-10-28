@@ -22,6 +22,28 @@ export default defineConfig({
       let discoveryProcess: ChildProcess | undefined;
       let discoveryCancelled = false;
       const courseRunner = createCourseSyncRunner(projectDir);
+      server.middlewares.use('/api/local/sync-usage', async (req, res) => {
+        const remote = req.socket.remoteAddress;
+        if (!remote || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)) { res.writeHead(403).end(); return; }
+        if (req.method !== 'GET') { res.writeHead(405).end(); return; }
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        try {
+          const raw = await readFile(join(projectDir, '.local', 'lms', 'course-sync-usage.jsonl'), 'utf8');
+          const items = raw.split('\n').filter(Boolean).slice(-100).flatMap(line => {
+            try {
+              const row = JSON.parse(line);
+              const count = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+              const usage = (value: any) => value && typeof value === 'object' ? { input: count(value.input), output: count(value.output), cached: count(value.cached), reasoning: count(value.reasoning) } : null;
+              return [{ at: typeof row.at === 'string' ? row.at : '', course: typeof row.course === 'string' ? row.course : '', model: typeof row.model === 'string' ? row.model : '', status: typeof row.status === 'string' ? row.status : '', durationMs: count(row.durationMs), coordinator: usage(row.coordinator), subagents: usage(row.subagents) }];
+            } catch { return []; }
+          }).reverse();
+          res.end(JSON.stringify({ items }));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') res.end(JSON.stringify({ items: [] }));
+          else res.writeHead(500).end(JSON.stringify({ error: 'USAGE_UNAVAILABLE' }));
+        }
+      });
       server.middlewares.use('/api/local/course-reports', async (req, res) => {
         const remote = req.socket.remoteAddress;
         if (!remote || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)) { res.writeHead(403).end(); return; }

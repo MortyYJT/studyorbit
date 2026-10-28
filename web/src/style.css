@@ -17,6 +17,17 @@ nav button[aria-current="page"] { background:var(--ink); color:var(--on-ink); }
 .header-actions { display:flex; align-items:center; gap:12px; margin-left:auto; }
 .avatar-wrap { position:relative; }
 .avatar { width:36px; height:36px; padding:0; border-radius:50%; background:var(--ink); color:var(--on-ink); font-weight:700; }
+.avatar img,.avatar-preview img { width:100%; height:100%; object-fit:cover; border-radius:50%; display:block; }
+.avatar-settings { display:flex; align-items:center; gap:14px; margin-bottom:20px; }
+.avatar-settings > div { display:flex; gap:8px; align-items:center; }
+.avatar-preview { width:56px; height:56px; display:grid; place-items:center; border-radius:50%; background:var(--ink); color:var(--on-ink); font-weight:700; overflow:hidden; }
+.avatar-upload { position:relative; display:inline-flex; align-items:center; padding:8px 12px; border:1px solid var(--line); border-radius:8px; cursor:pointer; margin:0; }
+.avatar-upload:focus-within { outline:2px solid var(--ink); outline-offset:2px; }
+.avatar-upload input { position:absolute; width:1px; height:1px; opacity:0; }
+.sync-usage { border-bottom:1px solid var(--line); padding:14px 0; }
+.sync-usage-heading { display:flex; justify-content:space-between; gap:12px; }
+.sync-usage-heading span,.sync-usage p { color:var(--muted); font-size:13px; }
+.sync-usage p { margin:6px 0 0; }
 .badge { position:absolute; right:0; top:0; width:9px; height:9px; border-radius:50%; background:var(--alert); border:2px solid var(--bg); pointer-events:none; }
 .menu { position:absolute; right:0; top:44px; width:200px; padding:6px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 8px 24px #0002; }
 .menu button { width:100%; text-align:left; border:0; }
