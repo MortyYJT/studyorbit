@@ -92,3 +92,5 @@ npm run dev
 2026-10-28 用户澄清 COMP20008 的 2 分参与分既不是 A1 Critical Thinking 的 [已移除]，也不是 A2 Teamwork Evaluation 的 2 分满分。随后只读查看 Canvas 作业列表和 Lectures & Workshops 页面；后者写明大多数每周 quiz 不计分，没有发现用户所说另一项 2 分参与分。已询问用户该项目所在页面或名称，不能据两条已排除的记录推断；没有修改课程成绩或创建参与分项目。
 
 2026-10-28 用户提供 COMP20008 Ed Workshop Introduction：页面说明在 11 次 workshop 中至少积极参与 9 次（不含最后一次 oral assessment），并在每次结束前提交练习，可获得 2-mark bonus。已将该来源与规则追加至忽略的 `.local/lms/course-observations.json`，不假定学生已获得；前端通用支持 bonus 的性质、上限和规则，不把 points 当百分比或自动加进课程总分，用户可编辑。同步提示词要求读取 workshop 介绍页中的加分及门槛，而非遍历所有教学正文。保持 Ed 现有用户标签页未关闭。代码未自行测试。
+
+2026-10-28 已新增 `docs/sync-rules.md`，整合用户已确认范围、字段、成绩、层级、bonus/hurdle、展示、用户编辑、排期和 agent/代码边界，并明确当前实现不足；这是规则草案，不是已全部实现的承诺。用户要求自行测试，未运行测试。
