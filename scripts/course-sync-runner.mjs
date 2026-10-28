@@ -163,7 +163,15 @@ export function createCourseSyncRunner(projectDir) {
           try { report = JSON.parse(result.lastMessage); } catch { report = null; }
           parsed = CourseDocumentSchema.safeParse(report?.document);
           result.issues = parsed.success ? [] : parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`);
-          const validReport = report && typeof report.reason === 'string' && ['completed', 'partial', 'failed'].includes(report.status) && (report.status === 'failed' ? report.document === null : parsed.success && parsed.data.course.id === course.id && parsed.data.course.code === course.subjectCode);
+          if (parsed.success) {
+            const items = parsed.data.assessments;
+            for (const [index, item] of items.entries()) {
+              const children = items.filter(child => child.parentId === item.id && child.nature === 'regular');
+              if (item.scoring !== 'none' && (item.parentId !== null || children.length === 0)) result.issues.push(`assessments.${index}.scoring: 只有有计分子项的顶层父项可使用 points 或 weighted`);
+              if (item.scoring === 'weighted' && children.some(child => child.weight === null || child.weight <= 0)) result.issues.push(`assessments.${index}.scoring: weighted 要求每个计分子项有明确正权重`);
+            }
+          }
+          const validReport = report && typeof report.reason === 'string' && ['completed', 'partial', 'failed'].includes(report.status) && (report.status === 'failed' ? report.document === null : parsed.success && result.issues.length === 0 && parsed.data.course.id === course.id && parsed.data.course.code === course.subjectCode);
           if (!validReport && !result.issues.length) result.issues = ['结果格式或课程身份不匹配'];
           attempts.push({ exitCode: result.exitCode, raw: result.lastMessage, issues: result.issues, usage: result.usage });
           if (result.exitCode !== 0 || cancelled || validReport) break;
@@ -187,7 +195,7 @@ export function createCourseSyncRunner(projectDir) {
         const child = await childUsage(result.threadId, start);
         if (cancelled) { row.status = 'cancelled'; return; }
         const allowed = ['completed', 'partial', 'failed'];
-        const validCourse = parsed.success && parsed.data.course.id === course.id && parsed.data.course.code === course.subjectCode;
+        const validCourse = parsed.success && result.issues.length === 0 && parsed.data.course.id === course.id && parsed.data.course.code === course.subjectCode;
         if (result.exitCode === 0 && report && typeof report.reason === 'string' && allowed.includes(report.status) && (report.status === 'failed' ? report.document === null : validCourse)) {
           row.status = report.status;
           row.reason = typeof report.reason === 'string' ? report.reason.slice(0, 500) : '';
