@@ -13,6 +13,17 @@ if (process.platform !== 'darwin' || !/^\d+$/.test(course ?? '')) throw new Erro
 const run = async (bin, args) => (await exec(bin, args, { timeout: 12000, maxBuffer: 24 * 1024 * 1024 })).stdout;
 const copy = async value => new Promise((resolveCopy, reject) => { const p = spawn('/usr/bin/pbcopy'); p.on('error', reject); p.on('close', code => code === 0 ? resolveCopy() : reject(new Error('剪贴板写入失败'))); p.stdin.end(value); });
 const browser = (await run('/usr/bin/osascript', ['-l', 'JavaScript', '-e', 'ObjC.import("AppKit"); var u = $.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL($.NSURL.URLWithString("https://canvas.lms.unimelb.edu.au/")); if (!u) throw new Error("No default browser"); $.NSBundle.bundleWithURL(u).bundleIdentifier.js;'])).trim();
+if (browser !== 'com.microsoft.edgemac') throw new Error('当前加载状态检测只支持 macOS Edge，请将 Edge 设为默认浏览器后使用。');
+const pageState = `on run argv
+ tell application id (item 1 of argv)
+  if (count of windows) is 0 then return "waiting"
+  set activeTab to active tab of front window
+  set currentUrl to URL of activeTab
+  if currentUrl does not start with (item 2 of argv) or currentUrl does not contain (item 3 of argv) then return "waiting"
+  if loading of activeTab then return "loading"
+  return "ready"
+ end tell
+end run`;
 const select = `on run argv
  tell application "System Events"
   set activeId to bundle identifier of first application process whose frontmost is true
@@ -53,13 +64,27 @@ try {
     console.log(`读取 ${kind}，请保持浏览器在前台…`);
     await run('/usr/bin/open', ['-b', browser, `${url}#${marker}`]); activeMarker = marker;
     await run('/usr/bin/osascript', ['-e', 'on run argv', '-e', 'tell application id (item 1 of argv) to activate', '-e', 'end run', browser]);
-    await pause(3000);
-    await copy(marker); owned = marker;
-    await run('/usr/bin/osascript', ['-e', select, browser]);
-    await pause(100);
-    const text = await run('/usr/bin/pbpaste', []); owned = text;
-    if (text === marker) throw new Error('未复制到页面，浏览器可能仍在加载。');
-    const rows = parseCoursePage(text);
+    const deadline = Date.now() + 15000;
+    let ready = false;
+    while (Date.now() < deadline) {
+      const state = (await run('/usr/bin/osascript', ['-e', pageState, browser, prefix, marker])).trim();
+      if (state === 'ready') { ready = true; break; }
+      await pause(250);
+    }
+    if (!ready) throw new Error('等待指定页面加载超时；请检查是否需要登录，或浏览器标签页被切换。');
+    let rows, lastError;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt) await pause(500);
+      await copy(marker); owned = marker;
+      await run('/usr/bin/osascript', ['-e', select, browser]);
+      await pause(100);
+      const text = await run('/usr/bin/pbpaste', []); owned = text;
+      try {
+        if (text === marker) throw new Error('未复制到页面内容。');
+        rows = parseCoursePage(text); break;
+      } catch (error) { lastError = error; }
+    }
+    if (!rows) throw lastError;
     if (kind === 'groups') captured.groups = rows.map(({ id, name, group_weight, rules }) => ({ id, name, group_weight: group_weight ?? null, rules: rules ?? null }));
     else captured.assignments = rows.map(a => ({ id: a.id, name: a.name ?? null, group_id: a.assignment_group_id ?? null, points_possible: a.points_possible ?? null, due_at: a.due_at ?? null, unlock_at: a.unlock_at ?? null, html_url: a.html_url ?? null, submission: a.submission ? { score: a.submission.score ?? null, workflow_state: a.submission.workflow_state ?? null, submitted_at: a.submission.submitted_at ?? null } : null }));
     captured[`${kind}Ms`] = Date.now() - begin;
