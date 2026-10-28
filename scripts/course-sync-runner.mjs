@@ -14,8 +14,8 @@ const counts = usage => {
   const input = usage?.input_tokens ?? usage?.prompt_tokens;
   const output = usage?.output_tokens ?? usage?.completion_tokens;
   if (!Number.isSafeInteger(input) || !Number.isSafeInteger(output)) return null;
-  const cached = usage.cached_input_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens;
-  const reasoning = usage.reasoning_output_tokens ?? usage.completion_tokens_details?.reasoning_tokens;
+  const cached = usage.cached_input_tokens ?? usage.input_tokens_details?.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens;
+  const reasoning = usage.reasoning_output_tokens ?? usage.output_tokens_details?.reasoning_tokens ?? usage.completion_tokens_details?.reasoning_tokens;
   return { input, cached: Number.isSafeInteger(cached) ? cached : null, output, reasoning: Number.isSafeInteger(reasoning) ? reasoning : null };
 };
 
@@ -155,7 +155,9 @@ export function createCourseSyncRunner(projectDir) {
         const attempts = [];
         for (let attempt = 0; attempt < 2; attempt++) {
           const repair = attempt ? `\n上次输出未通过校验，请只修复并完整返回符合 Schema 的 JSON。错误：${JSON.stringify(result.issues)}\n上次输出：${result.lastMessage}` : '';
-          result = provider === 'openai-compatible'
+          result = provider === 'deepseek'
+            ? await runDeepSeek(instructions + repair, trackStop)
+            : provider === 'openai-compatible'
             ? await runCompatible(instructions + repair, trackStop)
             : provider === 'codex' ? await runCodex(instructions + repair, courseDir, schemaPath, projectDir, trackStop, () => { row.phase = 'analysis'; })
               : { exitCode: 1, lastMessage: '', usage: null, error: `未知分析提供方：${provider}` };
@@ -179,7 +181,7 @@ export function createCourseSyncRunner(projectDir) {
           row.status = 'cancelled';
           const child = await childUsage(result.threadId, start);
           await mkdir(dirname(usagePath), { recursive: true, mode: 0o700 });
-          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || 'gpt-6-luna', durationMs: Date.now() - start.getTime(), status: 'cancelled', phases: phaseDurations, coordinator: result.usage, subagents: child })}\n`, { mode: 0o600 });
+          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || (process.env.COURSE_ANALYSIS_PROVIDER === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'), durationMs: Date.now() - start.getTime(), status: 'cancelled', phases: phaseDurations, coordinator: result.usage, subagents: child })}\n`, { mode: 0o600 });
           return;
         }
         row.phase = 'saving';
@@ -211,7 +213,7 @@ export function createCourseSyncRunner(projectDir) {
         }
         try {
           await mkdir(dirname(usagePath), { recursive: true, mode: 0o700 });
-          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || 'gpt-6-luna',
+          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || (process.env.COURSE_ANALYSIS_PROVIDER === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'),
             durationMs: Date.now() - start.getTime(), status: row.status, phases: phaseDurations, coordinator: result.usage, subagents: child })}\n`, { mode: 0o600 });
         } catch { row.reason += ' 用量记录写入失败。'; }
           } catch {
@@ -224,7 +226,7 @@ export function createCourseSyncRunner(projectDir) {
         row.status = 'failed'; row.reason = '无法启动或记录课程任务，请检查本地环境。';
         try {
           await mkdir(dirname(usagePath), { recursive: true, mode: 0o700 });
-          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || 'gpt-6-luna',
+          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || (process.env.COURSE_ANALYSIS_PROVIDER === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'),
             durationMs: Date.now() - start.getTime(), status: row.status, coordinator: null, subagents: null })}\n`, { mode: 0o600 });
         } catch { row.reason += ' 用量记录写入失败。'; }
       }
@@ -240,6 +242,30 @@ export function createCourseSyncRunner(projectDir) {
     return state;
   }
   return { start, cancel, status: () => state };
+}
+
+// DeepSeek Responses API: native schema output and local semantic validation.
+async function runDeepSeek(prompt, registerStop) {
+  const key = process.env.COURSE_ANALYSIS_API_KEY || process.env.DEEPSEEK_API_KEY;
+  if (!key) return { exitCode: 1, lastMessage: '', usage: null, error: '请配置 DEEPSEEK_API_KEY 或 COURSE_ANALYSIS_API_KEY。' };
+  const controller = new AbortController();
+  const untrack = registerStop(() => controller.abort());
+  const timer = setTimeout(() => controller.abort(), 15 * 60 * 1000);
+  try {
+    const response = await fetch('https://api.deepseek.com/responses', {
+      method: 'POST', signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model: process.env.COURSE_ANALYSIS_MODEL || 'deepseek-flash', input: prompt,
+        text: { format: { type: 'json_schema', name: 'course_analysis', schema: courseOutputSchema() } } }),
+    });
+    if (!response.ok) return { exitCode: 1, lastMessage: '', usage: null, error: `DeepSeek 接口返回 HTTP ${response.status}。` };
+    const data = await response.json();
+    const lastMessage = (data.output || []).filter(item => item.type === 'message').flatMap(item => item.content || []).filter(item => item.type === 'output_text').map(item => item.text || '').join('');
+    if (data.status !== 'completed') return { exitCode: 1, lastMessage, usage: counts(data.usage), error: `DeepSeek 结果未完成：${data.status || '未知'}。` };
+    return { exitCode: 0, lastMessage, usage: counts(data.usage), threadId: null };
+  } catch (error) {
+    return { exitCode: 1, lastMessage: '', usage: null, error: error.name === 'AbortError' ? '模型请求已中止或超时。' : 'DeepSeek 接口连接失败。' };
+  } finally { clearTimeout(timer); untrack(); }
 }
 
 // OpenAI-compatible chat-completions endpoint: credentials stay in environment.
@@ -272,7 +298,7 @@ function runCodex(prompt, courseDir, schemaPath, cwd, registerStop, onPhase) {
   return new Promise(resolveRun => {
     let threadId = null, usage = null, lastMessage = '', completed = false, code = null;
     const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only',
-      '-m', process.env.COURSE_ANALYSIS_MODEL || 'gpt-6-luna', '-c', 'agents.enabled=false', '--output-schema', schemaPath, '-'];
+      '-m', process.env.COURSE_ANALYSIS_MODEL || (process.env.COURSE_ANALYSIS_PROVIDER === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'), '-c', 'agents.enabled=false', '--output-schema', schemaPath, '-'];
     const proc = spawn('codex', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
     let hardStop;
     const signal = name => { try { if (process.platform === 'win32') { spawn('taskkill', ['/pid', String(proc.pid), '/t', '/f'], { stdio: 'ignore' }); } else if (proc.pid) process.kill(-proc.pid, name); } catch { /* Process already exited. */ } };

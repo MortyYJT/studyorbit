@@ -104,3 +104,5 @@ npm run dev
 2026-10-28：Canvas 后台读取、Ed 采集与每课 Luna 并行分析已进行用户授权的实际试跑；用量与未解决问题见 hybrid-sync-experiment.md。Canvas 仍仅第一页；Edge 需允许 Apple 事件 JavaScript。开发服务器热重载期间任务状态可能丢失，避免同步中改动服务器代码。
 
 2026-10-28：用户决定分析阶段使用统一提示词和可替换模型，不再要求每课派遣 subagent。`scripts/lib/course-analysis.mjs` 生成统一提示词和 Schema；runner 先采集再并行分析，默认用只读 Codex CLI，也可通过 OpenAI 兼容的 HTTP 接口调用模型。分析最多调用两次，格式或关系校验失败时用原结果和具体错误修复；取消可中止进行中的调用。同步过程中可能将已采集的课程及个人成绩发送给用户配置的模型服务。模型对比记录见 [模型对比](model-comparison.md)。配置兼容接口需在启动开发服务器前提供 `COURSE_ANALYSIS_PROVIDER=openai-compatible`、`COURSE_ANALYSIS_URL`、`COURSE_ANALYSIS_MODEL`、`COURSE_ANALYSIS_API_KEY`；密钥不写入仓库。HTTP 接入尚需实际前端流程验证。
+
+2026-10-29：新增 `COURSE_ANALYSIS_PROVIDER=deepseek`，使用 Responses API 的原生 JSON Schema；优先使用 `COURSE_ANALYSIS_API_KEY`，其次 `DEEPSEEK_API_KEY`，默认模型 `deepseek-flash`。在启动开发服务前配置环境变量，不要将密钥写入项目。一次前端 COMP20008 试跑因 Canvas 登录过期及 Handbook 采集失败仅取得 Ed 数据；见 [模型对比](model-comparison.md)，重新登录后仍需测试。
