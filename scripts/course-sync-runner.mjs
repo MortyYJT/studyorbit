@@ -91,12 +91,20 @@ export function createCourseSyncRunner(projectDir) {
       if (selected.some(item => !item || !codePattern.test(item.subjectCode))) throw new Error('INVALID_SELECTION');
       await mkdir(dirname(schemaPath), { recursive: true });
       await writeFile(schemaPath, JSON.stringify(courseOutputSchema(), null, 2), { mode: 0o600 });
-      const runId = randomUUID().slice(0, 8);
+      const runId = randomUUID();
+      const batchStart = Date.now();
+      await mkdir(dirname(usagePath), { recursive: true, mode: 0o700 });
+      await appendFile(usagePath, `${JSON.stringify({ type: 'batch_start', runId, at: new Date(batchStart).toISOString(), courses: selected.map(course => course.subjectCode) })}\n`, { mode: 0o600 });
       state = { running: true, courses: selected.map(course => ({ id: course.id, code: course.subjectCode, status: 'pending', reason: '' })), error: null };
       void runSequential(selected, runId).catch(() => {
         state.error = '同步任务异常中断，请检查本地环境。';
         for (const course of state.courses) if (course.status === 'pending' || course.status === 'running') course.status = 'failed';
-      }).finally(() => { state.running = false; active = false; });
+      }).finally(async () => {
+        try {
+          await appendFile(usagePath, `${JSON.stringify({ type: 'batch_end', runId, at: new Date().toISOString(), durationMs: Date.now() - batchStart, courses: state.courses.map(({ code, status }) => ({ code, status })) })}\n`, { mode: 0o600 });
+        } catch { state.error = '同步记录保存失败。'; }
+        state.running = false; active = false;
+      });
       return state;
     } catch (error) { active = false; throw error; }
   }
@@ -202,7 +210,7 @@ export function createCourseSyncRunner(projectDir) {
           row.status = 'cancelled';
           const child = await childUsage(result.threadId, start);
           await mkdir(dirname(usagePath), { recursive: true, mode: 0o700 });
-          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || ((process.env.COURSE_ANALYSIS_PROVIDER || 'deepseek') === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'), durationMs: Date.now() - start.getTime(), status: 'cancelled', phases: phaseDurations, coordinator: result.usage, subagents: child })}\n`, { mode: 0o600 });
+          await appendFile(usagePath, `${JSON.stringify({ runId, at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || ((process.env.COURSE_ANALYSIS_PROVIDER || 'deepseek') === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'), durationMs: Date.now() - start.getTime(), status: 'cancelled', phases: phaseDurations, coordinator: result.usage, subagents: child })}\n`, { mode: 0o600 });
           return;
         }
         row.phase = 'saving';
@@ -234,7 +242,7 @@ export function createCourseSyncRunner(projectDir) {
         }
         try {
           await mkdir(dirname(usagePath), { recursive: true, mode: 0o700 });
-          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || ((process.env.COURSE_ANALYSIS_PROVIDER || 'deepseek') === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'),
+          await appendFile(usagePath, `${JSON.stringify({ runId, at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || ((process.env.COURSE_ANALYSIS_PROVIDER || 'deepseek') === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'),
             durationMs: Date.now() - start.getTime(), status: row.status, phases: phaseDurations, coordinator: result.usage, subagents: child })}\n`, { mode: 0o600 });
         } catch { row.reason += ' 用量记录写入失败。'; }
           } catch {
@@ -247,7 +255,7 @@ export function createCourseSyncRunner(projectDir) {
         row.status = 'failed'; row.reason = '无法启动或记录课程任务，请检查本地环境。';
         try {
           await mkdir(dirname(usagePath), { recursive: true, mode: 0o700 });
-          await appendFile(usagePath, `${JSON.stringify({ at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || ((process.env.COURSE_ANALYSIS_PROVIDER || 'deepseek') === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'),
+          await appendFile(usagePath, `${JSON.stringify({ runId, at: start.toISOString(), course: course.subjectCode, model: process.env.COURSE_ANALYSIS_MODEL || ((process.env.COURSE_ANALYSIS_PROVIDER || 'deepseek') === 'deepseek' ? 'deepseek-flash' : 'gpt-6-luna'),
             durationMs: Date.now() - start.getTime(), status: row.status, coordinator: null, subagents: null })}\n`, { mode: 0o600 });
         } catch { row.reason += ' 用量记录写入失败。'; }
       }

@@ -13,7 +13,8 @@ import { LocalPlanning } from './LocalPlanning.js';
 type Panel = 'status' | 'settings';
 type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; phase?: string; file?: string }[]; error: string | null };
 type TokenUsage = { input: number | null; output: number | null; cached: number | null; reasoning: number | null };
-type SyncUsage = { at: string; course: string; model: string; status: string; durationMs: number | null; coordinator: TokenUsage | null; subagents: TokenUsage | null };
+type SyncUsage = { type: string; runId: string; at: string; course: string; courses: { code: string; status: string }[]; model: string; status: string; durationMs: number | null; coordinator: TokenUsage | null; subagents: TokenUsage | null };
+type SyncBatch = { id: string; at: string; durationMs: number | null; ended: boolean; legacy: boolean; selected: { code: string; status: string }[]; courses: SyncUsage[] };
 type SyncModal = 'discovery' | 'select' | 'starting' | 'syncing' | 'stopping' | 'finished';
 /** Navigation state; a preset is cleared once its conversation exists, so it is never sent twice. */
 export type View = { page: 'week' } | { page: 'agent'; preset?: AgentPreset; conversationId?: string; navigation?: number } | { page: 'course'; courseId: string };
@@ -156,10 +157,7 @@ export function App({ store }: { store: ShellStore }) {
     } catch (error) { setCourseRunError(error instanceof Error ? error.message : t.error); setSyncModal(discovery ? 'discovery' : 'syncing'); }
   }
   const syncButton = <button disabled={!!running} onClick={() => void syncCourses()} aria-busy={!!running}>{running ? t.syncing : t.sync}</button>;
-  const seenCourses = new Set<string>();
-  const latestUsage = (syncUsage ?? []).filter(row => { if (!row.course || seenCourses.has(row.course)) return false; seenCourses.add(row.course); return true; });
-  const latestSet = new Set(latestUsage);
-  const olderUsage = syncUsage?.filter(row => !latestSet.has(row)) ?? [];
+  const syncBatches = groupSyncUsage(syncUsage ?? []);
   return <>
     <header>
       <span className="brand"><span className="brand-dot" />coursework</span>
@@ -208,8 +206,7 @@ export function App({ store }: { store: ShellStore }) {
         {usageError && <p role="status">{language === 'zh' ? '无法读取同步记录。' : 'Could not read sync records.'}</p>}
         {!syncUsage && !usageError && <p>{t.loading}</p>}
         {syncUsage?.length === 0 && <p className="muted">{language === 'zh' ? '暂无同步记录。' : 'No sync records yet.'}</p>}
-        {latestUsage.length > 0 && <><p className="sync-usage-caption">{language === 'zh' ? '每门课程最近一次同步' : 'Latest sync for each course'}</p><div className="sync-usage-grid">{latestUsage.map((row, index) => <SyncUsageCard key={`${row.at}-${row.course}-${index}`} row={row} language={language} />)}</div></>}
-        {olderUsage.length > 0 && <details className="sync-usage-history"><summary>{language === 'zh' ? '历史记录' : 'History'}</summary><div className="sync-usage-grid">{olderUsage.map((row, index) => <SyncUsageCard key={`${row.at}-${row.course}-${index}`} row={row} language={language} />)}</div></details>}
+        {syncBatches.length > 0 && <><p className="sync-usage-caption">{language === 'zh' ? '最近一次' : 'Latest sync'}</p><SyncBatchRow key={syncBatches[0]!.id} batch={syncBatches[0]!} language={language} initiallyOpen />{syncBatches.length > 1 && <details className="sync-usage-history"><summary>{language === 'zh' ? '历史记录' : 'History'}</summary><div className="sync-batch-list">{syncBatches.slice(1).map(batch => <SyncBatchRow key={batch.id} batch={batch} language={language} />)}</div></details>}</>}
       </>}
       {panel === 'settings' && <>
         <div className="avatar-settings"><span className="avatar-preview">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><div><label className="avatar-upload">{language === 'zh' ? '上传头像' : 'Upload photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
@@ -227,20 +224,41 @@ export function App({ store }: { store: ShellStore }) {
   </>;
 }
 
-function SyncUsageCard({ row, language }: { row: SyncUsage; language: Language }) {
+function groupSyncUsage(rows: SyncUsage[]): SyncBatch[] {
+  const batches = new Map<string, SyncBatch>();
+  const legacy: SyncBatch[] = [];
+  for (const [index, row] of rows.entries()) {
+    if (!row.runId) {
+      if (row.type === 'course' && row.course) legacy.push({ id: `legacy-${index}-${row.at}`, at: row.at, durationMs: row.durationMs, ended: true, legacy: true, selected: [{ code: row.course, status: row.status }], courses: [row] });
+      continue;
+    }
+    const batch = batches.get(row.runId) ?? { id: row.runId, at: row.at, durationMs: null, ended: false, legacy: false, selected: [], courses: [] };
+    if (row.type === 'batch_start') { batch.at = row.at; if (!batch.selected.length) batch.selected = row.courses; }
+    else if (row.type === 'batch_end') { batch.ended = true; batch.durationMs = row.durationMs; batch.selected = row.courses; }
+    else if (row.type === 'course' && row.course) batch.courses.push(row);
+    batches.set(row.runId, batch);
+  }
+  return [...batches.values(), ...legacy].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
+}
+
+function usageTokens(row: SyncUsage | undefined): number | null {
+  const usage = row?.coordinator;
+  if (usage?.input == null || usage.output == null) return null;
+  if (row?.subagents && (row.subagents.input == null || row.subagents.output == null)) return null;
+  return usage.input + usage.output + (row?.subagents?.input ?? 0) + (row?.subagents?.output ?? 0);
+}
+
+function SyncBatchRow({ batch, language, initiallyOpen = false }: { batch: SyncBatch; language: Language; initiallyOpen?: boolean }) {
   const zh = language === 'zh';
-  const count = (field: 'input' | 'output') => {
-    const model = row.coordinator?.[field];
-    if (model == null || (row.subagents && row.subagents[field] == null)) return null;
-    return model + (row.subagents?.[field] ?? 0);
-  };
-  const input = count('input'), output = count('output');
-  const total = input === null || output === null ? null : input + output;
-  const when = row.at && !Number.isNaN(Date.parse(row.at)) ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(row.at)) : '—';
-  const state = row.status === 'cancelled' ? (zh ? '已中止' : 'Stopped') : row.status === 'failed' ? (zh ? '未完成' : 'Failed') : '';
-  return <section className="sync-usage-card">
-    <div className="sync-usage-heading"><strong>{row.course || '—'}</strong><span>{state || when}</span></div>
-    <div className="sync-usage-numbers"><div><strong>{row.durationMs === null ? '—' : `${(row.durationMs / 1000).toFixed(1)} ${zh ? '秒' : 's'}`}</strong><small>{zh ? '耗时' : 'Duration'}</small></div><div><strong>{total?.toLocaleString() ?? '—'}</strong><small>Token</small></div></div>
-    <details><summary>{zh ? '查看详情' : 'Details'}</summary><p>{when} · {row.model || '—'}</p><p>{zh ? '输入' : 'Input'} {input?.toLocaleString() ?? '—'} · {zh ? '输出' : 'Output'} {output?.toLocaleString() ?? '—'}</p></details>
-  </section>;
+  const when = batch.at && !Number.isNaN(Date.parse(batch.at)) ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(batch.at)) : '—';
+  const selected = batch.selected.length ? batch.selected : batch.courses.map(row => ({ code: row.course, status: row.status }));
+  const entries = selected.map(course => ({ ...course, row: batch.courses.find(item => item.course === course.code) }));
+  const totals = entries.map(entry => usageTokens(entry.row));
+  const tokenTotal = totals.length && totals.every(total => total !== null) ? totals.reduce<number>((sum, total) => sum + (total ?? 0), 0) : null;
+  const seconds = (ms: number | null) => ms === null ? '—' : `${(ms / 1000).toFixed(1)} ${zh ? '秒' : 's'}`;
+  return <details className="sync-batch" open={initiallyOpen || undefined}>
+    <summary><span><strong>{when}</strong><small>{batch.legacy ? (zh ? '早期单课记录' : 'Earlier course record') : !batch.ended ? (zh ? '未完成' : 'Incomplete') : `${entries.length} ${zh ? '门课程' : 'courses'}`}</small></span><span>{seconds(batch.durationMs)}</span><span>{tokenTotal?.toLocaleString() ?? '—'} Token</span></summary>
+    <div className="sync-batch-courses">{entries.map(({ code, status, row }, index) => <div className="sync-batch-course" key={`${code}-${index}`}><span>{code}{status === 'cancelled' ? (zh ? ' · 已中止' : ' · Stopped') : status === 'failed' ? (zh ? ' · 未完成' : ' · Failed') : ''}</span><span>{seconds(row?.durationMs ?? null)}</span><span>{usageTokens(row)?.toLocaleString() ?? '—'} Token</span></div>)}</div>
+    {!batch.legacy && <p className="sync-batch-note">{zh ? '耗时从保存选课后开始计算。' : 'Duration starts after courses are selected.'}</p>}
+  </details>;
 }

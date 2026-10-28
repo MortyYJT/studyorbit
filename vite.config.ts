@@ -30,12 +30,12 @@ export default defineConfig({
         res.setHeader('Cache-Control', 'no-store');
         try {
           const raw = await readFile(join(projectDir, '.local', 'lms', 'course-sync-usage.jsonl'), 'utf8');
-          const items = raw.split('\n').filter(Boolean).slice(-100).flatMap(line => {
+          const items = raw.split('\n').filter(Boolean).slice(-1000).flatMap(line => {
             try {
               const row = JSON.parse(line);
               const count = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
               const usage = (value: any) => value && typeof value === 'object' ? { input: count(value.input), output: count(value.output), cached: count(value.cached), reasoning: count(value.reasoning) } : null;
-              return [{ at: typeof row.at === 'string' ? row.at : '', course: typeof row.course === 'string' ? row.course : '', model: typeof row.model === 'string' ? row.model : '', status: typeof row.status === 'string' ? row.status : '', durationMs: count(row.durationMs), coordinator: usage(row.coordinator), subagents: usage(row.subagents) }];
+              return [{ type: typeof row.type === 'string' ? row.type : 'course', runId: typeof row.runId === 'string' ? row.runId : '', at: typeof row.at === 'string' ? row.at : '', course: typeof row.course === 'string' ? row.course : '', courses: Array.isArray(row.courses) ? row.courses.flatMap((value: unknown) => typeof value === 'string' ? [{ code: value, status: '' }] : value && typeof value === 'object' && typeof (value as { code?: unknown }).code === 'string' ? [{ code: (value as { code: string }).code, status: typeof (value as { status?: unknown }).status === 'string' ? (value as { status: string }).status : '' }] : []) : [], model: typeof row.model === 'string' ? row.model : '', status: typeof row.status === 'string' ? row.status : '', durationMs: count(row.durationMs), coordinator: usage(row.coordinator), subagents: usage(row.subagents) }];
             } catch { return []; }
           }).reverse();
           res.end(JSON.stringify({ items }));
