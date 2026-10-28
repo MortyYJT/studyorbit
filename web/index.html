@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="referrer" content="no-referrer" />
     <title>coursework</title>
+    <script>
+      // Apply the saved theme and palette before the app mounts so the first paint is already right; App.tsx owns later changes.
+      // Keep the palette ids in step with web/src/palette.ts (test/palette.test.ts checks this).
+      try {
+        var theme = localStorage.getItem('coursework.theme');
+        var palette = localStorage.getItem('coursework.palette');
+        document.documentElement.dataset.theme = theme === 'system' || theme === 'dark' ? theme : 'light';
+        document.documentElement.dataset.palette = ['mono', 'mist', 'pine', 'stone', 'morty'].indexOf(palette) >= 0 ? palette : 'mono';
+      } catch (error) { /* Storage may be blocked; the app falls back to its defaults. */ }
+    </script>
   </head>
   <body>
     <div id="root"></div>

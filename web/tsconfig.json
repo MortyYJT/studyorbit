@@ -10,5 +10,5 @@
     "types": ["node", "react", "react-dom"],
     "skipLibCheck": true
   },
-  "include": ["src", "../vite.config.ts"]
+  "include": ["src", "../shared", "../test", "../vite.config.ts", "../vitest.config.ts"]
 }

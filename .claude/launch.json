@@ -2,13 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "ui-prototype",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "-e",
-        "const h=require('node:http'),f=require('node:fs'),p=require('node:path');const root=p.resolve(process.env.CLAUDE_PROJECT_DIR||'.','design/prototype');h.createServer((q,r)=>{const u=decodeURIComponent(q.url.split('?')[0]);const file=p.join(root,u==='/'?'index.html':u);if(!file.startsWith(root)){r.writeHead(403).end();return}f.readFile(file,(e,b)=>{if(e){r.writeHead(404).end();return}r.writeHead(200,{'content-type':file.endsWith('.html')?'text/html; charset=utf-8':'application/octet-stream'}).end(b)})}).listen(4317,'127.0.0.1')"
-      ],
-      "port": 4317
+      "name": "web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "5173"],
+      "port": 5173
     }
   ]
 }

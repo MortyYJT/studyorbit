@@ -17,3 +17,8 @@ coverage/
 # OS / editor
 .DS_Store
 .idea/
+
+# Local-only archive of the v1 implementation and v2 history; never pushed.
+archive/
+.local-backups/
+*.db
