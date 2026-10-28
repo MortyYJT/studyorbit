@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ShellStore, attention } from './shell.js';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { ShellStore } from './shell.js';
 import { en, zh, type Copy, type Language, type Theme } from './i18n.js';
 import { WeekStore } from './weekStore.js';
-import { needsYou, weekModel } from './week.js';
 import { AgentPage } from './Agent.js';
 import type { AgentPreset } from './chat.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
-import { LocalPlanning } from './LocalPlanning.js';
+import { LocalPlanning, type SidebarCourse } from './LocalPlanning.js';
 
 type Panel = 'status' | 'settings';
 type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; phase?: string; file?: string }[]; error: string | null };
@@ -32,7 +31,6 @@ export function App({ store }: { store: ShellStore }) {
   const [usageError, setUsageError] = useState(false);
   const [view, setView] = useState<View>(() => { const conversationId = new URLSearchParams(window.location.search).get('conversation'); return conversationId ? { page: 'agent', conversationId } : { page: 'week' }; });
   const [week] = useState(() => new WeekStore(store.client));
-  const weekState = useSyncExternalStore(week.subscribe, week.getSnapshot);
   const openAgent = (preset?: AgentPreset) => setView({ page: 'agent', preset });
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState<Panel>();
@@ -41,11 +39,14 @@ export function App({ store }: { store: ShellStore }) {
   const [courseRefresh, setCourseRefresh] = useState(0);
   const [coursePanelOpen, setCoursePanelOpen] = useState(() => !selectionExists());
   const [savedNotice, setSavedNotice] = useState(0);
+  const [sidebarCourses, setSidebarCourses] = useState<SidebarCourse[]>([]);
+  const [navOpen, setNavOpen] = useState(false);
   const [localSyncWarning, setLocalSyncWarning] = useState('');
   const [courseRun, setCourseRun] = useState<CourseRun>();
   const [courseRunError, setCourseRunError] = useState('');
   const [syncModal, setSyncModal] = useState<SyncModal>();
   const syncDialog = useRef<HTMLDialogElement>(null);
+  const selectDialog = useRef<HTMLDialogElement>(null);
   const cancelledDiscovery = useRef(false);
   const cancelDuringStart = useRef(false);
   const resultSignature = useRef('');
@@ -53,9 +54,6 @@ export function App({ store }: { store: ShellStore }) {
   const avatar = useRef<HTMLButtonElement>(null);
   const menuRoot = useRef<HTMLDivElement>(null);
   const t = language === 'zh' ? zh : en;
-  const rows = useMemo(() => weekModel({ plan: weekState.plan, courses: weekState.courses ?? [], assessments: [], tasks: weekState.tasks ?? [], monday: weekState.today ?? '1970-01-05', timeZone: weekState.timeZone }), [weekState]);
-  const needs = needsYou({ attention: attention(state), overflow: rows.overflow, unestimated: rows.unestimated,
-    conflicts: state.conflicts?.items ?? [], updates: state.updates?.items ?? [] });
   const refreshAll = () => Promise.all([store.refresh(), week.refresh()]);
   const running = localSyncing || state.syncing || state.sync?.running || courseRun?.running;
   useEffect(() => {
@@ -73,6 +71,7 @@ export function App({ store }: { store: ShellStore }) {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     mainRef.current?.animate([{ opacity: 0, transform: 'translateY(5px)' }, { opacity: 1, transform: 'none' }], { duration: 350, easing: 'cubic-bezier(.2,.8,.2,1)' });
   }, [pageKey]);
+  useEffect(() => { const element = selectDialog.current; if (!element) return; if (coursePanelOpen && !element.open) element.showModal(); else if (!coursePanelOpen && element.open) element.close(); }, [coursePanelOpen]);
   useEffect(() => { const element = syncDialog.current; if (!element) return; if (syncModal && !element.open) element.showModal(); else if (!syncModal && element.open) element.close(); }, [syncModal]);
   useEffect(() => {
     if (!savedNotice) return;
@@ -161,37 +160,59 @@ export function App({ store }: { store: ShellStore }) {
       else { const run = await response.json() as CourseRun; setCourseRun(run); if (!run.running) setSyncModal('finished'); }
     } catch (error) { setCourseRunError(error instanceof Error ? error.message : t.error); setSyncModal(discovery ? 'discovery' : 'syncing'); }
   }
+  const go = (next: View) => { setView(next); setNavOpen(false); };
+  const isZh = language === 'zh';
+  const title = view.page === 'agent' ? t.agent : (isZh ? '本周' : 'This week');
   const syncButton = <button disabled={!!running} onClick={() => void syncCourses()} aria-busy={!!running}>{running ? t.syncing : t.sync}</button>;
   const syncBatches = groupSyncUsage(syncUsage ?? []);
-  return <>
-    <header>
-      <span className="brand"><span className="brand-dot" />coursework</span>
-      <nav aria-label="coursework">
-        {(['week', 'agent'] as const).map(item => <button key={item} aria-current={view.page === item ? 'page' : undefined} onClick={() => item === 'agent' ? openAgent() : setView({ page: item })}>{t[item]}</button>)}
-      </nav>
-      <div className="header-actions">{syncButton}
-        <div className="avatar-wrap" ref={menuRoot} onKeyDown={event => { if (event.key === 'Escape') { setMenu(false); avatar.current?.focus(); } }}>
-          <button className="avatar" ref={avatar} aria-label={t.menu} aria-expanded={menu} aria-controls="owner-menu" onClick={() => setMenu(!menu)}>{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</button>
-          {!!needs.length && <span className="badge" />}
-          {menu && <div id="owner-menu" className="menu"><button onClick={() => open('status')}>{language === 'zh' ? '同步数据' : 'Sync data'}</button><button onClick={() => open('settings')}>{t.settings}</button></div>}
+  return <div className="shell">
+    <aside className={`sidebar${navOpen ? ' open' : ''}`}>
+      <div className="sidebar-top">
+        <span className="brand"><Mark />coursework</span>
+        <span className="sidebar-page">{view.page === 'course' ? sidebarCourses.find(course => course.id === view.courseId)?.code ?? '' : title}</span>
+        <button className="nav-toggle ghost" aria-expanded={navOpen} aria-controls="sidebar-body" onClick={() => setNavOpen(!navOpen)}>{navOpen ? t.close : (isZh ? '菜单' : 'Menu')}</button>
+      </div>
+      <div className="sidebar-body" id="sidebar-body">
+        <nav className="nav" aria-label="coursework">
+          <button className="nav-item" aria-current={view.page === 'week' ? 'page' : undefined} onClick={() => go({ page: 'week' })}>{isZh ? '本周' : 'This week'}</button>
+          <button className="nav-item" aria-current={view.page === 'agent' ? 'page' : undefined} onClick={() => { openAgent(); setNavOpen(false); }}>{t.agent}</button>
+        </nav>
+        <div className="nav-group">
+          <h2 className="nav-label">{t.courses}</h2>
+          {sidebarCourses.length ? sidebarCourses.map(course => <button key={course.id} className="nav-item course-item" aria-current={view.page === 'course' && view.courseId === course.id ? 'page' : undefined}
+            title={course.name} onClick={() => go({ page: 'course', courseId: course.id })}>
+            <span className="course-code">{course.code}</span>
+            <small className="course-graded" title={isZh ? '已出分占比' : 'Graded weight'}>{course.graded === undefined ? '—' : `${Number(course.graded.toFixed(1))}%`}</small>
+            <small className="course-name">{course.name}</small>
+          </button>) : <p className="muted nav-empty">{isZh ? '同步并选择课程后显示。' : 'Sync and select courses.'}</p>}
+        </div>
+        <div className="sidebar-foot">
+          {syncButton}
+          <div className="owner" ref={menuRoot} onKeyDown={event => { if (event.key === 'Escape') { setMenu(false); avatar.current?.focus(); } }}>
+            <button className="owner-button ghost" ref={avatar} aria-label={t.menu} aria-expanded={menu} aria-controls="owner-menu" onClick={() => setMenu(!menu)}>
+              <span className="avatar" aria-hidden="true">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><span>{isZh ? '同步数据 · 设置' : 'Sync data · Settings'}</span></button>
+            {menu && <div id="owner-menu" className="menu"><button onClick={() => { setNavOpen(false); open('status'); }}>{isZh ? '同步数据' : 'Sync data'}</button><button onClick={() => { setNavOpen(false); open('settings'); }}>{t.settings}</button></div>}
+          </div>
         </div>
       </div>
-    </header>
-    <main ref={mainRef}>
-      {localSyncError && <p className="needs" role="status" style={{ whiteSpace: 'pre-wrap' }}>{localSyncError}</p>}
-      {localSyncWarning && <p className="needs" role="status">{localSyncWarning}</p>}
-      {courseRunError && <p className="needs" role="status">{courseRunError}</p>}
-      {view.page === 'week' && (coursePanelOpen
-        ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setCoursePanelOpen(false); setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); void startSelectedCourses(ids); }} />
-        : <button className="edit-courses" disabled={courseRun?.running} onClick={() => setCoursePanelOpen(true)}>{language === 'zh' ? '修改选课' : 'Edit courses'}</button>)}
-      {savedNotice > 0 && <div className="save-toast" role="status">{language === 'zh' ? '课程已经保存' : 'Courses saved'}</div>}
-      {view.page === 'agent' && !store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
-      {view.page === 'agent' && state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
-      {view.page !== 'course' && <div className="page-heading"><h1>{t[view.page]}</h1><button onClick={() => { setCourseRefresh(value => value + 1); void refreshAll(); }}>{t.refresh}</button></div>}
+    </aside>
+    <main className="canvas" ref={mainRef}>
+      {localSyncError && <p className="error-line" role="status" style={{ whiteSpace: 'pre-wrap' }}><i className="signal" aria-hidden="true" />{localSyncError}</p>}
+      {localSyncWarning && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{localSyncWarning}</p>}
+      {courseRunError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{courseRunError}</p>}
+      {view.page === 'agent' && !store.client.hasSession() && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{t.session}</p>}
+      {view.page === 'agent' && state.errors.action && <p className="error-line" role="status">{errorText(state.errors.action, t)}</p>}
+      {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1><button className="ghost" onClick={() => { setCourseRefresh(value => value + 1); void refreshAll(); }}>{t.refresh}</button></div>}
+      {savedNotice > 0 && <div className="save-toast" role="status">{isZh ? '课程已经保存' : 'Courses saved'}</div>}
       {view.page === 'agent' ? <AgentPage key={view.navigation} client={store.client} t={t} language={language} preset={view.preset} conversationId={view.conversationId} onPresetDone={() => setView({ page: 'agent' })} />
-        : <LocalPlanning language={language} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined}
-          syncIssues={courseRun?.courses ?? []} onCourse={courseId => setView({ page: 'course', courseId })} onBack={() => setView({ page: 'week' })} />}
+        : <LocalPlanning language={language} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined} onCourses={setSidebarCourses}
+          syncIssues={courseRun?.courses ?? []} onCourse={courseId => go({ page: 'course', courseId })} onBack={() => go({ page: 'week' })} />}
     </main>
+    <dialog ref={selectDialog} className="select-dialog" aria-labelledby="select-title" onCancel={event => { event.preventDefault(); setCoursePanelOpen(false); }}>
+      <div className="dialog-heading"><h2 id="select-title" tabIndex={-1} autoFocus>{isZh ? '修改选课' : 'Edit courses'}</h2><button className="ghost" onClick={() => setCoursePanelOpen(false)}>{t.close}</button></div>
+      <p className="select-note"><i className="signal" aria-hidden="true" />{isZh ? '保存后会立即开始同步所选课程（会使用 Edge、Ed 和模型额度）。' : 'Saving starts a sync of the selected courses right away (uses Edge, Ed and model quota).'}</p>
+      {coursePanelOpen && <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setCoursePanelOpen(false); setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); void startSelectedCourses(ids); }} />}
+    </dialog>
     <dialog ref={syncDialog} className="sync-dialog" aria-labelledby="sync-title" onCancel={event => event.preventDefault()}>
       <h2 id="sync-title">{language === 'zh' ? (syncModal === 'finished' ? '同步结果' : '正在同步课程') : (syncModal === 'finished' ? 'Sync results' : 'Syncing courses')}</h2>
       {syncModal === 'select' ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); if (ids.length) void startSelectedCourses(ids); else setSyncModal('finished'); }} /> : <>
@@ -205,15 +226,16 @@ export function App({ store }: { store: ShellStore }) {
       {syncModal === 'finished' ? <button onClick={() => setSyncModal(undefined)}>{language === 'zh' ? '关闭' : 'Close'}</button> : <button disabled={syncModal === 'stopping'} onClick={() => void stopSync()}>{language === 'zh' ? '中止同步' : 'Stop sync'}</button>}
     </dialog>
     <dialog ref={dialog} onCancel={close} onClose={() => { setPanel(undefined); avatar.current?.focus(); }} aria-labelledby="panel-title">
-      <div className="dialog-heading"><h2 id="panel-title">{panel === 'status' ? (language === 'zh' ? '同步数据' : 'Sync data') : panel ? t[panel] : ''}</h2><button onClick={close}>{t.close}</button></div>
+      <div className="dialog-heading"><h2 id="panel-title" tabIndex={-1} autoFocus>{panel === 'status' ? (language === 'zh' ? '同步数据' : 'Sync data') : panel ? t[panel] : ''}</h2><button className="ghost" onClick={close}>{t.close}</button></div>
       {panel === 'status' && <>
-        <button onClick={() => void loadSyncUsage()}>{t.refresh}</button>
-        {usageError && <p role="status">{language === 'zh' ? '无法读取同步记录。' : 'Could not read sync records.'}</p>}
-        {!syncUsage && !usageError && <p>{t.loading}</p>}
-        {syncUsage?.length === 0 && <p className="muted">{language === 'zh' ? '暂无同步记录。' : 'No sync records yet.'}</p>}
-        {syncBatches.length > 0 && <><SyncKpis batch={syncBatches[0]!} language={language} /><p className="sync-usage-caption">{language === 'zh' ? '最近一次' : 'Latest sync'}</p><SyncBatchRow key={syncBatches[0]!.id} batch={syncBatches[0]!} language={language} initiallyOpen />{syncBatches.length > 1 && <details className="sync-usage-history"><summary>{language === 'zh' ? '历史记录' : 'History'}</summary><div className="sync-batch-list">{syncBatches.slice(1).map(batch => <SyncBatchRow key={batch.id} batch={batch} language={language} />)}</div></details>}</>}
+        {usageError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{language === 'zh' ? '无法读取同步记录。' : 'Could not read sync records.'}</p>}
+        {!syncUsage && !usageError && <p className="muted">{t.loading}</p>}
+        {syncUsage?.length === 0 && <p className="muted">{language === 'zh' ? '还没有同步记录。点侧栏的「立即同步」开始第一次同步。' : 'No syncs yet. Use Sync now in the sidebar to run the first one.'}</p>}
+        {syncBatches.length > 0 && <><SyncLatest batch={syncBatches[0]!} language={language} onRefresh={() => void loadSyncUsage()} /><SyncHistory batches={syncBatches} language={language} /></>}
       </>}
       {panel === 'settings' && <>
+        <section className="settings-row"><div><h3>{isZh ? '课程' : 'Courses'}</h3><p className="muted">{sidebarCourses.length ? (isZh ? `已选 ${sidebarCourses.length} 门：${sidebarCourses.map(course => course.code).join('、')}` : `${sidebarCourses.length} selected: ${sidebarCourses.map(course => course.code).join(', ')}`) : (isZh ? '还没有选课。' : 'No courses selected.')}</p></div>
+          <button disabled={courseRun?.running} onClick={() => { close(); setCoursePanelOpen(true); }}>{isZh ? '修改选课' : 'Edit courses'}</button></section>
         <div className="avatar-settings"><span className="avatar-preview">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><div><label className="avatar-upload">{language === 'zh' ? '上传头像' : 'Upload photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
           const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!file) return;
           if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) { setAvatarError(language === 'zh' ? '请选择不超过 2 MB 的 JPG、PNG 或 WebP 图片。' : 'Choose a JPG, PNG or WebP image up to 2 MB.'); return; }
@@ -226,7 +248,12 @@ export function App({ store }: { store: ShellStore }) {
           <label>{t.language}<select value={language} onChange={event => setLanguage(event.target.value as Language)}><option value="en">English</option><option value="zh">中文</option></select></label></div>
       </>}
     </dialog>
-  </>;
+  </div>;
+}
+
+/** Product mark: the segmented grade ring that the course page draws, at 18px. */
+function Mark() {
+  return <svg className="mark" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="6.5" strokeDasharray="9 1.2" /></svg>;
 }
 
 function groupSyncUsage(rows: SyncUsage[]): SyncBatch[] {
@@ -262,32 +289,75 @@ function batchSummary(batch: SyncBatch) {
   return { entries, tokenTotal };
 }
 
-function seconds(ms: number | null, zh: boolean): string { return ms === null ? '—' : `${(ms / 1000).toFixed(1)} ${zh ? '秒' : 's'}`; }
-
-/** Metric cards for the latest batch; every value comes from the usage log, and a missing value shows as a dash. */
-function SyncKpis({ batch, language }: { batch: SyncBatch; language: Language }) {
-  const zh = language === 'zh';
-  const { entries, tokenTotal } = batchSummary(batch);
-  const completed = entries.filter(entry => entry.status === 'completed').length, partial = entries.filter(entry => entry.status === 'partial').length;
-  const durations = entries.map(entry => entry.row?.durationMs).filter((ms): ms is number => typeof ms === 'number');
-  const average = durations.length && durations.length === entries.length ? durations.reduce((sum, ms) => sum + ms, 0) / durations.length : null;
-  const cards: [string, string][] = [
-    [`${batch.recovered && batch.durationMs !== null ? (zh ? '约 ' : '~') : ''}${seconds(batch.durationMs, zh)}`, zh ? '最近一次总耗时' : 'Latest sync time'],
-    [tokenTotal?.toLocaleString() ?? '—', 'Token'],
-    [`${completed} / ${entries.length}`, partial ? (zh ? `完成 · ${partial} 门部分完成` : `completed · ${partial} partial`) : (zh ? '完成' : 'completed')],
-    [seconds(average, zh), zh ? '每门平均耗时（并行运行）' : 'Average per course (run in parallel)'],
-  ];
-  return <div className="kpis">{cards.map(([value, label]) => <div className="kpi" key={label}><div className="kpi-value">{value}</div><p className="muted">{label}</p></div>)}</div>;
+/** "2 min 0 s" reads faster than "119.8 s"; recovered runs carry "about". */
+function duration(ms: number | null, zh: boolean, approximate = false): string {
+  if (ms === null) return '—';
+  const total = Math.round(ms / 1000), minutes = Math.floor(total / 60), rest = total % 60;
+  const text = minutes ? (zh ? `${minutes} 分 ${rest} 秒` : `${minutes} min ${rest} s`) : (zh ? `${(ms / 1000).toFixed(1)} 秒` : `${(ms / 1000).toFixed(1)} s`);
+  return approximate ? (zh ? `约 ${text}` : `~${text}`) : text;
+}
+const statusNames: Record<string, [string, string]> = { completed: ['完成', 'Completed'], partial: ['部分完成', 'Partial'], failed: ['未完成', 'Failed'], cancelled: ['已中止', 'Stopped'] };
+/** One result per run: a single course names its status; several courses count how many finished. */
+function batchResult(batch: SyncBatch, zh: boolean): { text: string; problem: boolean } {
+  const { entries } = batchSummary(batch);
+  if (!batch.ended && !batch.legacy) return { text: zh ? '未结束' : 'Did not finish', problem: true };
+  if (entries.length === 1) { const status = entries[0]!.status; return { text: statusNames[status]?.[zh ? 0 : 1] ?? status, problem: status === 'failed' || status === 'cancelled' }; }
+  const done = entries.filter(entry => entry.status === 'completed').length, partial = entries.filter(entry => entry.status === 'partial').length;
+  const failed = entries.length - done - partial;
+  const parts = [zh ? `${done}/${entries.length} 门完成` : `${done} of ${entries.length} completed`];
+  if (partial) parts.push(zh ? `${partial} 门部分完成` : `${partial} partial`);
+  if (failed) parts.push(zh ? `${failed} 门未完成` : `${failed} failed`);
+  return { text: parts.join(' · '), problem: failed > 0 };
+}
+function batchWhen(batch: SyncBatch, language: Language): string {
+  return batch.at && !Number.isNaN(Date.parse(batch.at)) ? new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(batch.at)) : '—';
+}
+function batchCourses(batch: SyncBatch, zh: boolean): string {
+  const { entries } = batchSummary(batch);
+  return entries.length === 1 ? entries[0]!.code : entries.length <= 3 ? entries.map(entry => entry.code).join('、') : (zh ? `${entries.length} 门课` : `${entries.length} courses`);
 }
 
-function SyncBatchRow({ batch, language, initiallyOpen = false }: { batch: SyncBatch; language: Language; initiallyOpen?: boolean }) {
+/** The latest run as one sentence; every figure comes from the usage log and a missing one shows as a dash. */
+function SyncLatest({ batch, language, onRefresh }: { batch: SyncBatch; language: Language; onRefresh: () => void }) {
   const zh = language === 'zh';
-  const when = batch.at && !Number.isNaN(Date.parse(batch.at)) ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(batch.at)) : '—';
-  const { entries, tokenTotal } = batchSummary(batch);
-  if (entries.length === 1) return <div className="sync-batch sync-batch-single"><span><strong>{entries[0]!.code}</strong><small>{when}{batch.legacy ? (zh ? ' · 早期单课记录' : ' · Earlier record') : ''}</small></span><span>{seconds(batch.durationMs, zh)}</span><span>{tokenTotal?.toLocaleString() ?? '—'} Token</span></div>;
-  return <details className="sync-batch" open={initiallyOpen || undefined}>
-    <summary><span><strong>{when}</strong><small>{!batch.ended ? (zh ? '未完成' : 'Incomplete') : `${entries.length} ${zh ? '门课程' : 'courses'}`}</small></span><span>{batch.recovered && batch.durationMs !== null ? (zh ? '约 ' : '~') : ''}{seconds(batch.durationMs, zh)}</span><span>{tokenTotal?.toLocaleString() ?? '—'} Token</span></summary>
-    <div className="sync-batch-courses">{entries.map(({ code, status, row }, index) => <div className="sync-batch-course" key={`${code}-${index}`}><span>{code}{status === 'cancelled' ? (zh ? ' · 已中止' : ' · Stopped') : status === 'failed' ? (zh ? ' · 未完成' : ' · Failed') : ''}</span><span>{seconds(row?.durationMs ?? null, zh)}</span><span>{usageTokens(row)?.toLocaleString() ?? '—'} Token</span></div>)}</div>
-    <p className="sync-batch-note">{batch.recovered ? (zh ? '根据本机采集目录还原；总耗时为估算。' : 'Recovered from local collection folders; duration is approximate.') : (zh ? '耗时从保存选课后开始计算。' : 'Duration starts after courses are selected.')}</p>
-  </details>;
+  const { tokenTotal } = batchSummary(batch);
+  const result = batchResult(batch, zh);
+  return <section className="sync-latest" aria-label={zh ? '最近一次同步' : 'Latest sync'}>
+    <div className="row-heading"><span className="muted">{zh ? '最近一次同步' : 'Latest sync'}</span><button className="small ghost" onClick={onRefresh}>{zh ? '刷新' : 'Refresh'}</button></div>
+    <p className="sync-latest-when">{batchWhen(batch, language)} · {batchCourses(batch, zh)}</p>
+    <dl className="sync-latest-facts">
+      <div><dt>{zh ? '结果' : 'Result'}</dt><dd>{result.problem && <i className="signal" aria-hidden="true" />}{result.text}</dd></div>
+      <div><dt>{zh ? '用时' : 'Time'}</dt><dd>{duration(batch.durationMs, zh, batch.recovered)}</dd></div>
+      <div><dt>Token</dt><dd>{tokenTotal?.toLocaleString() ?? '—'}</dd></div>
+    </dl>
+  </section>;
+}
+
+/** Every run as a row; a run with several courses opens to show each course. */
+function SyncHistory({ batches, language }: { batches: SyncBatch[]; language: Language }) {
+  const zh = language === 'zh';
+  const [all, setAll] = useState(false);
+  const [open, setOpen] = useState<string>();
+  const shown = all ? batches : batches.slice(0, 8);
+  return <section className="sync-history" aria-label={zh ? '同步记录' : 'Sync history'}>
+    <h3>{zh ? '同步记录' : 'Sync history'}</h3>
+    <div className="sync-table" role="table">
+      <div className="sync-tr sync-th" role="row"><span role="columnheader">{zh ? '时间' : 'When'}</span><span role="columnheader">{zh ? '课程' : 'Courses'}</span><span role="columnheader">{zh ? '结果' : 'Result'}</span><span role="columnheader" className="num">{zh ? '用时' : 'Time'}</span><span role="columnheader" className="num">Token</span></div>
+      {shown.map(batch => {
+        const { entries, tokenTotal } = batchSummary(batch);
+        const result = batchResult(batch, zh);
+        const many = entries.length > 1, expanded = open === batch.id;
+        const cells = <><span>{many && <i className="chevron" aria-hidden="true" />}{batchWhen(batch, language)}</span><span>{batchCourses(batch, zh)}</span>
+          <span>{result.problem && <i className="signal" aria-hidden="true" />}{result.text}</span><span className="num">{duration(batch.durationMs, zh, batch.recovered)}</span><span className="num">{tokenTotal?.toLocaleString() ?? '—'}</span></>;
+        return <div key={batch.id} className={`sync-run${expanded ? ' open' : ''}`} role="rowgroup">
+          {many ? <button className="sync-tr" role="row" aria-expanded={expanded} onClick={() => setOpen(expanded ? undefined : batch.id)}>{cells}</button> : <div className="sync-tr" role="row">{cells}</div>}
+          {many && expanded && entries.map(({ code, status, row }, index) => <div className="sync-tr sync-sub" role="row" key={`${code}-${index}`}>
+            <span /><span>{code}</span><span>{(status === 'failed' || status === 'cancelled') && <i className="signal" aria-hidden="true" />}{statusNames[status]?.[zh ? 0 : 1] ?? status}</span>
+            <span className="num">{duration(row?.durationMs ?? null, zh)}</span><span className="num">{usageTokens(row)?.toLocaleString() ?? '—'}</span></div>)}
+        </div>;
+      })}
+    </div>
+    {batches.length > 8 && <button className="small ghost sync-more" onClick={() => setAll(!all)}>{all ? (zh ? '收起' : 'Show fewer') : (zh ? `显示全部 ${batches.length} 条` : `Show all ${batches.length}`)}</button>}
+    <p className="sync-note">{zh ? '用时从保存选课后开始算；带「约」的是从本机采集目录还原的记录。' : 'Time starts after courses are saved; "~" marks runs recovered from local folders.'}</p>
+  </section>;
 }
