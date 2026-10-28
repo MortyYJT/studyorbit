@@ -52,6 +52,7 @@ try {
     const begin = Date.now(), marker = `coursework-${id}-${kind}`;
     console.log(`读取 ${kind}，请保持浏览器在前台…`);
     await run('/usr/bin/open', ['-b', browser, `${url}#${marker}`]); activeMarker = marker;
+    await run('/usr/bin/osascript', ['-e', 'on run argv', '-e', 'tell application id (item 1 of argv) to activate', '-e', 'end run', browser]);
     await pause(3000);
     await copy(marker); owned = marker;
     await run('/usr/bin/osascript', ['-e', select, browser]);
@@ -67,7 +68,7 @@ try {
     catch { console.error(`无法确认实验标签页，未自动关闭 ${kind} 标签。`); owned = await run('/usr/bin/pbpaste', []); }
     console.log(`${kind}：${rows.length} 条，用时 ${captured[`${kind}Ms`]} ms`);
   }
-  const out = resolve('.local', 'experiments', 'hybrid-03', 'canvas-auto.json');
+  const out = resolve('.local', 'experiments', 'hybrid-03', `canvas-auto-${course}.json`);
   const result = { courseId: course, capturedAt: new Date().toISOString(), scope: 'first_page', paginationVerified: false, browser, durationMs: Date.now() - started, ...captured };
   await mkdir(dirname(out), { recursive: true, mode: 0o700 });
   const tmp = `${out}.${id}.tmp`; await writeFile(tmp, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 }); await rename(tmp, out);
