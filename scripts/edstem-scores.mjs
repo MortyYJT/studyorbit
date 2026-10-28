@@ -27,9 +27,11 @@ for (const id of ids) {
   try {
     const found = await get(`lessons/${id}/attempts/${auth.user.id}`);
     if (found.error) { results.push({ lessonId: id, status: 'unavailable', reason: found.error, durationMs: Date.now() - started }); continue; }
-    const finalId = found.data?.final_id;
-    const finalAttempt = found.data?.attempts?.find(item => item.id === finalId && item.user_id === auth.user.id && String(item.lesson_id) === id);
-    if (!finalAttempt) { results.push({ lessonId: id, status: 'no_final_submission', durationMs: Date.now() - started }); continue; }
+    if (!Array.isArray(found.data?.attempts) || !Object.hasOwn(found.data, 'final_id')) throw new Error('Invalid attempts response');
+    const finalId = found.data.final_id;
+    if (finalId === null) { results.push({ lessonId: id, status: 'no_final_submission', durationMs: Date.now() - started }); continue; }
+    const finalAttempt = found.data.attempts.find(item => item.id === finalId && item.user_id === auth.user.id && String(item.lesson_id) === id);
+    if (!finalAttempt) throw new Error('Final submission not found for owner');
     const marked = await get(`lessons/${id}/marking_status?attempt=${encodeURIComponent(finalId)}`);
     if (marked.error) { results.push({ lessonId: id, status: 'unavailable', reason: marked.error, durationMs: Date.now() - started }); continue; }
     const body = marked.data;
@@ -38,8 +40,10 @@ for (const id of ids) {
     const validTotals = totals.length && totals.every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0);
     const maximum = validTotals ? totals.reduce((sum, value) => sum + value, 0) : null;
     const score = body.attempt_result.mark;
-    const unmarked = Array.isArray(body.lesson_markable_marking_status) && body.lesson_markable_marking_status.some(item => Array.isArray(item.unmarked_user_ids) && item.unmarked_user_ids.includes(auth.user.id));
-    const graded = !unmarked && typeof score === 'number' && Number.isFinite(score) && maximum !== null && maximum > 0;
+    const markingItems = body.lesson_markable_marking_status;
+    const validMarking = Array.isArray(markingItems) && markingItems.every(item => Array.isArray(item.unmarked_user_ids));
+    const unmarked = validMarking && markingItems.some(item => item.unmarked_user_ids.includes(auth.user.id));
+    const graded = validMarking && !unmarked && typeof score === 'number' && Number.isFinite(score) && maximum !== null && maximum > 0;
     results.push({ lessonId: id, status: graded ? 'graded' : 'not_available', score: graded ? score : null, maxScore: graded ? maximum : null,
       submittedAt: finalAttempt.submitted_at ?? null, durationMs: Date.now() - started });
   } catch { results.push({ lessonId: id, status: 'unavailable', reason: 'Request or response failed', durationMs: Date.now() - started }); }
