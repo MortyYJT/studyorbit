@@ -6,14 +6,11 @@ import { needsYou, weekModel } from './week.js';
 import { NeedsYou, WeekView } from './WeekView.js';
 import { AgentPage } from './Agent.js';
 import type { AgentPreset } from './chat.js';
-import { MemoryPanel } from './MemoryPanel.js';
-import { MetricsPanel } from './MetricsPanel.js';
 import { CoursePage } from './CoursePage.js';
-import { CourseSelect } from './CourseSelect.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning } from './LocalPlanning.js';
 
-type Panel = 'memory' | 'status' | 'audit' | 'settings' | 'metrics';
+type Panel = 'status' | 'settings';
 type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; phase?: string; file?: string }[]; error: string | null };
 type TokenUsage = { input: number | null; output: number | null; cached: number | null; reasoning: number | null };
 type SyncUsage = { at: string; course: string; model: string; status: string; durationMs: number | null; coordinator: TokenUsage | null; subagents: TokenUsage | null };
@@ -40,7 +37,6 @@ export function App({ store }: { store: ShellStore }) {
   const openAgent = (preset?: AgentPreset) => setView({ page: 'agent', preset });
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState<Panel>();
-  const [selecting, setSelecting] = useState(false);
   const [localSyncing, setLocalSyncing] = useState(false);
   const [localSyncError, setLocalSyncError] = useState('');
   const [courseRefresh, setCourseRefresh] = useState(0);
@@ -53,7 +49,6 @@ export function App({ store }: { store: ShellStore }) {
   const syncDialog = useRef<HTMLDialogElement>(null);
   const cancelledDiscovery = useRef(false);
   const cancelDuringStart = useRef(false);
-  const conversationNavigation = useRef(0);
   const resultSignature = useRef('');
   const dialog = useRef<HTMLDialogElement>(null);
   const avatar = useRef<HTMLButtonElement>(null);
@@ -113,7 +108,7 @@ export function App({ store }: { store: ShellStore }) {
       setSyncUsage(data.items);
     } catch { setUsageError(true); }
   }
-  function open(next: Panel) { setMenu(false); setPanel(next); if (next === 'audit') void store.loadAudit(); if (next === 'status') void loadSyncUsage(); }
+  function open(next: Panel) { setMenu(false); setPanel(next); if (next === 'status') void loadSyncUsage(); }
   function close() { dialog.current?.close(); setPanel(undefined); avatar.current?.focus(); }
   async function syncCourses() {
     if (running) return;
@@ -161,7 +156,10 @@ export function App({ store }: { store: ShellStore }) {
     } catch (error) { setCourseRunError(error instanceof Error ? error.message : t.error); setSyncModal(discovery ? 'discovery' : 'syncing'); }
   }
   const syncButton = <button disabled={!!running} onClick={() => void syncCourses()} aria-busy={!!running}>{running ? t.syncing : t.sync}</button>;
-  function date(value?: string) { return value ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short', timeZone: state.planning?.settings?.timeZone }).format(new Date(value)) : t.never; }
+  const seenCourses = new Set<string>();
+  const latestUsage = (syncUsage ?? []).filter(row => { if (!row.course || seenCourses.has(row.course)) return false; seenCourses.add(row.course); return true; });
+  const latestSet = new Set(latestUsage);
+  const olderUsage = syncUsage?.filter(row => !latestSet.has(row)) ?? [];
   return <>
     <header>
       <span className="brand"><span className="brand-dot" />coursework</span>
@@ -172,7 +170,7 @@ export function App({ store }: { store: ShellStore }) {
         <div className="avatar-wrap" ref={menuRoot} onKeyDown={event => { if (event.key === 'Escape') { setMenu(false); avatar.current?.focus(); } }}>
           <button className="avatar" ref={avatar} aria-label={t.menu} aria-expanded={menu} aria-controls="owner-menu" onClick={() => setMenu(!menu)}>{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</button>
           {!!needs.length && <span className="badge" />}
-          {menu && <div id="owner-menu" className="menu">{(['status', 'metrics', 'memory', 'audit', 'settings'] as const).map(item => <button key={item} onClick={() => open(item)}>{item === 'status' ? (language === 'zh' ? '同步数据' : 'Sync data') : t[item]}</button>)}</div>}
+          {menu && <div id="owner-menu" className="menu"><button onClick={() => open('status')}>{language === 'zh' ? '同步数据' : 'Sync data'}</button><button onClick={() => open('settings')}>{t.settings}</button></div>}
         </div>
       </div>
     </header>
@@ -203,7 +201,6 @@ export function App({ store }: { store: ShellStore }) {
       </>}
       {syncModal === 'finished' ? <button onClick={() => setSyncModal(undefined)}>{language === 'zh' ? '关闭' : 'Close'}</button> : <button disabled={syncModal === 'stopping'} onClick={() => void stopSync()}>{language === 'zh' ? '中止同步' : 'Stop sync'}</button>}
     </dialog>
-    {selecting && <CourseSelect store={store} t={t} onClose={() => { setSelecting(false); void week.refresh(); }} />}
     <dialog ref={dialog} onCancel={close} onClose={() => { setPanel(undefined); avatar.current?.focus(); }} aria-labelledby="panel-title">
       <div className="dialog-heading"><h2 id="panel-title">{panel === 'status' ? (language === 'zh' ? '同步数据' : 'Sync data') : panel ? t[panel] : ''}</h2><button onClick={close}>{t.close}</button></div>
       {panel === 'status' && <>
@@ -211,24 +208,8 @@ export function App({ store }: { store: ShellStore }) {
         {usageError && <p role="status">{language === 'zh' ? '无法读取同步记录。' : 'Could not read sync records.'}</p>}
         {!syncUsage && !usageError && <p>{t.loading}</p>}
         {syncUsage?.length === 0 && <p className="muted">{language === 'zh' ? '暂无同步记录。' : 'No sync records yet.'}</p>}
-        {syncUsage?.map((row, index) => <section className="sync-usage" key={`${row.at}-${row.course}-${index}`}>
-          <div className="sync-usage-heading"><strong>{row.course || '—'}</strong><span>{row.at && !Number.isNaN(Date.parse(row.at)) ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(row.at)) : '—'}</span></div>
-          <p>{row.model || '—'} · {row.durationMs === null ? '—' : `${(row.durationMs / 1000).toFixed(1)} ${language === 'zh' ? '秒' : 's'}`}</p>
-          {[{ label: language === 'zh' ? '模型' : 'Model', usage: row.coordinator }, ...(row.subagents ? [{ label: language === 'zh' ? '子任务' : 'Subtasks', usage: row.subagents }] : [])].map(({ label, usage }) => <p key={label}>{label} · {language === 'zh' ? '输入' : 'Input'} {usage?.input?.toLocaleString() ?? '—'} · {language === 'zh' ? '输出' : 'Output'} {usage?.output?.toLocaleString() ?? '—'}{usage?.cached != null ? ` · ${language === 'zh' ? '缓存' : 'Cached'} ${usage.cached.toLocaleString()}` : ''}{usage?.reasoning != null ? ` · ${language === 'zh' ? '推理' : 'Reasoning'} ${usage.reasoning.toLocaleString()}` : ''}</p>)}
-        </section>)}
-      </>}
-      {panel === 'memory' && <MemoryPanel client={store.client} t={t} language={language} courses={state.courses?.items ?? []} timeZone={state.planning?.settings?.timeZone}
-        onConversation={conversationId => { close(); setView({ page: 'agent', conversationId, navigation: ++conversationNavigation.current }); }} />}
-      {panel === 'metrics' && <MetricsPanel client={store.client} t={t} language={language} timeZone={state.planning?.settings?.timeZone} />}
-      {panel === 'audit' && <><button disabled={state.auditLoading} onClick={() => void store.loadAudit()}>{t.refresh}</button>
-        {state.errors.audit && <p role="status">{errorText(state.errors.audit, t)}</p>}
-        {!state.audit && !state.errors.audit && <p>{t.loading}</p>}
-        {state.audit && <>{!state.audit.coverage.complete && <p>{t.incomplete}</p>}{!state.audit.items.length && <p>{t.noAudit}</p>}
-          <div className="audit-list">{state.audit.items.map((row, index) => <article key={`${row.id}-${index}`}><strong>{row.command}</strong><dl>
-            <dt>{t.time}</dt><dd>{date(row.at)}</dd><dt>{t.phase}</dt><dd>{row.phase}</dd><dt>{t.outcome}</dt><dd>{row.code} {row.outcome} {row.reason}</dd>
-            {(row.courseId || row.assessmentId) && <><dt>{t.context}</dt><dd>{row.courseId} {row.assessmentId}</dd></>}
-          </dl></article>)}</div>{state.audit.nextCursor && <button disabled={state.auditLoading} onClick={() => void store.loadAudit(true)}>{t.more}</button>}</>}
-        {state.auditLoading && <p role="status">{t.loading}</p>}
+        {latestUsage.length > 0 && <><p className="sync-usage-caption">{language === 'zh' ? '每门课程最近一次同步' : 'Latest sync for each course'}</p><div className="sync-usage-grid">{latestUsage.map((row, index) => <SyncUsageCard key={`${row.at}-${row.course}-${index}`} row={row} language={language} />)}</div></>}
+        {olderUsage.length > 0 && <details className="sync-usage-history"><summary>{language === 'zh' ? '历史记录' : 'History'}</summary><div className="sync-usage-grid">{olderUsage.map((row, index) => <SyncUsageCard key={`${row.at}-${row.course}-${index}`} row={row} language={language} />)}</div></details>}
       </>}
       {panel === 'settings' && <>
         <div className="avatar-settings"><span className="avatar-preview">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><div><label className="avatar-upload">{language === 'zh' ? '上传头像' : 'Upload photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
@@ -244,4 +225,22 @@ export function App({ store }: { store: ShellStore }) {
       </>}
     </dialog>
   </>;
+}
+
+function SyncUsageCard({ row, language }: { row: SyncUsage; language: Language }) {
+  const zh = language === 'zh';
+  const count = (field: 'input' | 'output') => {
+    const model = row.coordinator?.[field];
+    if (model == null || (row.subagents && row.subagents[field] == null)) return null;
+    return model + (row.subagents?.[field] ?? 0);
+  };
+  const input = count('input'), output = count('output');
+  const total = input === null || output === null ? null : input + output;
+  const when = row.at && !Number.isNaN(Date.parse(row.at)) ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(row.at)) : '—';
+  const state = row.status === 'cancelled' ? (zh ? '已中止' : 'Stopped') : row.status === 'failed' ? (zh ? '未完成' : 'Failed') : '';
+  return <section className="sync-usage-card">
+    <div className="sync-usage-heading"><strong>{row.course || '—'}</strong><span>{state || when}</span></div>
+    <div className="sync-usage-numbers"><div><strong>{row.durationMs === null ? '—' : `${(row.durationMs / 1000).toFixed(1)} ${zh ? '秒' : 's'}`}</strong><small>{zh ? '耗时' : 'Duration'}</small></div><div><strong>{total?.toLocaleString() ?? '—'}</strong><small>Token</small></div></div>
+    <details><summary>{zh ? '查看详情' : 'Details'}</summary><p>{when} · {row.model || '—'}</p><p>{zh ? '输入' : 'Input'} {input?.toLocaleString() ?? '—'} · {zh ? '输出' : 'Output'} {output?.toLocaleString() ?? '—'}</p></details>
+  </section>;
 }
