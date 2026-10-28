@@ -3,6 +3,7 @@ import { en, zh, type Language, type Theme } from './i18n.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning, type SidebarCourse } from './LocalPlanning.js';
 import { palettes, parsePalette, type Palette } from './palette.js';
+import type { LlmProvider, PublicLlmConfig } from '../../scripts/lib/llm-config.mjs';
 
 type Panel = 'status' | 'settings';
 type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; phase?: string; file?: string }[]; error: string | null };
@@ -126,9 +127,15 @@ export function App() {
     cancelDuringStart.current = false; setCourseRunError(''); setSyncModal('starting');
     try {
       const response = await fetch('/api/local/course-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
-      if (!response.ok) throw new Error(response.status === 409
-        ? (language === 'zh' ? '已有课程同步正在进行，选择已保存，但新同步尚未启动。' : 'A course sync is running. Selection saved, but a new sync was not started.')
-        : (language === 'zh' ? '无法启动课程同步，选择已保存。' : 'Could not start course sync. Your selection was saved.'));
+      if (!response.ok) {
+        const failure: unknown = await response.json().catch(() => undefined);
+        const code = failure && typeof failure === 'object' && 'error' in failure && typeof failure.error === 'string' ? failure.error : '';
+        throw new Error(response.status === 409
+          ? (language === 'zh' ? '已有课程同步正在进行，选择已保存，但新同步尚未启动。' : 'A course sync is running. Selection saved, but a new sync was not started.')
+          : code === 'ANALYSIS_PROVIDER_INVALID' ? (language === 'zh' ? '环境变量 COURSE_ANALYSIS_PROVIDER 不是可识别的提供方，同步未启动。请在「设置 → 分析模型」里选择提供方并保存。选择已保存。' : 'COURSE_ANALYSIS_PROVIDER is not a known provider, so the sync did not start. Pick a provider in Settings → Analysis model. Your selection was saved.')
+          : code.startsWith('ANALYSIS_') ? (language === 'zh' ? '分析模型还没配置好（缺少密钥或接口地址），请在「设置 → 分析模型」里检查。选择已保存。' : 'The analysis model is not configured (missing key or endpoint). Check Settings → Analysis model. Your selection was saved.')
+          : (language === 'zh' ? '无法启动课程同步，选择已保存。' : 'Could not start course sync. Your selection was saved.'));
+      }
       const run = await response.json() as CourseRun; setCourseRun(run);
       if (cancelDuringStart.current) { const stopped = await fetch('/api/local/course-sync', { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }); if (!stopped.ok) throw new Error(language === 'zh' ? '无法中止同步，请重试。' : 'Could not stop sync.'); setCourseRun(await stopped.json() as CourseRun); setSyncModal('stopping'); }
       else setSyncModal('syncing');
@@ -221,6 +228,7 @@ export function App() {
       {panel === 'settings' && <>
         <section className="settings-row"><div><h3>{isZh ? '课程' : 'Courses'}</h3><p className="muted">{sidebarCourses.length ? (isZh ? `已选 ${sidebarCourses.length} 门：${sidebarCourses.map(course => course.code).join('、')}` : `${sidebarCourses.length} selected: ${sidebarCourses.map(course => course.code).join(', ')}`) : (isZh ? '还没有选课。' : 'No courses selected.')}</p></div>
           <button disabled={courseRun?.running} onClick={() => { close(); setCoursePanelOpen(true); }}>{isZh ? '修改选课' : 'Edit courses'}</button></section>
+        <AnalysisModelSettings language={language} />
         <div className="avatar-settings"><span className="avatar-preview">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><div><label className="avatar-upload">{language === 'zh' ? '上传头像' : 'Upload photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
           const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!file) return;
           if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) { setAvatarError(language === 'zh' ? '请选择不超过 2 MB 的 JPG、PNG 或 WebP 图片。' : 'Choose a JPG, PNG or WebP image up to 2 MB.'); return; }
@@ -311,9 +319,10 @@ function SyncLatest({ batch, language, onRefresh }: { batch: SyncBatch; language
   const zh = language === 'zh';
   const { tokenTotal } = batchSummary(batch);
   const result = batchResult(batch, zh);
+  const models = [...new Set(batch.courses.map(row => row.model).filter(Boolean))];
   return <section className="sync-latest" aria-label={zh ? '最近一次同步' : 'Latest sync'}>
     <div className="row-heading"><span className="muted">{zh ? '最近一次同步' : 'Latest sync'}</span><button className="small ghost" onClick={onRefresh}>{zh ? '刷新' : 'Refresh'}</button></div>
-    <p className="sync-latest-when">{batchWhen(batch, language)} · {batchCourses(batch, zh)}</p>
+    <p className="sync-latest-when">{batchWhen(batch, language)} · {batchCourses(batch, zh)}{models.length > 0 && ` · ${models.join('、')}`}</p>
     <dl className="sync-latest-facts">
       <div><dt>{zh ? '结果' : 'Result'}</dt><dd>{result.problem && <i className="signal" aria-hidden="true" />}{result.text}</dd></div>
       <div><dt>{zh ? '用时' : 'Time'}</dt><dd>{duration(batch.durationMs, zh, batch.recovered)}</dd></div>
@@ -348,5 +357,97 @@ function SyncHistory({ batches, language }: { batches: SyncBatch[]; language: La
     </div>
     {batches.length > 8 && <button className="small ghost sync-more" onClick={() => setAll(!all)}>{all ? (zh ? '收起' : 'Show fewer') : (zh ? `显示全部 ${batches.length} 条` : `Show all ${batches.length}`)}</button>}
     <p className="sync-note">{zh ? '用时从保存选课后开始算；带「约」的是从本机采集目录还原的记录。' : 'Time starts after courses are saved; "~" marks runs recovered from local folders.'}</p>
+  </section>;
+}
+
+const providerNames: Record<LlmProvider, [string, string]> = {
+  deepseek: ['DeepSeek', 'DeepSeek'], 'openai-compatible': ['OpenAI 兼容接口', 'OpenAI-compatible API'],
+  anthropic: ['Anthropic Claude', 'Anthropic Claude'], codex: ['Codex CLI', 'Codex CLI'],
+};
+const fieldErrorText: Record<string, [string, string]> = {
+  required: ['必填。', 'Required.'], invalid_url: ['地址无效。', 'Not a valid URL.'],
+  insecure_url: ['只能使用 HTTPS 或本机（localhost / 127.0.0.1）地址。', 'Use HTTPS or a localhost / 127.0.0.1 address.'],
+  too_long: ['太长了。', 'Too long.'], whitespace: ['不能包含空格。', 'Must not contain spaces.'],
+  invalid_provider: ['未知的提供方。', 'Unknown provider.'], unknown_field: ['请求包含未知字段。', 'Unknown field in request.'], invalid_json: ['请求格式错误。', 'Malformed request.'],
+};
+type ModelForm = { provider: LlmProvider; model: string; baseUrl: string; apiKey: string; clearKey: boolean };
+function formFrom(config: PublicLlmConfig): ModelForm { return { provider: config.provider, model: config.model, baseUrl: config.baseUrl, apiKey: '', clearKey: false }; }
+
+/** Analysis model settings (decision #229): one form, one Save. The key is write-only and never read back. */
+function AnalysisModelSettings({ language }: { language: Language }) {
+  const zh = language === 'zh';
+  const pick = (pair: [string, string]) => pair[zh ? 0 : 1];
+  const [config, setConfig] = useState<PublicLlmConfig>();
+  const [form, setForm] = useState<ModelForm>();
+  const [loadError, setLoadError] = useState(false);
+  const [busy, setBusy] = useState<'save' | 'test'>();
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [status, setStatus] = useState<{ problem: boolean; text: string }>();
+  useEffect(() => {
+    let live = true;
+    fetch('/api/local/llm-config').then(async response => { if (!response.ok) throw new Error(); return await response.json() as PublicLlmConfig; })
+      .then(data => { if (live) { setConfig(data); setForm(formFrom(data)); } }).catch(() => { if (live) setLoadError(true); });
+    return () => { live = false; };
+  }, []);
+  if (loadError) return <section className="settings-row model-settings"><div><h3>{zh ? '分析模型' : 'Analysis model'}</h3><p className="muted">{zh ? '无法读取模型设置（仅在本地开发服务器中可用）。' : 'Could not read model settings (local dev server only).'}</p></div></section>;
+  if (!config || !form) return <section className="settings-row model-settings"><div><h3>{zh ? '分析模型' : 'Analysis model'}</h3><p className="muted">{zh ? '加载中…' : 'Loading…'}</p></div></section>;
+  const sameProvider = form.provider === config.provider;
+  const dirty = Boolean(config.providerInvalid) || !sameProvider || form.model !== config.model || form.baseUrl !== config.baseUrl || form.apiKey !== '' || form.clearKey;
+  const placeholder = (sameProvider && !config.model ? config.effectiveModel : config.defaultModels[form.provider]) ?? (zh ? '必填，例如 gpt-5.5' : 'Required, e.g. gpt-5.5');
+  const update = (patch: Partial<ModelForm>) => { setForm({ ...form, ...patch }); setStatus(undefined); setFieldErrors({}); };
+  const changeProvider = (provider: LlmProvider) => update(provider === config.provider ? { ...formFrom(config), apiKey: form.apiKey } : { provider, model: '', baseUrl: '', clearKey: false });
+  const errorFor = (field: string) => fieldErrors[field] && <small className="model-error" role="alert">{pick(fieldErrorText[fieldErrors[field]!] ?? [fieldErrors[field]!, fieldErrors[field]!])}</small>;
+  async function save() {
+    if (!form) return;
+    setBusy('save'); setStatus(undefined); setFieldErrors({});
+    try {
+      const response = await fetch('/api/local/llm-config', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: form.provider, model: form.model, ...(form.provider === 'openai-compatible' ? { baseUrl: form.baseUrl } : {}), ...(form.apiKey ? { apiKey: form.apiKey } : {}), ...(form.clearKey ? { clearKey: true } : {}) }) });
+      const data: unknown = await response.json().catch(() => undefined);
+      if (response.status === 400 && data && typeof data === 'object' && 'fieldErrors' in data) { setFieldErrors(data.fieldErrors as Record<string, string>); setStatus({ problem: true, text: zh ? '没有保存：请修正标出的字段。' : 'Not saved: fix the marked fields.' }); return; }
+      if (!response.ok) throw new Error();
+      const next = data as PublicLlmConfig;
+      setConfig(next); setForm(formFrom(next));
+      setStatus({ problem: next.keyRequired && !next.hasKey, text: next.keyRequired && !next.hasKey ? (zh ? '已保存，但还没有 API 密钥，同步会失败。' : 'Saved, but there is no API key yet; syncs will fail.') : (zh ? '已保存。下次同步开始时生效。' : 'Saved. Applies from the next sync.') });
+    } catch { setStatus({ problem: true, text: zh ? '保存失败，请重试。' : 'Could not save. Please retry.' }); }
+    finally { setBusy(undefined); }
+  }
+  async function test() {
+    setBusy('test'); setStatus(undefined);
+    try {
+      const response = await fetch('/api/local/llm-config/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (!response.ok) throw new Error(response.status === 409 ? (zh ? '已有一个测试在进行。' : 'A test is already running.') : '');
+      const data = await response.json() as { ok: boolean; latencyMs: number; model: string | null; error?: string };
+      const where = `${data.model ?? '—'} · ${data.latencyMs.toLocaleString()} ms`;
+      setStatus(data.ok ? { problem: false, text: `${zh ? '连接成功' : 'Connected'} · ${where}` } : { problem: true, text: `${zh ? '连接失败' : 'Connection failed'} · ${where}${data.error ? ` · ${data.error}` : ''}` });
+    } catch (error) { setStatus({ problem: true, text: error instanceof Error && error.message ? error.message : (zh ? '无法测试连接。' : 'Could not test the connection.') }); }
+    finally { setBusy(undefined); }
+  }
+  const keyNote = sameProvider && config.hasKey && !form.clearKey
+    ? (config.keySource === 'settings' ? (zh ? '已保存（来自设置）' : 'Saved (from settings)') : (zh ? '已保存（来自环境变量）' : 'Saved (from environment)'))
+    : form.clearKey ? (zh ? '保存后清除' : 'Cleared on save') : '';
+  return <section className="model-settings" aria-labelledby="model-settings-title">
+    <h3 id="model-settings-title">{zh ? '分析模型' : 'Analysis model'}</h3>
+    {config.providerInvalid && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{zh ? '环境变量 COURSE_ANALYSIS_PROVIDER 不可识别，同步不会启动。请在下面选择提供方并保存。' : 'COURSE_ANALYSIS_PROVIDER is not recognised; syncs will not start. Choose a provider below and save.'}</p>}
+    <p className="muted model-note">{zh ? '同步时用来整理课程数据的模型。课程和成绩会发送给所选服务，可能产生费用。' : 'The model that organises course data during a sync. Course data and grades are sent to the chosen service and may cost money.'}</p>
+    <label className="model-row"><span className="k">{zh ? '提供方' : 'Provider'}</span>
+      <select value={form.provider} onChange={event => changeProvider(event.target.value as LlmProvider)}>{(Object.keys(providerNames) as LlmProvider[]).map(value => <option key={value} value={value}>{pick(providerNames[value])}</option>)}</select>{errorFor('provider')}</label>
+    <label className="model-row"><span className="k">{zh ? '模型' : 'Model'}</span>
+      <input value={form.model} placeholder={placeholder} spellCheck={false} autoComplete="off" onChange={event => update({ model: event.target.value })} />{errorFor('model')}</label>
+    {form.provider === 'openai-compatible' && <label className="model-row"><span className="k">{zh ? '接口地址' : 'Endpoint'}</span>
+      <input value={form.baseUrl} placeholder="https://…/v1/chat/completions" spellCheck={false} autoComplete="off" inputMode="url" onChange={event => update({ baseUrl: event.target.value })} />{errorFor('baseUrl')}</label>}
+    {form.provider !== 'codex' ? <div className="model-row"><label className="k" htmlFor="model-key">API key</label>
+      <div className="model-key"><input id="model-key" type="password" value={form.apiKey} autoComplete="new-password" spellCheck={false} placeholder={keyNote || (zh ? '粘贴密钥（只写入，不会显示）' : 'Paste key (write-only, never shown)')} onChange={event => update({ apiKey: event.target.value, clearKey: false })} />
+        {sameProvider && config.keySource === 'settings' && !form.apiKey && <button type="button" className="small ghost" onClick={() => update({ clearKey: !form.clearKey })}>{form.clearKey ? (zh ? '撤销' : 'Undo') : (zh ? '清除' : 'Clear')}</button>}</div>
+      {errorFor('apiKey')}
+      {!sameProvider && config.keySource === 'settings' && <small className="muted">{zh ? '换了提供方，已保存的密钥不会沿用。' : 'The saved key is not carried over to another provider.'}</small>}</div>
+      : <p className="muted model-note">{zh ? 'Codex CLI 用本机已登录的 Codex，不需要密钥。' : 'Codex CLI uses your signed-in local Codex; no key needed.'}</p>}
+    <div className="model-actions">
+      <button className="primary small" disabled={!dirty || busy !== undefined} onClick={() => void save()}>{busy === 'save' ? (zh ? '保存中…' : 'Saving…') : (zh ? '保存' : 'Save')}</button>
+      <button className="small" disabled={dirty || busy !== undefined} title={dirty ? (zh ? '先保存再测试' : 'Save before testing') : undefined} onClick={() => void test()}>{busy === 'test' ? (zh ? '测试中…' : 'Testing…') : (zh ? '测试连接' : 'Test connection')}</button>
+      {status ? <span className={`model-status${status.problem ? ' problem' : ''}`} role="status">{status.problem && <i className="signal" aria-hidden="true" />}{status.text}</span>
+        : dirty ? <span className="model-status muted">{zh ? '有未保存的更改。' : 'Unsaved changes.'}</span>
+        : <span className="model-status muted">{zh ? `当前：${pick(providerNames[config.provider])} · ${config.effectiveModel ?? '—'}${config.source === 'env' ? '（来自环境变量）' : config.source === 'default' ? '（默认）' : ''}` : `Current: ${pick(providerNames[config.provider])} · ${config.effectiveModel ?? '—'}${config.source === 'env' ? ' (from environment)' : config.source === 'default' ? ' (default)' : ''}`}</span>}
+    </div>
   </section>;
 }

@@ -15,7 +15,7 @@ npm run dev
 
 1. 在 **macOS Microsoft Edge** 中登录墨大 Canvas，并保留一个浏览器窗口；Canvas 和 Handbook 采集依赖 Edge 的 Apple Events JavaScript 和系统自动化权限。
 2. 安装并登录澳区 `edstem` CLI；Ed 使用其独立认证，**不是**自动复用 Edge 登录。当前本机曾使用 0.8.2；未确认其他版本。
-3. 在启动开发服务器的进程环境配置 `DEEPSEEK_API_KEY`（或 `COURSE_ANALYSIS_API_KEY`）。不要把密钥写进仓库或截图。默认使用 DeepSeek Responses API 与 `deepseek-flash`；课程和成绩数据会发送给配置的模型服务，模型调用可能产生费用。
+3. 在页面「设置 → 分析模型」选择 DeepSeek、OpenAI 兼容接口、Anthropic Claude 或 Codex CLI 并填写密钥；设置保存在被忽略的 `.local/config/llm.json`（权限 600），密钥只写不回显。也可以沿用环境变量（`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`，或 `COURSE_ANALYSIS_PROVIDER` / `_MODEL` / `_URL` / `_API_KEY`），优先级为：设置 > 环境变量 > 默认（DeepSeek `deepseek-flash`）。不要把密钥写进仓库或截图；课程和成绩数据会发送给所选模型服务，模型调用可能产生费用。
 
 配置完成后，从页面点击“立即同步”，选择课程并保存。只采集课程列表也可执行 `npm run sync:courses`；它使用相同的 Edge 后台采集器。
 

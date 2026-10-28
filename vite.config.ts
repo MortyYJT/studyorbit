@@ -7,6 +7,8 @@ import { execFile, spawn, type ChildProcess, type ExecFileOptionsWithStringEncod
 import { fileURLToPath } from 'node:url';
 import { filterSubjects } from './scripts/lib/course-list.mjs';
 import { createCourseSyncRunner } from './scripts/course-sync-runner.mjs';
+import { LlmConfigValidationError, publicLlmConfig, readLlmConfig, resolveAnalysisConfig, saveLlmConfig } from './scripts/lib/llm-config.mjs';
+import { testConnection } from './scripts/lib/llm-providers.mjs';
 import { CourseDocumentSchema } from './shared/course-data.js';
 
 const courseFile = fileURLToPath(new URL('./.local/lms/courses.json', import.meta.url));
@@ -77,6 +79,41 @@ export default defineConfig({
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') res.end(JSON.stringify({ items: [] }));
           else res.writeHead(500).end(JSON.stringify({ error: 'USAGE_UNAVAILABLE' }));
+        }
+      });
+      // Analysis model settings (decision #229). The key is write-only: responses never include it.
+      let llmTestRunning = false;
+      server.middlewares.use('/api/local/llm-config', async (req, res) => {
+        const remote = req.socket.remoteAddress;
+        if (!remote || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)) { res.writeHead(403).end(); return; }
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        const path = (req.url ?? '/').split('?')[0];
+        if (path === '/' && req.method === 'GET') { res.end(JSON.stringify(publicLlmConfig(await readLlmConfig(projectDir), process.env))); return; }
+        const isSave = path === '/' && req.method === 'PUT', isTest = path === '/test' && req.method === 'POST';
+        if (!isSave && !isTest) { res.writeHead(path === '/' || path === '/test' ? 405 : 404).end(); return; }
+        if (!req.headers.origin || req.headers.origin !== `http://${req.headers.host}`
+          || req.headers['content-type']?.split(';')[0] !== 'application/json') { res.writeHead(403).end(); return; }
+        try {
+          let body = '';
+          for await (const chunk of req) {
+            body += chunk.toString();
+            if (body.length > 10000) { res.writeHead(413).end(JSON.stringify({ error: 'TOO_LARGE' })); return; }
+          }
+          if (isTest) {
+            if (llmTestRunning) { res.writeHead(409).end(JSON.stringify({ error: 'TEST_RUNNING' })); return; }
+            llmTestRunning = true;
+            try { res.end(JSON.stringify(await testConnection(await resolveAnalysisConfig(projectDir, process.env)))); }
+            finally { llmTestRunning = false; }
+            return;
+          }
+          let input: unknown;
+          try { input = JSON.parse(body); } catch { res.writeHead(400).end(JSON.stringify({ error: 'INVALID_LLM_CONFIG', fieldErrors: { form: 'invalid_json' } })); return; }
+          const saved = await saveLlmConfig(projectDir, input);
+          res.end(JSON.stringify(publicLlmConfig(saved, process.env)));
+        } catch (error) {
+          if (error instanceof LlmConfigValidationError) res.writeHead(400).end(JSON.stringify({ error: 'INVALID_LLM_CONFIG', fieldErrors: error.fieldErrors }));
+          else res.writeHead(500).end(JSON.stringify({ error: 'LLM_CONFIG_UNAVAILABLE' }));
         }
       });
       server.middlewares.use('/api/local/course-reports', async (req, res) => {
