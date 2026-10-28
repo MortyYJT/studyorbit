@@ -98,3 +98,5 @@ npm run dev
 2026-10-28 用户决定采用 agent 直接输出 JSON、代码确定性处理、用户修正的精简方案。新的契约在 `docs/course-json.md` 与 `shared/course-data.ts`，提示词 `docs/course-sync-prompt.md`，分数计算 `shared/course-calculations.ts`；runner 和页面只接受契约 v1，旧标题/课程特例解析已从主流程移除。用户修改、新增、排序、隐藏存在浏览器覆盖层；稳定 ID 是跨同步保留编辑的前提。旧课程及桌面项目生成的成绩 JSON 已移至忽略的 `.local-backups/20261028-160949/`；浏览器数据在首次刷新时先备份再重置，详见 `docs/migration.md`。这次未自行测试，需用户重启 Vite、重新同步并审核；不可声称端到端已验证。
 
 2026-10-28：Codex 的最终回复使用从 `CourseDocumentSchema` 生成的 JSON Schema 返回状态和课程数据；课程 subagent 返回结果给调度员，程序再做关系和数值校验并保存 JSON。模型侧 schema 不代替本地业务校验。尚未由用户进行端到端测试。
+
+2026-10-28：同步弹窗显示课程数量及各阶段，支持中止；课程数据校验失败时将原始输出与字段错误保存在 `.local/lms/sync-errors/`。COMP20003 从本次 Codex 记录恢复，移除了三个造成三级嵌套的非评分 Token 项，来源记录仍保留在 Codex 会话。COMP20008 当前结果没有期末考试；新版提示词会检查考核概览和考试信息，尚需重新同步确认。分数占比条只累计顶层有效权重。用户负责端到端测试。

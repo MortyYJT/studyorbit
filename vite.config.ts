@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { filterSubjects } from './scripts/lib/course-list.mjs';
 import { createCourseSyncRunner } from './scripts/course-sync-runner.mjs';
@@ -19,6 +19,8 @@ export default defineConfig({
     name: 'local-course-candidates',
     configureServer(server) {
       let syncRunning = false;
+      let discoveryProcess: ChildProcess | undefined;
+      let discoveryCancelled = false;
       const courseRunner = createCourseSyncRunner(projectDir);
       server.middlewares.use('/api/local/course-reports', async (req, res) => {
         const remote = req.socket.remoteAddress;
@@ -62,9 +64,10 @@ export default defineConfig({
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.setHeader('Cache-Control', 'no-store');
         if (req.method === 'GET') { res.end(JSON.stringify(courseRunner.status())); return; }
-        if (req.method !== 'POST') { res.writeHead(405).end(); return; }
+        if (req.method !== 'POST' && req.method !== 'DELETE') { res.writeHead(405).end(); return; }
         if (!req.headers.origin || req.headers.origin !== `http://${req.headers.host}`
           || req.headers['content-type']?.split(';')[0] !== 'application/json') { res.writeHead(403).end(); return; }
+        if (req.method === 'DELETE') { res.end(JSON.stringify(courseRunner.cancel())); return; }
         try {
           let body = '';
           for await (const chunk of req) {
@@ -87,13 +90,21 @@ export default defineConfig({
           || !origin || origin !== `http://${req.headers.host}`) {
           res.writeHead(403).end(); return;
         }
+        if (req.method === 'DELETE') {
+          discoveryCancelled = true;
+          if (discoveryProcess?.pid) { try { if (process.platform === 'win32') spawn('taskkill', ['/pid', String(discoveryProcess.pid), '/t', '/f']); else process.kill(-discoveryProcess.pid, 'SIGTERM'); } catch { /* already exited */ } }
+          res.writeHead(200).end(JSON.stringify({ ok: true })); return;
+        }
         if (req.method !== 'POST') { res.writeHead(405).end(); return; }
         if (syncRunning) { res.writeHead(409).end(); return; }
         syncRunning = true;
-        execFile(process.execPath, [courseScript], { cwd: projectDir, timeout: 45000, maxBuffer: 1024 * 1024 }, (error, _stdout, stderr) => {
+        discoveryCancelled = false;
+        discoveryProcess = execFile(process.execPath, [courseScript], { cwd: projectDir, timeout: 45000, maxBuffer: 1024 * 1024, detached: process.platform !== 'win32' }, (error, _stdout, stderr) => {
           syncRunning = false;
+          discoveryProcess = undefined;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.setHeader('Cache-Control', 'no-store');
+          if (discoveryCancelled) { res.writeHead(409).end(JSON.stringify({ error: 'SYNC_CANCELLED' })); return; }
           if (error) {
             res.writeHead(500);
             res.end(JSON.stringify({ error: stderr.trim().slice(0, 2000) || '获取课程失败。' }));

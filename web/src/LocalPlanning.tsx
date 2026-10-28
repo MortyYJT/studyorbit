@@ -90,8 +90,11 @@ function WeightBreakdown({ assessments, parents, zh }: { assessments: Assessment
     const weight = parent ? parent.weight : item.weightValue;
     return weight !== undefined && weight > 0 ? [{ key: item.key, name: parent?.displayName || item.name, weight }] : [];
   });
-  if (!rows.length) return null;
-  return <section className="weight-breakdown"><h2>{zh ? '分数占比' : 'Assessment weights'}</h2><div className="weight-breakdown-list">{rows.map(item => <div className="weight-breakdown-item" key={item.key}><span>{item.name}</span><strong>{item.weight}%</strong></div>)}</div></section>;
+  const total = rows.reduce((sum, item) => sum + item.weight, 0);
+  let used = 0;
+  return <section className="weight-breakdown"><h2>{zh ? '分数占比' : 'Assessment weights'}</h2><div className="weight-bar-row"><div className="weight-bar" role="img" aria-label={`${zh ? '已识别课程占比' : 'Identified weight'} ${total}/100`}>
+    {rows.map((item, index) => { const width = Math.max(0, Math.min(item.weight, 100 - used)); used += item.weight; return <span key={item.key} className={`weight-segment weight-color-${index % 6}`} style={{ width: `${width}%` }} title={`${item.name}: ${item.weight}%`} />; })}
+    </div><strong>{Number(total.toFixed(2))}/100</strong></div><div className="weight-legend">{rows.map((item, index) => <span key={item.key}><i className={`weight-color-${index % 6}`} />{item.name} {item.weight}%</span>)}</div></section>;
 }
 
 export function LocalPlanning({ language, refreshVersion, courseId, onCourse, onBack, syncIssues }: { language: Language; refreshVersion: number; courseId?: string; onCourse: (id: string) => void; onBack: () => void; syncIssues: { id: string; status: string; reason: string }[] }) {

@@ -14,7 +14,8 @@ import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning } from './LocalPlanning.js';
 
 type Panel = 'memory' | 'status' | 'audit' | 'settings' | 'metrics';
-type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; file?: string }[]; error: string | null };
+type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; phase?: string; file?: string }[]; error: string | null };
+type SyncModal = 'discovery' | 'select' | 'starting' | 'syncing' | 'stopping' | 'finished';
 /** Navigation state; a preset is cleared once its conversation exists, so it is never sent twice. */
 export type View = { page: 'week' } | { page: 'agent'; preset?: AgentPreset; conversationId?: string; navigation?: number } | { page: 'course'; courseId: string };
 function preference(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
@@ -42,6 +43,10 @@ export function App({ store }: { store: ShellStore }) {
   const [localSyncWarning, setLocalSyncWarning] = useState('');
   const [courseRun, setCourseRun] = useState<CourseRun>();
   const [courseRunError, setCourseRunError] = useState('');
+  const [syncModal, setSyncModal] = useState<SyncModal>();
+  const syncDialog = useRef<HTMLDialogElement>(null);
+  const cancelledDiscovery = useRef(false);
+  const cancelDuringStart = useRef(false);
   const conversationNavigation = useRef(0);
   const resultSignature = useRef('');
   const dialog = useRef<HTMLDialogElement>(null);
@@ -61,6 +66,7 @@ export function App({ store }: { store: ShellStore }) {
   useEffect(() => { document.documentElement.dataset.theme = theme; remember('coursework.theme', theme); }, [theme]);
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('coursework.language', language); }, [language]);
   useEffect(() => { if (panel) dialog.current?.showModal(); }, [panel]);
+  useEffect(() => { const element = syncDialog.current; if (!element) return; if (syncModal && !element.open) element.showModal(); else if (!syncModal && element.open) element.close(); }, [syncModal]);
   useEffect(() => {
     if (!savedNotice) return;
     const timer = window.setTimeout(() => setSavedNotice(0), 3000);
@@ -74,7 +80,7 @@ export function App({ store }: { store: ShellStore }) {
         if (!response.ok) return;
         const next: unknown = await response.json();
         if (!stopped && next && typeof next === 'object' && 'running' in next && typeof next.running === 'boolean'
-          && 'courses' in next && Array.isArray(next.courses)) setCourseRun(next as CourseRun);
+          && 'courses' in next && Array.isArray(next.courses)) { const run = next as CourseRun; setCourseRun(run); setSyncModal(current => run.running ? (current === 'stopping' ? current : 'syncing') : current === 'syncing' || current === 'stopping' ? 'finished' : current); }
       } catch { /* A later refresh can recover without hiding previous status. */ }
     }
     void refreshRun();
@@ -95,7 +101,7 @@ export function App({ store }: { store: ShellStore }) {
   function close() { dialog.current?.close(); setPanel(undefined); avatar.current?.focus(); }
   async function syncCourses() {
     if (running) return;
-    setLocalSyncing(true); setLocalSyncError(''); setLocalSyncWarning('');
+    cancelledDiscovery.current = false; setSyncModal('discovery'); setCourseRun(undefined); setLocalSyncing(true); setLocalSyncError(''); setLocalSyncWarning('');
     try {
       const response = await fetch('/api/local/sync-courses', { method: 'POST' });
       if (!response.ok) {
@@ -107,21 +113,36 @@ export function App({ store }: { store: ShellStore }) {
       if (!data || typeof data !== 'object' || !('ok' in data) || data.ok !== true) throw new Error(t.error);
       if ('warning' in data && typeof data.warning === 'string') setLocalSyncWarning(data.warning);
       setCourseRefresh(value => value + 1);
-      setCoursePanelOpen(true);
+      if (!cancelledDiscovery.current) { setSyncModal('select'); setCoursePanelOpen(false); }
       setView({ page: 'week' });
-    } catch (error) { setLocalSyncError(error instanceof Error ? error.message : t.error); }
+    } catch (error) { if (!cancelledDiscovery.current) setLocalSyncError(error instanceof Error ? error.message : t.error); setSyncModal('finished'); }
     finally { setLocalSyncing(false); }
   }
   async function startSelectedCourses(ids: string[]) {
     if (!ids.length) return;
-    setCourseRunError('');
+    cancelDuringStart.current = false; setCourseRunError(''); setSyncModal('starting');
     try {
       const response = await fetch('/api/local/course-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
       if (!response.ok) throw new Error(response.status === 409
         ? (language === 'zh' ? '已有课程同步正在进行，选择已保存，但新同步尚未启动。' : 'A course sync is running. Selection saved, but a new sync was not started.')
         : (language === 'zh' ? '无法启动课程同步，选择已保存。' : 'Could not start course sync. Your selection was saved.'));
-      setCourseRun(await response.json() as CourseRun);
-    } catch (error) { setCourseRunError(error instanceof Error ? error.message : t.error); }
+      const run = await response.json() as CourseRun; setCourseRun(run);
+      if (cancelDuringStart.current) { const stopped = await fetch('/api/local/course-sync', { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }); if (!stopped.ok) throw new Error(language === 'zh' ? '无法中止同步，请重试。' : 'Could not stop sync.'); setCourseRun(await stopped.json() as CourseRun); setSyncModal('stopping'); }
+      else setSyncModal('syncing');
+    } catch (error) { setCourseRunError(error instanceof Error ? error.message : t.error); setSyncModal('finished'); }
+  }
+  async function stopSync() {
+    if (syncModal === 'select') { setSyncModal('finished'); return; }
+    if (syncModal === 'starting') { cancelDuringStart.current = true; setSyncModal('stopping'); return; }
+    const discovery = syncModal === 'discovery';
+    if (discovery) cancelledDiscovery.current = true;
+    setSyncModal('stopping');
+    try {
+      const response = await fetch(discovery ? '/api/local/sync-courses' : '/api/local/course-sync', { method: 'DELETE', headers: discovery ? undefined : { 'Content-Type': 'application/json' } });
+      if (!response.ok) throw new Error(language === 'zh' ? '无法中止同步，请重试。' : 'Could not stop sync. Please retry.');
+      if (discovery) setSyncModal('finished');
+      else { const run = await response.json() as CourseRun; setCourseRun(run); if (!run.running) setSyncModal('finished'); }
+    } catch (error) { setCourseRunError(error instanceof Error ? error.message : t.error); setSyncModal(discovery ? 'discovery' : 'syncing'); }
   }
   const syncButton = <button disabled={!!running} onClick={() => void syncCourses()} aria-busy={!!running}>{running ? t.syncing : t.sync}</button>;
   function date(value?: string) { return value ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short', timeZone: state.planning?.settings?.timeZone }).format(new Date(value)) : t.never; }
@@ -147,15 +168,6 @@ export function App({ store }: { store: ShellStore }) {
         ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setCoursePanelOpen(false); setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); void startSelectedCourses(ids); }} />
         : <button className="edit-courses" disabled={courseRun?.running} onClick={() => setCoursePanelOpen(true)}>{language === 'zh' ? '修改选课' : 'Edit courses'}</button>)}
       {savedNotice > 0 && <div className="save-toast" role="status">{language === 'zh' ? '课程已经保存' : 'Courses saved'}</div>}
-      {view.page === 'week' && courseRun?.running && courseRun.courses.length > 0 && <section className="card course-sync-status" aria-live="polite">
-        <h2>{language === 'zh' ? (courseRun.running ? '正在同步课程' : '课程同步结果') : (courseRun.running ? 'Syncing courses' : 'Course sync results')}</h2>
-        {courseRun.courses.map(course => <div className="attention-row" key={course.id}>
-          <span><b>{course.code}</b> · {({ pending: language === 'zh' ? '等待' : 'Waiting', running: language === 'zh' ? '读取中' : 'Reading',
-            completed: language === 'zh' ? '已完成' : 'Completed', partial: language === 'zh' ? '部分完成' : 'Partial', failed: language === 'zh' ? '未完成' : 'Failed' } as Record<string, string>)[course.status] ?? course.status}
-            </span>
-        </div>)}
-        {courseRun.error && <p role="status">{courseRun.error}</p>}
-      </section>}
       {view.page === 'agent' && !store.client.hasSession() && <p className="needs" role="status">{t.session}</p>}
       {view.page === 'agent' && state.errors.action && <p role="status">{errorText(state.errors.action, t)}</p>}
       {view.page !== 'course' && <div className="page-heading"><h1>{t[view.page]}</h1><button onClick={() => { setCourseRefresh(value => value + 1); void refreshAll(); }}>{t.refresh}</button></div>}
@@ -163,6 +175,18 @@ export function App({ store }: { store: ShellStore }) {
         : <LocalPlanning language={language} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined}
           syncIssues={courseRun?.courses ?? []} onCourse={courseId => setView({ page: 'course', courseId })} onBack={() => setView({ page: 'week' })} />}
     </main>
+    <dialog ref={syncDialog} className="sync-dialog" aria-labelledby="sync-title" onCancel={event => event.preventDefault()}>
+      <h2 id="sync-title">{language === 'zh' ? (syncModal === 'finished' ? '同步结果' : '正在同步课程') : (syncModal === 'finished' ? 'Sync results' : 'Syncing courses')}</h2>
+      {syncModal === 'select' ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); if (ids.length) void startSelectedCourses(ids); else setSyncModal('finished'); }} /> : <>
+        {syncModal !== 'finished' && <><p>{language === 'zh' ? '同步使用你的浏览器，请暂时不要操作浏览器窗口。' : 'Sync uses your browser. Please leave its window untouched.'}</p><div className="sync-indeterminate" role="progressbar" aria-label={language === 'zh' ? '同步进行中' : 'Sync in progress'}><span /></div></>}
+        {syncModal === 'discovery' && <p>{language === 'zh' ? '正在获取课程列表…' : 'Fetching course list…'}</p>}
+        {syncModal === 'starting' && <p>{language === 'zh' ? '正在启动课程同步…' : 'Starting course sync…'}</p>}
+        {syncModal === 'stopping' && <p>{language === 'zh' ? '正在中止，请稍候…' : 'Stopping…'}</p>}
+        {courseRun && courseRun.courses.length > 0 && <><p>{language === 'zh' ? '已处理' : 'Processed'} {courseRun.courses.filter(course => ['completed', 'partial', 'failed'].includes(course.status)).length} / {courseRun.courses.length}</p>{courseRun.courses.map(course => <div className="sync-course" key={course.id}><b>{course.code}</b><span>{({ pending: language === 'zh' ? '等待' : 'Waiting', running: course.phase === 'starting' ? (language === 'zh' ? '启动中' : 'Starting') : course.phase === 'saving' ? (language === 'zh' ? '整理与保存' : 'Saving') : (language === 'zh' ? '读取中' : 'Reading'), completed: language === 'zh' ? '已完成' : 'Completed', partial: language === 'zh' ? '部分完成' : 'Partial', failed: language === 'zh' ? '未完成' : 'Failed', cancelled: language === 'zh' ? '已中止' : 'Stopped' } as Record<string,string>)[course.status] ?? course.status}</span>{course.status === 'failed' && course.reason && <small>{course.reason}</small>}</div>)}</>}
+        {(localSyncError || courseRunError || courseRun?.error) && <p role="alert">{localSyncError || courseRunError || courseRun?.error}</p>}
+      </>}
+      {syncModal === 'finished' ? <button onClick={() => setSyncModal(undefined)}>{language === 'zh' ? '关闭' : 'Close'}</button> : <button disabled={syncModal === 'stopping'} onClick={() => void stopSync()}>{language === 'zh' ? '中止同步' : 'Stop sync'}</button>}
+    </dialog>
     {selecting && <CourseSelect store={store} t={t} onClose={() => { setSelecting(false); void week.refresh(); }} />}
     <dialog ref={dialog} onCancel={close} onClose={() => { setPanel(undefined); avatar.current?.focus(); }} aria-labelledby="panel-title">
       <div className="dialog-heading"><h2 id="panel-title">{panel ? t[panel] : ''}</h2><button onClick={close}>{t.close}</button></div>
