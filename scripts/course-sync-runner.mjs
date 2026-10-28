@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { filterSubjects } from './lib/course-list.mjs';
+import { CourseDocumentSchema } from '../shared/course-data.ts';
 
 const codePattern = /^[A-Z]{4}[1-9]\d{4}$/;
 const counts = usage => usage && Number.isSafeInteger(usage.input_tokens) && Number.isSafeInteger(usage.output_tokens) ? {
@@ -92,7 +93,7 @@ export function createCourseSyncRunner(projectDir) {
         await mkdir(courseDir, { recursive: true });
         let outputPath = join(courseDir, '分数结构.json');
         try { await stat(outputPath); outputPath = join(courseDir, `分数结构-${runId}.json`); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-        const replacements = { '{course_name}': JSON.stringify(course.name), '{course_code}': course.subjectCode, '{term}': JSON.stringify(term),
+        const replacements = { '{course_id}': course.id, '{course_name}': JSON.stringify(course.name), '{course_code}': course.subjectCode, '{term}': JSON.stringify(term),
           '{canvas_url}': `https://canvas.lms.unimelb.edu.au/courses/${course.id}`, '{course_dir}': courseDir };
         let task = template;
         for (const [key, value] of Object.entries(replacements)) task = task.replaceAll(key, value);
@@ -102,7 +103,7 @@ export function createCourseSyncRunner(projectDir) {
         const child = await childUsage(result.threadId, start);
         let report;
         try { report = JSON.parse(result.lastMessage); } catch { report = null; }
-        const fileOk = await readFile(outputPath, 'utf8').then(text => { const v = JSON.parse(text); return !!v && typeof v === 'object' && !Array.isArray(v); }).catch(() => false);
+        const fileOk = await readFile(outputPath, 'utf8').then(text => { const v = CourseDocumentSchema.safeParse(JSON.parse(text)); return v.success && v.data.course.id === course.id; }).catch(() => false);
         const allowed = ['completed', 'partial', 'failed'];
         if (result.exitCode === 0 && report && allowed.includes(report.status) && child && (report.status === 'failed' || fileOk)) {
           row.status = report.status;
@@ -112,7 +113,7 @@ export function createCourseSyncRunner(projectDir) {
           row.status = 'failed';
           row.reason = result.exitCode !== 0 ? 'Codex 任务未正常完成，请检查 Codex 是否安装、已登录及电脑操作权限。'
             : !child ? '没有可核实的课程子任务记录；请检查 Codex 的 subagent 和电脑操作配置。'
-            : '未获得可核实的课程结果文件。';
+            : '课程结果缺失或不符合 JSON 契约；原文件已保留。';
           if (fileOk) row.file = outputPath;
         }
         try {

@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { filterSubjects } from './scripts/lib/course-list.mjs';
 import { createCourseSyncRunner } from './scripts/course-sync-runner.mjs';
+import { CourseDocumentSchema } from './shared/course-data.js';
 
 const courseFile = fileURLToPath(new URL('./.local/lms/courses.json', import.meta.url));
 const projectDir = fileURLToPath(new URL('./', import.meta.url));
@@ -43,16 +44,14 @@ export default defineConfig({
               files.sort((a, b) => b.mtime - a.mtime);
               for (const file of files) {
                 try {
-                  const data: unknown = JSON.parse(await readFile(join(dir, file.name), 'utf8'));
-                  if (data && typeof data === 'object' && !Array.isArray(data)) return { id: course.id, report: data };
+                  const data = CourseDocumentSchema.safeParse(JSON.parse(await readFile(join(dir, file.name), 'utf8')));
+                  if (data.success && data.data.course.id === course.id) return { id: course.id, report: data.data };
                 } catch { /* Older valid reports may still be usable. */ }
               }
             } catch { /* A selected course may not have a report yet. */ }
             return { id: course.id, report: null };
           }));
-          const edScores = await readFile(join(projectDir, '.local', 'lms', 'ed-scores.json'), 'utf8').then(JSON.parse).catch(() => ({}));
-          const observations = await readFile(join(projectDir, '.local', 'lms', 'course-observations.json'), 'utf8').then(JSON.parse).catch(() => ({}));
-          res.end(JSON.stringify({ courses, reports: reports.filter(Boolean), edScores, observations }));
+          res.end(JSON.stringify({ courses, reports: reports.filter(Boolean) }));
         } catch (error) {
           res.writeHead((error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500).end(JSON.stringify({ error: 'COURSES_UNAVAILABLE' }));
         }
