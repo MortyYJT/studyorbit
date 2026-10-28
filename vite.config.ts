@@ -11,7 +11,7 @@ import { CourseDocumentSchema } from './shared/course-data.js';
 
 const courseFile = fileURLToPath(new URL('./.local/lms/courses.json', import.meta.url));
 const projectDir = fileURLToPath(new URL('./', import.meta.url));
-const courseScript = fileURLToPath(new URL('./scripts/get-courses.mjs', import.meta.url));
+const courseScript = fileURLToPath(new URL('./scripts/canvas-background.mjs', import.meta.url));
 
 export default defineConfig({
   root: 'web',
@@ -99,7 +99,7 @@ export default defineConfig({
         if (syncRunning) { res.writeHead(409).end(); return; }
         syncRunning = true;
         discoveryCancelled = false;
-        discoveryProcess = execFile(process.execPath, [courseScript], { cwd: projectDir, timeout: 45000, maxBuffer: 1024 * 1024, detached: process.platform !== 'win32' }, (error, _stdout, stderr) => {
+        discoveryProcess = execFile(process.execPath, [courseScript, 'discover', courseFile], { cwd: projectDir, timeout: 45000, maxBuffer: 1024 * 1024, detached: process.platform !== 'win32' }, (error, _stdout, stderr) => {
           syncRunning = false;
           discoveryProcess = undefined;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
