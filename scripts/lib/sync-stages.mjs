@@ -329,7 +329,7 @@ export async function analyseStage(ctx, course, collected) {
       const started = ctx.now(), startedDate = new Date(ctx.now());
       const budget = { waitedMs: 0 };
       let calls = 0, retried = null;
-      const logical = [];
+      const logical = [], every = [];
       const run = async text => {
         const results = [];
         const outcome = await ctx.limiters.model(ctx.config.provider).run(async () => {
@@ -338,6 +338,7 @@ export async function analyseStage(ctx, course, collected) {
           const result = await ctx.callModel(ctx.config, text, { schema: ctx.schema, schemaPath: ctx.schemaPath, cwd: ctx.projectDir,
             registerStop: ctx.registerStop, onPhase: () => ctx.setCourse(course.id, { phase: 'analysis' }) });
           results.push(result);
+          every.push(result);
           if (result.exitCode === 0) return { ok: true, value: result };
           return { ok: false, retryable: isTemporaryFailure(result) && !ctx.stopStatus(), retryAfterMs: result.retryAfterMs ?? null, error: result.error, value: result };
         }, { signal: ctx.signal, budget });
@@ -349,7 +350,11 @@ export async function analyseStage(ctx, course, collected) {
       let analysis;
       try {
         analysis = await analyseWithRepair({ instructions: prompt, run, validate: raw => validateAnalysis(raw, { course, ...data }), isCancelled: () => Boolean(ctx.stopStatus()) });
-      } catch (error) { throw Object.assign(error, { attempts: calls, usage: retried ? { coordinator: retried, subagents: null } : null }); }
+      } catch (error) {
+        // Stopped while waiting for a slot or a retry: count every call that already returned.
+        const spent = every.reduce((sum, item) => addUsage(sum, item.usage), null);
+        throw Object.assign(error, { attempts: calls, usage: spent ? { coordinator: spent, subagents: null } : null });
+      }
       const { result, attempts } = analysis;
       const coordinator = addUsage(result.usage, retried);
       if (attempts.length > 1) await ctx.writeDiagnostic(`${ctx.jobId}-${course.id}-attempts.json`, attempts);
@@ -413,7 +418,7 @@ export async function mergeStage(ctx, course, validated, previousHash) {
       ctx.setCourse(course.id, { phase: 'saving' });
       const outcome = validated.artifact;
       if (!outcome.document) {
-        return { checkpoint: { plannedPath: null, contentHash: null, validateArtifact: validated.artifactHash, changeLog: false },
+        return { checkpoint: { plannedPath: null, contentHash: null, validateArtifact: validated.artifactHash, changeLog: false, status: outcome.status, reason: outcome.reason },
           result: { status: outcome.status, reason: outcome.reason, file: null } };
       }
       const rows = ctx.store.lineageStages(ctx.jobId, course.id, 'merge').filter(row => row.jobId !== ctx.jobId);
@@ -443,12 +448,19 @@ export async function mergeStage(ctx, course, validated, previousHash) {
         await ctx.hook('afterMergeWrite', course.id);
       }
       ctx.store.putSnapshot({ jobId: ctx.jobId, courseId: course.id, document: final.content, version: final.document.version ?? null, status: final.status, reason: final.reason, file: path });
+      // Change log (decision #355): only with an earlier document, at most once per course per lineage. A log that
+      // cannot be read or written adds 「变更记录写入失败。」 to the reason and never changes the status, as before.
       const holder = { reason: final.reason };
-      if (!(await changeLogHasRun(ctx.projectDir, course.id, ctx.lineageIds))) {
-        await ctx.io.recordCourseChanges({ at: ctx.isoNow(), runId: ctx.jobId, courseId: course.id, previous: capturedDocument(ctx.store, previousHash), current: final.document }, holder);
+      const previous = capturedDocument(ctx.store, previousHash);
+      if (previous) {
+        let logged;
+        try { logged = await changeLogHasRun(ctx.projectDir, course.id, ctx.lineageIds); } catch { logged = null; }
+        if (logged === null) holder.reason = [holder.reason, '变更记录写入失败。'].filter(Boolean).join(' ');
+        else if (!logged) await ctx.io.recordCourseChanges({ at: ctx.isoNow(), runId: ctx.jobId, courseId: course.id, previous, current: final.document }, holder);
       }
-      return { checkpoint: { plannedPath: path, contentHash: final.contentHash, validateArtifact: final.validateArtifact, changeLog: true, ...(plan.kind === 'complete' ? { completedFrom: plan.row.jobId } : {}) },
-        result: { status: final.status, reason: holder.reason, file: path } };
+      return { checkpoint: { plannedPath: path, contentHash: final.contentHash, validateArtifact: final.validateArtifact, changeLog: true,
+        status: final.status, reason: holder.reason, ...(plan.kind === 'complete' ? { completedFrom: plan.row.jobId } : {}) },
+      result: { status: final.status, reason: holder.reason, file: path } };
     },
   });
 }

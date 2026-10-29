@@ -1,12 +1,12 @@
 import { existsSync } from 'node:fs';
-import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { manualClock } from '../scripts/lib/rate-limit.mjs';
-import { RESUME_WINDOW_MS, type SyncPipeline } from '../scripts/lib/sync-pipeline.mjs';
+import { createSyncLimiters, createSyncPipeline, RESUME_WINDOW_MS, type SyncPipeline } from '../scripts/lib/sync-pipeline.mjs';
 import type { SyncStore } from '../scripts/lib/sync-store.mjs';
 import {
-  changeLogLines, courseDir, createProject, desktopFiles, fakeCollectors, fakeModel, openStore, pipelineFor, START,
+  changeLogLines, courseDir, createProject, desktopFiles, fakeCollectors, fakeConfig, fakeModel, openStore, pipelineFor, START,
   syntheticCourse, usageLines, writeCourseList, writeEarlierDocument, type Project, type SyntheticCourse,
 } from './sync-fakes.ts';
 
@@ -36,6 +36,15 @@ async function run(pipeline: SyncPipeline, start: () => Promise<unknown>) {
   await start();
   await pipeline.idle();
   return pipeline.status();
+}
+
+/** A pipeline whose model settings resolve only after `gate`, to act while a start is being prepared. */
+function createPipelineWithGate(db: SyncStore, collectors: ReturnType<typeof fakeCollectors>, courses: SyntheticCourse[], gate: Promise<void>) {
+  const clock = manualClock(START, { instant: true });
+  return createSyncPipeline({
+    store: db, projectDir: project!.projectDir, desktopDir: project!.desktopDir, runCollector: collectors.runCollector, callModel: fakeModel(courses).callModel,
+    resolveModel: async () => { await gate; return fakeConfig; }, childUsage: async () => null, clock, limiters: createSyncLimiters({ clock }), newId: () => 'run-1',
+  });
 }
 
 describe('a sync through the four stages', () => {
@@ -200,6 +209,42 @@ describe('a sync through the four stages', () => {
     await expect(unconfigured.start(['900001'])).rejects.toThrow('ANALYSIS_KEY_MISSING');
     expect(db.listJobs()).toEqual([]);
     expect(pipeline.status()).toEqual({ running: false, courses: [], error: null, jobId: null, resumable: false });
+  });
+
+  it('keeps a course saved when the change log cannot be read, adding 「变更记录写入失败。」 as before', async () => {
+    const courses = await setup(2, { earlier: [2] });
+    await mkdir(join(project!.projectDir, '.local', 'lms', 'changes.jsonl'));
+    const pipeline = pipelineFor(project!, await store(), { runCollector: fakeCollectors(courses).runCollector, callModel: fakeModel(courses).callModel });
+    const status = await run(pipeline, () => pipeline.start(ids(courses)));
+    expect(status.courses.map(course => [course.status, course.reason])).toEqual([['completed', ''], ['completed', '变更记录写入失败。']]);
+    expect(status.courses.every(course => course.file)).toBe(true);
+  });
+
+  it('marks the job and its courses failed when the batch_start line cannot be written', async () => {
+    const courses = await setup(1);
+    await mkdir(join(project!.projectDir, '.local', 'lms', 'course-sync-usage.jsonl'));
+    const db = await store();
+    const pipeline = pipelineFor(project!, db, { runCollector: fakeCollectors(courses).runCollector, callModel: fakeModel(courses).callModel }, { ids: ['run-1'] });
+    await expect(pipeline.start(ids(courses))).rejects.toThrow();
+    expect(db.getJob('run-1')).toMatchObject({ status: 'failed', error: '同步记录保存失败。', courses: [{ status: 'failed', reason: '同步记录保存失败。' }] });
+    expect(pipeline.running()).toBe(false);
+  });
+
+  it('applies a cancel that arrives while the start is being prepared, before any collector runs', async () => {
+    const courses = await setup(1);
+    const collectors = fakeCollectors(courses);
+    const db = await store();
+    const gate = Promise.withResolvers<void>();
+    const pipeline = createPipelineWithGate(db, collectors, courses, gate.promise);
+    const starting = pipeline.start(ids(courses));
+    await new Promise(resolve => setTimeout(resolve, 5));
+    expect(pipeline.running()).toBe(true);
+    pipeline.cancel();
+    gate.resolve();
+    await starting;
+    await pipeline.idle();
+    expect(collectors.calls).toEqual([]);
+    expect(db.getJob('run-1')).toMatchObject({ status: 'cancelled', courses: [{ status: 'cancelled' }] });
   });
 
   it('records the planned path and content hash before writing the course file', async () => {
@@ -385,16 +430,20 @@ describe('cancellation and interruption', () => {
   it('cancels during a backoff wait at once, without another model request', async () => {
     const courses = await setup(1);
     const clock = manualClock(START);
-    const model = fakeModel(courses, { SYNT10001: [{ status: 429, retryAfterMs: 8000 }] });
+    // The first reply is invalid; the repair call is throttled and the cancel lands during its backoff wait.
+    const model = fakeModel(courses, { SYNT10001: [{ invalid: true }, { status: 429, retryAfterMs: 8000 }] });
     const db = await store(() => clock.now());
     const pipeline = pipelineFor(project!, db, { runCollector: fakeCollectors(courses).runCollector, callModel: model.callModel }, { ids: ['run-1'], clock });
     await pipeline.start(ids(courses));
     // Collectors wait 500 ms between starts on this clock; move time until the model's backoff wait is pending.
-    for (let step = 0; step < 50 && model.count() === 0; step++) { clock.advance(500); await new Promise(resolve => setTimeout(resolve, 2)); }
+    for (let step = 0; step < 50 && model.count() < 2; step++) { clock.advance(500); await new Promise(resolve => setTimeout(resolve, 2)); }
     await expect.poll(() => clock.pending(), { interval: 5 }).toBe(1);
     pipeline.cancel();
     await pipeline.idle();
-    expect(model.count()).toBe(1);
+    expect(model.count()).toBe(2);
+    // The first call's usage still counts.
+    expect((await usageLines(project!.projectDir)).find(line => !line.type)).toMatchObject({ status: 'cancelled', coordinator: { input: expect.any(Number) } });
+    expect((await usageLines(project!.projectDir)).find(line => !line.type)!.coordinator.input).toBeGreaterThan(0);
     expect(db.getJob('run-1')!.status).toBe('cancelled');
     expect(db.getStage('run-1', '900001', 'analyse')).toMatchObject({ status: 'cancelled' });
   });

@@ -112,11 +112,13 @@ export function createSyncPipeline(deps) {
     async mkdir(path, options) { assertAlive(); return mkdir(path, options); },
     async writeFile(path, data, options) { assertAlive(); return writeFile(path, data, options); },
     async appendFile(path, data, options) { assertAlive(); return appendFile(path, data, options); },
-    async recordCourseChanges(entry, row) { assertAlive(); return recordCourseChanges(projectDir, entry, row); },
+    async recordCourseChanges(entry, row) { assertAlive(); return recordCourseChanges(projectDir, entry, row, { beforeWrite: assertAlive }); },
   };
 
-  let current = null; // { jobId, controller, stops, stop: null | 'cancelled' | 'interrupted', done }
+  let current = null; // { jobId, controller, stops, stop: null | 'cancelled' | 'interrupted' }
   let reserving = false;
+  // A cancel or shutdown that arrives while a start or resume is being prepared applies to the job it creates.
+  let pendingStop = null;
   let idle = Promise.resolve();
 
   function halt() {
@@ -142,7 +144,9 @@ export function createSyncPipeline(deps) {
   function resumeProblem(job) {
     if (!RESUMABLE.has(job.status)) return 'NOT_RESUMABLE';
     if (rawStore.childOf(job.id)) return 'ALREADY_RESUMED';
-    const root = rawStore.getJob(rawStore.lineage(job.id).at(-1));
+    // The age is the lineage root's: ancestors' collected data can be reused (design §7).
+    let root = job;
+    for (let depth = 0; root?.resumedFrom && depth < 1000; depth++) root = rawStore.getJob(root.resumedFrom);
     if (!root || clock.now() - Date.parse(root.createdAt) >= RESUME_WINDOW_MS) return 'RESUME_EXPIRED';
     if (job.courses.every(course => courseDone(job.id, course.courseId))) return 'NOT_RESUMABLE';
     return null;
@@ -164,13 +168,13 @@ export function createSyncPipeline(deps) {
         ...(course.phase ? { phase: course.phase } : {}), ...(course.file ? { file: course.file } : {}),
         stage: latestStage(job.id, course.courseId), reused: course.reused,
       })),
-      error: job.error, jobId: job.id, resumedFrom: job.resumedFrom, resumable: !running && !current && resumeProblem(job) === null,
+      error: job.error, jobId: job.id, resumedFrom: job.resumedFrom, resumable: !running && !current && !reserving && resumeProblem(job) === null,
     };
   }
   function jobs() {
     return rawStore.listJobs().map(job => ({
       id: job.id, status: job.status, createdAt: job.createdAt, finishedAt: job.finishedAt, resumedFrom: job.resumedFrom,
-      resumable: !isRunning(job.id) && !current && resumeProblem(job) === null,
+      resumable: !isRunning(job.id) && !current && !reserving && resumeProblem(job) === null,
       courses: job.courses.map(course => ({ id: course.courseId, code: course.code ?? '', status: course.status })),
     }));
   }
@@ -191,7 +195,8 @@ export function createSyncPipeline(deps) {
     if (current || reserving) throw codeError('SYNC_RUNNING');
     if (halted) throw codeError('PIPELINE_HALTED');
     reserving = true;
-    try { return await action(); } finally { reserving = false; }
+    pendingStop = null;
+    try { return await action(); } finally { reserving = false; pendingStop = null; }
   }
 
   async function start(ids) {
@@ -236,13 +241,20 @@ export function createSyncPipeline(deps) {
       await appendUsage({ type: 'batch_start', runId: jobId, at: new Date(startedAt).toISOString(), courses: courses.map(course => course.code),
         ...(resumedFrom ? { resumedFrom } : {}) });
     } catch (error) {
-      try { store.updateJob(jobId, { status: 'failed', finishedAt: isoNow(), error: '同步记录保存失败。' }); } catch { /* Reported by the throw. */ }
+      safely(() => {
+        for (const course of courses) store.updateCourse(jobId, course.courseId, { status: 'failed', reason: '同步记录保存失败。' });
+        store.updateJob(jobId, { status: 'failed', finishedAt: isoNow(), error: '同步记录保存失败。' });
+      });
       throw error;
     }
     const controller = new AbortController();
     current = { jobId, controller, stops: new Set(), stop: null };
     const job = current;
-    idle = runJob(job, config, selected, startedAt).finally(() => {
+    if (pendingStop) {
+      if (pendingStop === 'cancelled') cancel(); else stopCurrent(pendingStop);
+    }
+    // runJob reports its own failures through the job row; a rejection here (store closed under it) is not fatal.
+    idle = runJob(job, config, selected, startedAt).catch(() => {}).finally(() => {
       if (halted) { try { rawStore.close(); } catch { /* Already closed. */ } }
       if (current === job) current = null;
     });
@@ -284,7 +296,13 @@ export function createSyncPipeline(deps) {
         const course = selected[index];
         if (job.stop) { safely(() => markStopped(job, row.courseId)); continue; }
         const merged = courseDone(jobId, row.courseId);
-        if (merged) { await copyDone(ctx, row, merged); continue; }
+        if (merged) {
+          try { await copyDone(ctx, row, merged); } catch {
+            if (halted) break;
+            safely(() => store.updateCourse(jobId, row.courseId, { status: 'failed', reason: REASONS.stageUnexpected }));
+          }
+          continue;
+        }
         if (!course) {
           store.updateCourse(jobId, row.courseId, { status: 'failed', reason: REASONS.courseRemoved });
           continue;
@@ -322,8 +340,9 @@ export function createSyncPipeline(deps) {
     let outcome = { status: source?.status, reason: source?.reason ?? '', file: source?.file ?? null };
     if (!['completed', 'partial', 'failed'].includes(outcome.status)) {
       // The server died between the merge commit and the course row update: take the result from the checkpoint.
-      const validated = JSON.parse(rawStore.getArtifact(merged.checkpoint.validateArtifact));
-      outcome = { status: validated.status, reason: validated.reason, file: merged.checkpoint.plannedPath ?? null };
+      const checkpoint = merged.checkpoint;
+      const validated = typeof checkpoint.status === 'string' ? checkpoint : JSON.parse(rawStore.getArtifact(checkpoint.validateArtifact));
+      outcome = { status: validated.status, reason: validated.reason ?? '', file: checkpoint.plannedPath ?? null };
     }
     ctx.store.updateCourse(ctx.jobId, row.courseId, { ...outcome, reused: true, phase: null });
     await writeCourseUsage(ctx, { code: row.code, status: outcome.status, started: clock.now(), phases: {}, coordinator: { ...ZERO_USAGE }, subagents: null, reused: [...STAGES] }, row.courseId);
@@ -332,19 +351,21 @@ export function createSyncPipeline(deps) {
   async function courseTask(ctx, course, row, collected, started) {
     const reused = collected.reused ? ['collect'] : [];
     const phases = { ...collected.phases };
-    let usage = null;
+    let usage = null, stage = 'analyse';
     try {
       const analysed = await analyseStage(ctx, course, collected);
       if (analysed.reused) { reused.push('analyse'); usage = { coordinator: { ...ZERO_USAGE }, subagents: null }; }
       else { usage = analysed.usage; phases.analysisMs = analysed.durationMs; }
+      stage = 'validate';
       const validated = await validateStage(ctx, course, collected, analysed, row.previous);
       if (validated.reused) reused.push('validate');
+      stage = 'merge';
       const merged = await mergeStage(ctx, course, validated, row.previous);
       ctx.store.updateCourse(ctx.jobId, course.id, { status: merged.status, reason: merged.reason, file: merged.file, stoppedStage: null });
       await writeCourseUsage(ctx, { code: course.subjectCode, status: merged.status, started, phases, coordinator: usage?.coordinator ?? null, subagents: usage?.subagents ?? null, reused }, course.id);
     } catch (error) {
       if (halted) return;
-      await courseStopped(ctx, course, error, started, { phases, reused, usage: error?.usage ?? usage, stage: 'analyse' });
+      await courseStopped(ctx, course, error, started, { phases, reused, usage: error?.usage ?? usage, stage });
     }
   }
 
@@ -395,7 +416,10 @@ export function createSyncPipeline(deps) {
   // ---- Stopping ---------------------------------------------------------------------------------------------------
   /** DELETE: pending and running courses become `cancelled` at once; every stop is called; waits end immediately. */
   function cancel() {
-    if (!current) return status();
+    if (!current) {
+      if (reserving) pendingStop ??= 'cancelled';
+      return status();
+    }
     const job = current;
     if (!job.stop) {
       job.stop = 'cancelled';
@@ -412,12 +436,14 @@ export function createSyncPipeline(deps) {
   /** Server shutdown: stop as for cancel, but mark the work `interrupted`. Resolves when the job's tasks settled. */
   function shutdown() {
     if (current) stopCurrent('interrupted');
+    else if (reserving) pendingStop = 'interrupted';
     return idle;
   }
 
   return {
     start, resume, cancel, shutdown, status, jobs,
-    running: () => Boolean(current),
+    /** True while a job runs or a start or resume is being prepared. */
+    running: () => Boolean(current) || reserving,
     /** Resolves after the current job and all its tasks have settled. */
     idle: () => idle,
   };

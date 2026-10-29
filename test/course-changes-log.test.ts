@@ -38,6 +38,14 @@ describe('changeLogHasRun', () => {
 });
 
 describe('appendCourseChanges', () => {
+  it('writes nothing when beforeWrite throws', async () => {
+    const previous = v1([item('a1')]);
+    const current = v2([item('a1', { weight: 30 })]);
+    const halted = () => { throw new Error('PIPELINE_HALTED'); };
+    await expect(appendCourseChanges(dir, { at, runId: 'run-1', courseId: '100', previous, current }, { beforeWrite: halted })).rejects.toThrow('PIPELINE_HALTED');
+    await expect(stat(logFile())).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('appends one line per change with the run ID, in an owner-only file and directory', async () => {
     const previous = v1([item('a1'), item('a2')]);
     const current = v2([item('canvas:5551', { due: '2026-11-10T12:59:00Z', score: 9 }), item('a2', { weight: 25, score: 8, status: 'graded' })], { a1: 'canvas:5551' });

@@ -182,7 +182,7 @@ export function App() {
   async function resumeSync() {
     const jobId = courseRun?.jobId;
     if (running || !jobId) return;
-    setCourseRunError(''); setLocalSyncError(''); setSyncModal('starting');
+    cancelDuringStart.current = false; setCourseRunError(''); setLocalSyncError(''); setSyncModal('starting');
     try {
       const response = await fetch(`/api/local/sync-jobs/${encodeURIComponent(jobId)}/resume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       if (!response.ok) {
@@ -195,7 +195,9 @@ export function App() {
           : (language === 'zh' ? '无法继续上次同步。' : 'Could not resume the last sync.'));
       }
       setCourseRun(await response.json() as CourseRun);
-      setSyncModal('syncing');
+      // Stop pressed while the resume was starting: cancel the job it created, as for a new sync.
+      if (cancelDuringStart.current) { const stopped = await fetch('/api/local/course-sync', { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }); if (!stopped.ok) throw new Error(language === 'zh' ? '无法中止同步，请重试。' : 'Could not stop sync.'); setCourseRun(await stopped.json() as CourseRun); setSyncModal('stopping'); }
+      else setSyncModal('syncing');
     } catch (error) { setCourseRunError(error instanceof Error ? error.message : t.error); setSyncModal('finished'); }
   }
   const go = (next: View) => {

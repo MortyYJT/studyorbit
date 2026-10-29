@@ -17,14 +17,17 @@ const logFile = projectDir => join(logDirectory(projectDir), 'changes.jsonl');
  * `current` and returns the number of lines. Nothing is written when `previous` is null (first sync) or nothing changed.
  * All lines of one call are written in a single append. Throws when the log cannot be written.
  */
-export async function appendCourseChanges(projectDir, { at, runId, courseId, previous, current }) {
+export async function appendCourseChanges(projectDir, { at, runId, courseId, previous, current }, { beforeWrite } = {}) {
   if (!previous) return 0;
   const changes = diffSnapshots(previous, current);
   if (!changes.length) return 0;
   const text = changes.map(change => JSON.stringify({ at, runId, courseId, ...change })).join('\n');
+  // `beforeWrite` may throw to stop the write (the sync pipeline after a simulated crash).
+  beforeWrite?.();
   await mkdir(logDirectory(projectDir), { recursive: true, mode: 0o700 });
   // A line cut short by an earlier failed write would swallow this append's first line; start on a new line.
   const separator = (await endsWithNewline(logFile(projectDir))) ? '' : '\n';
+  beforeWrite?.();
   await appendFile(logFile(projectDir), `${separator}${text}\n`, { mode: 0o600 });
   return changes.length;
 }
@@ -42,8 +45,8 @@ async function endsWithNewline(path) {
 }
 
 /** `appendCourseChanges` for the sync runner: a failure adds 「变更记录写入失败。」 to `row.reason` and never changes its status. */
-export async function recordCourseChanges(projectDir, entry, row) {
-  try { await appendCourseChanges(projectDir, entry); }
+export async function recordCourseChanges(projectDir, entry, row, options) {
+  try { await appendCourseChanges(projectDir, entry, options); }
   catch { row.reason = [row.reason, '变更记录写入失败。'].filter(Boolean).join(' '); }
 }
 
