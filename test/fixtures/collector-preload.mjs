@@ -44,7 +44,7 @@ function answer(file, args) {
       return { stdout: `7:${id}` };
     }
     const url = tabs.get(argv[1]);
-    if (/close t$/m.test(script)) return { stdout: '' };
+    if (/close t$/m.test(script)) return scenario.closeError ? { error: scenario.closeError } : { stdout: '' };
     if (/return "ready"/.test(script)) return { stdout: scenario.state?.[url] ?? 'ready' };
     if (/execute t javascript \(item 4 of argv\)/.test(script)) {
       const page = scenario.pages?.[url];

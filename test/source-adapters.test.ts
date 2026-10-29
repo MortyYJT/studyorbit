@@ -132,6 +132,26 @@ describe('collectors through the new entry points and the configuration', () => 
     expect(configured.stderr).toContain('只能在 macOS 上使用');
   });
 
+  it('keeps the collectors\' handling of a tab that cannot be closed', async () => {
+    const handbookUrl = 'https://handbook.unimelb.edu.au/2026/subjects/synt10001/assessment';
+    // Handbook: the text is kept and written; the close message follows the result.
+    const handbook = await runCollectorScript('scripts/collect-handbook.mjs', ['SYNT10001', '2026', '<out>'], {
+      closeError: 'tab gone', texts: { [handbookUrl]: 'SYNT10001 Assessment' },
+    });
+    expect([handbook.code, handbook.stderr]).toEqual([0, '无法关闭 Handbook 后台标签页，请手动关闭。\n']);
+    expect(JSON.parse(handbook.output!)).toMatchObject({ status: 'available', text: 'SYNT10001 Assessment' });
+    // Canvas: a failed close fails the collector; closing is tried once more; the failure is reported first.
+    const canvas = await runCollectorScript('scripts/canvas-background.mjs', ['discover', '<out>'], { ...discover, closeError: 'tab gone' });
+    expect([canvas.code, canvas.output]).toEqual([1, null]);
+    expect(canvas.stderr).toBe('Canvas 后台采集失败：tab gone。如提示 JavaScript from Apple Events，请在 Edge 开发者菜单允许后重试。\n无法关闭本次后台采集标签页，请手动关闭。\n');
+    expect(canvas.calls.filter(call => /close t$/m.test(String(call.script)))).toHaveLength(2);
+    // A failure with a tab that cannot be closed: the failure first, then the close message.
+    const redirect = await runCollectorScript('scripts/canvas-background.mjs', ['discover', '<out>'], {
+      ...discover, closeError: 'tab gone', state: { [Object.keys(discover.pages)[0]!]: 'redirect' },
+    });
+    expect(redirect.stderr).toBe('Canvas 后台采集失败：Canvas 登录可能已失效或页面跳转。如提示 JavaScript from Apple Events，请在 Edge 开发者菜单允许后重试。\n无法关闭本次后台采集标签页，请手动关闭。\n');
+  });
+
   it('runs Ed off macOS without the configuration (Ed never needs the browser)', async () => {
     const run = await runCollectorScript('scripts/sources/ed/collect.mjs', ['SYNT10001', '2026 Semester 2', '<out>'], {
       platform: 'linux', edstem: { 'units list --json': [] },

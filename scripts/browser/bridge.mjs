@@ -49,16 +49,19 @@ const realSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
  * - `messages`: `{ identity, redirect, timeout }` texts of the collector (as before the move);
  * - `isAborted()`: true once the collector was asked to stop;
  * - `onUnread(tab, error)`: called while the tab is still open when both reads failed (it may throw a better error);
- * - `onCloseError()`: called when closing fails after another error (the other error is kept);
+ * - `onCloseError()`: called when the tab could not be closed (the collector reports it after its own result);
+ * - `closeFailureFails`: after a successful read, a failed close fails the page (closing is tried once more, as the
+ *   Canvas collector did); otherwise it is only reported and the value is returned (as the Handbook collector did);
  * - `sleep`, `now`: test seams.
  */
 export async function withPage(bridge, url, expectedPrefix, kind, options) {
-  const { accept, messages, isAborted = () => false, onUnread, onCloseError, sleep = realSleep, now = Date.now } = options;
+  const { accept, messages, isAborted = () => false, onUnread, onCloseError, closeFailureFails = false, sleep = realSleep, now = Date.now } = options;
   assertReadKind(kind);
   let tab;
   try { tab = await bridge.open(url, expectedPrefix); }
   catch (error) { throw error instanceof TabUnrecognisedError ? new Error(messages.identity) : error; }
-  let failed = true;
+  const closeQuietly = async () => { try { await bridge.close(tab); } catch { onCloseError?.(); } };
+  let value;
   try {
     const until = now() + LOAD_LIMIT_MS;
     let ready = false;
@@ -69,20 +72,29 @@ export async function withPage(bridge, url, expectedPrefix, kind, options) {
       await sleep(POLL_MS);
     }
     if (!ready) throw new Error(isAborted() ? '已中止' : messages.timeout);
-    let error;
+    let error, read = false;
     for (let attempt = 0; attempt < 2 && !isAborted(); attempt++) {
       try {
         if (attempt) await sleep(READ_RETRY_MS);
-        const value = accept(await bridge.read(tab, expectedPrefix, kind));
-        failed = false;
-        return value;
+        value = accept(await bridge.read(tab, expectedPrefix, kind));
+        read = true;
+        break;
       } catch (caught) { error = caught; }
     }
-    if (onUnread) await onUnread(tab, error);
-    throw error ?? new Error('已中止');
-  } finally {
-    if (failed) {
-      try { await bridge.close(tab); } catch { onCloseError?.(); }
-    } else await bridge.close(tab);
+    if (!read) {
+      if (onUnread) await onUnread(tab, error);
+      throw error ?? new Error('已中止');
+    }
+  } catch (failure) {
+    await closeQuietly();
+    throw failure;
   }
+  try {
+    await bridge.close(tab);
+  } catch (closeError) {
+    if (!closeFailureFails) { onCloseError?.(); return value; }
+    await closeQuietly();
+    throw closeError;
+  }
+  return value;
 }

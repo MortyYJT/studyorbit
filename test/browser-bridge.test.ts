@@ -93,8 +93,16 @@ describe('withPage', () => {
     let reported = 0;
     await expect(withPage(closing.bridge, 'u', 'p', 'body-text', { accept, messages, onCloseError: () => { reported++; } })).rejects.toThrow('REDIRECT');
     expect(reported).toBe(1);
-    const closingAfterRead = fakeBridge({ reads: ['good'], close: new Error('gone') });
-    await expect(withPage(closingAfterRead.bridge, 'u', 'p', 'body-text', { accept, messages })).rejects.toThrow('gone');
+  });
+
+  it('after a good read, a failed close is reported and the value kept, or (closeFailureFails) tried again and fatal', async () => {
+    const lenient = fakeBridge({ reads: ['good'], close: new Error('gone') });
+    let reported = 0;
+    await expect(withPage(lenient.bridge, 'u', 'p', 'body-text', { accept, messages, onCloseError: () => { reported++; } })).resolves.toBe('GOOD');
+    expect([lenient.calls.filter(call => call === 'close').length, reported]).toEqual([1, 1]);
+    const strict = fakeBridge({ reads: ['good'], close: new Error('gone') });
+    await expect(withPage(strict.bridge, 'u', 'p', 'body-text', { accept, messages, closeFailureFails: true, onCloseError: () => { reported++; } })).rejects.toThrow('gone');
+    expect([strict.calls.filter(call => call === 'close').length, reported]).toEqual([2, 2]);
   });
 
   it('refuses an unknown read kind before opening anything', async () => {

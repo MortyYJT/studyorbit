@@ -25,6 +25,7 @@ export type PageOptions<T> = {
   isAborted?(): boolean;
   onUnread?(tab: TabHandle, error: unknown): Promise<void> | void;
   onCloseError?(): void;
+  closeFailureFails?: boolean;
   sleep?(ms: number): Promise<void>;
   now?(): number;
 };

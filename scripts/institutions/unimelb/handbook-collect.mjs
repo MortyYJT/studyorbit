@@ -16,6 +16,7 @@ const bridge = bridgeFor(config);
 const isStopped = stopFlag();
 const url = `${HANDBOOK_ORIGIN}/${year}/subjects/${course.toLowerCase()}/assessment`;
 const start = Date.now();
+let closeFailed = false;
 try {
   const content = await withPage(bridge, url, url, 'body-text', {
     messages: { identity: '无法识别 Handbook 标签页', redirect: 'Handbook 页面跳转或不可访问', timeout: 'Handbook 页面加载超时' },
@@ -29,10 +30,14 @@ try {
       const status = Number(await bridge.read(tab, url, 'navigation-status').catch(() => ''));
       if (!isStopped() && isTemporaryStatus(status)) throw httpFailure('Handbook', status);
     },
-    onCloseError: () => console.error('无法关闭 Handbook 后台标签页，请手动关闭。'),
+    onCloseError: () => { closeFailed = true; },
   });
   const result = { status: 'available', course, year, url, text: content.slice(0, 50000), capturedAt: new Date().toISOString(), durationMs: Date.now() - start };
   await writeJsonAtomic(dest, result);
   console.log(JSON.stringify({ status: 'available', durationMs: result.durationMs }));
 } catch (e) { console.error(`Handbook 采集不可用：${String(e.stderr || e.message).trim().slice(0, 400)}`); process.exitCode = collectorExitCode(e); }
-finally { await bridge.dispose(); }
+finally {
+  // Reported after the result or the failure, as before the move; a failed close never loses the page text.
+  if (closeFailed) console.error('无法关闭 Handbook 后台标签页，请手动关闭。');
+  await bridge.dispose();
+}

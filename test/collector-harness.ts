@@ -11,7 +11,7 @@ export const repoDir = join(import.meta.dirname, '..');
 const preload = join(import.meta.dirname, 'fixtures', 'collector-preload.mjs');
 
 export type CollectorScenario = {
-  now?: string; platform?: string; running?: boolean; osascriptError?: string;
+  now?: string; platform?: string; running?: boolean; osascriptError?: string; closeError?: string;
   pages?: Record<string, { status: number; body: string; link: string | null }>;
   texts?: Record<string, string>; state?: Record<string, string>; navigationStatus?: Record<string, number>;
   edstem?: Record<string, unknown>; scores?: unknown; fetch?: Record<string, { status?: number; json?: unknown }>;

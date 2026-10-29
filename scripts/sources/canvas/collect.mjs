@@ -33,6 +33,7 @@ function acceptPage(text) {
 }
 
 const start = Date.now();
+let closeFailed = false;
 try {
   for (const [kind, initialUrl] of requests) {
     const begin = Date.now(), allRows = [], seen = new Set(); let url = initialUrl, pages = 0;
@@ -43,7 +44,7 @@ try {
       seen.add(url);
       const page = await withPage(bridge, url, expectedPath, 'same-origin-json', {
         accept: acceptPage, messages, isAborted: isStopped,
-        onCloseError: () => console.error('无法关闭本次后台采集标签页，请手动关闭。'),
+        onCloseError: () => { closeFailed = true; }, closeFailureFails: true,
       });
       allRows.push(...page.rows); pages++;
       const next = (page.link || '').split(',').map(part => part.trim()).find(part => /;\s*rel="?next"?/i.test(part));
@@ -71,5 +72,7 @@ try {
   console.error(`Canvas 后台采集失败：${message}。如提示 JavaScript from Apple Events，请在 Edge 开发者菜单允许后重试。`);
   process.exitCode = collectorExitCode(error);
 } finally {
+  // Reported after the failure itself, as before the move.
+  if (closeFailed) console.error('无法关闭本次后台采集标签页，请手动关闭。');
   await bridge.dispose();
 }
