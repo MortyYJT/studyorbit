@@ -12,7 +12,7 @@ The system SHALL take subject-code extraction, the course filter, term parsing a
 - **THEN** its file goes to `<Desktop>/StudyOrbit Fall 2026/CS_101/分数结构.json`
 
 ### Requirement: UniMelb plugin reproduces today's behaviour
-The `unimelb` plugin SHALL use the subject-code pattern `[A-Z]{4}[1-9]\d{4}` at the start of `course_code`, "Semester 1/2" term parsing, `<year> S<n>` labels, `Australia/Melbourne`, the current prompt and reason sentences, and the Handbook framework source (collector and parsing moved unchanged). Golden tests recorded before the change from the synthetic course SHALL pass unchanged: the analysis prompt, the repair prompt, both chat system prompts, validation and settle reasons, Desktop paths and the discovery output.
+The `unimelb` plugin SHALL use the subject-code pattern `[A-Z]{4}[1-9]\d{4}` at the start of `course_code`, "Semester 1/2" term parsing, `<year> S<n>` labels, `Australia/Melbourne`, the current prompt and reason sentences, and the Handbook framework source (collector and parsing moved unchanged). Golden tests recorded before the change from the synthetic course SHALL pass unchanged: the analysis prompt, the repair prompt, both chat system prompts, validation and settle reasons, Desktop paths, and `normalizeCourses` and the discovery collector's output for synthetic API pages with an injected clock. The discovery golden SHALL ignore only the fields added later by this change (`canvasOrigin`, `institution`).
 
 #### Scenario: Golden prompt
 - **WHEN** the analysis prompt is built for the synthetic course with the `unimelb` plugin
@@ -30,18 +30,22 @@ The `generic` plugin SHALL accept a course whose trimmed `course_code` matches t
 - **THEN** the folder segment is `_CON`
 
 ### Requirement: Prompts and messages are parameterised
-The analysis prompt SHALL build its source rule from the plugin and its framework-reference and framework-quote clauses from the framework source; without a framework source those clauses and `handbookComponents` SHALL be omitted. Validation and settle reasons SHALL name sources by their labels. The chat system prompts SHALL take the assistant introduction and the time label from the plugin. Every computation of "today" in the server, the MCP server, `shared/` and the page SHALL use the institution's time zone.
+The analysis prompt SHALL build its source rule from the plugin and its framework-reference and framework-quote clauses from the framework source; without a framework source those clauses and `handbookComponents` SHALL be omitted. Validation and settle reasons SHALL name sources by their labels. The chat system prompts SHALL take their English and Chinese assistant introductions and the time label from the plugin. Every computation of "today" and every due-date formatting in the server, the MCP server, the chat context, `shared/` and the page SHALL use the institution's time zone. Chat tool descriptions SHALL name the time zone with the plugin's English time label, so UniMelb descriptions stay unchanged.
 
 #### Scenario: Generic prompt has no Handbook
 - **WHEN** the analysis prompt is built with the `generic` plugin
-- **THEN** it contains neither "Handbook" nor `handbookComponents`, and a `handbook` reference in the reply is a validation issue as a reference to a source that was not collected
+- **THEN** it has no Handbook rule and no `handbookComponents` (the contract's schema descriptions are unchanged), and a `handbook` reference in the reply is a validation issue as a reference to a source that was not collected
+
+#### Scenario: UniMelb tool descriptions unchanged
+- **WHEN** the chat tool registry is built for `unimelb`
+- **THEN** the `list_courses` and `upcoming_deadlines` descriptions equal today's, including "Melbourne"
 
 #### Scenario: Today in another time zone
 - **WHEN** the institution is `generic` with time zone `America/New_York` and the clock is 2026-10-30T02:00Z
 - **THEN** the chat's today is `2026-10-29`
 
 ### Requirement: Generic code contains no UniMelb literals
-A test SHALL fail when any module under `scripts/`, `server/`, `shared/` or `web/src/` outside `scripts/institutions/unimelb/` contains `unimelb`, `UniMelb`, `墨尔本`, `Melbourne`, `Handbook` or `[A-Z]{4}[1-9]`, except entries listed in the test with a reason (the registry id `unimelb`, the grade bands in `shared/course-calculations.ts`).
+A test SHALL fail when any module under `scripts/`, `server/`, `shared/` or `web/src/` outside `scripts/institutions/unimelb/` contains `unimelb`, `UniMelb`, `墨尔本`, `Melbourne`, `Handbook` or `[A-Z]{4}[1-9]`, except entries listed in the test with a reason: the registry id `unimelb`, the grade bands in `shared/course-calculations.ts`, and the `.describe` texts of `shared/course-data.ts`, which are model input through the output schema and describe the kept contract value `handbook`.
 
 #### Scenario: Hard-coded host added
 - **WHEN** a generic module adds the string `canvas.lms.unimelb.edu.au`
