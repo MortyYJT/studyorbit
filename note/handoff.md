@@ -20,7 +20,7 @@
 - **修正与同步三方合并（第 2 部分，待合并）：** `shared/corrections.ts` 的 `mergeCorrections`（只同步改 → 用同步值；只你改 → 保留；改成一样 → 保留并钉住；都改且不同 → 用你的并记冲突；同步删掉的考核 → 修正保留并提孤立冲突）和 `resolveConflict`；`scripts/lib/corrections-store.mjs` 读取时发现课程文件变了就先按 `legacyIds` 改键（钉住和冲突跟着走）再合并、推进基准；保存、导入、处理冲突前都先合并；新接口 `POST /api/local/corrections/<courseId>/conflicts/<conflictId>`；课程页顶部「同步冲突」块、抽屉「冲突」标记、周页「需要你处理」每课一行；同时修了 `legacyIds` 配不上 v1 分组纯数字 ID 的缺口（#385）。无头 Chrome 在临时项目副本（合成课程、临时 HOME）里走了三次重新同步和全部按钮，没碰真实数据。
 - **变更记录和提醒（第 3 部分，待合并）：** `shared/course-changes.ts` 的 `diffSnapshots` 按稳定 ID（旧 ID 经 `legacyIds`）比较上一份和新课程文件，只记截止时间和权重，不记分数、新增和删除；同步脚本保存课程文件后经 `scripts/lib/course-changes-log.mjs` 追加到 `.local/lms/changes.jsonl`（第一次同步不记，写入失败只在原因后加「变更记录写入失败。」）；`GET /api/local/course-changes` 返回最新 200 条；周页「需要你处理」每条一行、标题旁「知道了」，课程页顶部「课程变更」块（只有不会连带隐藏别的课的提醒时才给「知道了」）；已读标记 `coursework.course-changes-seen.v1` 在 localStorage。无头 Chrome 在临时项目副本（两门合成课程、临时 HOME）里验证了显示、两处「知道了」、刷新后不再显示、之后的新变更重新出现、390 px 宽度，没跑真实同步。
 - **v2 评测（PR #268 待审查，分支 `claude/eval-v2`）：** 照基线重跑 4 门课 × 5 次（`deepseek-flash`），基线和 v2 都用最终打分代码 `--rescore` 重新打分，前后对比在 `docs/eval-results.md`「v2 之后」（合计字段准确率 83.9% → 87.0%，只有 COMP20003 变高）；评测脚本新增「无出处」计数（20 次运行全是 0）、`--rescore`，配对补上 Canvas 作业分组（决定 #370–#374）。
-- **同步存储（`local-server-sync-pipeline` 第 2 部分，PR 待审查，分支 `claude/sync-store`）：** `scripts/lib/sync-store.mjs`（`node:sqlite`，`.local/studyorbit.db` 0600、WAL、按 `user_version` 迁移、升级前备份、不可用的文件绝不改写、启动标记中断、按续跑链保留 50 条）和 `scripts/lib/server-lock.mjs`（单实例锁）；`engines.node` ≥ 24.15.0；还没接进服务和同步（等第 1、3 部分），决定 #405–#409。
+- **同步存储（`local-server-sync-pipeline` 第 2 部分，PR #272 已合并）：** `scripts/lib/sync-store.mjs`（`node:sqlite`，`.local/studyorbit.db` 0600、WAL、按 `user_version` 迁移、升级前备份、不可用的文件绝不改写、启动标记中断、按续跑链保留 50 条）和 `scripts/lib/server-lock.mjs`（单实例锁）；`engines.node` ≥ 24.15.0；还没接进服务和同步（等第 1、3 部分），决定 #405–#409。
 - **验证（较早）：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
 
 ## 未验证
@@ -44,7 +44,7 @@
 3. 你：打开 `localhost:5173`，在复习页点一个预设按钮，确认对话正常，把一条回复「存到复习」。
 4. L0/L1/L2（#238 先不做）：以后做时先定方案；Claude 的立场是执行器只在合成演示课程上跑。
 5. 小问题（未排期）：`RichText` 遇到「标题 + 列表」混在一段时列表符号原样显示。
-6. 工具调用对话 + MCP：OpenSpec 变更 `chat-tools-mcp`（决定 #320–#339、#360–#369、#395–#404，待你复核）。第 1、2 个 PR 已合并（#264、#267）；第 3 个 PR #273（问答评测，分支 `claude/chat-qa-eval`）待审查合并：32 道合成题 × 5 次 × 2 种模式，`deepseek-flash` 上下文模式 → 工具模式的准确率见 `docs/eval-results.md`「对话问答：改造前后」，上下文模式的错是缺计划数据或剩余权重口径不同，不是算术错；同一 PR 修了 DeepSeek 并行工具调用的回传顺序（#396，#267 的实测没覆盖到，第二步会 400）。MCP（第 4 个，分支 `claude/mcp-server`，决定 #400–#404）已开 PR 待审查合并：`scripts/mcp-server.mjs` + `scripts/lib/course-mcp.mjs`，SDK 1.32.2，README 有 Claude Code / Claude Desktop 接法；#330 需要你定是否改用 SDK v2。
+6. 工具调用对话 + MCP：OpenSpec 变更 `chat-tools-mcp`（决定 #320–#339、#360–#369、#395–#404，待你复核）。第 1、2 个 PR 已合并（#264、#267）；第 3 个 PR #273（问答评测）已合并：32 道合成题 × 5 次 × 2 种模式，`deepseek-flash` 上下文模式 → 工具模式的准确率见 `docs/eval-results.md`「对话问答：改造前后」，上下文模式的错是缺计划数据或剩余权重口径不同，不是算术错；同一 PR 修了 DeepSeek 并行工具调用的回传顺序（#396，#267 的实测没覆盖到，第二步会 400）。MCP（第 4 个，分支 `claude/mcp-server`，决定 #400–#404）已开 PR 待审查合并：`scripts/mcp-server.mjs` + `scripts/lib/course-mcp.mjs`，SDK 1.32.2，README 有 Claude Code / Claude Desktop 接法；#330 需要你定是否改用 SDK v2。
 
 ## 等用户决定
 
