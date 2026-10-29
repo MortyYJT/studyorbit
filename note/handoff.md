@@ -5,8 +5,8 @@
 - **最后更新：** 2026-10-30，Claude。
 - **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）、#247（全局清理，#239）；规则精简为单一文件 `CLAUDE.md`（#241）。
 - **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，本地 `origin` 已指向新地址），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口在独立的本地服务（`server/`，`127.0.0.1:5190`），Vite（`localhost:5173`）只提供页面并代理 `/api/local`；`npm run dev` 一起启动（`local-server-sync-pipeline` 第 1 部分合并后）。
-- **OpenSpec：** `course-contract-v2` 已全部合并并归档（PR #259、#262、#265、#266）。`local-corrections-merge`（#290–#298）：第 1 部分（`.local/corrections/` 存储、接口、localStorage 一次性迁移，决定 #375–#384）PR #269、第 2 部分（三方合并和冲突，决定 #385–#394）PR #271 已合并；第 3 部分（变更记录和提醒，分支 `claude/change-log`，决定 #410–#414）已开 PR 待审查合并，该 PR 里已把整个变更归档到 `openspec/changes/archive/`，规格并入 `openspec/specs/`（`local-corrections`、`course-change-log`）。`local-server-sync-pipeline`（PR #272、#275、#277、#278、#279）和 `chat-tools-mcp`（PR #264、#267、#273、#270）已在 `local-server-sync-pipeline` 第 4 个 PR 里归档（决定 #435–#437）；还在进行的是 `generic-adapters`。
-- **现行规格：** 在 `openspec/specs/`（`agent-chat`、`chat-qa-eval`、`course-analysis`、`course-change-log`、`course-contract`、`course-mcp-server`、`course-tools`、`grade-target`、`local-api-server`、`local-corrections`、`revision`、`staged-course-sync`、`sync-job-store`、`sync-resume-measurement`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
+- **OpenSpec：** `course-contract-v2` 已全部合并并归档（PR #259、#262、#265、#266）。`local-corrections-merge`（#290–#298）：第 1 部分（`.local/corrections/` 存储、接口、localStorage 一次性迁移，决定 #375–#384）PR #269、第 2 部分（三方合并和冲突，决定 #385–#394）PR #271 已合并；第 3 部分（变更记录和提醒，分支 `claude/change-log`，决定 #410–#414）已开 PR 待审查合并，该 PR 里已把整个变更归档到 `openspec/changes/archive/`，规格并入 `openspec/specs/`（`local-corrections`、`course-change-log`）。`local-server-sync-pipeline`（PR #272、#275、#277、#278、#279）和 `chat-tools-mcp`（PR #264、#267、#273、#270）已在 `local-server-sync-pipeline` 第 4 个 PR 里归档（决定 #435–#437）；`generic-adapters`（PR #280–#283，决定 #440–#479）在第 4 个 PR #283 里归档，规格并入 `openspec/specs/`（`browser-bridge`、`course-source-adapters`、`institution-plugins`、`source-settings`，`course-analysis` 加了一条）。
+- **现行规格：** 在 `openspec/specs/`（`agent-chat`、`browser-bridge`、`chat-qa-eval`、`course-analysis`、`course-change-log`、`course-contract`、`course-mcp-server`、`course-source-adapters`、`course-tools`、`grade-target`、`institution-plugins`、`local-api-server`、`local-corrections`、`revision`、`source-settings`、`staged-course-sync`、`sync-job-store`、`sync-resume-measurement`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
 
 ## 已完成
 
@@ -27,11 +27,13 @@
 - **通用化第 1 部分（`generic-adapters`，分支 `claude/generic-adapters-1`，PR #280 待合并，决定 #450–#456）：** 先录墨大金标准（`test/golden/`，四个采集器用测试预加载模块在子进程里对假响应真跑），再把采集器搬到接口后面：`scripts/sources/`（Canvas、Ed、注册表、`STUDYORBIT_SOURCE_CONFIG`）、`scripts/institutions/unimelb/`（课程代码、学期、文件夹、措辞、Handbook 来源）、`scripts/browser/`（`withPage`、Edge 的 AppleScript 桥，只能开允许的 origin、只有固定读取表达式）；旧脚本路径保留为转发；分阶段同步不再写死三个来源，任务的来源列表存进数据库（第 2 步迁移）。金标准逐字节不变。
 - **通用化第 2 部分（macOS Chrome，分支 `claude/generic-adapters-2`，PR #281 依赖 #280，决定 #457–#459）：** `chrome-applescript` 用和 Edge 相同的脚本；两个桥开标签页前都先查浏览器是否已打开（不替你启动，Edge 也一样，这是有意改动）；临时开关 `STUDYORBIT_BROWSER=chrome-applescript`（第 3 部分加设置后删）；Apple Events 提示按浏览器给；README 写了 Chrome 准备步骤并标「未实测」。
 - **通用化第 3 部分（设置 + 通用学校 + 通用 Canvas，分支 `claude/generic-adapters-3`，PR #282 待审查合并，决定 #460–#469）：** `.local/config/sources.json`（0600）和 `GET`/`PUT /api/local/source-settings`，设置页「数据来源」（学校、Canvas 地址、浏览器、Ed 区域，通用学校另有时区和课程代码正则）；同步或获取课程进行中拒绝保存；`generic` 学校插件（`StudyOrbit <学期>/<代码>` 文件夹、中性措辞、没有框架来源）；Canvas 地址可配，课程列表记下 `canvasOrigin`，地址变了要重新获取课程（`COURSE_LIST_STALE`）；Ed 区域 `auto`/`au`/`us`/`eu`；提示词、原因、对话、工具说明、MCP 和页面的「今天」都按学校取措辞和时区；collect 哈希加入学校、地址、区域和来源（金标准里只有这一个哈希值重录）；`test/no-institution-literals.test.ts` 守住通用代码；第 2 部分的 `STUDYORBIT_BROWSER` 已去掉，改在设置里选 Chrome。墨大提示词、原因、文件夹、采集器调用和对话提示逐字节不变（金标准）。
+- **通用化第 4 部分（Windows/Linux 专用浏览器 CDP，实验性，分支 `claude/generic-adapters-4`，PR #283 待审查合并，决定 #470–#479）：** `scripts/browser/cdp-pipe.mjs`（管道传输 + 方法和参数白名单，写入前拒绝）、`cdp-launch.mjs`（找程序、`--remote-debugging-pipe` + `.local/browser/<桥>` 专用配置目录 700、不开端口、「已在运行」检测、`Browser.close` 后 5 秒强杀）、`cdp-host.mjs`（本地服务持有的长期浏览器，跨采集和任务保持；按采集器的地址白名单代为开、查、读、关标签页）、`cdp.mjs`（采集器经 Node IPC 的桥）；`POST /api/local/browser/open` 和设置页「打开专用浏览器」；专用浏览器里登录失效（跳转或 401）时 Canvas 退出码 77，collect 失败、可续跑并重新采集；Apple 事件路径不变。同一 PR 归档了整个 `generic-adapters`。
 - **验证（较早）：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
 
 ## 未验证
 
-- 通用化第 3 部分：其他学校的 Canvas、Ed `us`/`eu`、macOS Chrome 都只用合成响应测过；`auto` 区域下美区和欧区的 Ed 课程链接会按 `au` 生成（#463）；Windows/Linux 专用浏览器能选但没实现，选了同步会失败（#461）；设置页只在临时项目副本、合成数据、无头 Chrome 里点过（拦截了同步、获取课程和对话的写请求，实际没有发生），没碰真实 `.local/`。升级后第一次「继续上次同步」会重新采集（collect 哈希变了）。
+- 通用化第 4 部分：Windows、Linux 上完全没跑过（找程序、启动、关闭、强杀、IPC）；「已在运行」检测、新标签页地址和 `readyState` 的先后、单点登录会话 cookie 能否在长期浏览器里保持、后台标签页里的同步 XHR 都没验证；本机只用全新临时配置目录、无头 Chrome、`about:blank` 做过一次管道冒烟测试（#479）。
+- 通用化第 3 部分：其他学校的 Canvas、Ed `us`/`eu`、macOS Chrome 都只用合成响应测过；`auto` 区域下美区和欧区的 Ed 课程链接会按 `au` 生成（#463）；Windows/Linux 专用浏览器在第 4 部分实现（实验性，见上）；设置页只在临时项目副本、合成数据、无头 Chrome 里点过（拦截了同步、获取课程和对话的写请求，实际没有发生），没碰真实 `.local/`。升级后第一次「继续上次同步」会重新采集（collect 哈希变了）。
 
 - 通用化第 2 部分：没有用真实 Chrome 跑过（只核对过 `sdef` 和用假 osascript 测脚本）；「是否已打开」检查也没在真实 Edge 上跑过；Chrome 中文菜单名「显示 → 开发者」没在界面上核对。
 - 通用化第 1 部分：没有跑过真实采集器（Edge、Canvas、Ed、Handbook 都没碰），采集器只在假 osascript / 假 edstem / 假 fetch 上跑过；数据库第 2 步迁移只在测试库上跑过，第一次启动服务时会先备份 `.local/studyorbit.db.v1.bak` 再迁移。
@@ -64,7 +66,8 @@
 7. 通用化：OpenSpec 变更 `generic-adapters`（决定 #440–#456，待你复核）。第 1 个 PR #280（接口和搬家）和第 2 个 PR #281（macOS Chrome，基于第 1 个，#280 合并后把 #281 的目标分支改回 `main`）待 CI 通过后依次合并；之后是设置 + 通用学校 + 通用 Canvas、Windows/Linux 的 CDP 桥（实验性）。
    - 你：#280 合并后跑一次「获取课程」，确认 Edge 采集照旧（#281 合并后 Edge 没打开时会直接报「请先打开 Microsoft Edge 并登录」）。
    - 你：在 Chrome 里打开「显示 → 开发者 → 允许 Apple 事件中的 JavaScript」，第 3 部分合并后在「设置 → 数据来源」把浏览器改成 Google Chrome 保存，跑一次「获取课程」；第一次会弹出允许控制「Google Chrome」的系统询问（`STUDYORBIT_BROWSER` 已去掉）。
-   - 你：审查第 3 部分 PR #282（决定 #460–#469）；合并后不改设置即为原来的墨大 + Edge，设置页「数据来源」看一眼即可。下一步是第 4 部分（Windows/Linux 的 CDP 专用浏览器，实验性）。
+   - 你：审查第 3 部分 PR #282（决定 #460–#469）；合并后不改设置即为原来的墨大 + Edge，设置页「数据来源」看一眼即可。
+   - 你：审查第 4 部分 PR #283（决定 #470–#479，Windows/Linux 专用浏览器，实验性，未在这两个系统上验证；同一 PR 归档 `generic-adapters`）。macOS + Edge 不受影响；有 Windows 或 Linux 机器时可以选「Google Chrome（专用浏览器）」，点「打开专用浏览器」登录后跑一次「获取课程」。
 
 ## 等用户决定
 
