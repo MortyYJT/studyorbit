@@ -34,6 +34,16 @@ npm run dev
 
 然后在页面点「立即同步」，勾选课程并保存。**保存选课会立刻开始同步**，会用到 Edge、Ed 和模型额度；复习页的预设按钮和对话也会用模型额度。只采集课程列表可以运行 `npm run sync:courses`。
 
+## 不用墨大账号试跑
+
+仓库带一门合成课程（`test/fixtures/synthetic-course/`，课程代码 `SYNT10001`，数据全是编的），可以不登录、不用模型密钥，走一遍「模型输出 → 本地校验 → 拦截与修复 → 和标准答案对比打分」：
+
+```bash
+node scripts/eval-course-analysis.mjs --fixture test/fixtures/synthetic-course
+```
+
+第一份固定输出把 Ed 的得分配上了 Canvas 的满分，会被校验拦下并触发一次修复；另一份能通过校验但漏了一个 hurdle，只有对比标准答案才发现。终端会打印准确率、一致性和拦截次数，完整结果存在 `.local/eval/results/`。加 `--live` 改为调用你设置的模型。标准答案格式、指标定义和用真实采集数据评测的方法见 [课程分析评测](docs/eval-format.md)。
+
 ## 数据与隐私
 
 | 内容 | 位置 |
@@ -50,7 +60,7 @@ npm run dev
 
 - `npm run check`：类型检查加 `test/` 下的 vitest 测试，与 CI 相同。成绩、「期末需要」和排期是 `shared/` 里的纯函数，测试只用合成数据。
 - `npm run build`：构建静态资源。**静态构建不包含同步、对话和复习笔记接口**，它们只在 Vite 开发服务器里。
-- 代码结构见 [项目结构和数据流](docs/overview.md)，脚本见 [scripts/README.md](scripts/README.md)；课程 JSON 契约见 [docs/course-json.md](docs/course-json.md)，分析提示词见 [docs/course-sync-prompt.md](docs/course-sync-prompt.md)；现行规格在 `openspec/specs/`。
+- 代码结构见 [项目结构和数据流](docs/overview.md)，脚本见 [scripts/README.md](scripts/README.md)；课程 JSON 契约见 [docs/course-json.md](docs/course-json.md)，分析提示词见 [docs/course-sync-prompt.md](docs/course-sync-prompt.md)，评测见 [docs/eval-format.md](docs/eval-format.md)；现行规格在 `openspec/specs/`。
 - 开发规则见 [CLAUDE.md](CLAUDE.md)；决定记录在 `note/decisions.md`，进度见 [路线图](note/product/roadmap.md)，当前交接在 [note/handoff.md](note/handoff.md)。
 
 ## 实验记录
