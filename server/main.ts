@@ -79,17 +79,27 @@ export async function startServer({ projectDir, desktopDir, env = process.env, w
 
 /** CLI: start, print the listening line, stop on SIGINT/SIGTERM; any startup error exits with code 1. */
 export async function main({ projectDir = fileURLToPath(new URL('../', import.meta.url)) }: { projectDir?: string } = {}) {
-  let running: RunningServer;
+  // Install the signal handlers before any await. Without a listener a signal takes the default action and kills the
+  // process with no cleanup, and the listening line used to be written before the handlers existed, so a supervisor
+  // reacting to that line could signal into that gap. A signal during startup stops the server once it has started.
+  let running: RunningServer | undefined;
+  let stopRequested = false;
+  const shutdown = () => {
+    stopRequested = true;
+    if (running) void running.stop().then(() => process.exit(0), () => process.exit(1));
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
   try {
     running = await startServer({ projectDir });
   } catch (error) {
     console.error(`StudyOrbit 本地服务无法启动：${(error as Error).message}`);
     process.exit(1);
   }
-  // Handlers first: a launcher may signal as soon as it reads the listening line.
-  const shutdown = () => { void running.stop().then(() => process.exit(0), () => process.exit(1)); };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  if (stopRequested) {
+    shutdown();
+    return;
+  }
   console.log(`${LISTENING_LINE} http://127.0.0.1:${running.port}`);
 }
 
