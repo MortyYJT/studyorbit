@@ -16,6 +16,7 @@ import { loadCourseReports } from './scripts/lib/course-reports.mjs';
 import { createReplyRegistry } from './scripts/lib/chat-replies.mjs';
 import { foreignOrigin } from './scripts/lib/local-origin.mjs';
 import { createCorrectionsHandler, createCorrectionsStore } from './scripts/lib/corrections-store.mjs';
+import { createCourseChangesHandler } from './scripts/lib/course-changes-log.mjs';
 import type { CourseDocument } from './shared/course-data.js';
 
 const courseFile = fileURLToPath(new URL('./.local/lms/courses.json', import.meta.url));
@@ -151,6 +152,9 @@ export default defineConfig({
         },
       }));
       server.middlewares.use('/api/local/corrections', (req, res) => { void handleCorrections(req, res); });
+      // Due date and weight changes logged by syncs (decision #296); the handler lives in scripts/lib/course-changes-log.mjs.
+      const handleCourseChanges = createCourseChangesHandler(projectDir);
+      server.middlewares.use('/api/local/course-changes', (req, res) => { void handleCourseChanges(req, res); });
       // Revision notes saved from Agent replies (decision #236). GET ?courseId=, POST, DELETE /:id; stored in .local/revision.
       server.middlewares.use('/api/local/revision-notes', async (req, res) => {
         const remote = req.socket.remoteAddress;

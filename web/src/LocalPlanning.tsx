@@ -8,6 +8,7 @@ import { bandTargets, calculateGrades, finalNeeded, parentGrade, type Band } fro
 import { parseAvailability, schedulePlan } from '../../shared/planning.js';
 import { applyChoiceToSlice, importCourse, migrateStoredKeys, migrationPlan, storageKeys, writeCourseSlice, type CorrectionsRequest, type CourseSlice } from './local-stores.js';
 import type { Conflict, CorrectionsView } from '../../shared/corrections.js';
+import { CHANGES_SEEN_KEY, CourseChangeSchema, courseDismissAt, newestAt, unseenChanges, type CourseChange } from '../../shared/course-changes.js';
 
 type RecordValue = Record<string, unknown>;
 type Course = { id: string; name: string; subjectCode: string; term?: string };
@@ -226,6 +227,9 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const sending = useRef(new Map<string, Promise<void>>());
   // Open disagreements between a sync and the owner's corrections, per migrated course (decisions #249, #293).
   const [conflicts, setConflicts] = useState<Record<string, Conflict[]>>({});
+  // Due date and weight changes logged by syncs, and the newest change time dismissed with 「知道了」 (decision #296).
+  const [changes, setChanges] = useState<CourseChange[]>([]);
+  const [changesSeen, setChangesSeen] = useState<string | null>(() => { try { return localStorage.getItem(CHANGES_SEEN_KEY); } catch { return null; } });
   const [notes, setNotes] = useState<RevisionNote[]>();
   const [notesError, setNotesError] = useState(false);
   // A response for a course the owner has already left is dropped, so one course never shows another's notes.
@@ -263,12 +267,33 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         if (migrated.changed) { setCorrections(readStore<Correction>(correctionKey)); setManual(readStore<Assessment[]>(manualKey)); setOrder(readStore<string[]>(orderKey)); setWork(readWork()); }
         if (migrated.failed) setSaveError(true);
         await loadCorrections();
+        const logged = await loadChanges();
         if (!live) return;
+        setChanges(logged);
         setCourses(data.courses.filter(course => ids.includes(course.id)).map(course => normalize(course, data.reports.find(item => item.id === course.id)?.report))); setError('');
       } catch { if (live) setError(zh ? '无法读取本地课程数据，请先同步课程。' : 'Could not load local course data. Sync courses first.'); }
     }
     void load(); return () => { live = false; };
   }, [refreshVersion, zh]);
+  // The change log is a reminder only: when it cannot be read, no reminder is shown.
+  async function loadChanges(): Promise<CourseChange[]> {
+    try {
+      const response = await fetch('/api/local/course-changes', { cache: 'no-store' });
+      if (!response.ok) return [];
+      const data = record(await response.json());
+      return Array.isArray(data.changes) ? data.changes.flatMap(entry => { const parsed = CourseChangeSchema.safeParse(entry); return parsed.success ? [parsed.data] : []; }) : [];
+    } catch { return []; }
+  }
+  // 「知道了」: the marker only moves forward, also against another tab's newer marker; it is a display preference, so it
+  // stays in localStorage.
+  function dismissChanges(at: string | null) {
+    if (!at) return;
+    let stored: string | null = null;
+    try { stored = localStorage.getItem(CHANGES_SEEN_KEY); } catch { /* Unreadable storage: use this view's marker. */ }
+    const next = [changesSeen, stored, at].reduce<string>((newest, value) => value && Date.parse(value) > Date.parse(newest) ? value : newest, at);
+    setChangesSeen(next);
+    if (next !== stored) try { localStorage.setItem(CHANGES_SEEN_KEY, next); } catch { /* Dismissed for this view only. */ }
+  }
   // One-time import of each course's browser data, then the `.local/` views; courses whose import has not succeeded keep
   // using localStorage. The browser copy is never deleted (decision #294).
   async function loadCorrections() {
@@ -344,6 +369,14 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   // Conflict display (decision #293): names come from the corrected course data; a removed assessment falls back to the
   // name in the owner's correction, then its ID.
   const courseConflicts = selected ? conflicts[selected.course.id] ?? [] : [];
+  const unseen = unseenChanges(changes, changesSeen, courses.map(item => item.course.id));
+  const courseChanges = selected ? unseen.filter(entry => entry.courseId === selected.course.id) : [];
+  // 「SYNT10001 Assignment 1：权重 20% → 25%」; an empty value reads 「未知」.
+  const changeText = (entry: CourseChange, code?: string) => {
+    const value = (field: CourseChange['field'], raw: string | number | null) => raw === null || raw === '' ? (zh ? '未知' : 'Unknown') : field === 'due' ? longDue(String(raw)) : `${raw}%`;
+    const what = entry.field === 'due' ? (zh ? '截止' : 'due') : (zh ? '权重' : 'weight');
+    return `${code ? `${code} ` : ''}${entry.name}${zh ? '：' : ': '}${what} ${value(entry.field, entry.before)} → ${value(entry.field, entry.after)}`;
+  };
   const fieldLabel: Record<string, [string, string]> = { name: ['名称', 'Name'], kind: ['类型', 'Type'], nature: ['性质', 'Nature'], weight: ['权重', 'Weight'], score: ['得分', 'Score'], outOf: ['满分', 'Out of'], due: ['截止', 'Due'], status: ['状态', 'Status'], rule: ['规则', 'Rule'], scoring: ['计分方式', 'Scoring'], parent: ['归属', 'Parent'], link: ['链接', 'Link'], mergeInto: ['合并到', 'Merged into'] };
   const nameOfKey = (key: string): string | undefined => {
     if (!selected) return undefined;
@@ -495,6 +528,13 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         {onAsk && <button className="small ask-agent" onClick={() => onAsk(selected.course.id)}>{zh ? '问 Agent' : 'Ask Agent'}</button>}</div>
       {!selected.available && <p className="needs">{zh ? '这门课尚无可用的同步结果。' : 'No sync result is available for this course yet.'}</p>}
       {syncIssues.filter(item => item.id === selected.course.id && item.status === 'failed').map(item => <p className="needs" key={item.id}>{zh ? '最近一次同步未完成，正在显示已保存的课程信息。' : 'The latest sync failed. Showing saved course information.'}</p>)}
+      {courseChanges.length > 0 && <section className="course-changes card" aria-label={zh ? '课程变更' : 'Course changes'}>
+        <div className="course-changes-head"><h2>{zh ? '课程变更' : 'Course changes'}</h2>
+          {courseDismissAt(unseen, selected.course.id) !== null && <button className="small ghost" type="button" onClick={() => dismissChanges(courseDismissAt(unseen, selected.course.id))}>{zh ? '知道了' : 'Got it'}</button>}</div>
+        <p className="muted">{courseDismissAt(unseen, selected.course.id) !== null ? (zh ? '最近一次同步改了这些截止时间或权重。' : 'The latest syncs changed these deadlines or weights.')
+          : (zh ? '最近一次同步改了这些截止时间或权重；其他课程也有未读变更，请在计划页「需要你处理」里点「知道了」。' : 'The latest syncs changed these deadlines or weights. Other courses have unread changes too; use "Got it" under "Needs you" on the plan page.')}</p>
+        {courseChanges.map((entry, index) => <div className="change-row" key={`${entry.at}:${entry.assessmentId}:${entry.field}:${index}`}>{changeText(entry)}</div>)}
+      </section>}
       {courseConflicts.length > 0 && <section className="sync-conflicts card" aria-label={zh ? '同步冲突' : 'Sync conflicts'}>
         <h2>{zh ? '同步冲突' : 'Sync conflicts'}</h2>
         <p className="muted">{zh ? '在你选择之前，页面先用你的修正。' : 'Your corrections are used until you choose.'}</p>
@@ -710,6 +750,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     ...syncIssues.filter(item => item.status === 'failed').map(item => ({ key: `sync:${item.id}`, courseId: item.id, text: zh ? `${codeOf(item.id)} 最近一次同步未完成` : `${codeOf(item.id)}: the latest sync failed` })),
     ...courses.flatMap(({ course }) => { const count = conflicts[course.id]?.length ?? 0;
       return count ? [{ key: `conflicts:${course.id}`, courseId: course.id, text: zh ? `${course.subjectCode}：${count} 项修正和同步结果不一致` : `${course.subjectCode}: ${count} ${count === 1 ? 'correction differs' : 'corrections differ'} from the latest sync` }] : []; }),
+    ...unseen.map((entry, index) => ({ key: `change:${entry.at}:${entry.courseId}:${entry.assessmentId}:${entry.field}:${index}`, courseId: entry.courseId, text: changeText(entry, codeOf(entry.courseId)) })),
     ...assessmentDeadlines.filter(({ item, day, courseId, graded }) => graded && day >= today && day <= weekEnd && item.score === undefined
       && !['submitted', 'graded'].includes(item.status)
       && !tasks.some(task => covers(task, courseId, item.key) || (item.parent !== '' && covers(task, courseId, item.parent))))
@@ -733,7 +774,8 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       <div className="week-toolbar"><div className="week-nav" role="group" aria-label={zh ? '周切换' : 'Navigate weeks'}>
         <button onClick={() => shift(-1)}>‹</button><button onClick={() => setWeek(addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)))}>{zh ? '今天' : 'Today'}</button><button onClick={() => shift(1)}>›</button><span className="range">{mode === 'plan' ? `${shortDate(week)} – ${shortDate(addDays(week, 6))}` : currentMonth}</span></div>
         <div className="week-actions"><span className="muted">{zh ? '学期' : 'Term'}: {courses[0]?.course.term || '—'}</span><div className="seg" role="group" aria-label={zh ? '视图' : 'View'}><button aria-pressed={mode === 'plan'} onClick={() => { setWeek(addDays(week, -((new Date(`${week}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{zh ? '周视图' : 'Week'}</button><button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>{zh ? '月历' : 'Month'}</button></div><button aria-expanded={editingHours} onClick={() => setEditingHours(value => !value)}>{zh ? '每天可用时间' : 'Daily hours'}</button><button aria-expanded={addingTask} onClick={() => setAddingTask(value => !value)}>{addingTask ? (zh ? '取消' : 'Cancel') : (zh ? '添加任务' : 'Add task')}</button></div></div>
-      {needs.length > 0 && <section className="needs" aria-label={zh ? '需要你处理' : 'Needs you'}><h2>{zh ? '需要你处理' : 'Needs you'}</h2>
+      {needs.length > 0 && <section className="needs" aria-label={zh ? '需要你处理' : 'Needs you'}><div className="needs-head"><h2>{zh ? '需要你处理' : 'Needs you'}</h2>
+        {unseen.length > 0 && <button className="small ghost" type="button" title={zh ? '课程变更不再提示' : 'Stop showing these course changes'} onClick={() => dismissChanges(newestAt(unseen))}>{zh ? '知道了' : 'Got it'}</button>}</div>
         {needs.map(entry => entry.courseId
           ? <button type="button" className="needs-line ghost" key={entry.key} onClick={() => onCourse(entry.courseId)}><i className="signal" aria-hidden="true" /><span>{entry.text}</span><span className="needs-line-go">›</span></button>
           : <div className="needs-line" key={entry.key}><i className="signal" aria-hidden="true" /><span>{entry.text}</span></div>)}</section>}
