@@ -8,7 +8,7 @@
 - [x] 1.6 Tests then `calculate_grades` (leaf, points group, weighted group, bonus/ungraded/alternative/zero-weight exclusions, incomplete group, what-if on leaf, parent and item without maximum, what-if on a bonus rejected, `whatIfApplied` effects incl. `no-weight`, `parent-score-overrides` and `group-incomplete`) and `final_needed` (argument, saved, default target; secured, reachable, unreachable; unidentified weight)
 - [x] 1.7 Tests then `upcoming_deadlines` (window, done items, cap) and `plan_schedule` (snapshot, argument tasks with and without keys, page keys kept so same-day ties match the weekly page, availability sources, window and `courseIds` output filter that never changes placements, overflow, `available: false`)
 - [x] 1.8 Tests then the 8 000-character limit (`truncated` metadata, `RESULT_TOO_LARGE`)
-- [ ] 1.9 `bash .claude/check.sh`; fresh-context review; record the PR number here
+- [ ] 1.9 `bash .claude/check.sh`; fresh-context review; record the PR number here (PR #264; check passes, review pending)
 
 ## 2. Tool-calling chat (PR 2)
 
