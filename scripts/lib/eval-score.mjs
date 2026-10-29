@@ -26,11 +26,24 @@ function sameValue(a, b) {
   return a === b;
 }
 
+// Identity keys of a gold item's own id: `canvas-<n>` / `canvas:<n>` / `ed-<n>` / `ed:<n>`, `canvas-group-<n>` /
+// `canvas-group:<n>`, or a bare number tried as Canvas assignment, then Ed lesson, then Canvas assignment group.
+function ownIdKeys(id) {
+  const group = /^canvas-group[-:](\d+)$/.exec(String(id));
+  if (group) return [`canvas-group:${group[1]}`];
+  const shaped = /^(?:(canvas|ed)[-:])?(\d+)$/.exec(String(id));
+  if (!shaped) return [];
+  return shaped[1] ? [`${shaped[1]}:${shaped[2]}`] : [`canvas:${shaped[2]}`, `ed:${shaped[2]}`, `canvas-group:${shaped[2]}`];
+}
+
 /**
- * Pair each gold assessment with at most one predicted assessment (course-contract-v2 design §7): same id first; then a
- * shared Canvas assignment or Ed lesson (v2 `refs`, v1 source URLs or platform-shaped ids, a bare-number gold id tried as
- * Canvas then Ed); then the same name slug. Each pass takes the first unused predicted item.
- * Returns one `{ gold, predicted }` entry per gold item, in gold order.
+ * Pair each gold assessment with at most one predicted assessment (course-contract-v2 design §7, decision #372): same id
+ * first; then platform identity, in two passes over all gold items: (a) the gold item's own id (platform-shaped, a
+ * `canvas-group` id, or a bare number tried as Canvas assignment, Ed lesson, then Canvas assignment group, since v1 keyed
+ * groups by their bare number), (b) its v2 `refs` and v1 source URLs; then the same name slug. Own ids go first because a
+ * v1 group's sources cite its children's pages. Predicted identities are `canvas`/`ed` refs, platform-shaped ids and the
+ * item's own `canvas-group:<n>` id (not `canvas-group` refs, which children cite too). Each pass takes the first unused
+ * predicted item, in gold order. Returns one `{ gold, predicted }` entry per gold item, in gold order.
  */
 export function matchAssessments(goldItems, predictedItems) {
   const used = new Set();
@@ -39,15 +52,23 @@ export function matchAssessments(goldItems, predictedItems) {
     if (index >= 0) used.add(index);
     return { gold, predicted: index >= 0 ? predictedItems[index] : null };
   });
-  // Predicted identities are concrete only: a bare-number predicted id is matched by the id pass.
-  const known = predictedItems.map(item => new Set(platformIdentities(item).flatMap(identity => ('bare' in identity ? [] : [`${identity.platform}:${identity.id}`]))));
+  // A bare-number predicted id is matched by the id pass only.
+  const known = predictedItems.map(item => new Set([
+    ...platformIdentities(item).flatMap(identity => ('bare' in identity ? [] : [`${identity.platform}:${identity.id}`])),
+    ...(/^canvas-group:\d+$/.test(String(item.id)) ? [String(item.id)] : []),
+  ]));
   const take = index => { used.add(index); return predictedItems[index]; };
+  const claim = (pair, keys) => {
+    const index = keys.map(key => known.findIndex((set, i) => !used.has(i) && set.has(key))).find(i => i >= 0);
+    if (index !== undefined) pair.predicted = take(index);
+    return index !== undefined;
+  };
+  for (const pair of pairs) if (!pair.predicted) claim(pair, ownIdKeys(pair.gold.id));
   for (const pair of pairs) {
     if (pair.predicted) continue;
     for (const identity of platformIdentities(pair.gold)) {
-      const wanted = 'bare' in identity ? [`canvas:${identity.bare}`, `ed:${identity.bare}`] : [`${identity.platform}:${identity.id}`];
-      const index = wanted.map(key => known.findIndex((set, i) => !used.has(i) && set.has(key))).find(i => i >= 0);
-      if (index !== undefined) { pair.predicted = take(index); break; }
+      if ('bare' in identity) continue;
+      if (claim(pair, [`${identity.platform}:${identity.id}`])) break;
     }
   }
   for (const pair of pairs) {
@@ -161,6 +182,12 @@ export function interceptionCounts(runs) {
 
 const ratio = (a, b) => (b ? a / b : null);
 
+/** Weights and rules a stored v2 document cleared as unsourced (「无出处」); v1 items without `unsourced` count none. */
+export function unsourcedCounts(document) {
+  const fields = document.assessments.flatMap(item => (Array.isArray(item.unsourced) ? item.unsourced : []));
+  return { weight: fields.filter(field => field === 'weight').length, rule: fields.filter(field => field === 'rule').length };
+}
+
 /**
  * Summary for one course over its runs. Each run: `{ accepted, failed?, document, attempts, durationMs, usage }`.
  * Accuracy, recall and precision are pooled over runs that produced a document.
@@ -178,6 +205,7 @@ export function summariseCourse(gold, runs) {
     correct: sum('correct'), cells: sum('cells'), matched: sum('matched'), gold: sum('goldCount'), predicted: sum('predictedCount'),
   };
   const agreement = consistency(gold, runs.map(run => run.document ?? null));
+  const unsourcedPerRun = runs.map(run => (run.document ? unsourcedCounts(run.document) : null));
   return {
     runs: runs.length, documentRuns: scores.length,
     fieldAccuracy: ratio(counts.correct, counts.cells),
@@ -187,6 +215,11 @@ export function summariseCourse(gold, runs) {
     cellAgreement: agreement.cellAgreement,
     identicalToFirst: agreement.identicalToFirst,
     interception: interceptionCounts(runs),
+    unsourced: {
+      weight: unsourcedPerRun.reduce((total, counts) => total + (counts?.weight ?? 0), 0),
+      rule: unsourcedPerRun.reduce((total, counts) => total + (counts?.rule ?? 0), 0),
+      perRun: unsourcedPerRun,
+    },
     tokens: {
       input: withUsage.reduce((total, run) => total + (run.usage.input ?? 0), 0),
       output: withUsage.reduce((total, run) => total + (run.usage.output ?? 0), 0),
@@ -213,6 +246,7 @@ export function summariseOverall(summaries) {
     cellAgreement: ratio(sum(s => s.counts.agreeingCells), sum(s => s.counts.consistencyCells)),
     identicalToFirst: ratio(sum(s => s.counts.identicalRuns), runs),
     interception: { runs, repairTriggered: sum(s => s.interception.repairTriggered), rejected: sum(s => s.interception.rejected), failed: sum(s => s.interception.failed), issues },
+    unsourced: { weight: sum(s => s.unsourced.weight), rule: sum(s => s.unsourced.rule) },
     tokens: { input: sum(s => s.tokens.input), output: sum(s => s.tokens.output), runsWithUsage: sum(s => s.tokens.runsWithUsage) },
     durationMs: { total: sum(s => s.durationMs.total), mean: runs ? sum(s => s.durationMs.total) / runs : null },
   };

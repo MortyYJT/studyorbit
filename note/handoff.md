@@ -17,6 +17,7 @@
 - **清理（#239）：** 删了 6 份过时文档和约 130 条死 CSS 规则（13 个页面状态 × 6 种主题和背景组合，逐元素对比新旧计算样式，0 差异；同步弹窗和选课弹窗没测，因为打开会触发真实同步）；README、overview、scripts/README、OpenSpec 项目背景按代码重写；品牌名改为 StudyOrbit。
 - **课程 JSON v2 第 3 部分（待合并）：** 同步保存前核对权重和规则的引文（`scripts/lib/course-quotes.mjs`，在 `settleCourse` 里），找不到出处就清空、记入 `unsourced`、原因追加「N 项权重或规则无出处」；`shared/local-keys.ts` 的 `migrateLocalKeys` 在页面读取课程时把修正、手动考核归属、学习任务和排序迁到新 ID（`web/src/local-stores.ts`）；课程页在列表、权重图例、抽屉、复习页显示「无出处」，修正填了值就不显示；对话上下文写「权重无出处」「规则无出处」；评测按 ID → 平台身份 → 名称 slug 配对。`npm run check` 24 个文件、302 个测试通过；无头浏览器（临时配置、拦截所有非 GET 本地请求）看了 4 门真实 v1 课程（无标记、正常显示），并用拦截课程接口返回的合成课程验证 v1 → v2 后本地键迁移、标记和引文显示、重复加载不再改动。
 - **修正存进 `.local/`（第 1 部分，待合并）：** `shared/corrections.ts`（Schema、`assessmentFields`、`sameValue`、`normaliseCorrections`、`applyOwnerEdit`、导入时的孤立/悬空冲突）；`scripts/lib/corrections-store.mjs`（每课一个 0600 文件、按课串行、原子写、读不了的文件绝不覆盖、导入只在没有文件时创建）和它的请求处理，挂在 `vite.config.ts`；页面每次加载先跑 v2 键迁移，再逐课导入 localStorage 数据（标记 `coursework.corrections-migrated.v1`），之后已迁移课程的修正、手动考核、排序都读写本地服务，带 revision，409 时刷新并提示；单项表单状态默认取有效状态，父项表单日期默认取墨尔本日期。回滚注意：迁移后在页面上做的修正只在 `.local/corrections/`，回退代码后要重新录入。
+- **v2 评测（PR #268 待审查，分支 `claude/eval-v2`）：** 照基线重跑 4 门课 × 5 次（`deepseek-flash`），基线和 v2 都用最终打分代码 `--rescore` 重新打分，前后对比在 `docs/eval-results.md`「v2 之后」（合计字段准确率 83.9% → 87.0%，只有 COMP20003 变高）；评测脚本新增「无出处」计数（20 次运行全是 0）、`--rescore`，配对补上 Canvas 作业分组（决定 #370–#374）。
 - **验证（较早）：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
 
 ## 未验证
@@ -32,6 +33,8 @@
 
 1. 审查并合并 `local-corrections-merge` 第 1 部分的 PR，再做第 2 部分（三方合并、冲突显示）。
 2. 你：第一次 v2 同步后看一眼各课的「无出处」数量；太多的话再调提示词（评测可以量清空率）。
+   - 评测里 20 次运行「无出处」都是 0。
+   - 后续（未排期，决定 #372）：同步的 `legacyIds` 也不会把 v1 分组的纯数字 ID 映射到 `canvas-group:<n>`，名称不同时分组上的修正可能迁不过去；要改 spec。
 3. 你：打开 `localhost:5173`，在复习页点一个预设按钮，确认对话正常，把一条回复「存到复习」。
 4. L0/L1/L2（#238 先不做）：以后做时先定方案；Claude 的立场是执行器只在合成演示课程上跑。
 5. 小问题（未排期）：`RichText` 遇到「标题 + 列表」混在一段时列表符号原样显示。
