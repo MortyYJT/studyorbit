@@ -33,10 +33,10 @@
 
 ## 4. CDP bridge for Windows and Linux, experimental (PR 4)
 
-- [ ] 4.1 Tests then pipe transport: NUL-separated JSON framing, request IDs, responses out of order, closed pipe, timeouts
-- [ ] 4.2 Tests then the method allowlist and the three constant expressions (state uses `document.readyState`); `Network.*`, `Storage.*` and any other method throw before writing
-- [ ] 4.3 Tests then `cdp-launch.mjs`: executable lookup with a fake file system (Windows and Linux paths, `browserPath`), launch arguments (pipe, dedicated `--user-data-dir`, never a port), profile directory 0700, handover detection, close then kill after 5 s
-- [ ] 4.4 Tests then `scripts/browser/cdp-host.mjs` in the server: one long-lived browser launched on demand, kept across collectors and jobs, relaunched after the window closed, closed on setting change and shutdown; IPC requests from collector children (`spawnCollector` adds the IPC channel for `cdp-*`); stopping a collector closes its tabs only
-- [ ] 4.5 `cdp-chrome` and `cdp-edge` bridges behind `withPage` over IPC; `POST /api/local/browser/open` and the 「打开专用浏览器」 button; redirect message 「请在专用浏览器里登录后继续同步」
-- [ ] 4.6 Docs: Windows/Linux setup marked experimental and not verified; settings page label
-- [ ] 4.7 `bash .claude/check.sh`; fresh-context review; record the PR number here
+- [x] 4.1 Tests then pipe transport: NUL-separated JSON framing, request IDs, responses out of order, closed pipe, timeouts (PR #283)
+- [x] 4.2 Tests then the method allowlist and the three constant expressions (state uses `document.readyState`); `Network.*`, `Storage.*` and any other method throw before writing (PR #283; four constants since #451 added `navigation-status`, decision #471)
+- [x] 4.3 Tests then `cdp-launch.mjs`: executable lookup with a fake file system (Windows and Linux paths, `browserPath`), launch arguments (pipe, dedicated `--user-data-dir`, never a port), profile directory 0700, handover detection, close then kill after 5 s (PR #283; unverified on Windows/Linux, decision #479)
+- [x] 4.4 Tests then `scripts/browser/cdp-host.mjs` in the server: one long-lived browser launched on demand, kept across collectors and jobs, relaunched after the window closed, closed on setting change and shutdown; IPC requests from collector children (`spawnCollector` adds the IPC channel for `cdp-*`); stopping a collector closes its tabs only (PR #283)
+- [x] 4.5 `cdp-chrome` and `cdp-edge` bridges behind `withPage` over IPC; `POST /api/local/browser/open` and the 「打开专用浏览器」 button; redirect message 「请在专用浏览器里登录后继续同步」 (PR #283; exit 77 keeps the job resumable, decision #474)
+- [x] 4.6 Docs: Windows/Linux setup marked experimental and not verified; settings page label (PR #283)
+- [x] 4.7 `bash .claude/check.sh`; fresh-context review; record the PR number here: PR #283 (not verified on Windows or Linux; one macOS smoke test of the pipe with a temporary profile and `about:blank`)

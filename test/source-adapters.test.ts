@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { CDP_NEEDS_SERVER } from '../scripts/browser/cdp.mjs';
 import { chatSystemPrompt } from '../scripts/lib/chat-context.mjs';
 import { buildAnalysisPrompt } from '../scripts/lib/course-analysis.mjs';
 import { filterSubjects, normalizeCourses } from '../scripts/lib/course-list.mjs';
@@ -244,10 +245,10 @@ describe('another Canvas and the Ed regions (generic-adapters PR 3)', () => {
     }
   });
 
-  it('stops before any browser call for the CDP bridge, which is not built yet', async () => {
+  it('stops before any browser call for the CDP bridge when not started by the local server (generic-adapters PR 4)', async () => {
     const run = await runCollectorScript('scripts/sources/canvas/collect.mjs', ['discover', '<out>'], { platform: 'linux' }, sourceConfigEnv({ ...other, browser: 'cdp-chrome' }));
     expect([run.code, run.calls, run.output]).toEqual([1, [], null]);
-    expect(run.stderr).toContain('专用浏览器（CDP）还没有实现');
+    expect(run.stderr).toContain(CDP_NEEDS_SERVER);
   });
 
   const units = { 'units list --json': [{ id: 5, code: 'CS101', year: 2026, session: 'Fall' }, { id: 6, code: 'CS.1019', year: 2026, session: 'Fall' }, { id: 7, code: 'CSX101', year: 2026, session: 'Fall' }],

@@ -12,8 +12,12 @@ export type SourceSettingsReply = {
   settings: ReturnType<typeof effectiveSourceSettings>; saved: boolean; platform: string; available: ReturnType<typeof availableChoices>;
 };
 
-/** `busy()` is true while a sync or discovery runs; `isFile` checks a browser path (tests swap in a fake). */
-export function sourceSettingsRoute({ projectDir, platform }: RouteContext, busy: () => boolean, isFile?: (path: string) => Promise<boolean>): RouteHandler {
+/**
+ * `busy()` is true while a sync or discovery runs; `isFile` checks a browser path (tests swap in a fake); `onSaved`
+ * hears every saved setting (the dedicated browser closes when the browser setting changes).
+ */
+export function sourceSettingsRoute({ projectDir, platform }: RouteContext, busy: () => boolean, isFile?: (path: string) => Promise<boolean>,
+  onSaved?: (settings: SourceSettings) => Promise<void> | void): RouteHandler {
   const reply = (settings: SourceSettings, saved: boolean): SourceSettingsReply => ({ settings: effectiveSourceSettings(settings), saved, platform, available: availableChoices(platform) });
   return async (req, res) => {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -46,6 +50,7 @@ export function sourceSettingsRoute({ projectDir, platform }: RouteContext, busy
         // Checked again right before the rename: a sync or discovery that started meanwhile keeps the old file.
         beforeWrite: () => { if (busy()) throw new SourceSettingsError('SYNC_RUNNING'); },
       });
+      try { await onSaved?.(saved); } catch { /* Closing the dedicated browser failed; the settings are saved anyway. */ }
       res.end(JSON.stringify(reply(saved, true)));
     } catch (error) {
       if (error instanceof SourceSettingsError && error.code === 'SYNC_RUNNING') res.writeHead(409).end(JSON.stringify({ error: 'SYNC_RUNNING' }));

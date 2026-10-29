@@ -1,5 +1,6 @@
 // /api/local/sync-courses: course discovery. POST runs the Canvas source's discovery collector (in the owner's
-// signed-in browser) into .local/lms/courses.json; DELETE cancels it. `Origin` is required on every method.
+// signed-in browser) into .local/lms/courses.json; DELETE cancels it. `Origin` is required on every method. With the
+// experimental CDP bridge the collector reaches the server's dedicated browser over an IPC channel.
 import { execFile, spawn, type ChildProcess, type ExecFileOptionsWithStringEncoding } from 'node:child_process';
 import { courseFile, type RouteContext, type RouteHandler } from '../context.ts';
 
@@ -8,7 +9,33 @@ export type CourseDiscovery = { route: RouteHandler; cancel(): void; running(): 
  * The discovery process for an output path: an absolute script, its arguments and the environment it adds. Built once
  * per discovery from the source settings read then.
  */
-export type DiscoveryCommand = (out: string) => Promise<{ script: string; args: string[]; env: Record<string, string> }>;
+export type DiscoveryCommand = (out: string) => Promise<{
+  script: string; args: string[]; env: Record<string, string>;
+  /** Serves the child's IPC channel (the dedicated browser of the experimental CDP bridge, design §7). */
+  attach?: (child: ChildProcess) => void;
+}>;
+
+const DISCOVERY_TIMEOUT_MS = 45000;
+const DISCOVERY_MAX_BUFFER = 1024 * 1024;
+
+/**
+ * `execFile` cannot open an IPC channel, so a discovery through the dedicated browser is spawned with one and given the
+ * same limits: killed after 45 s, output capped at 1 MiB, an error for a non-zero exit or a signal.
+ */
+function spawnWithChannel(script: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }, attach: (child: ChildProcess) => void,
+  done: (error: Error | null, stderr: string) => void): ChildProcess {
+  const child = spawn(process.execPath, [script, ...args], { ...options, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], detached: process.platform !== 'win32' });
+  let stdout = 0, stderr = '', finished = false;
+  const kill = () => { try { child.kill('SIGTERM'); } catch { /* Already gone. */ } };
+  const timer = setTimeout(kill, DISCOVERY_TIMEOUT_MS);
+  child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.length; if (stdout + stderr.length > DISCOVERY_MAX_BUFFER) kill(); });
+  child.stderr?.on('data', (chunk: Buffer) => { if (stderr.length < DISCOVERY_MAX_BUFFER) stderr += chunk.toString(); if (stdout + stderr.length > DISCOVERY_MAX_BUFFER) kill(); });
+  const finish = (error: Error | null) => { if (finished) return; finished = true; clearTimeout(timer); done(error, stderr); };
+  child.once('error', error => finish(error));
+  child.once('close', (code, signal) => finish(code === 0 && !signal ? null : new Error(`discovery exited with ${code ?? signal}`)));
+  attach(child);
+  return child;
+}
 
 /** `command` builds the discovery process (the Canvas source's); tests swap in a stub script. */
 export function syncCoursesRoute({ projectDir }: RouteContext, command: DiscoveryCommand): CourseDiscovery {
@@ -47,7 +74,7 @@ export function syncCoursesRoute({ projectDir }: RouteContext, command: Discover
       res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify({ error: 'SYNC_CANCELLED' }));
       return;
     }
-    discoveryProcess = execFile(process.execPath, [discovery.script, ...discovery.args], { cwd: projectDir, env: { ...process.env, ...discovery.env }, timeout: 45000, maxBuffer: 1024 * 1024, detached: process.platform !== 'win32' } as ExecFileOptionsWithStringEncoding, (error, _stdout, stderr) => {
+    const done = (error: Error | null, stderr: string) => {
       syncRunning = false;
       discoveryProcess = undefined;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -60,7 +87,11 @@ export function syncCoursesRoute({ projectDir }: RouteContext, command: Discover
       }
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true, ...(stderr.trim() ? { warning: stderr.trim().slice(0, 1000) } : {}) }));
-    });
+    };
+    const env = { ...process.env, ...discovery.env };
+    discoveryProcess = discovery.attach
+      ? spawnWithChannel(discovery.script, discovery.args, { cwd: projectDir, env }, discovery.attach, done)
+      : execFile(process.execPath, [discovery.script, ...discovery.args], { cwd: projectDir, env, timeout: DISCOVERY_TIMEOUT_MS, maxBuffer: DISCOVERY_MAX_BUFFER, detached: process.platform !== 'win32' } as ExecFileOptionsWithStringEncoding, (error, _stdout, stderr) => done(error, stderr));
   };
   return { route, cancel, running: () => syncRunning };
 }

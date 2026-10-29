@@ -1,3 +1,4 @@
+import type { CdpHost } from '../browser/cdp-host.mjs';
 import type { AnalysisConfig } from './llm-config.mjs';
 import type { AnalysisResult } from './llm-providers.mjs';
 import type { Limiter } from './rate-limit.mjs';
@@ -12,7 +13,7 @@ export type SourceEntry = { file: string; sha256: string; exitCode: number | nul
 export type Sources = Record<Source, SourceEntry>;
 export type SyncCourse = { id: string; subjectCode: string; term?: unknown; name?: unknown; [key: string]: unknown };
 export type CollectorRequest = {
-  source: Source; script: string; args: string[]; env?: Record<string, string>; cwd: string; registerStop(stop: () => void): () => void; signal: AbortSignal;
+  source: Source; script: string; args: string[]; env?: Record<string, string>; usesBrowser?: boolean; cwd: string; registerStop(stop: () => void): () => void; signal: AbortSignal;
 };
 export type CollectorRunner = (request: CollectorRequest) => Promise<{ code: number | null; error?: string }>;
 export type ModelCaller = (config: AnalysisConfig, prompt: string, options: { schema: unknown; schemaPath: string; cwd: string; registerStop(stop: () => void): () => void; onPhase?(phase: string): void }) => Promise<AnalysisResult>;
@@ -47,7 +48,7 @@ export function sourceFlags(sources: Sources, data: Record<Source, any>): Record
 export function planMerge(rows: StageRow[], inputHash: string): Promise<MergePlan>;
 export function chooseCoursePath(courseDir: string, jobId: string): Promise<string>;
 export function limiterKey(source: Pick<CourseSource, 'usesBrowser' | 'limiter'>): string;
-export const spawnCollector: CollectorRunner;
+export function spawnCollector(request: CollectorRequest & { browserHost?: CdpHost }): Promise<{ code: number | null; error?: string }>;
 export class StageError extends Error { code: string; reason: string; constructor(code: string, reason: string, extra?: Record<string, unknown>); }
 export class StageFailure extends Error {
   stage: StageName; status: 'failed' | 'cancelled' | 'interrupted'; code: string; reason: string; usage: unknown; phases: Record<string, number>;

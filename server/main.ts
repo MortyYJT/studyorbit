@@ -60,11 +60,13 @@ export async function startServer({ projectDir, desktopDir, env = process.env, w
       // Stop accepting connections, refuse requests on open ones, then interrupt the sync.
       const closed = new Promise<void>(resolve => server.close(() => resolve()));
       server.closeIdleConnections();
-      api.close();
+      // Also closes the dedicated browser of the CDP bridge, if one runs (Browser.close, killed after 5 s).
+      const browserClosed = api.close();
       const deadline = Date.now() + SHUTDOWN_WAIT_MS;
       while (api.syncRunning() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
       server.closeAllConnections();
       await closed;
+      await browserClosed.catch(() => { /* The browser process is gone either way. */ });
       if (store?.ok) store.store.close();
       lock.release();
     })());

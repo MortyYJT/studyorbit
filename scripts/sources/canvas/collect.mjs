@@ -7,7 +7,8 @@
 // records the Canvas origin and the institution in the course list.
 import { appleEventsHint } from '../../browser/applescript.mjs';
 import { withPage } from '../../browser/bridge.mjs';
-import { collectorExitCode, httpFailure } from '../../lib/collector-exit.mjs';
+import { CDP_SIGN_IN } from '../../browser/cdp.mjs';
+import { collectorExitCode, EX_SIGN_IN, httpFailure } from '../../lib/collector-exit.mjs';
 import { normalizeCourses, parseCoursePage } from '../../lib/course-list.mjs';
 import { bridgeFor, stopFlag, writeJsonAtomic } from '../collector-io.mjs';
 import { readSourceConfig } from '../config.mjs';
@@ -26,11 +27,17 @@ const requests = course === 'discover'
   ? [['courses', `${origin}/api/v1/courses?enrollment_state=active&include[]=term&per_page=${pageSize}`]]
   : [['groups', `${prefix}assignment_groups?per_page=${pageSize}`], ['assignments', `${prefix}assignments?include%5B%5D=submission&per_page=${pageSize}`]];
 const captured = { courseId: course, capturedAt: new Date().toISOString(), scope: 'paginated', paginationVerified: false, pagination: {} };
-const messages = { identity: '无法识别实验标签页', redirect: 'Canvas 登录可能已失效或页面跳转', timeout: 'Canvas 页面加载超时' };
+// With the dedicated browser (CDP), a redirect means the owner has to sign in there; the sync then fails the stage
+// (exit 77) instead of using a placeholder, so the job can be resumed after signing in (design §7).
+const dedicated = config.browser.startsWith('cdp-');
+const messages = { identity: '无法识别实验标签页', redirect: dedicated ? CDP_SIGN_IN : 'Canvas 登录可能已失效或页面跳转', timeout: 'Canvas 页面加载超时' };
 
 /** One API page: HTTP 429/5xx (or no response) on the final attempt exits with 75 so the sync retries it. */
 function acceptPage(text) {
   const response = JSON.parse(text);
+  // Canvas answers a signed-out API request with HTTP 401 rather than a redirect: in the dedicated browser that
+  // means the owner has to sign in there.
+  if (dedicated && response.status === 401) throw new Error(CDP_SIGN_IN);
   if (response.status !== 200) throw httpFailure('Canvas', response.status);
   return { rows: parseCoursePage(response.body), link: response.link };
 }
@@ -75,7 +82,7 @@ try {
 } catch (error) {
   const message = String(error.stderr || error.message).trim().slice(0, 500);
   console.error(`Canvas 后台采集失败：${message}。${appleEventsHint(config.browser)}`);
-  process.exitCode = collectorExitCode(error);
+  process.exitCode = dedicated && error.message === CDP_SIGN_IN ? EX_SIGN_IN : collectorExitCode(error);
 } finally {
   // Reported after the failure itself, as before the move.
   if (closeFailed) console.error('无法关闭本次后台采集标签页，请手动关闭。');

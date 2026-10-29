@@ -1,15 +1,19 @@
 // The local API as a plain Node request handler (design §2): the access guard (§3) in front of the route table. Each
 // route keeps the path, methods, status codes, bodies, error codes and body limits it had in `vite.config.ts`.
+import type { ChildProcess } from 'node:child_process';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createCdpHost, type CdpHost } from '../scripts/browser/cdp-host.mjs';
 import { createSyncPipeline, type PipelineDeps, type SyncPipeline } from '../scripts/lib/sync-pipeline.mjs';
+import { spawnCollector } from '../scripts/lib/sync-stages.mjs';
 import { loadSourceSetup } from '../scripts/lib/source-settings.mjs';
 import { canvasSource } from '../scripts/sources/registry.mjs';
 import type { OpenResult } from '../scripts/lib/sync-store.mjs';
 import type { Env, RouteContext, RouteHandler } from './context.ts';
 import { checkRequest } from './guard.ts';
+import { browserRoute } from './routes/browser.ts';
 import { chatsRoute } from './routes/chats.ts';
 import { correctionsRoute } from './routes/corrections.ts';
 import { courseCandidatesRoute } from './routes/course-candidates.ts';
@@ -48,12 +52,20 @@ export type LocalApiOptions = {
    */
   pipelineDeps?: Omit<Partial<PipelineDeps>, 'store' | 'projectDir' | 'desktopDir' | 'hooks'>;
   discoveryScript?: string;
+  /**
+   * The dedicated browser of the experimental CDP bridge (generic-adapters design §7): one per server, launched on
+   * demand. Tests pass a host with a fake browser.
+   */
+  browserHost?: CdpHost;
 };
 
 export type LocalApi = {
   handle(req: IncomingMessage, res: ServerResponse): void;
-  /** Stops a running course sync (marked `interrupted`) and course discovery; later requests get 503 (shutting down). */
-  close(): void;
+  /**
+   * Stops a running course sync (marked `interrupted`) and course discovery; later requests get 503 (shutting down).
+   * Resolves once the dedicated browser, if one runs, is closed (`Browser.close`, killed after 5 s).
+   */
+  close(): Promise<void>;
   /** True while a course sync is running. */
   syncRunning(): boolean;
 };
@@ -68,13 +80,17 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
     // The source settings (generic-adapters design §8) are read once per sync, per discovery and per request.
     sourceSetup: () => loadSourceSetup(options.projectDir, { platform }),
   };
+  const browserHost = options.browserHost ?? createCdpHost({ projectDir: options.projectDir, platform, env: context.env });
+  // Real collectors reach the dedicated browser over an IPC channel (browser-using sources with a CDP bridge only).
+  const runCollector: PipelineDeps['runCollector'] = request => spawnCollector({ ...request, browserHost });
   const pipeline: SyncPipeline | null = options.store?.ok
-    ? createSyncPipeline({ setup: context.sourceSetup, ...options.pipelineDeps, hooks: undefined, store: options.store.store, projectDir: context.projectDir, desktopDir: context.desktopDir, env: context.env })
+    ? createSyncPipeline({ setup: context.sourceSetup, runCollector, ...options.pipelineDeps, hooks: undefined, store: options.store.store, projectDir: context.projectDir, desktopDir: context.desktopDir, env: context.env })
     : null;
   const discovery = syncCoursesRoute(context, async out => {
     const setup = await context.sourceSetup();
     const command = canvasSource.discover(setup.context, out);
-    return { ...command, script: options.discoveryScript ?? join(SCRIPTS_DIR, command.script) };
+    const client = browserHost.clientFor(command.env);
+    return { ...command, script: options.discoveryScript ?? join(SCRIPTS_DIR, command.script), ...(client ? { attach: (child: ChildProcess) => browserHost.attach(child, client) } : {}) };
   });
   const busy = () => (pipeline?.running() ?? false) || discovery.running();
   const routes: [string, RouteHandler][] = [
@@ -89,7 +105,8 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
     ['sync-jobs', syncJobsRoute(pipeline)],
     ['sync-courses', discovery.route],
     ['course-candidates', courseCandidatesRoute(context)],
-    ['source-settings', sourceSettingsRoute(context, busy, options.isFile)],
+    ['source-settings', sourceSettingsRoute(context, busy, options.isFile, settings => browserHost.settingsChanged(settings))],
+    ['browser', browserRoute(context, browserHost)],
   ];
   const mounts = routes.map(([name, handler]) => [`${API_PREFIX}/${name}`, handler] as const);
 
@@ -114,10 +131,11 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
 
   return {
     handle,
-    close() {
+    async close() {
       closed = true;
       void pipeline?.shutdown();
       discovery.cancel();
+      await browserHost.shutdown();
     },
     syncRunning: () => pipeline?.running() ?? false,
   };

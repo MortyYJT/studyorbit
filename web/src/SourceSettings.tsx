@@ -51,6 +51,7 @@ export function SourceSettingsSection({ language, onSaved }: { language: Languag
   const [form, setForm] = useState<Form>();
   const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [opening, setOpening] = useState(false);
   const [fieldError, setFieldError] = useState<{ field: string | null; reason: string }>();
   const [status, setStatus] = useState<{ problem: boolean; text: string }>();
   useEffect(() => {
@@ -75,7 +76,20 @@ export function SourceSettingsSection({ language, onSaved }: { language: Languag
     update({ institution: id, canvasOrigin: next?.defaultCanvasOrigin ?? (id === reply.settings.institution ? reply.settings.canvasOrigin ?? '' : ''), timeZone: '', codePattern: '' });
   };
   const errorFor = (field: string) => fieldError?.field === field && <small className="model-error" role="alert">{fieldError.reason}</small>;
-  const browserLabel = (browser: SourceSettingsReply['available']['browsers'][number]) => `${pick([browser.label.zh, browser.label.en])}${browser.experimental ? (zh ? ' · 实验性，未在 Windows 上验证' : ' · experimental, not verified on Windows') : ''}${!browser.implemented ? (zh ? ' · 尚未实现' : ' · not built yet') : ''}`;
+  const browserLabel = (browser: SourceSettingsReply['available']['browsers'][number]) => `${pick([browser.label.zh, browser.label.en])}${browser.experimental ? (zh ? ' · 实验性，未在 Windows 和 Linux 上验证' : ' · experimental, not verified on Windows or Linux') : ''}${!browser.implemented ? (zh ? ' · 尚未实现' : ' · not built yet') : ''}`;
+  // The dedicated browser can be opened when it is the current choice without unsaved changes (the server reads the file).
+  const savedDedicated = reply.settings.browser.startsWith('cdp-') && !dirty;
+
+  async function openDedicatedBrowser() {
+    setOpening(true); setStatus(undefined);
+    try {
+      const response = await fetch('/api/local/browser/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const data = await response.json().catch(() => undefined) as { reason?: string } | undefined;
+      if (!response.ok) { setStatus({ problem: true, text: zh ? `无法打开专用浏览器：${data?.reason ?? '请重试'}` : `Could not open the dedicated browser: ${data?.reason ?? 'please retry'}` }); return; }
+      setStatus({ problem: false, text: zh ? '已打开专用浏览器。请在里面登录 Canvas，登录后不要关闭这个窗口，然后再同步。' : 'The dedicated browser is open. Sign in to Canvas there, keep the window open, then sync.' });
+    } catch { setStatus({ problem: true, text: zh ? '无法打开专用浏览器，请重试。' : 'Could not open the dedicated browser. Please retry.' }); }
+    finally { setOpening(false); }
+  }
 
   async function save() {
     if (!form || !reply) return;
@@ -117,7 +131,11 @@ export function SourceSettingsSection({ language, onSaved }: { language: Languag
       {errorFor('canvasOrigin') || <small className="muted">{zh ? '只填网站地址（https://…），不含路径。' : 'Only the site address (https://…), no path.'}</small>}</label>
     <label className="model-row"><span className="k">{pick(fieldNames.browser!)}</span>
       <select value={form.browser} onChange={event => update({ browser: event.target.value, browserPath: '' })}>{reply.available.browsers.map(item => <option key={item.id} value={item.id} disabled={!item.available}>{browserLabel(item)}</option>)}</select>
-      {errorFor('browser') || (chosenBrowser?.experimental && <small className="muted">{zh ? '实验性，未在 Windows 上验证。专用浏览器的采集在后续版本实现，目前选它同步会失败。' : 'Experimental, not verified on Windows. Collecting through the dedicated browser comes in a later version; syncing with it fails for now.'}</small>)}</label>
+      {errorFor('browser') || (chosenBrowser?.experimental && <small className="muted">{zh
+        ? '实验性，未在 Windows 和 Linux 上验证。StudyOrbit 会用单独的配置目录启动一个专用浏览器（不碰你平时用的浏览器），你在里面登录一次；同步期间保持这个窗口打开。登录信息保存在项目的 .local/browser/ 里，只有你能读，删除它就会退出登录。'
+        : 'Experimental, not verified on Windows or Linux. StudyOrbit starts a dedicated browser with its own profile (your everyday browser is not touched); sign in there once and keep the window open while syncing. Its sign-in data stays in the project’s .local/browser/, readable only by you; deleting it signs you out.'}</small>)}</label>
+    {savedDedicated && <div className="model-row"><span className="k" />
+      <button className="small" disabled={opening} onClick={() => void openDedicatedBrowser()}>{opening ? (zh ? '正在打开…' : 'Opening…') : (zh ? '打开专用浏览器' : 'Open dedicated browser')}</button></div>}
     {cdp && <label className="model-row"><span className="k">{pick(fieldNames.browserPath!)}</span>
       <input value={form.browserPath} placeholder={zh ? '可选：浏览器程序的完整路径' : 'Optional: full path of the browser program'} spellCheck={false} autoComplete="off" onChange={event => update({ browserPath: event.target.value })} />{errorFor('browserPath')}</label>}
     <label className="model-row"><span className="k">{pick(fieldNames.edRegion!)}</span>

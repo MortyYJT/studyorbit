@@ -122,6 +122,8 @@ describe('source settings: validation', () => {
     expect(choices.browsers.map(browser => [browser.id, browser.available, browser.experimental])).toEqual([
       ['edge-applescript', false, false], ['chrome-applescript', false, false], ['cdp-chrome', true, true], ['cdp-edge', true, true],
     ]);
+    // Every bridge is built since generic-adapters PR 4; the CDP ones stay experimental.
+    expect(choices.browsers.every(browser => browser.implemented)).toBe(true);
     expect(choices.institutions.map(item => item.id)).toEqual([DEFAULT_INSTITUTION.id, 'generic']);
     expect(choices.edRegions).toEqual(['auto', 'au', 'us', 'eu']);
   });

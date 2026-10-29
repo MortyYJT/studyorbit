@@ -14,14 +14,15 @@ import { resolveSourceSetup } from '../sources/registry.mjs';
 export const SOURCE_SETTINGS_VERSION = 1;
 export const ED_REGIONS = Object.freeze(['auto', 'au', 'us', 'eu']);
 /**
- * The browser bridges: where each is available and whether it is experimental. The CDP bridges (Windows and Linux,
- * also usable on macOS) arrive in the next part of the change; until then a collector using them stops with a message.
+ * The browser bridges: where each is available and whether it is experimental. The CDP bridges (the server's
+ * dedicated browser; meant for Windows and Linux, also usable on macOS) are experimental and not verified on Windows
+ * or Linux (scripts/browser/cdp-host.mjs).
  */
 export const BROWSERS = Object.freeze({
   'edge-applescript': Object.freeze({ label: Object.freeze({ zh: 'Microsoft Edge（macOS，Apple 事件）', en: 'Microsoft Edge (macOS, Apple Events)' }), platforms: Object.freeze(['darwin']), experimental: false, implemented: true }),
   'chrome-applescript': Object.freeze({ label: Object.freeze({ zh: 'Google Chrome（macOS，Apple 事件）', en: 'Google Chrome (macOS, Apple Events)' }), platforms: Object.freeze(['darwin']), experimental: false, implemented: true }),
-  'cdp-chrome': Object.freeze({ label: Object.freeze({ zh: 'Google Chrome（专用浏览器）', en: 'Google Chrome (dedicated browser)' }), platforms: null, experimental: true, implemented: false }),
-  'cdp-edge': Object.freeze({ label: Object.freeze({ zh: 'Microsoft Edge（专用浏览器）', en: 'Microsoft Edge (dedicated browser)' }), platforms: null, experimental: true, implemented: false }),
+  'cdp-chrome': Object.freeze({ label: Object.freeze({ zh: 'Google Chrome（专用浏览器）', en: 'Google Chrome (dedicated browser)' }), platforms: null, experimental: true, implemented: true }),
+  'cdp-edge': Object.freeze({ label: Object.freeze({ zh: 'Microsoft Edge（专用浏览器）', en: 'Microsoft Edge (dedicated browser)' }), platforms: null, experimental: true, implemented: true }),
 });
 const FIELDS = ['version', 'institution', 'canvasOrigin', 'browser', 'browserPath', 'edRegion', 'timeZone', 'codePattern'];
 

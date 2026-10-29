@@ -4,6 +4,11 @@
 // run in tests; these helpers are tested with synthetic responses instead.
 
 export const EX_TEMPFAIL = 75;
+/**
+ * `77` (EX_NOPERM): the dedicated browser of the experimental CDP bridge is signed out (generic-adapters design §7).
+ * The sync fails the collect stage without retrying, so the source is collected again when the job is resumed.
+ */
+export const EX_SIGN_IN = 77;
 
 /** HTTP 429 or 5xx. */
 export function isTemporaryStatus(status) {
