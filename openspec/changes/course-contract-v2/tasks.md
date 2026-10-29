@@ -1,10 +1,10 @@
 ## 1. Schemas v2 and compatible reading (PR 1)
 
-- [ ] 1.1 Tests then the stored document v2 schema in `shared/course-data.ts`: new assessment fields, top-level `legacyIds`, strictness, `unsourced` values, v1 refinements (unique IDs, score ≤ maxScore, parent rules) apply to v2
-- [ ] 1.2 Tests then `CourseDocumentSchema` as a union on `version` (1 | 2); version 3 and missing version rejected
-- [ ] 1.3 Tests then `toDisplayDocument`: v1 → empty `refs`, `null` quotes, empty `unsourced`, empty `legacyIds`; v2 passes through
-- [ ] 1.4 Tests then the model output schema (`CourseModelOutputSchema`): allowed fields only; `id`, `parentId`, `due`, `score`, `maxScore`, `status`, `sources` rejected (schema only; not wired to the sync yet)
-- [ ] 1.5 Route every reader through the union and `toDisplayDocument`: `scripts/lib/course-reports.mjs` (+ `.d.mts`), `scripts/lib/chat-context.mjs`, `vite.config.ts`, `web/src/LocalPlanning.tsx`; existing v1 tests stay green
+- [x] 1.1 Tests then the stored document v2 schema in `shared/course-data.ts`: new assessment fields, top-level `legacyIds`, strictness, `unsourced` values, v1 refinements (unique IDs, score ≤ maxScore, parent rules) apply to v2
+- [x] 1.2 Tests then `CourseDocumentSchema` as a union on `version` (1 | 2); version 3 and missing version rejected
+- [x] 1.3 Tests then `toDisplayDocument`: v1 → empty `refs`, `null` quotes, empty `unsourced`, empty `legacyIds`; v2 passes through
+- [x] 1.4 Tests then the model output schema (`CourseModelOutputSchema`): allowed fields only; `id`, `parentId`, `due`, `score`, `maxScore`, `status`, `sources` rejected (schema only; not wired to the sync yet)
+- [x] 1.5 Route every reader through the union and `toDisplayDocument`: `scripts/lib/course-reports.mjs` (+ `.d.mts`), `scripts/lib/chat-context.mjs`, `vite.config.ts`, `web/src/LocalPlanning.tsx`; existing v1 tests stay green
 - [ ] 1.6 `bash .claude/check.sh`; fresh-context review; record the PR number here
 
 ## 2. Model output v2 in the sync (PR 2)

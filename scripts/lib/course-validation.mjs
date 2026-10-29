@@ -1,4 +1,4 @@
-import { CourseDocumentSchema } from '../../shared/course-data.ts';
+import { CourseDocumentV1Schema } from '../../shared/course-data.ts';
 
 const REPORT_STATUSES = ['completed', 'partial', 'failed'];
 
@@ -7,7 +7,7 @@ const REPORT_STATUSES = ['completed', 'partial', 'failed'];
 export function validateAnalysis(raw, { course, canvas, ed }) {
   let report;
   try { report = JSON.parse(raw); } catch { report = null; }
-  const parsed = CourseDocumentSchema.safeParse(report?.document);
+  const parsed = CourseDocumentV1Schema.safeParse(report?.document);
   const issues = parsed.success ? [] : parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`);
   if (parsed.success) issues.push(...semanticIssues(parsed.data, canvas, ed));
   const valid = Boolean(report) && typeof report.reason === 'string' && REPORT_STATUSES.includes(report.status)

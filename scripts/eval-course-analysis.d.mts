@@ -1,15 +1,15 @@
 import type { AnalysisCourse, Attempt, ModelResult } from './lib/course-validation.mjs';
 import type { AnalysisConfig } from './lib/llm-config.mjs';
 import type { CourseSummary, OverallSummary, RunUsage } from './lib/eval-score.mjs';
-import type { CourseDocument } from '../shared/course-data.ts';
+import type { CourseDocumentV1 } from '../shared/course-data.ts';
 
 export type EvalOptions = {
   run?: string; courses?: string; gold?: string; n: number; model?: string; provider?: string;
   fake?: string; fixture?: string; out?: string; live: boolean;
 };
-export type EvalCourse = { course: AnalysisCourse & { name?: string; term?: string | null }; canvas: unknown; ed: unknown; handbook: unknown; gold: CourseDocument };
+export type EvalCourse = { course: AnalysisCourse & { name?: string; term?: string | null }; canvas: unknown; ed: unknown; handbook: unknown; gold: CourseDocumentV1 };
 export type EvalRunRecord = {
-  index: number; accepted: boolean; failed: boolean; status: string; reason: string; document: CourseDocument | null;
+  index: number; accepted: boolean; failed: boolean; status: string; reason: string; document: CourseDocumentV1 | null;
   attempts: Attempt[]; durationMs: number; usage: RunUsage;
 };
 export type CourseEvaluation = { id: string; code: string; runs: EvalRunRecord[]; summary: CourseSummary };
