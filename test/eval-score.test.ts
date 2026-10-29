@@ -234,4 +234,16 @@ describe('summaries', () => {
     expect(overall.interception).toMatchObject({ runs: 3, repairTriggered: 1, rejected: 1, failed: 0, issues: { x: 2 } });
     expect(overall.cellAgreement).toBe(1);
   });
+
+  it('counts weights and rules cleared as unsourced per run, per course and overall', () => {
+    const cleared = (id: string, fields: string[]) => edit(id, { unsourced: fields, ...(fields.includes('weight') ? { weight: null } : {}) });
+    const both = clone(gold);
+    Object.assign(both.assessments[0], { weight: null, unsourced: ['weight', 'rule'] });
+    Object.assign(both.assessments[3], { weight: null, unsourced: ['weight'] });
+    const one = summariseCourse(gold, [run(clone(gold)), run(both), run(null, { accepted: false })]);
+    expect(one.unsourced).toEqual({ weight: 2, rule: 1, perRun: [{ weight: 0, rule: 0 }, { weight: 2, rule: 1 }, null] });
+    const two = summariseCourse(gold, [run(cleared('q1', ['rule']))]);
+    expect(two.unsourced).toEqual({ weight: 0, rule: 1, perRun: [{ weight: 0, rule: 1 }] });
+    expect(summariseOverall([one, two]).unsourced).toEqual({ weight: 2, rule: 2 });
+  });
 });

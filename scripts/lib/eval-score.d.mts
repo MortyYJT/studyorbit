@@ -11,15 +11,17 @@ export type Consistency = {
   documentRuns: number; cells: number; agreeingCells: number; cellAgreement: number | null; identicalRuns: number; identicalToFirst: number | null;
 };
 export type Interception = { runs: number; repairTriggered: number; rejected: number; failed: number; issues: Record<string, number> };
+export type UnsourcedCounts = { weight: number; rule: number };
 export type RunUsage = { input: number | null; output: number | null; [key: string]: unknown } | null;
 export type EvalRun = { accepted: boolean; failed?: boolean; document: DocumentLike | null; attempts: Array<{ exitCode?: number | null; issues?: string[] }>; durationMs?: number; usage?: RunUsage };
 export type CourseSummary = {
   runs: number; documentRuns: number; fieldAccuracy: number | null; perField: Record<ScoredField, number | null>;
   recall: number | null; precision: number | null; cellAgreement: number | null; identicalToFirst: number | null;
-  interception: Interception; tokens: { input: number; output: number; runsWithUsage: number }; durationMs: { total: number; mean: number | null };
+  interception: Interception; unsourced: UnsourcedCounts & { perRun: Array<UnsourcedCounts | null> };
+  tokens: { input: number; output: number; runsWithUsage: number }; durationMs: { total: number; mean: number | null };
   counts: Record<string, unknown>; mismatches: Array<{ unmatchedGold: string[]; extraPredicted: string[]; mismatches: Cell[] }>;
 };
-export type OverallSummary = Omit<CourseSummary, 'counts' | 'mismatches'> & { courses: number };
+export type OverallSummary = Omit<CourseSummary, 'counts' | 'mismatches' | 'unsourced'> & { courses: number; unsourced: UnsourcedCounts };
 
 export const SCORED_FIELDS: ScoredField[];
 export const MISSING: '<missing>';
@@ -30,5 +32,6 @@ export function scoreDocument(gold: DocumentLike, predicted: DocumentLike): Docu
 export function normaliseDocument(document: DocumentLike): Array<Record<string, unknown>>;
 export function consistency(gold: DocumentLike, documents: Array<DocumentLike | null>): Consistency;
 export function interceptionCounts(runs: Array<Pick<EvalRun, 'accepted' | 'failed' | 'attempts'>>): Interception;
+export function unsourcedCounts(document: DocumentLike): UnsourcedCounts;
 export function summariseCourse(gold: DocumentLike, runs: EvalRun[]): CourseSummary;
 export function summariseOverall(summaries: CourseSummary[]): OverallSummary;

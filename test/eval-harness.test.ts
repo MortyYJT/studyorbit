@@ -144,7 +144,11 @@ describe('runEvaluation', () => {
     expect(run1).toHaveProperty('usage');
     const saved = JSON.parse(await readFile(join(out, 'summary.json'), 'utf8'));
     expect(saved.overall.interception.repairTriggered).toBe(1);
-    expect(await readFile(join(out, 'summary.md'), 'utf8')).toContain('SYNT10001');
+    expect(saved.overall.unsourced).toEqual({ weight: expect.any(Number), rule: expect.any(Number) });
+    expect(saved.courses[0].summary.unsourced.perRun).toHaveLength(2);
+    const markdown = await readFile(join(out, 'summary.md'), 'utf8');
+    expect(markdown).toContain('SYNT10001');
+    expect(markdown).toContain('无出处（权重/规则）');
     expect(logs.join('\n')).toContain('SYNT10001');
   });
 

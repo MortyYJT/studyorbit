@@ -166,10 +166,10 @@ export function formatSummary(summary) {
   const lines = [
     `# 课程分析评测 ${summary.startedAt}`, '',
     `模式：${summary.mode === 'fake' ? '固定输出' : `模型 ${summary.provider} / ${summary.model ?? '默认'}`}；每门课 ${summary.n} 次。`, '',
-    '| 课程 | 运行 | 有结果 | 触发修复 | 最终拒绝 | 调用失败 | 字段准确率 | 召回 | 精确 | 单元格一致 | 与首次相同 | 输入/输出 token | 平均耗时 |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| 课程 | 运行 | 有结果 | 触发修复 | 最终拒绝 | 调用失败 | 字段准确率 | 召回 | 精确 | 单元格一致 | 与首次相同 | 无出处（权重/规则） | 输入/输出 token | 平均耗时 |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
-  const row = (label, s) => `| ${label} | ${s.runs} | ${s.documentRuns} | ${s.interception.repairTriggered} | ${s.interception.rejected} | ${s.interception.failed} | ${pct(s.fieldAccuracy)} | ${pct(s.recall)} | ${pct(s.precision)} | ${pct(s.cellAgreement)} | ${pct(s.identicalToFirst)} | ${s.tokens.runsWithUsage ? `${s.tokens.input}/${s.tokens.output}` : '—'} | ${s.durationMs.mean === null ? '—' : `${(s.durationMs.mean / 1000).toFixed(1)}s`} |`;
+  const row = (label, s) => `| ${label} | ${s.runs} | ${s.documentRuns} | ${s.interception.repairTriggered} | ${s.interception.rejected} | ${s.interception.failed} | ${pct(s.fieldAccuracy)} | ${pct(s.recall)} | ${pct(s.precision)} | ${pct(s.cellAgreement)} | ${pct(s.identicalToFirst)} | ${s.unsourced.weight}/${s.unsourced.rule} | ${s.tokens.runsWithUsage ? `${s.tokens.input}/${s.tokens.output}` : '—'} | ${s.durationMs.mean === null ? '—' : `${(s.durationMs.mean / 1000).toFixed(1)}s`} |`;
   for (const course of summary.courses) lines.push(row(course.code, course.summary));
   if (summary.courses.length > 1) lines.push(row('合计', summary.overall));
   lines.push('', `各字段准确率：${Object.entries(summary.overall.perField).map(([field, value]) => `${field} ${pct(value)}`).join('，')}`);

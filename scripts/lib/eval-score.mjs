@@ -161,6 +161,12 @@ export function interceptionCounts(runs) {
 
 const ratio = (a, b) => (b ? a / b : null);
 
+/** Weights and rules a stored v2 document cleared as unsourced (「无出处」); v1 items without `unsourced` count none. */
+export function unsourcedCounts(document) {
+  const fields = document.assessments.flatMap(item => (Array.isArray(item.unsourced) ? item.unsourced : []));
+  return { weight: fields.filter(field => field === 'weight').length, rule: fields.filter(field => field === 'rule').length };
+}
+
 /**
  * Summary for one course over its runs. Each run: `{ accepted, failed?, document, attempts, durationMs, usage }`.
  * Accuracy, recall and precision are pooled over runs that produced a document.
@@ -178,6 +184,7 @@ export function summariseCourse(gold, runs) {
     correct: sum('correct'), cells: sum('cells'), matched: sum('matched'), gold: sum('goldCount'), predicted: sum('predictedCount'),
   };
   const agreement = consistency(gold, runs.map(run => run.document ?? null));
+  const unsourcedPerRun = runs.map(run => (run.document ? unsourcedCounts(run.document) : null));
   return {
     runs: runs.length, documentRuns: scores.length,
     fieldAccuracy: ratio(counts.correct, counts.cells),
@@ -187,6 +194,11 @@ export function summariseCourse(gold, runs) {
     cellAgreement: agreement.cellAgreement,
     identicalToFirst: agreement.identicalToFirst,
     interception: interceptionCounts(runs),
+    unsourced: {
+      weight: unsourcedPerRun.reduce((total, counts) => total + (counts?.weight ?? 0), 0),
+      rule: unsourcedPerRun.reduce((total, counts) => total + (counts?.rule ?? 0), 0),
+      perRun: unsourcedPerRun,
+    },
     tokens: {
       input: withUsage.reduce((total, run) => total + (run.usage.input ?? 0), 0),
       output: withUsage.reduce((total, run) => total + (run.usage.output ?? 0), 0),
@@ -213,6 +225,7 @@ export function summariseOverall(summaries) {
     cellAgreement: ratio(sum(s => s.counts.agreeingCells), sum(s => s.counts.consistencyCells)),
     identicalToFirst: ratio(sum(s => s.counts.identicalRuns), runs),
     interception: { runs, repairTriggered: sum(s => s.interception.repairTriggered), rejected: sum(s => s.interception.rejected), failed: sum(s => s.interception.failed), issues },
+    unsourced: { weight: sum(s => s.unsourced.weight), rule: sum(s => s.unsourced.rule) },
     tokens: { input: sum(s => s.tokens.input), output: sum(s => s.tokens.output), runsWithUsage: sum(s => s.tokens.runsWithUsage) },
     durationMs: { total: sum(s => s.durationMs.total), mean: runs ? sum(s => s.durationMs.total) / runs : null },
   };
