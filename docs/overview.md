@@ -1,6 +1,18 @@
 # 项目结构与数据流
 
-更新：2026-10-30。StudyOrbit 是本地原型：Vite 开发服务器同时提供 React 页面和只接受本机同源请求的本地接口（`vite.config.ts`）。静态构建不含这些接口。
+更新：2026-10-30。StudyOrbit 是本地原型，`npm run dev` 启动两个进程：本地接口服务（`server/`）和提供 React 页面的 Vite 开发服务器。静态构建不含本地接口。
+
+## 进程、端口和令牌
+
+| 进程 | 地址 | 说明 |
+| --- | --- | --- |
+| 本地接口服务（`node server/main.ts`，`npm run server`） | `http://127.0.0.1:5190`（`STUDYORBIT_API_PORT`） | 提供全部 `/api/local/*`；只绑 `127.0.0.1`；端口被占就报错退出，不换端口 |
+| Vite 开发服务器（`npm run dev:web`） | `http://localhost:5173`（`STUDYORBIT_WEB_PORT`，严格端口） | 只提供页面，把 `/api/local` 代理到本地接口服务 |
+
+- **启动：** `scripts/dev.mjs` 每次启动生成一个随机 32 字节令牌，经环境变量 `STUDYORBIT_API_TOKEN` 交给两个进程（不写盘、不打印、不进前端代码）；先启动接口服务，看到 `StudyOrbit local API listening on …` 这一行再启动 Vite（15 秒没看到或服务先退出就整体退出）；Ctrl-C 转发给两个进程，一个退出就停掉另一个。附加参数传给 Vite（`npm run dev -- --open`）；改页面端口用 `STUDYORBIT_WEB_PORT`，不要用 `--port`（接口只认页面自己的端口）。
+- **访问检查**（`server/guard.ts`，依次，失败一律 403 空响应）：对端是本机回环；请求头 `x-studyorbit-token` 等于本次令牌（定长比较）；`Host` 只能是 `localhost` / `127.0.0.1` / `[::1]` 加页面端口（防 DNS 重绑定）；有 `Origin` 时必须等于 `http://<Host>`。各路由原有的写操作要求（同源 `Origin` 加 `Content-Type: application/json`）不变。
+- **代理**（`server/proxy.ts`）：不改 `Host`，在服务端加上令牌并覆盖浏览器自带的值；浏览器不是本机回环地址就直接 403、不转发；SSE 不缓冲，浏览器中断时上游请求随之关闭。直接 `vite`（`npm run dev:web`）没有令牌会拒绝启动；`vite preview` 没有代理，`/api/local` 返回 404。
+- **单实例：** 服务启动时取得 `.local/server.lock`（`scripts/lib/server-lock.mjs`），同一项目已有服务在运行就退出并提示「另一个 StudyOrbit 本地服务正在运行」，退出时删除；随后打开 `.local/studyorbit.db`（`scripts/lib/sync-store.mjs`），数据库不可用时同步接口返回 `503 SYNC_STORE_UNAVAILABLE`，其他接口照常。
 
 ## 主流程
 
@@ -28,7 +40,10 @@
 | `web/src/LocalPlanning.tsx` | 课程页（成绩、考核、复习）和周视图 / 月历（排期、需要你处理、任务用时） |
 | `web/src/Agent.tsx`、`agent-request.ts` | 对话页；其他页面带课程和预设提示词打开新对话 |
 | `web/src/palette.ts`、`background.ts`、`BackgroundLayer.tsx`、`motion.ts` | 配色、背景、动画 |
-| `vite.config.ts` | 本地接口；所有 `/api/local/*` 拒绝其他来源（`scripts/lib/local-origin.mjs`） |
+| `server/main.ts`、`server/app.ts`、`server/routes/` | 本地接口服务：启动、访问检查后的路由表、每个 `/api/local/*` 路由一个文件 |
+| `server/guard.ts`、`server/proxy.ts` | 访问检查（回环、令牌、Host、Origin）；Vite 的 `/api/local` 代理 |
+| `scripts/dev.mjs` | `npm run dev`：生成令牌，先启动接口服务再启动 Vite |
+| `vite.config.ts` | 只有页面、端口和代理 |
 | `scripts/course-sync-runner.mjs` | 编排、模型调用、校验、取消、保存、用量和变更记录 |
 | `scripts/lib/` | 模型设置与适配器、对话存储与上下文、复习笔记存储、课程读取、修正存储、变更记录 |
 | `shared/` | 课程 JSON 契约、成绩计算、排期、修正合并、变更比较 |

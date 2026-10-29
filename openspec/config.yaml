@@ -6,8 +6,10 @@ context: |
   a model the owner picks (DeepSeek, OpenAI-compatible, Anthropic, Codex CLI) turns them into one course
   JSON per course, validated by `shared/course-data.ts`. The React app shows grades, the final-needed
   target, a deterministic weekly plan, revision, and an Agent chat over the synced data.
-  Architecture: Vite dev server only; the loopback, same-origin `/api/local/*` routes live in
-  `vite.config.ts`; pure, tested logic lives in `shared/` (grades, planning); local stores live in
+  Architecture: `npm run dev` (scripts/dev.mjs) starts a standalone loopback Node server (`server/`, TypeScript
+  run by Node, port 5190) serving every `/api/local/*` route behind a per-launch token and loopback/Host/Origin
+  checks, then the Vite dev server (port 5173), which only serves the page and proxies `/api/local`; new routes go in
+  `server/routes/`; pure, tested logic lives in `shared/` (grades, planning); local stores live in
   `scripts/lib/` and write to the ignored `.local/`. Owner corrections, tasks and preferences live in
   browser localStorage. Decisions are in `note/decisions.md` (v2 starts at #223).
   Stack: Node 24, strict TypeScript, React 19, Vite 8, zod, vitest. No other runtime dependencies.

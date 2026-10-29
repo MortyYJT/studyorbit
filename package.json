@@ -8,7 +8,9 @@
     "node": ">=24.15.0"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite",
+    "server": "node server/main.ts",
     "sync:courses": "node scripts/canvas-background.mjs discover .local/lms/courses.json",
     "mcp": "node scripts/mcp-server.mjs",
     "build": "tsc -p web/tsconfig.json && vite build",

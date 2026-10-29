@@ -1,9 +1,10 @@
 # 脚本
 
-运行入口是 `npm run dev`（页面和本地接口）和 `npm run sync:courses`（只采集课程列表）。权限、登录和数据位置见 [项目 README](../README.md) 与 [项目结构和数据流](../docs/overview.md)。
+运行入口是 `npm run dev`（`dev.mjs`：本地接口服务加页面）和 `npm run sync:courses`（只采集课程列表）。权限、登录和数据位置见 [项目 README](../README.md) 与 [项目结构和数据流](../docs/overview.md)。
 
 | 脚本 | 用途 |
 | --- | --- |
+| `dev.mjs` | `npm run dev` 的启动脚本：生成本次令牌，先启动 `server/main.ts`（端口 5190），看到监听行再启动 Vite（端口 5173），转发 Ctrl-C，一个退出就停另一个 |
 | `canvas-background.mjs` | 在已登录的 Edge 里读取 Canvas 课程，或单课的作业分组、作业和本人提交；按 Link 分页 |
 | `collect-ed-course.mjs` | 通过 `edstem` CLI 获取 Ed 目录、部分成绩和选定介绍 |
 | `edstem-scores.mjs` | 只读获取本人最终提交成绩，供 Ed 采集器使用 |
@@ -22,5 +23,6 @@
 | `lib/chat-store.mjs`、`lib/chat-context.mjs`、`lib/chat-replies.mjs` | 对话存储、对话上下文与系统提示、进行中的回复 |
 | `lib/revision-store.mjs` | 复习笔记存储（`.local/revision/notes.json`） |
 | `lib/local-origin.mjs` | 本地接口的同源检查 |
+| `lib/server-lock.mjs`、`lib/sync-store.mjs` | 本地接口服务的单实例锁（`.local/server.lock`）和同步记录数据库（`.local/studyorbit.db`） |
 
 `.d.mts` 文件是这些模块给 TypeScript 用的类型声明。旧的复制式采集脚本和 Cookie 实验脚本已移除，需要时查 Git 历史。

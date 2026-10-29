@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config';
 
-// Kept separate from vite.config.ts so tests never load the local sync API plugin.
+// Kept separate from vite.config.ts, which refuses `serve` without the local API token (scripts/dev.mjs sets it).
 export default defineConfig({
   test: {
     environment: 'node',
