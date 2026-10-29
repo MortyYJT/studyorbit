@@ -6,7 +6,8 @@ import type { RevisionNote } from '../../scripts/lib/revision-store.mjs';
 import { CourseDocumentSchema, toDisplayDocument } from '../../shared/course-data.js';
 import { bandTargets, calculateGrades, finalNeeded, parentGrade, type Band } from '../../shared/course-calculations.js';
 import { parseAvailability, schedulePlan } from '../../shared/planning.js';
-import { migrateStoredKeys, storageKeys } from './local-stores.js';
+import { markMigrated, migrateStoredKeys, migrationPlan, storageKeys, writeCourseSlice, type CourseSlice } from './local-stores.js';
+import type { CorrectionsView } from '../../shared/corrections.js';
 
 type RecordValue = Record<string, unknown>;
 type Course = { id: string; name: string; subjectCode: string; term?: string };
@@ -52,6 +53,33 @@ function readWork(): Work[] {
   } catch { return []; }
 }
 function readStore<T>(key: string): Record<string, T> { try { return record(JSON.parse(localStorage.getItem(key) ?? '{}')) as Record<string, T>; } catch { return {}; } }
+type Stores = { corrections: Record<string, Correction>; manual: Record<string, Assessment[]>; order: Record<string, string[]> };
+const courseOfKey = (key: string) => /^(\d{1,20}):/.exec(key)?.[1];
+// One course's part of the three stores that live in `.local/corrections/` once the course is migrated (decision #294).
+function sliceOf(stores: Stores, courseId: string): CourseSlice {
+  return { corrections: Object.fromEntries(Object.entries(stores.corrections).filter(([key]) => courseOfKey(key) === courseId)),
+    manual: Array.isArray(stores.manual[courseId]) ? stores.manual[courseId] : [], order: Array.isArray(stores.order[courseId]) ? stores.order[courseId] : [] };
+}
+function withSlice(stores: Stores, courseId: string, slice: CourseSlice): Stores {
+  const manual = { ...stores.manual }, order = { ...stores.order };
+  delete manual[courseId]; delete order[courseId];
+  if (slice.manual.length) manual[courseId] = slice.manual as Assessment[];
+  if (slice.order.length) order[courseId] = slice.order;
+  return { corrections: { ...Object.fromEntries(Object.entries(stores.corrections).filter(([key]) => courseOfKey(key) !== courseId)), ...slice.corrections as Record<string, Correction> }, manual, order };
+}
+function changedCourses(before: Stores, after: Stores): string[] {
+  const ids = new Set([...Object.keys(before.corrections), ...Object.keys(after.corrections)].flatMap(key => courseOfKey(key) ?? []));
+  for (const id of [...Object.keys(before.manual), ...Object.keys(after.manual), ...Object.keys(before.order), ...Object.keys(after.order)]) if (/^\d{1,20}$/.test(id)) ids.add(id);
+  return [...ids].filter(id => JSON.stringify(sliceOf(before, id)) !== JSON.stringify(sliceOf(after, id)));
+}
+const viewSlice = (view: CorrectionsView): CourseSlice => ({ corrections: view.corrections, manual: view.manual, order: view.order });
+// The calendar day of a due value for a date input: a date-only value as is, a date-time as its Melbourne day.
+function dateInput(due: string | undefined): string | undefined {
+  if (!due) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(due)) return due;
+  const date = new Date(due);
+  return Number.isNaN(date.getTime()) ? undefined : localDay(date);
+}
 function readAvailability(): number[] { try { return parseAvailability(JSON.parse(localStorage.getItem(availabilityKey) ?? 'null')); } catch { return parseAvailability(null); } }
 function localDay(date = new Date()): string { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date); }
 function addDays(day: string, count: number): string { const date = new Date(`${day}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + count); return date.toISOString().slice(0, 10); }
@@ -189,6 +217,13 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const [mode, setMode] = useState<'plan' | 'month'>('plan');
   const [courseTab, setCourseTab] = useState<'assessments' | 'revision'>('assessments');
   const [saveError, setSaveError] = useState(false);
+  // Corrections of migrated courses are saved to `.local/corrections/` (decisions #294, #295); the rest stay in localStorage.
+  const [correctionsNotice, setCorrectionsNotice] = useState<'' | 'save' | 'refreshed' | 'unavailable'>('');
+  const latest = useRef<Stores>({ corrections, manual, order });
+  const localCourses = useRef(new Set<string>());
+  const revisions = useRef<Record<string, number>>({});
+  const confirmed = useRef<Record<string, CourseSlice>>({});
+  const sending = useRef(new Map<string, Promise<void>>());
   const [notes, setNotes] = useState<RevisionNote[]>();
   const [notesError, setNotesError] = useState(false);
   // A response for a course the owner has already left is dropped, so one course never shows another's notes.
@@ -225,11 +260,44 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         const migrated = migrateStoredKeys(localStorage, migrations);
         if (migrated.changed) { setCorrections(readStore<Correction>(correctionKey)); setManual(readStore<Assessment[]>(manualKey)); setOrder(readStore<string[]>(orderKey)); setWork(readWork()); }
         if (migrated.failed) setSaveError(true);
+        await loadCorrections();
+        if (!live) return;
         setCourses(data.courses.filter(course => ids.includes(course.id)).map(course => normalize(course, data.reports.find(item => item.id === course.id)?.report))); setError('');
       } catch { if (live) setError(zh ? '无法读取本地课程数据，请先同步课程。' : 'Could not load local course data. Sync courses first.'); }
     }
     void load(); return () => { live = false; };
   }, [refreshVersion, zh]);
+  // One-time import of each course's browser data, then the `.local/` views; courses whose import has not succeeded keep
+  // using localStorage. The browser copy is never deleted (decision #294).
+  async function loadCorrections() {
+    for (const { courseId: id, slice } of migrationPlan(localStorage).imports) {
+      try {
+        const response = await fetch(`/api/local/corrections/${id}/import`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(slice) });
+        const body: unknown = response.ok ? await response.json() : null;
+        if (body && typeof (body as { imported?: unknown }).imported === 'boolean') markMigrated(localStorage, id);
+      } catch { /* Retried on the next load; the course keeps using localStorage. */ }
+    }
+    const plan = migrationPlan(localStorage);
+    localCourses.current = new Set(plan.local);
+    let next: Stores = { corrections: {}, manual: {}, order: {} };
+    const stored: Stores = { corrections: readStore<Correction>(correctionKey), manual: readStore<Assessment[]>(manualKey), order: readStore<string[]>(orderKey) };
+    for (const id of plan.local) next = withSlice(next, id, sliceOf(stored, id));
+    revisions.current = {}; confirmed.current = {};
+    let notice: typeof correctionsNotice = '';
+    try {
+      const response = await fetch('/api/local/corrections', { cache: 'no-store' });
+      if (!response.ok) throw new Error('unavailable');
+      const data = (await response.json()) as { courses: Record<string, CorrectionsView | { error: string }> };
+      for (const [id, view] of Object.entries(data.courses)) {
+        if (localCourses.current.has(id)) continue;
+        if ('error' in view) { notice = 'unavailable'; continue; }
+        revisions.current[id] = view.revision; confirmed.current[id] = viewSlice(view);
+        next = withSlice(next, id, viewSlice(view));
+      }
+    } catch { notice = 'unavailable'; }
+    latest.current = next; setCorrections(next.corrections); setManual(next.manual); setOrder(next.order);
+    setCorrectionsNotice(notice);
+  }
   const original = courses.find(item => item.course.id === courseId);
   // Owner corrections, grouping and grading inputs are shared by the course page and the course rail rings.
   const withCorrections = (original: CourseData) => ({ ...original, assessments: [...original.assessments, ...(Array.isArray(manual[original.course.id]) ? manual[original.course.id] : [])].map(item => {
@@ -270,15 +338,51 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const selected = original && withCorrections(original);
   const primaryItems = selected ? visibleItems(selected) : [];
   const parents = selected ? groupParents(selected, primaryItems) : [];
-  function saveCorrections(next: Record<string, Correction>): boolean { try { localStorage.setItem(correctionKey, JSON.stringify(next)); setCorrections(next); setSaveError(false); return true; } catch { setSaveError(true); return false; } }
-  function saveManual(next: Record<string, Assessment[]>): boolean { try { localStorage.setItem(manualKey, JSON.stringify(next)); setManual(next); setSaveError(false); return true; } catch { setSaveError(true); return false; } }
+  function commit(next: Stores) { latest.current = next; setCorrections(next.corrections); setManual(next.manual); setOrder(next.order); }
+  // Updates the page at once; courses not yet migrated are written to localStorage, the others are sent to the server.
+  function persist(next: Stores): boolean {
+    const changed = changedCourses(latest.current, next);
+    for (const id of changed.filter(id => localCourses.current.has(id))) if (!writeCourseSlice(localStorage, id, sliceOf(next, id))) { setSaveError(true); return false; }
+    commit(next); setSaveError(false);
+    for (const id of changed.filter(id => !localCourses.current.has(id))) {
+      const run = (sending.current.get(id) ?? Promise.resolve()).then(() => send(id));
+      sending.current.set(id, run);
+    }
+    return true;
+  }
+  // One request per course at a time, so a later edit carries the revision returned by the earlier one (decision #295).
+  async function send(id: string) {
+    const slice = sliceOf(latest.current, id), sent = JSON.stringify(slice);
+    if (sent === JSON.stringify(confirmed.current[id] ?? { corrections: {}, manual: [], order: [] })) return;
+    const adopt = (view: CorrectionsView, replace: boolean) => {
+      revisions.current[id] = view.revision; confirmed.current[id] = viewSlice(view);
+      if (replace) commit(withSlice(latest.current, id, viewSlice(view)));
+    };
+    try {
+      const response = await fetch(`/api/local/corrections/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: revisions.current[id] ?? 0, ...slice }) });
+      const body = await response.json().catch(() => null) as (CorrectionsView & { current?: CorrectionsView }) | null;
+      if (response.ok && body && typeof body.revision === 'number') {
+        // Take the server's normalised copy unless a newer edit is already waiting to be sent.
+        adopt(body, JSON.stringify(sliceOf(latest.current, id)) === sent);
+        setCorrectionsNotice(notice => notice === 'save' ? '' : notice);
+        return;
+      }
+      if (response.status === 409 && body?.current) { adopt(body.current, true); setCorrectionsNotice('refreshed'); return; }
+      throw new Error('save failed');
+    } catch {
+      commit(withSlice(latest.current, id, confirmed.current[id] ?? { corrections: {}, manual: [], order: [] }));
+      setCorrectionsNotice('save');
+    }
+  }
+  function saveCorrections(next: Record<string, Correction>): boolean { return persist({ ...latest.current, corrections: next }); }
+  function saveManual(next: Record<string, Assessment[]>): boolean { return persist({ ...latest.current, manual: next }); }
   function move(key: string, siblings: string[], direction: number) {
     if (!courseId) return; const index = siblings.indexOf(key); const destination = index + direction;
     if (index < 0 || destination < 0 || destination >= siblings.length) return;
     const reordered = [...siblings]; [reordered[index], reordered[destination]] = [reordered[destination]!, reordered[index]!];
     const existing = Array.isArray(order[courseId]) ? order[courseId] : [];
     const next = { ...order, [courseId]: [...existing.filter(id => !reordered.includes(id)), ...reordered] };
-    try { localStorage.setItem(orderKey, JSON.stringify(next)); setOrder(next); setSaveError(false); } catch { setSaveError(true); }
+    persist({ ...latest.current, order: next });
   }
   function sorted<T>(items: T[], key: (item: T) => string): T[] {
     const ranks = courseId && Array.isArray(order[courseId]) ? order[courseId] : [];
@@ -392,7 +496,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
                   const w = String(data.get('weight') ?? '').trim(), n = String(data.get('score') ?? '').trim(), m = String(data.get('outOf') ?? '').trim(); const weight = w ? Number(w) : null, score = n ? Number(n) : null, outOf = m ? Number(m) : null;
                   if ((weight !== null && (!Number.isFinite(weight) || weight < 0 || weight > 100)) || (score !== null && (!Number.isFinite(score) || score < 0)) || (outOf !== null && (!Number.isFinite(outOf) || outOf < 0)) || (score !== null && outOf !== null && score > outOf)) return;
                   saveCorrections({ ...corrections, [parent.sourceKey!]: { ...corrections[parent.sourceKey!], nature: String(data.get('nature')) as Correction['nature'] }, [entry.key]: { ...corrections[entry.key], name, kind: String(data.get('kind')) as Kind, scoring: String(data.get('scoring')) as 'none' | 'points' | 'weighted', weight, score, outOf, due: String(data.get('due') ?? '') || null, status: String(data.get('status') ?? '').trim() } }); }}>
-                  <label>{zh ? '名称' : 'Name'}<input name="name" required defaultValue={parent.displayName || parent.name} /></label><label>{zh ? '类型' : 'Type'}<select name="kind" defaultValue={parent.kind ?? 'assignment'}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'hurdle', 'unknown'] as Kind[]).map(value => <option key={value} value={value}>{groupName[value]}</option>)}</select></label><label>{zh ? '性质' : 'Nature'}<select name="nature" defaultValue={(() => { const source = visible.find(item => item.key === parent.sourceKey); return source?.bonus ? 'bonus' : source?.caution ? 'alternative' : source?.ungraded ? 'ungraded' : 'regular'; })()}><option value="regular">{zh ? '普通考核' : 'Regular'}</option><option value="bonus">{zh ? '加分' : 'Bonus'}</option><option value="ungraded">{zh ? '不计分' : 'Ungraded'}</option><option value="alternative">{zh ? '替代考试' : 'Alternative'}</option></select></label><label>{zh ? '占比 %' : 'Weight %'}<input type="number" min="0" max="100" step="any" name="weight" defaultValue={parent.weight} /></label><label>{zh ? '子项计分方式' : 'Child scoring'}<select name="scoring" defaultValue={parent.scoringRule}><option value="none">{zh ? '不自动汇总' : 'No aggregation'}</option><option value="points">{zh ? '按分值' : 'By points'}</option><option value="weighted">{zh ? '按各项权重' : 'By weights'}</option></select></label><label>{zh ? '得分' : 'Score'}<input type="number" min="0" step="any" name="score" defaultValue={parent.score} /></label><label>{zh ? '满分' : 'Out of'}<input type="number" min="0" step="any" name="outOf" defaultValue={parent.outOf} /></label><label>{zh ? '日期' : 'Due date'}<input type="date" name="due" defaultValue={parent.due} /></label><label>{zh ? '状态' : 'Status'}<input name="status" defaultValue={parent.status} /></label><button type="submit">{zh ? '保存' : 'Save'}</button></form></details>
+                  <label>{zh ? '名称' : 'Name'}<input name="name" required defaultValue={parent.displayName || parent.name} /></label><label>{zh ? '类型' : 'Type'}<select name="kind" defaultValue={parent.kind ?? 'assignment'}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'hurdle', 'unknown'] as Kind[]).map(value => <option key={value} value={value}>{groupName[value]}</option>)}</select></label><label>{zh ? '性质' : 'Nature'}<select name="nature" defaultValue={(() => { const source = visible.find(item => item.key === parent.sourceKey); return source?.bonus ? 'bonus' : source?.caution ? 'alternative' : source?.ungraded ? 'ungraded' : 'regular'; })()}><option value="regular">{zh ? '普通考核' : 'Regular'}</option><option value="bonus">{zh ? '加分' : 'Bonus'}</option><option value="ungraded">{zh ? '不计分' : 'Ungraded'}</option><option value="alternative">{zh ? '替代考试' : 'Alternative'}</option></select></label><label>{zh ? '占比 %' : 'Weight %'}<input type="number" min="0" max="100" step="any" name="weight" defaultValue={parent.weight} /></label><label>{zh ? '子项计分方式' : 'Child scoring'}<select name="scoring" defaultValue={parent.scoringRule}><option value="none">{zh ? '不自动汇总' : 'No aggregation'}</option><option value="points">{zh ? '按分值' : 'By points'}</option><option value="weighted">{zh ? '按各项权重' : 'By weights'}</option></select></label><label>{zh ? '得分' : 'Score'}<input type="number" min="0" step="any" name="score" defaultValue={parent.score} /></label><label>{zh ? '满分' : 'Out of'}<input type="number" min="0" step="any" name="outOf" defaultValue={parent.outOf} /></label><label>{zh ? '日期' : 'Due date'}<input type="date" name="due" defaultValue={dateInput(parent.due)} /></label><label>{zh ? '状态' : 'Status'}<input name="status" defaultValue={parent.status} /></label><button type="submit">{zh ? '保存' : 'Save'}</button></form></details>
               </div></details>; };
           const entries = (kind: Kind) => { const items = kind === 'ungraded' ? foldedItems : groupedItem(kind); const combined: { key: string; item?: Assessment; parent?: ParentAssessment }[] = [
             ...parents.filter(parent => kind === 'ungraded' ? foldedParent(parent) : !foldedParent(parent) && (parent.kind ?? 'assignment') === kind).map(parent => ({ key: `${selected.course.id}:group:${parent.name}`, parent })), ...items.map(item => ({ key: item.key, item })) ];
@@ -467,7 +571,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
             <label>{zh ? '性质' : 'Nature'}<select name="nature" defaultValue={item.bonus ? 'bonus' : item.caution ? 'alternative' : item.ungraded || item.kind === 'ungraded' ? 'ungraded' : 'regular'}><option value="regular">{zh ? '普通考核' : 'Regular'}</option><option value="bonus">{zh ? '加分' : 'Bonus'}</option><option value="ungraded">{zh ? '不计分' : 'Ungraded'}</option><option value="alternative">{zh ? '替代考试' : 'Alternative'}</option></select></label><label>{zh ? '规则' : 'Rule'}<input name="rule" defaultValue={item.rule ?? ''} /></label>
             <label>{zh ? '单项占比 %' : 'Item weight %'}<input name="weight" type="number" min="0" max="100" step="any" defaultValue={item.weightValue} /></label>
             <label>{zh ? '得分' : 'Score'}<input name="score" type="number" min="0" step="any" defaultValue={item.score} /></label><label>{zh ? '满分' : 'Out of'}<input name="outOf" type="number" min="0" step="any" defaultValue={item.outOf} /></label>
-            <label>{zh ? '截止时间' : 'Due'}<input name="due" defaultValue={item.due} placeholder="YYYY-MM-DD" /></label><label>{zh ? '归属' : 'Parent'}<select name="parent" defaultValue={item.parent}><option value="">{zh ? '无' : 'None'}</option>{visible.filter(candidate => candidate.key !== item.key && !candidate.parent && !visible.some(child => child.parent === item.key)).map(candidate => <option key={candidate.key} value={candidate.key}>{candidate.name}</option>)}</select></label><label>{zh ? '状态' : 'Status'}<input name="status" defaultValue={corrections[item.key]?.status ?? ''} /></label><label>{zh ? '链接' : 'Link'}<input type="url" name="link" defaultValue={item.link} /></label><button type="submit">{zh ? '保存' : 'Save'}</button>
+            <label>{zh ? '截止时间' : 'Due'}<input name="due" defaultValue={item.due} placeholder="YYYY-MM-DD" /></label><label>{zh ? '归属' : 'Parent'}<select name="parent" defaultValue={item.parent}><option value="">{zh ? '无' : 'None'}</option>{visible.filter(candidate => candidate.key !== item.key && !candidate.parent && !visible.some(child => child.parent === item.key)).map(candidate => <option key={candidate.key} value={candidate.key}>{candidate.name}</option>)}</select></label><label>{zh ? '状态' : 'Status'}<input name="status" defaultValue={item.status} /></label><label>{zh ? '链接' : 'Link'}<input type="url" name="link" defaultValue={item.link} /></label><button type="submit">{zh ? '保存' : 'Save'}</button>
           </form></details>
           <details className="assessment-edit"><summary>{zh ? '和另一项合并' : 'Merge with another'}</summary><div className="local-merge"><label>{zh ? '如果是同一个考核，合并到' : 'If this is the same assessment, merge into'}<select defaultValue="" onChange={event => { const target = event.target.value; if (!target) return; saveCorrections({ ...corrections, [item.key]: { ...corrections[item.key], mergeInto: target } }); close(); }}><option value="">{zh ? '选择考核' : 'Choose assessment'}</option>{visible.filter(other => other.key !== item.key && !all.some(child => corrections[child.key]?.mergeInto === item.key || child.parent === item.key)).map(other => <option value={other.key} key={other.key}>{other.name}</option>)}</select></label><small>{zh ? '来源保留，可撤销。已有排期不会自动移除。' : 'Sources remain and merges can be undone. Existing plans are not removed.'}</small></div></details>
           <div className="drawer-actions">
@@ -480,6 +584,9 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
 
     </> : <p>{zh ? '课程不可用或未选中。' : 'Course unavailable or not selected.'}</p>}
     {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}
+    {correctionsNotice && <p role="alert">{correctionsNotice === 'refreshed' ? (zh ? '修正已在别处更新，已刷新；请重新编辑' : 'Corrections were updated elsewhere and have been refreshed; please edit again')
+      : correctionsNotice === 'save' ? (zh ? '修正保存失败，已恢复为上次保存的内容；请确认本地服务在运行后重试。' : 'Could not save the corrections; the last saved version is shown. Check that the local server is running and try again.')
+      : (zh ? '无法读取本地修正文件（.local/corrections），部分修正暂未显示。' : 'Could not read the local corrections (.local/corrections); some corrections are not shown.')}</p>}
   </div>;
   // Monday-first weekday names; 2026-01-05 is a Monday.
   const weekdayName = (index: number) => new Intl.DateTimeFormat(language, { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${addDays('2026-01-05', index)}T12:00:00Z`));
@@ -589,6 +696,9 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
             <label className="inline"><input type="checkbox" checked={item.done === true} onChange={event => updateTask(item.key, { done: event.currentTarget.checked })} />{zh ? '完成' : 'Done'}</label>
             <button className="small ghost" onClick={() => saveWork(work.filter(row => row.key !== item.key))}>{zh ? '移除' : 'Remove'}</button></span></div>; })}</details>}
       {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}
+    {correctionsNotice && <p role="alert">{correctionsNotice === 'refreshed' ? (zh ? '修正已在别处更新，已刷新；请重新编辑' : 'Corrections were updated elsewhere and have been refreshed; please edit again')
+      : correctionsNotice === 'save' ? (zh ? '修正保存失败，已恢复为上次保存的内容；请确认本地服务在运行后重试。' : 'Could not save the corrections; the last saved version is shown. Check that the local server is running and try again.')
+      : (zh ? '无法读取本地修正文件（.local/corrections），部分修正暂未显示。' : 'Could not read the local corrections (.local/corrections); some corrections are not shown.')}</p>}
     </div></div>
   </>;
 }

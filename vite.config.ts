@@ -14,6 +14,7 @@ import { createNote, deleteNote, listNotes } from './scripts/lib/revision-store.
 import { loadCourseReports } from './scripts/lib/course-reports.mjs';
 import { createReplyRegistry } from './scripts/lib/chat-replies.mjs';
 import { foreignOrigin } from './scripts/lib/local-origin.mjs';
+import { createCorrectionsHandler, createCorrectionsStore } from './scripts/lib/corrections-store.mjs';
 import type { CourseDocument } from './shared/course-data.js';
 
 const courseFile = fileURLToPath(new URL('./.local/lms/courses.json', import.meta.url));
@@ -138,6 +139,17 @@ export default defineConfig({
           res.writeHead((error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500).end(JSON.stringify({ error: 'COURSES_UNAVAILABLE' }));
         }
       });
+      // Owner corrections, manual assessments and order lists per course in .local/corrections (decisions #290-#295).
+      // The store and its request handling live in scripts/lib/corrections-store.mjs; the base of a new store is the
+      // course's newest valid course file, read the same way as the course-reports route.
+      const handleCorrections = createCorrectionsHandler(createCorrectionsStore({
+        projectDir,
+        loadDocument: async courseId => {
+          try { return (await loadCourseReports(projectDir)).reports.find(item => item.id === courseId)?.report ?? null; }
+          catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
+        },
+      }));
+      server.middlewares.use('/api/local/corrections', (req, res) => { void handleCorrections(req, res); });
       // Revision notes saved from Agent replies (decision #236). GET ?courseId=, POST, DELETE /:id; stored in .local/revision.
       server.middlewares.use('/api/local/revision-notes', async (req, res) => {
         const remote = req.socket.remoteAddress;
