@@ -127,10 +127,11 @@ export async function evaluateCourses({ courses, n, run, isCancelled = () => fal
         const { result, validation, attempts } = await analyseWithRepair({
           instructions,
           run: prompt => run(prompt, { course, run: index }),
-          validate: raw => validateAnalysis(raw, { course, canvas, ed }),
+          validate: raw => validateAnalysis(raw, { course, canvas, ed, handbook }),
           isCancelled,
         });
-        const settled = settleCourse({ result, validation, collection: collectionFlags(canvas, ed, handbook) });
+        // Same path as the sync: the accepted output becomes a stored v2 document; no earlier document, so no legacy IDs.
+        const settled = settleCourse({ result, validation, collection: collectionFlags(canvas, ed, handbook), data: { canvas, ed, handbook }, previous: null });
         // A model/process failure or a cancelled run is "failed"; only a completed but invalid answer is "rejected".
         const failed = !settled.accepted && (result.exitCode !== 0 || isCancelled());
         runs.push({ index, accepted: settled.accepted, failed, status: settled.status, reason: settled.reason, document: settled.document,

@@ -7,7 +7,7 @@ import { createFakeRunner, evaluateCourses, isInside, loadFixture, loadRun, pars
 // The synthetic fixture uses an invented course (SYNT10001) and example.* URLs only.
 const fixture = join(import.meta.dirname, 'fixtures', 'synthetic-course');
 const cells = 7 * 9;
-const edIssue = 'Ed 已得 24/30，请使用同一来源的得分和满分';
+const refIssue = 'refs.0: 「Quiz 2」引用的 canvas 7999 不是采集到的 Canvas 作业 ID';
 const temps: string[] = [];
 afterEach(async () => { await Promise.all(temps.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
 
@@ -29,15 +29,20 @@ describe('evaluateCourses on the synthetic fixture', () => {
     const evaluation = await evaluateCourses({ courses: [course], n: 3, run: createFakeRunner(join(fixture, 'outputs')) });
     const [result] = evaluation.courses;
     expect(result.runs.map(run => run.attempts.length)).toEqual([2, 1, 1]);
-    expect(result.runs[0].attempts[0].issues).toEqual([`assessments.3: ${edIssue}`]);
+    expect(result.runs[0].attempts[0].issues).toEqual([`assessments.2.${refIssue}`]);
     expect(result.runs.every(run => run.accepted)).toBe(true);
+    // The runs are scored as stored v2 documents (code-filled IDs and facts) against the v1 gold, matched by name.
+    expect(result.runs[0].document?.version).toBe(2);
+    expect(result.runs[0].document?.assessments.map(item => item.id)).toEqual(['canvas-group:501', 'canvas:7101', 'canvas:7102', 'canvas:7001', 'ed:3003', 'canvas:7201', 'handbook:laboratory-attendance']);
 
     const summary = result.summary;
-    expect(summary.interception).toEqual({ runs: 3, repairTriggered: 1, rejected: 0, failed: 0, issues: { [edIssue]: 1 } });
+    expect(summary.interception).toEqual({ runs: 3, repairTriggered: 1, rejected: 0, failed: 0, issues: { [refIssue]: 1 } });
     expect(summary.documentRuns).toBe(3);
-    // Run 2 misses the lab hurdle (9 cells), has the wrong Quiz 2 status (1 cell) and one extra practice item.
-    expect(summary.fieldAccuracy).toBeCloseTo((3 * cells - 10) / (3 * cells), 10);
-    expect(summary.perField.status).toBeCloseTo(19 / 21, 10);
+    // Every run: the group status (unknown vs in_progress) and the bonus maximum and status come from code and differ from
+    // the gold (3 cells). Run 2 also misses the lab hurdle (9 cells), has the wrong Quiz 2 kind (1 cell) and one extra practice item.
+    expect(summary.fieldAccuracy).toBeCloseTo((3 * cells - 3 * 3 - 10) / (3 * cells), 10);
+    expect(summary.perField.status).toBeCloseTo(14 / 21, 10);
+    expect(summary.perField.kind).toBeCloseTo(19 / 21, 10);
     expect(summary.perField.parentId).toBeCloseTo(20 / 21, 10);
     expect(summary.recall).toBeCloseTo(20 / 21, 10);
     expect(summary.precision).toBeCloseTo(20 / 21, 10);
@@ -51,7 +56,7 @@ describe('evaluateCourses on the synthetic fixture', () => {
     const wrong = await readFile(join(fixture, 'outputs', '1.json'), 'utf8');
     const evaluation = await evaluateCourses({ courses: [course], n: 1, run: async () => ({ exitCode: 0, lastMessage: wrong, usage: null }) });
     expect(evaluation.courses[0].runs[0]).toMatchObject({ accepted: false, document: null });
-    expect(evaluation.courses[0].summary.interception).toEqual({ runs: 1, repairTriggered: 1, rejected: 1, failed: 0, issues: { [edIssue]: 2 } });
+    expect(evaluation.courses[0].summary.interception).toEqual({ runs: 1, repairTriggered: 1, rejected: 1, failed: 0, issues: { [refIssue]: 2 } });
     expect(evaluation.courses[0].summary.fieldAccuracy).toBeNull();
   });
 });

@@ -3,7 +3,7 @@
   "course": "SYNT10001",
   "year": "2026",
   "url": "https://handbook.example.edu/2026/subjects/synt10001/assessment",
-  "text": "Assessment. Weekly online quizzes (20%), two quizzes of 10% each. Assignment 1, a written report (30%), due in week 6. Final examination, 2 hours (50%), held in the examination period. Hurdle requirements: students must pass the final examination (at least 25 out of 50) and attend at least 8 of the 10 laboratory classes to pass the subject.",
+  "text": "Assessment\nDescription\tTiming\tPercentage\nWeekly online quizzes\nTwo quizzes of 10% each\tWeeks 2 and 8\t20%\nAssignment 1\nA written report\tWeek 6\t30%\nFinal examination\n2 hours, held in the examination period\tExamination period\t50%\nLaboratory attendance\nAttend at least 8 of the 10 laboratory classes\tThroughout the semester\tN/A\nHurdle requirement: students must pass the final examination (at least 25 out of 50) to pass the subject.",
   "capturedAt": "2026-09-15T00:00:00.000Z",
   "durationMs": 10
 }

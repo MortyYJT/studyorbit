@@ -5,19 +5,19 @@
 - [x] 1.3 Tests then `toDisplayDocument`: v1 → empty `refs`, `null` quotes, empty `unsourced`, empty `legacyIds`; v2 passes through
 - [x] 1.4 Tests then the model output schema (`CourseModelOutputSchema`): allowed fields only; `id`, `parentId`, `due`, `score`, `maxScore`, `status`, `sources` rejected (schema only; not wired to the sync yet)
 - [x] 1.5 Route every reader through the union and `toDisplayDocument`: `scripts/lib/course-reports.mjs` (+ `.d.mts`), `scripts/lib/chat-context.mjs`, `vite.config.ts`, `web/src/LocalPlanning.tsx`; existing v1 tests stay green
-- [ ] 1.6 `bash .claude/check.sh`; fresh-context review; record the PR number here (PR #259; check passed, fresh-context review pending)
+- [x] 1.6 `bash .claude/check.sh`; fresh-context review; record the PR number here (PR #259)
 
 ## 2. Model output v2 in the sync (PR 2)
 
-- [ ] 2.1 Tests then `parseHandbookComponents` in `scripts/lib/course-refs.mjs` (+ `.d.mts`) on synthetic tab-separated text: timing cell, multi-line first cell, header line, `N/A` hurdle row, table repeated per study period (merged), same name with different percentages (suffixed), no table; check it once against a real local Handbook capture (never committed)
-- [ ] 2.2 Tests then `slug` and ID generation: platform priority, primary reference = smallest ID, repeatable-reference suffix for all sharing items, `group:` fallback, empty slug, `parentKey` → `parentId`
-- [ ] 2.3 Tests then reference validation in `scripts/lib/course-validation.mjs`: missing Canvas / group / Ed IDs, Handbook name not a parsed component (substring rejected), uncollected source, shared Canvas or Ed reference, leaf with no references, duplicate keys, parent rules on keys, duplicate final IDs; issues name the item and reference; remove the v1 Ed score/maximum check
-- [ ] 2.4 Tests then fact back-fill: due precedence, score/maxScore pairs (Canvas graded, Ed graded, ungraded maximum, score above maximum), Canvas and Ed status mapping, most-advanced status, group/Handbook/model-only items, `sources` (Canvas group → `platform: 'canvas'`, `url: null`), canonical Handbook names in `refs`
-- [ ] 2.5 Tests then `buildLegacyIds(previous, current)`: equal IDs first and excluded, v1 source URLs, platform-shaped v1 IDs (Canvas before Ed for bare digits), unique name slug, ambiguous pairs dropped, unchanged IDs omitted, v2 carry-forward and composition
-- [ ] 2.6 Tests then `buildStoredDocument(modelDocument, collected, previous)` producing a valid stored v2 document (quotes kept as given and `unsourced: []` until PR 3)
-- [ ] 2.7 `courseOutputSchema()` from the model output schema; prompt gets `handbookComponents` and per-group `rulesText`; rewrite the prompt rules for references, listed Handbook names, exact quotes (Handbook row cells separated by single spaces) and "facts are filled by code"
-- [ ] 2.8 Runner: `validateAnalysis` gets Handbook data and components; reason 「Handbook 考核表未能解析」 and status at most `partial` when no component parses; the newest valid earlier document is passed in for `legacyIds`; `settleCourse` saves `buildStoredDocument(...)`; diagnostics unchanged
-- [ ] 2.9 Synthetic end-to-end test: model output fixture + collected fixtures + earlier v1 file → saved v2 file read back by `course-reports`
+- [x] 2.1 Tests then `parseHandbookComponents` in `scripts/lib/course-refs.mjs` (+ `.d.mts`) on synthetic tab-separated text: timing cell, multi-line first cell, header line, `N/A` hurdle row, table repeated per study period (merged), same name with different percentages (suffixed), no table; check it once against a real local Handbook capture (never committed)
+- [x] 2.2 Tests then `slug` and ID generation: platform priority, primary reference = smallest ID, repeatable-reference suffix for all sharing items, `group:` fallback, empty slug, `parentKey` → `parentId`
+- [x] 2.3 Tests then reference validation in `scripts/lib/course-validation.mjs`: missing Canvas / group / Ed IDs, Handbook name not a parsed component (substring rejected), uncollected source, shared Canvas or Ed reference, leaf with no references, duplicate keys, parent rules on keys, duplicate final IDs; issues name the item and reference; remove the v1 Ed score/maximum check
+- [x] 2.4 Tests then fact back-fill: due precedence, score/maxScore pairs (Canvas graded, Ed graded, ungraded maximum, score above maximum), Canvas and Ed status mapping, most-advanced status, group/Handbook/model-only items, `sources` (Canvas group → `platform: 'canvas'`, `url: null`), canonical Handbook names in `refs`
+- [x] 2.5 Tests then `buildLegacyIds(previous, current)`: equal IDs first and excluded, v1 source URLs, platform-shaped v1 IDs (Canvas before Ed for bare digits), unique name slug, ambiguous pairs dropped, unchanged IDs omitted, v2 carry-forward and composition
+- [x] 2.6 Tests then `buildStoredDocument(modelDocument, collected, previous)` producing a valid stored v2 document (quotes kept as given and `unsourced: []` until PR 3)
+- [x] 2.7 `courseOutputSchema()` from the model output schema; prompt gets `handbookComponents` and per-group `rulesText`; rewrite the prompt rules for references, listed Handbook names, exact quotes (Handbook row cells separated by single spaces) and "facts are filled by code"
+- [x] 2.8 Runner: `validateAnalysis` gets Handbook data and components; reason 「Handbook 考核表未能解析」 and status at most `partial` when no component parses; the newest valid earlier document is passed in for `legacyIds`; `settleCourse` saves `buildStoredDocument(...)`; diagnostics unchanged
+- [x] 2.9 Synthetic end-to-end test: model output fixture + collected fixtures + earlier v1 file → saved v2 file read back by `course-reports`
 - [ ] 2.10 `bash .claude/check.sh`; fresh-context review; record the PR number here
 
 ## 3. Quote verification, local key migration, 「无出处」 display and docs (PR 3)
