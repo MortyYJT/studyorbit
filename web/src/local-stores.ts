@@ -1,5 +1,6 @@
 // Browser storage of the owner's local planning data, and the one-time move of its keys to new assessment IDs.
 import { migrateLocalKeys, type LocalStores } from '../../shared/local-keys.js';
+import { sameValue, type Conflict } from '../../shared/corrections.js';
 
 export const storageKeys = {
   work: 'coursework.local-planning.work.v1',
@@ -155,4 +156,21 @@ export async function importCourse(storage: StorageLike, request: CorrectionsReq
     }
     return markMigrated(storage, courseId);
   } catch { return false; }
+}
+
+/**
+ * A conflict choice applied to a course's page copy that holds newer, not yet sent edits (decision #394), so the next save
+ * does not send the removed value back as a new owner change. `sync` drops the field (an orphaned correction is dropped
+ * whole) unless the owner has changed that value again since; `mine` changes nothing. Returns a new slice.
+ */
+export function applyChoiceToSlice(slice: CourseSlice, conflict: Conflict, choice: 'sync' | 'mine'): CourseSlice {
+  if (choice === 'mine' || !Object.hasOwn(slice.corrections, conflict.key)) return slice;
+  const corrections = { ...slice.corrections };
+  const correction = corrections[conflict.key] as Record<string, unknown>;
+  if (conflict.type === 'orphaned' || conflict.field === null) delete corrections[conflict.key];
+  else if (correction && typeof correction === 'object' && sameValue(conflict.field, correction[conflict.field], conflict.user)) {
+    const { [conflict.field]: _removed, ...rest } = correction;
+    if (Object.keys(rest).length) corrections[conflict.key] = rest; else delete corrections[conflict.key];
+  }
+  return { ...slice, corrections };
 }

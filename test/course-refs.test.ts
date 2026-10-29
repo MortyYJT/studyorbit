@@ -273,6 +273,33 @@ describe('buildLegacyIds', () => {
     )).toEqual({ 'canvas-1': 'canvas:1', 'ed-3': 'ed:3' });
   });
 
+  // v1 group parents used the bare Canvas assignment-group number as their ID; v2 names the group `canvas-group:<n>`.
+  const parentV1 = (id: string, name: string, parentId: string | null, urls: string[] = []) => ({ ...v1(id, name, urls.map(url => ['canvas', url] as [string, string])), parentId });
+  const group = (id: string): Ref => ({ platform: 'canvas-group', id });
+
+  it('maps a bare v1 group number to canvas-group:<n> when there is no canvas:<n>, ignoring the group links to its children', () => {
+    const previous = { version: 1 as const, assessments: [
+      parentV1('300', 'Quizzes', null, [canvasUrl('5551'), canvasUrl('5552')]),
+      parentV1('q1', 'Quiz 1', '300', [canvasUrl('5551')]), parentV1('q2', 'Quiz 2', '300', [canvasUrl('5552')]),
+    ] };
+    expect(buildLegacyIds(previous, current(
+      v2('canvas-group:300', 'Quiz marks', [group('300')]),
+      v2('canvas:5551', 'Quiz one', [canvas('5551'), group('300')]), v2('canvas:5552', 'Quiz two', [canvas('5552'), group('300')]),
+    ))).toEqual({ 300: 'canvas-group:300', q1: 'canvas:5551', q2: 'canvas:5552' });
+  });
+
+  it('keeps canvas:<n> first for bare digits, and prefers the group over ed:<n> only for a v1 parent', () => {
+    expect(buildLegacyIds(previousV1(v1('300', 'Quizzes')), current(v2('canvas:300', 'X', [canvas('300')]), v2('canvas-group:300', 'Y', [group('300')])))).toEqual({ 300: 'canvas:300' });
+    const both = () => current(v2('ed:300', 'Lesson', [ed('300')]), v2('canvas-group:300', 'Group', [group('300')]), v2('canvas:9', 'Child', [canvas('9')]));
+    expect(buildLegacyIds(previousV1(v1('300', 'Lab')), both())).toEqual({ 300: 'ed:300' });
+    expect(buildLegacyIds({ version: 1 as const, assessments: [parentV1('300', 'Quizzes', null), parentV1('c', 'Child', '300', [canvasUrl('9')])] }, both()))
+      .toEqual({ 300: 'canvas-group:300', c: 'canvas:9' });
+  });
+
+  it('maps canvas-group-shaped v1 IDs to the group', () => {
+    expect(buildLegacyIds(previousV1(v1('canvas-group-301', 'Labs')), current(v2('canvas-group:301', 'Lab marks', [group('301')])))).toEqual({ 'canvas-group-301': 'canvas-group:301' });
+  });
+
   it('falls back to a name slug that is unique on both sides', () => {
     expect(buildLegacyIds(previousV1(v1('exam', 'Final Exam'), v1('hurdle', 'Hurdle')),
       current(v2('handbook:final-exam', 'Final exam!', [{ platform: 'handbook', id: 'Final exam' }]), v2('group:hurdle', 'Hurdle'), v2('group:hurdle-2', 'hurdle'))))

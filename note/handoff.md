@@ -5,7 +5,7 @@
 - **最后更新：** 2026-10-30，Claude。
 - **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）、#247（全局清理，#239）；规则精简为单一文件 `CLAUDE.md`（#241）。
 - **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，本地 `origin` 已指向新地址），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
-- **OpenSpec：** `course-contract-v2` 已全部合并并归档（PR #259、#262、#265、#266）。进行中：`local-corrections-merge`（#290–#298），第 1 部分（`.local/corrections/` 存储、`/api/local/corrections` 接口、localStorage 一次性迁移；分支 `claude/corrections-store`，决定 #375–#384）已开 PR 待审查合并；第 2 部分（三方合并和冲突）、第 3 部分（变更记录）未开始。另有 `local-server-sync-pipeline`、`chat-tools-mcp` 已立项。
+- **OpenSpec：** `course-contract-v2` 已全部合并并归档（PR #259、#262、#265、#266）。进行中：`local-corrections-merge`（#290–#298），第 1 部分（`.local/corrections/` 存储、接口、localStorage 一次性迁移，决定 #375–#384）已合并（PR #269）；第 2 部分（三方合并和冲突，分支 `claude/corrections-merge`，决定 #385–#394）PR #271 待审查合并；第 3 部分（变更记录）未开始。另有 `local-server-sync-pipeline`、`chat-tools-mcp` 已立项。
 - **现行规格：** 在 `openspec/specs/`（`grade-target`、`revision`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
 
 ## 已完成
@@ -17,6 +17,7 @@
 - **清理（#239）：** 删了 6 份过时文档和约 130 条死 CSS 规则（13 个页面状态 × 6 种主题和背景组合，逐元素对比新旧计算样式，0 差异；同步弹窗和选课弹窗没测，因为打开会触发真实同步）；README、overview、scripts/README、OpenSpec 项目背景按代码重写；品牌名改为 StudyOrbit。
 - **课程 JSON v2 第 3 部分（待合并）：** 同步保存前核对权重和规则的引文（`scripts/lib/course-quotes.mjs`，在 `settleCourse` 里），找不到出处就清空、记入 `unsourced`、原因追加「N 项权重或规则无出处」；`shared/local-keys.ts` 的 `migrateLocalKeys` 在页面读取课程时把修正、手动考核归属、学习任务和排序迁到新 ID（`web/src/local-stores.ts`）；课程页在列表、权重图例、抽屉、复习页显示「无出处」，修正填了值就不显示；对话上下文写「权重无出处」「规则无出处」；评测按 ID → 平台身份 → 名称 slug 配对。`npm run check` 24 个文件、302 个测试通过；无头浏览器（临时配置、拦截所有非 GET 本地请求）看了 4 门真实 v1 课程（无标记、正常显示），并用拦截课程接口返回的合成课程验证 v1 → v2 后本地键迁移、标记和引文显示、重复加载不再改动。
 - **修正存进 `.local/`（第 1 部分，待合并）：** `shared/corrections.ts`（Schema、`assessmentFields`、`sameValue`、`normaliseCorrections`、`applyOwnerEdit`、导入时的孤立/悬空冲突）；`scripts/lib/corrections-store.mjs`（每课一个 0600 文件、按课串行、原子写、读不了的文件绝不覆盖、导入只在没有文件时创建）和它的请求处理，挂在 `vite.config.ts`；页面每次加载先跑 v2 键迁移，再逐课导入 localStorage 数据（标记 `coursework.corrections-migrated.v1`），之后已迁移课程的修正、手动考核、排序都读写本地服务，带 revision，409 时刷新并提示；单项表单状态默认取有效状态，父项表单日期默认取墨尔本日期。回滚注意：迁移后在页面上做的修正只在 `.local/corrections/`，回退代码后要重新录入。
+- **修正与同步三方合并（第 2 部分，待合并）：** `shared/corrections.ts` 的 `mergeCorrections`（只同步改 → 用同步值；只你改 → 保留；改成一样 → 保留并钉住；都改且不同 → 用你的并记冲突；同步删掉的考核 → 修正保留并提孤立冲突）和 `resolveConflict`；`scripts/lib/corrections-store.mjs` 读取时发现课程文件变了就先按 `legacyIds` 改键（钉住和冲突跟着走）再合并、推进基准；保存、导入、处理冲突前都先合并；新接口 `POST /api/local/corrections/<courseId>/conflicts/<conflictId>`；课程页顶部「同步冲突」块、抽屉「冲突」标记、周页「需要你处理」每课一行；同时修了 `legacyIds` 配不上 v1 分组纯数字 ID 的缺口（#385）。无头 Chrome 在临时项目副本（合成课程、临时 HOME）里走了三次重新同步和全部按钮，没碰真实数据。
 - **v2 评测（PR #268 待审查，分支 `claude/eval-v2`）：** 照基线重跑 4 门课 × 5 次（`deepseek-flash`），基线和 v2 都用最终打分代码 `--rescore` 重新打分，前后对比在 `docs/eval-results.md`「v2 之后」（合计字段准确率 83.9% → 87.0%，只有 COMP20003 变高）；评测脚本新增「无出处」计数（20 次运行全是 0）、`--rescore`，配对补上 Canvas 作业分组（决定 #370–#374）。
 - **同步存储（`local-server-sync-pipeline` 第 2 部分，PR 待审查，分支 `claude/sync-store`）：** `scripts/lib/sync-store.mjs`（`node:sqlite`，`.local/studyorbit.db` 0600、WAL、按 `user_version` 迁移、升级前备份、不可用的文件绝不改写、启动标记中断、按续跑链保留 50 条）和 `scripts/lib/server-lock.mjs`（单实例锁）；`engines.node` ≥ 24.15.0；还没接进服务和同步（等第 1、3 部分），决定 #405–#409。
 - **验证（较早）：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
@@ -28,15 +29,16 @@
 - 四家模型真实调用、真实同步、Safari / Firefox（同上一次交接）。
 - 契约 v2 没跑过真实同步：真实 Handbook / Ed 文本下有多少权重会被标「无出处」未知（模型改写而非逐字复制时会大量清空，见 design 风险一节）；真实 v1 → v2 迁移只在合成数据上验证过。
 
+- 三方合并和冲突处理只在合成课程上验证过；真实课程重新同步后的冲突数量未知（第一次 v1 → v2 同步可能一次出现较多）。
 - MCP 只用 SDK 客户端在本机真实数据上跑过冒烟测试（只看数量，#404）；从 Claude Code / Claude Desktop 实际连接没做过。
 - 修正迁移只用合成数据在一门真实课程 ID 上验证过（无头 Chrome、全新配置目录，验证后已删掉生成的文件）；你自己浏览器里的真实迁移没跑过（目前没有修正，迁移不会做任何事）。
 
 ## 下一步
 
-1. 审查并合并 `local-corrections-merge` 第 1 部分的 PR，再做第 2 部分（三方合并、冲突显示）。
+1. 新上下文审查并合并 `local-corrections-merge` 第 2 部分的 PR，再做第 3 部分（变更记录和提醒）。
 2. 你：第一次 v2 同步后看一眼各课的「无出处」数量；太多的话再调提示词（评测可以量清空率）。
    - 评测里 20 次运行「无出处」都是 0。
-   - 后续（未排期，决定 #372）：同步的 `legacyIds` 也不会把 v1 分组的纯数字 ID 映射到 `canvas-group:<n>`，名称不同时分组上的修正可能迁不过去；要改 spec。
+   - 决定 #372 记下的 `legacyIds` 分组缺口已在第 2 部分修好（#385），spec 已改。
 3. 你：打开 `localhost:5173`，在复习页点一个预设按钮，确认对话正常，把一条回复「存到复习」。
 4. L0/L1/L2（#238 先不做）：以后做时先定方案；Claude 的立场是执行器只在合成演示课程上跑。
 5. 小问题（未排期）：`RichText` 遇到「标题 + 列表」混在一段时列表符号原样显示。
