@@ -1,13 +1,13 @@
 ## 1. Tool registry (PR 1)
 
-- [ ] 1.1 Snapshot test pinning today's `chatSystemPrompt('zh' | 'en')` and `buildChatContext` output for a synthetic document (context mode must stay byte-identical)
-- [ ] 1.2 Tests then `gradeBreakdown` in `shared/course-calculations.ts`; rewrite `calculateGrades` to sum it; existing grade tests unchanged and green; property test: breakdown sums equal totals
-- [ ] 1.3 Move `totals()` grading inputs from `scripts/lib/chat-context.mjs` to `gradingInputs(doc)` in `shared/course-tools.ts`; chat context calls it; 1.1 stays green
-- [ ] 1.4 Tests then the registry core: `courseTools`, `toolDefinitions()` (`z.toJSONSchema`, no `$schema`, `type: object`), `runTool` (unknown tool, `INVALID_ARGUMENTS` paths, scope check, unsynced course, two-decimal rounding, deterministic output)
-- [ ] 1.5 Tests then `list_courses` and `get_assessments` (filters, Melbourne due format, unsourced flags, v1 and v2 documents)
-- [ ] 1.6 Tests then `calculate_grades` (leaf, points group, weighted group, bonus/ungraded/alternative/zero-weight exclusions, incomplete group, what-if on leaf, parent and item without maximum, what-if on a bonus rejected, `whatIfApplied` effects incl. `no-weight`, `parent-score-overrides` and `group-incomplete`) and `final_needed` (argument, saved, default target; secured, reachable, unreachable; unidentified weight)
-- [ ] 1.7 Tests then `upcoming_deadlines` (window, done items, cap) and `plan_schedule` (snapshot, argument tasks with and without keys, page keys kept so same-day ties match the weekly page, availability sources, window and `courseIds` output filter that never changes placements, overflow, `available: false`)
-- [ ] 1.8 Tests then the 8 000-character limit (`truncated` metadata, `RESULT_TOO_LARGE`)
+- [x] 1.1 Snapshot test pinning today's `chatSystemPrompt('zh' | 'en')` and `buildChatContext` output for a synthetic document (context mode must stay byte-identical)
+- [x] 1.2 Tests then `gradeBreakdown` in `shared/course-calculations.ts`; rewrite `calculateGrades` to sum it; existing grade tests unchanged and green; property test: breakdown sums equal totals
+- [x] 1.3 Move `totals()` grading inputs from `scripts/lib/chat-context.mjs` to `gradingInputs(doc)` in `shared/course-tools.ts`; chat context calls it; 1.1 stays green
+- [x] 1.4 Tests then the registry core: `courseTools`, `toolDefinitions()` (`z.toJSONSchema`, no `$schema`, `type: object`), `runTool` (unknown tool, `INVALID_ARGUMENTS` paths, scope check, unsynced course, two-decimal rounding, deterministic output)
+- [x] 1.5 Tests then `list_courses` and `get_assessments` (filters, Melbourne due format, unsourced flags, v1 and v2 documents)
+- [x] 1.6 Tests then `calculate_grades` (leaf, points group, weighted group, bonus/ungraded/alternative/zero-weight exclusions, incomplete group, what-if on leaf, parent and item without maximum, what-if on a bonus rejected, `whatIfApplied` effects incl. `no-weight`, `parent-score-overrides` and `group-incomplete`) and `final_needed` (argument, saved, default target; secured, reachable, unreachable; unidentified weight)
+- [x] 1.7 Tests then `upcoming_deadlines` (window, done items, cap) and `plan_schedule` (snapshot, argument tasks with and without keys, page keys kept so same-day ties match the weekly page, availability sources, window and `courseIds` output filter that never changes placements, overflow, `available: false`)
+- [x] 1.8 Tests then the 8 000-character limit (`truncated` metadata, `RESULT_TOO_LARGE`)
 - [ ] 1.9 `bash .claude/check.sh`; fresh-context review; record the PR number here
 
 ## 2. Tool-calling chat (PR 2)
