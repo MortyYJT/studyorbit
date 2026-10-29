@@ -13,7 +13,7 @@ The course page and the chat read the newest valid `分数结构*.json` per cour
 
 Local stores in `.local/` follow `scripts/lib/revision-store.mjs`: owner-only files (0600) in a 0700 directory, temp-file-and-rename writes, a promise queue to serialise read-modify-write, and a read that throws on anything other than a missing file so a later write never replaces data it could not read. Local API routes in `vite.config.ts` check the loopback address and use `foreignOrigin` (`scripts/lib/local-origin.mjs`); write methods also require an exact `Origin` and `Content-Type: application/json`.
 
-Owner decisions: #248 (corrections move to `.local/`, merged by Node), #249 (on conflict the owner's value is used first, the conflict is shown, the owner chooses), #253 (Claude makes the remaining design choices). Choices made under #253 for this change are recorded as #290–#297.
+Owner decisions: #248 (corrections move to `.local/`, merged by Node), #249 (on conflict the owner's value is used first, the conflict is shown, the owner chooses), #253 (Claude makes the remaining design choices). Choices made under #253 for this change are recorded as #290–#298.
 
 ## Goals / Non-Goals
 
@@ -45,6 +45,7 @@ One file per course: `.local/corrections/<courseId>.json`, with `courseId` match
   corrections: { [key]: Correction },          // keys start with "<courseId>:"; same shape as today
   manual: Assessment[],                        // keys "<courseId>:manual:<uuid>"; page shape, kept as given
   order: string[],
+  pins: { [key]: string[] },                 // owner fields kept even when equal to the base (§4)
   conflicts: Conflict[],
   updatedAt: ISO string }
 ```
@@ -63,7 +64,7 @@ All routes sit under the existing `/api/local` guard, check the loopback address
 | --- | --- |
 | `GET /api/local/corrections` | Every course with a store file. Courses in the current course list are reconciled first (§4). Returns `{ courses: { [courseId]: View } }`; an unreadable file is reported as `{ error: 'CORRECTIONS_UNREADABLE' }` for that course only. |
 | `GET /api/local/corrections?courseId=<id>` | One course, reconciled. No file → `{ exists: false, revision: 0, corrections: {}, manual: [], order: [], conflicts: [] }`. |
-| `PUT /api/local/corrections/<courseId>` | Body `{ revision, corrections, manual, order }`. `revision` must equal the stored one (0 when no file exists, which creates it); otherwise `409 { error: 'REVISION_MISMATCH', current: View }`. The server normalises (§3), closes conflicts on fields the request changed, writes, returns the new `View`. |
+| `PUT /api/local/corrections/<courseId>` | Body `{ revision, corrections, manual, order }`. `revision` must equal the stored one (0 when no file exists, which creates it with the same base as an import: the current newest valid course file of the course, or `digest: null` when there is none, §6); otherwise `409 { error: 'REVISION_MISMATCH', current: View }`. The server normalises (§3), closes conflicts on fields the request changed, writes, returns the new `View`. |
 | `POST /api/local/corrections/<courseId>/import` | Body `{ corrections, manual, order }`. When any file exists for the course → `200 { imported: false }` (an unreadable file → 500, never overwritten). Otherwise creates the store (§5) with `flag: 'wx'` → `201 { imported: true, store: View }`. |
 | `POST /api/local/corrections/<courseId>/conflicts/<conflictId>` | Body `{ revision, choice: 'sync' \| 'mine' }`; revision checked as for `PUT`; unknown conflict → 404. Returns the new `View`. |
 
@@ -90,11 +91,16 @@ All routes sit under the existing `/api/local` guard, check the loopback address
 | `parent` | `<courseId>:<parentId>`, or `null` |
 | `link` | the first source URL, or `null` |
 
-A group correction (`<courseId>:group:<courseId>:<id>`) is compared with the fields of the same assessment `<id>`, since the group row shows that assessment's values.
+A group correction (`<courseId>:group:<courseId>:<id>`) belongs to the same assessment `<id>`. The parent edit form takes its defaults from the source item *with its item correction already applied*, so for stripping (below) a group field is compared with the *effective item value*: the base value overlaid by the item correction of `<courseId>:<id>` for that field. An item-level correction copied under the group key is therefore removed, and choosing 「用同步的」 on the item field is not undone by a leftover group copy. In the merge a group field is compared with the base value, like an item field.
 
-**Equality** (`sameValue(field, a, b)`): `undefined`, `null` and `''` (after trimming) are all "empty" and equal; numbers are equal when they agree to two decimal places; `due` values that both parse as full date-times are equal when they denote the same instant (so `2026-11-10T12:59:00Z` equals `2026-11-10T23:59:00+11:00`); other strings compare trimmed.
+**Equality** (`sameValue(field, a, b)`): `undefined`, `null` and `''` (after trimming) are all "empty" and equal; numbers are equal when they agree to two decimal places; `due` values that both parse as full date-times are equal when they denote the same instant (so `2026-11-10T12:59:00Z` equals `2026-11-10T23:59:00+11:00`), and a date-only `YYYY-MM-DD` equals a date-time whose calendar date in `Australia/Melbourne` is that day; other strings compare trimmed.
 
-**What the owner changed.** Because the edit form saves every field, a correction field *equal to the base value* is treated as not set by the owner. `normaliseCorrections(store)` removes such fields, and removes a correction left with no field at all. It runs on import, on every `PUT` and inside every merge. This also fixes today's side effect where saving any edit stored `status: ''` and hid the synced status.
+**What the owner changed.** Because the edit forms save every field, a correction field *equal to the base value* (for group fields, the effective item value) is treated as not set by the owner. `normaliseCorrections(store)` removes such fields unless the field is pinned (§4), and removes a correction left with no field at all. It runs on import, on every `PUT` and inside every merge.
+
+Form noise that the equality rule alone does not catch (decision #292):
+
+- **Empty `status`.** The item edit form fills the status input from the stored correction (`corrections[key]?.status ?? ''`), not from the synced status, so every save stores `status: ''` even when the sync says `graded`. An empty `status` is always "not set" and is removed whatever the base says (the owner cannot clear a status to "unknown"; there is no such choice in the form). PR 1 also changes the item form's status default to the item's effective status. This fixes today's side effect where saving any edit hid the synced status.
+- **Group `due: null`.** The parent edit form puts a full date-time into an `<input type="date">`, which the browser rejects, so every save of a parent stored `due: null` ("owner cleared the date"). PR 1 changes the default to the Melbourne calendar date of the effective due (`YYYY-MM-DD`), which the date-only equality above treats as unchanged. Group corrections imported from localStorage (§6) drop `due: null`, because the old form produced it on every save and a genuine clear cannot be told apart.
 
 **Owner-only fields.** `hidden`, `mergeInto` and `bonus` have no synced counterpart; they are never stripped and never conflict. `link` is stripped when equal to the base link but never conflicts (a different link is shown next to the synced sources, as today).
 
@@ -110,29 +116,34 @@ Corrections on manual items (`<courseId>:manual:...`) and keys of neither form a
 
 1. If the new document is v2 with `legacyIds`, apply `migrateLocalKeys` to `{ corrections, manual: { [courseId]: manual }, order: { [courseId]: order }, work: [] }`, and rename `base.assessments` keys the same way (an existing new key wins). This is the same function the page uses; it is idempotent.
 2. `mergeCorrections(base.assessments, incoming, store)` (pure).
-3. `base` ← `{ digest, assessments: incoming }` plus the base entries of orphaned assessments that still have corrections; `revision` + 1; write.
+3. `base` ← `{ digest, assessments: incoming }`; `revision` + 1; write.
 
 **Merge rules**, for each correction key whose assessment ID is known, and each overridable field the correction sets (b = base, i = incoming, u = owner):
 
 | Case | Result |
 | --- | --- |
-| `u` equals `b` (owner did not change it) | drop the field; the sync value shows |
+| `u` equals `b`, field not pinned (owner did not change it) | drop the field; the sync value shows |
+| `u` equals `b`, field pinned, `i` equals `b` | keep `u` (pinned) |
+| `u` equals `b`, field pinned, `i` differs | keep `u`; record a `field` conflict |
 | `i` equals `b` (only the owner changed it) | keep `u` |
-| `i` equals `u` (both changed to the same value) | drop the field (resolved) and close any open conflict on it |
+| `i` equals `u` (both changed to the same value) | keep the field and **pin** it; close any open conflict on it |
 | all three differ | keep `u`; record a `field` conflict `{ base: b, incoming: i, user: u }` |
 | no base entry for the assessment | treat `b` as `i`: keep `u` if it differs, no conflict |
 
-- **Assessment removed by the sync** (key's ID not in `incoming`): the correction is kept unchanged; unless its only fields are `hidden` (hiding something that is gone needs no decision), an `orphaned` conflict is recorded.
-- **Reference to a removed assessment**: a correction whose `parent` or `mergeInto` names an item key not in `incoming` (and not a manual key) keeps the value and records a `dangling` conflict for that field.
+**Pins** (decision #298). When the sync converges on the owner's value, dropping the field would let the next sync change silently replace a value the owner set (and name, score or kind changes are not in the change log). Instead the field stays in the correction and its name is added to `pins[key]`. A pinned field is never stripped by the "equal to the base" rule; a later sync that changes it raises a `field` conflict and the owner's value stays. A pin is removed when the owner changes that field's value in a `PUT` (the new value is then treated like any owner change) or chooses 「用同步的」 for it, and when the correction is deleted.
+
+- **Assessment removed by the sync**: raised only on the transition from present to absent, i.e. the key's ID is in `base.assessments` and not in `incoming`. The correction is kept unchanged; unless its only fields are `hidden` (hiding something that is gone needs no decision), an `orphaned` conflict is recorded. Because the base then advances to `incoming`, which also lacks the ID, later syncs that still lack it raise nothing, so a 「保留」 choice sticks. If the assessment comes back, its correction is merged with no base entry (adopted, no conflict).
+- **Reference to a removed assessment**: likewise only on the transition: a correction whose `parent` or `mergeInto` names an item key whose ID is in `base.assessments` and not in `incoming` (manual keys excluded) keeps the value and records a `dangling` conflict for that field.
 - **New assessment**: no correction exists; nothing to do.
 - Existing conflicts: a new conflict replaces an open one with the same ID; open `field` conflicts whose correction field was dropped are closed.
+- Import and a `PUT` that creates the store run the same transition check once against the new base: corrections whose assessment or reference target is not in that base get `orphaned` or `dangling` conflicts. With `digest: null` nothing is raised.
 
 `Conflict` = `{ id, type: 'field' | 'orphaned' | 'dangling', key, assessmentId, field: string | null, base, incoming, user, detectedAt }`, where `id` is the first 16 hex characters of `sha256("<type>|<key>|<field>")`, so the same disagreement keeps one ID across merges.
 
 ### 5. Conflict resolution and edits (decision #293)
 
-- `choice: 'sync'` — `field`: delete that field from the correction (the correction is deleted when empty); `orphaned`: delete the correction and its base entry; `dangling`: delete that field. The conflict is closed.
-- `choice: 'mine'` — the conflict is closed and the correction stays. The base already holds the incoming value, so the same disagreement is not raised again unless a later sync changes the field again.
+- `choice: 'sync'` — `field`: delete that field from the correction (the correction is deleted when empty); `orphaned`: delete the correction; `dangling`: delete that field. The conflict is closed.
+- `choice: 'mine'` — the conflict is closed and the correction stays; this neither adds nor removes a pin (the value differs from the new base, so it is kept anyway). The base already holds the incoming value, so the same disagreement is not raised again unless a later sync changes the field again; an orphaned or dangling conflict is not raised again while the assessment stays absent.
 - A `PUT` that changes or removes a correction field with an open conflict closes that conflict (the owner has chosen by editing).
 
 The page shows open conflicts in three places: a 「同步冲突」 block at the top of the course page (assessment name, field label, 「同步：」 incoming, 「你的：」 user, buttons 「用同步的」/「保留我的」; orphaned items read 「这项已不在最新同步里，你的修正暂时未用」 with 「删除修正」/「保留」); a mark beside the conflicted field in the drawer; and one line per course in the week page's 「需要你处理」 list (「<CODE>：N 项修正和同步结果不一致」) that opens the course. The owner's value is what the page uses until a choice is made (#249).
@@ -145,7 +156,7 @@ On each course-reports load the page runs, in order:
 2. For every course ID that has corrections (keys `^\d+:`), manual items or an order list in localStorage and is not listed in the marker `coursework.corrections-migrated.v1` (`{ courses: string[] }`): `POST /import` with that course's slices. On `imported: true` or `imported: false`, the course is added to the marker. On failure it is left out and retried on the next load.
 3. `GET /api/local/corrections` and use it as the source for every course in the marker or with no localStorage data.
 
-The server's import validates, takes the current newest valid course file of that course as the base (or an empty base with `digest: null` when there is none, adopted at the first reconcile), runs `migrateLocalKeys` once more, normalises (§3) and creates the file with `flag: 'wx'`. Import is idempotent: a second call finds the file and returns `imported: false`, which also covers two tabs importing at once and a profile whose course was already imported elsewhere (its localStorage copy is then not merged in).
+The server's import validates, takes the current newest valid course file of that course as the base (or an empty base with `digest: null` when there is none, adopted at the first reconcile), runs `migrateLocalKeys` once more, drops `due: null` from group corrections (§3), normalises (§3), runs the transition check (§4) and creates the file with `flag: 'wx'`. Import is idempotent: a second call finds the file and returns `imported: false`, which also covers two tabs importing at once and a profile whose course was already imported elsewhere (its localStorage copy is then not merged in).
 
 A per-course marker is used instead of one flag: if one course fails, the page keeps reading and writing localStorage for that course only, as today, so an edit made before the retry cannot be lost when an already-imported course would otherwise be skipped. The localStorage stores are never deleted; after migration they are a read-only backup.
 
@@ -170,7 +181,8 @@ After migration, `corrections`, `manual` and `order` state are built from the vi
 ## Risks / Trade-offs
 
 - [A `GET` writes the store] → only when a new course file is first seen; the write is queued, atomic and idempotent, and the routes are loopback and same-origin only.
-- [Stripping fields equal to the base loses "pin this value" intent] → the edit form saves every field, so pinning cannot be told apart from untouched today; the owner can re-enter a value after a later sync, and the conflict would show the change.
+- [Stripping fields equal to the base loses "pin this value" intent when the owner types the synced value itself] → the edit form saves every field, so this cannot be told apart from untouched; values the owner set *before* the sync agreed are pinned when it converges (§4), so they are never lost silently.
+- [An imported group correction that genuinely cleared a due date loses that clear] → accepted; the old form wrote `due: null` on every parent save, so keeping it would clear every edited parent's date.
 - [Imported corrections have an unknown original base] → the current file is used as the base; fields already equal to it are dropped (they changed nothing on screen); others are kept as owner changes. No conflict can be raised for changes that happened before the import.
 - [The first v2 sync after v1 differs in many fields] → due dates compare by instant; remaining differences (kinds, cleared weights) raise conflicts or change-log lines, which is honest but may be many once.
 - [Deleting the newest course file makes an older file "new"] → treated like a sync that changed values back; owner values still win and conflicts are shown.

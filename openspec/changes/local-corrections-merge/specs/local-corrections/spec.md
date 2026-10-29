@@ -16,11 +16,15 @@ The system SHALL store each course's owner corrections, manual assessments and o
 - **THEN** it is rejected with `INVALID_COURSE_ID` and no file is touched
 
 ### Requirement: Corrections API with optimistic revisions
-The system SHALL serve `/api/local/corrections` to loopback, same-origin requests only, with JSON bodies required for writes: `GET` for all courses with a store or one course (`?courseId=`), `PUT /<courseId>` with `{ revision, corrections, manual, order }`, `POST /<courseId>/import`, and `POST /<courseId>/conflicts/<conflictId>`. A `PUT` or conflict resolution whose `revision` differs from the stored revision (0 when no file exists) MUST be rejected with `409` and the current store, and MUST NOT change the file. Every successful write SHALL increase `revision` by one.
+The system SHALL serve `/api/local/corrections` to loopback, same-origin requests only, with JSON bodies required for writes: `GET` for all courses with a store or one course (`?courseId=`), `PUT /<courseId>` with `{ revision, corrections, manual, order }`, `POST /<courseId>/import`, and `POST /<courseId>/conflicts/<conflictId>`. A `PUT` with revision 0 for a course without a file SHALL create the store with the same base as an import (the current newest valid course file of the course). A `PUT` or conflict resolution whose `revision` differs from the stored revision (0 when no file exists) MUST be rejected with `409` and the current store, and MUST NOT change the file. Every successful write SHALL increase `revision` by one.
 
 #### Scenario: Stale write is rejected
 - **WHEN** two tabs read course `100` at revision 4, the first saves (revision 5), and the second then saves with revision 4
 - **THEN** the second save gets `409` with the revision 5 store, and the page shows that the corrections were updated elsewhere and refreshes them
+
+#### Scenario: First save creates the store
+- **WHEN** course `300` has no store file and no localStorage data, and the owner saves a weight correction with revision 0
+- **THEN** the store is created with the course's newest valid course file as its base, and the correction is kept only if it differs from that file
 
 #### Scenario: Foreign origin
 - **WHEN** a page served from another local port sends `GET /api/local/corrections`
@@ -46,14 +50,30 @@ On page load, after the course-contract-v2 key migration has run on localStorage
 - **THEN** the imported store holds the correction under the v2 key
 
 ### Requirement: Only fields the owner changed are kept
-The system SHALL compare each correction field with the base value of the same assessment (a group correction with the assessment it belongs to), using the correction vocabulary (`kind` `test` as `exam` and `other` as `unknown`, `status` `unknown` as empty, `outOf` for `maxScore`, `parent` as an item key, `link` as the first source URL), treating `undefined`, `null` and an empty string as equal, numbers as equal to two decimal places, and due date-times as equal when they denote the same instant. A field equal to its base value SHALL be removed on import, on every save and in every merge, and a correction left without fields SHALL be removed. `hidden`, `mergeInto` and `bonus` SHALL never be removed this way.
+The system SHALL compare each item correction field with the base value of the same assessment, and each group correction field with the effective item value (the base value overlaid by that assessment's item correction), using the correction vocabulary (`kind` `test` as `exam` and `other` as `unknown`, `status` `unknown` as empty, `outOf` for `maxScore`, `parent` as an item key, `link` as the first source URL), treating `undefined`, `null` and an empty string as equal, numbers as equal to two decimal places, due date-times as equal when they denote the same instant, and a date-only due as equal to a date-time on the same calendar day in `Australia/Melbourne`. A field equal to that value SHALL be removed on import, on every save and in every merge unless it is pinned, and a correction left without fields SHALL be removed. An empty `status` SHALL always be treated as not set and removed. Group corrections imported from localStorage SHALL drop `due: null`. `hidden`, `mergeInto` and `bonus` SHALL never be removed this way. The item edit form SHALL default the status to the item's effective status, and the parent edit form SHALL default its date input to the calendar date of the effective due.
 
 #### Scenario: Form saves unchanged fields
 - **WHEN** the base has weight 20 and due `2026-11-10T12:59:00Z`, and the owner saves the edit form changing only the weight to 25 (the form also sends due `2026-11-10T23:59:00+11:00` and status `''`)
 - **THEN** the stored correction contains only `weight: 25`
 
+#### Scenario: Empty status against a synced status
+- **WHEN** the base status is `graded` and a saved correction has `status: ''`
+- **THEN** the status field is removed and the page shows 「已出分」 with no conflict on any later sync
+
+#### Scenario: Item correction copied into the group correction
+- **WHEN** the owner corrected the weight of parent `canvas-group:300` to 40 (base 30), then saves the parent edit form changing only the name, and later chooses 「用同步的」 for the weight
+- **THEN** the group correction holds only the name, and after choosing the sync value the page shows weight 30
+
+#### Scenario: Parent due date round trip
+- **WHEN** a parent's effective due is `2026-11-10T12:59:00Z` and the owner saves the parent edit form without touching the date (the form sends `2026-11-10`)
+- **THEN** no `due` field is stored for the group
+
+#### Scenario: Imported parent date noise
+- **WHEN** localStorage holds a group correction with `due: null` and a name change, and it is imported while the base due is `2026-11-10T12:59:00Z`
+- **THEN** the imported group correction holds only the name
+
 ### Requirement: Three-way merge with sync results
-When the server reads a course store and the newest valid course file for that course has a digest different from the store's base digest, it SHALL first apply that document's `legacyIds` to the store's keys and base with `migrateLocalKeys`, then merge per assessment and per overridable field (`name`, `kind`, `nature`, `weight`, `score`, `outOf`, `due`, `status`, `rule`, `scoring`, `parent`, `link`) with the base as the common ancestor, then set the base to the new document. The owner's value SHALL be used whenever the owner changed a field, including when the sync also changed it to a different value (#249). Corrections for assessments the sync removed SHALL be kept. Merging the same document twice SHALL change nothing.
+When the server reads a course store and the newest valid course file for that course has a digest different from the store's base digest, it SHALL first apply that document's `legacyIds` to the store's keys and base with `migrateLocalKeys`, then merge per assessment and per overridable field (`name`, `kind`, `nature`, `weight`, `score`, `outOf`, `due`, `status`, `rule`, `scoring`, `parent`, `link`) with the base as the common ancestor, then set the base to the new document. The owner's value SHALL be used whenever the owner changed a field, including when the sync also changed it to a different value (#249). When the sync converges on a value the owner set, the field SHALL be kept and pinned so that a later sync change raises a conflict instead of replacing it. Corrections for assessments the sync removed SHALL be kept, and orphaned or dangling conflicts SHALL be raised only when the assessment or reference target was in the base and is absent from the new document. Merging the same document twice SHALL change nothing.
 
 #### Scenario: Only the sync changed
 - **WHEN** the base weight is 20, the owner has corrected only the name, and the new file has weight 25
@@ -65,22 +85,30 @@ When the server reads a course store and the newest valid course file for that c
 
 #### Scenario: Both changed to the same value
 - **WHEN** the base weight is 20, the owner corrected it to 30, and the new file has 30
-- **THEN** the weight field is removed from the correction, the page shows 30, and no conflict is recorded
+- **THEN** the page shows 30, no conflict is recorded, and the weight field stays in the correction as pinned
+
+#### Scenario: Sync changes a converged value later
+- **WHEN** the base weight is 20 and the owner corrected it to 30; the first re-sync has 30; a second re-sync has 25
+- **THEN** after the second re-sync the page still shows 30 and a `field` conflict records sync 25 and owner 30
 
 #### Scenario: Both changed to different values
 - **WHEN** the base due date is 3 November, the owner corrected it to 5 November, and the new file has 10 November
 - **THEN** the page shows 5 November and a `field` conflict records base 3 November, sync 10 November and owner 5 November
 
 #### Scenario: Assessment removed by the sync
-- **WHEN** the owner corrected the weight of `canvas:5551` and the new file no longer has `canvas:5551`
+- **WHEN** the owner corrected the weight of `canvas:5551`, the base has `canvas:5551`, and the new file no longer has it
 - **THEN** the correction is kept and an `orphaned` conflict is recorded for it
+
+#### Scenario: Kept orphan is not raised again
+- **WHEN** the owner chose 「保留」 for that `orphaned` conflict and the next re-sync still lacks `canvas:5551`
+- **THEN** no conflict is recorded and the correction is still kept
 
 #### Scenario: Hidden assessment removed by the sync
 - **WHEN** the owner's only correction of `canvas:5552` is `hidden: true` and the new file no longer has it
 - **THEN** the correction is kept and no conflict is recorded
 
 #### Scenario: Merge target removed by the sync
-- **WHEN** a correction has `mergeInto: '100:canvas:5551'` and the new file no longer has `canvas:5551`
+- **WHEN** a correction has `mergeInto: '100:canvas:5551'`, the base has `canvas:5551`, and the new file no longer has it
 - **THEN** the `mergeInto` value is kept and a `dangling` conflict is recorded for that field
 
 #### Scenario: New assessment
@@ -100,7 +128,7 @@ When the server reads a course store and the newest valid course file for that c
 - **THEN** the second read does not change the store or its revision
 
 ### Requirement: Conflicts are shown and the owner chooses
-The course page SHALL list the course's open conflicts with the assessment name, the field, the sync value and the owner's value, and offer 「用同步的」 and 「保留我的」 (for an assessment no longer in the sync, 「删除修正」 and 「保留」); the drawer SHALL mark a conflicted field; and the week page's 「需要你处理」 list SHALL show one line per course with open conflicts that opens the course. Choosing the sync value SHALL remove the correction field (an orphaned correction is removed whole) and close the conflict; keeping the owner's value SHALL close the conflict and keep the correction, and the same disagreement SHALL NOT be raised again unless a later sync changes that field again. Saving a new value for a conflicted field SHALL close its conflict.
+The course page SHALL list the course's open conflicts with the assessment name, the field, the sync value and the owner's value, and offer 「用同步的」 and 「保留我的」 (for an assessment no longer in the sync, 「删除修正」 and 「保留」); the drawer SHALL mark a conflicted field; and the week page's 「需要你处理」 list SHALL show one line per course with open conflicts that opens the course. Choosing the sync value SHALL remove the correction field (an orphaned correction is removed whole) and close the conflict; keeping the owner's value SHALL close the conflict and keep the correction, and the same disagreement SHALL NOT be raised again unless a later sync changes that field again. Saving a new value for a conflicted field SHALL close its conflict. Choosing the sync value SHALL also remove the field's pin.
 
 #### Scenario: Use the sync value
 - **WHEN** a weight conflict shows sync 25 and owner 30, and the owner clicks 「用同步的」
