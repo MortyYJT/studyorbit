@@ -22,14 +22,14 @@
 
 ## 3. Quote verification, local key migration, 「无出处」 display and docs (PR 3)
 
-- [x] 3.1 Tests then normalisation and corpus units in `scripts/lib/course-quotes.mjs` (+ `.d.mts`): tags, entities, NFKC, case, quotes, dashes, whitespace incl. tabs; units = Handbook rows, other Handbook lines, Ed context texts, Canvas group names, rendered group rules (`drop lowest <n>`, `drop highest <n>`, `never drop <name>`); assignment names and lesson titles excluded; no matching across units
-- [x] 3.2 Tests then weight verification: Canvas group weight and cited Handbook percentage to two decimals, quote with number + `%`/`per cent`/`percent`, Handbook-row quote must contain the row's component name, `5` vs `25%`, `Quiz 5`, too short, quote with `null` field dropped; rule verification incl. a Canvas drop rule
-- [x] 3.3 Tests then clearing: field and quote `null`, `unsourced` updated, weighted parent downgraded to `none`, reason note 「N 项权重或规则无出处」, status unchanged
-- [x] 3.4 Wire verification after the repair loop in the runner, before saving
-- [x] 3.5 Tests then `migrateLocalKeys(stores, courseId, legacyIds)` in `shared/`: correction item and group keys, `parent`/`mergeInto` values, manual `parent`, work keys (item and group form), order list rewritten and de-duplicated, existing new correction wins, planned-task key collision keeps both tasks, idempotent, other courses untouched
-- [x] 3.6 Course page runs `migrateLocalKeys` on browser storage when course reports load and saves the result; written so the #248 `.local/` store can call the same function
-- [x] 3.7 Course page: 「无出处」 tag on weight (list, breakdown, drawer) and rule (drawer, Revision tab); quote shown in the drawer; tag hidden when a correction supplies the value
+- [x] 3.1 Tests then normalisation and corpus units in `scripts/lib/course-quotes.mjs` (+ `.d.mts`): tags, entities, NFKC, case, quotes, dashes, whitespace incl. tabs; units = Handbook rows, other Handbook lines, Ed context texts, Canvas group names, rendered group rules (`drop lowest <n>`, `drop highest <n>`, `never drop <name>`); assignment names and lesson titles excluded; no matching across units (PR #265)
+- [x] 3.2 Tests then weight verification: Canvas group weight and cited Handbook percentage to two decimals, quote with number + `%`/`per cent`/`percent`, Handbook-row quote must contain the row's component name, `5` vs `25%`, `Quiz 5`, too short, quote with `null` field dropped; rule verification incl. a Canvas drop rule (PR #265)
+- [x] 3.3 Tests then clearing: field and quote `null`, `unsourced` updated, weighted parent downgraded to `none`, reason note 「N 项权重或规则无出处」, status unchanged (PR #265)
+- [x] 3.4 Wire verification after the repair loop in the runner, before saving (PR #265)
+- [x] 3.5 Tests then `migrateLocalKeys(stores, courseId, legacyIds)` in `shared/`: correction item and group keys, `parent`/`mergeInto` values, manual `parent`, work keys (item and group form), order list rewritten and de-duplicated, existing new correction wins, planned-task key collision keeps both tasks, idempotent, other courses untouched (PR #265)
+- [x] 3.6 Course page runs `migrateLocalKeys` on browser storage when course reports load and saves the result; written so the #248 `.local/` store can call the same function (PR #265)
+- [x] 3.7 Course page: 「无出处」 tag on weight (list, breakdown, drawer) and rule (drawer, Revision tab); quote shown in the drawer; tag hidden when a correction supplies the value (PR #265)
 - [x] 3.8 Chat context marks 「权重无出处」/「规则无出处」 (test in `test/chat-context.test.ts`)
-- [x] 3.9 If `scripts/lib/eval-score.mjs` is on `main`: tests then matching by `id`, then platform identity (v2 `refs`, or v1 source URLs and platform-shaped IDs), then name slug, one-to-one; otherwise add this as an open item in `note/handoff.md`
+- [x] 3.9 If `scripts/lib/eval-score.mjs` is on `main`: tests then matching by `id`, then platform identity (v2 `refs`, or v1 source URLs and platform-shaped IDs), then name slug, one-to-one; otherwise add this as an open item in `note/handoff.md` (PR #265)
 - [x] 3.10 Rewrite `docs/course-json.md` for v2 (model output, stored document, Handbook components, IDs, back-fill, quotes, `legacyIds`, v1 compatibility)
 - [ ] 3.11 `bash .claude/check.sh`; real-browser check of a synthetic v1 course, then the same course synced to v2 with corrections moved; fresh-context review; update `note/handoff.md`; archive the change after PR 3 merges

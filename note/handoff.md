@@ -5,7 +5,7 @@
 - **最后更新：** 2026-10-30，Claude。
 - **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）、#247（全局清理，#239）；规则精简为单一文件 `CLAUDE.md`（#241）。
 - **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，本地 `origin` 已指向新地址），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
-- **OpenSpec：** 进行中的 change：`course-contract-v2`（课程 JSON v2）。第 1 部分（PR #259）、第 2 部分（PR #262，同步写 v2）已合并；第 3 部分（引文核对、本地键迁移、「无出处」显示、评测按平台身份配对、`docs/course-json.md` 重写；分支 `claude/contract-v2-quotes`，决定 #306–#313）已开 PR 待审查合并，合并后再归档该 change。已立项未实现：`local-corrections-merge`（#290–#298，依赖本 change 的 `migrateLocalKeys`）、`chat-tools-mcp`（#320–#332）。
+- **OpenSpec：** 进行中的 change：`course-contract-v2`（课程 JSON v2）。第 1 部分（PR #259）、第 2 部分（PR #262，同步写 v2）已合并；第 3 部分（引文核对、本地键迁移、「无出处」显示、评测按平台身份配对、`docs/course-json.md` 重写；分支 `claude/contract-v2-quotes`，决定 #306–#313）已开 PR #265 待审查合并，合并后再归档该 change。已立项未实现：`local-corrections-merge`（#290–#298，依赖本 change 的 `migrateLocalKeys`）、`chat-tools-mcp`（#320–#332）。
 - **现行规格：** 在 `openspec/specs/`（`grade-target`、`revision`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
 
 ## 已完成
@@ -27,7 +27,7 @@
 
 ## 下一步
 
-1. 审查并合并 `claude/contract-v2-quotes` 的 PR，然后归档 `course-contract-v2`；之后可以开始 `local-corrections-merge` 第 1 部分。
+1. 审查并合并 PR #265，然后归档 `course-contract-v2`；之后可以开始 `local-corrections-merge` 第 1 部分。
 2. 你：第一次 v2 同步后看一眼各课的「无出处」数量；太多的话再调提示词（评测可以量清空率）。
 3. 你：打开 `localhost:5173`，在复习页点一个预设按钮，确认对话正常，把一条回复「存到复习」。
 4. L0/L1/L2（#238 先不做）：以后做时先定方案；Claude 的立场是执行器只在合成演示课程上跑。
