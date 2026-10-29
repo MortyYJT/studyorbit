@@ -273,6 +273,120 @@ export function applyOwnerEdit(store: { corrections: Record<string, Correction>;
   return { corrections, pins, conflicts };
 }
 
+type MergeState = { corrections: Record<string, Correction>; pins: Record<string, readonly string[]>; conflicts: Conflict[] };
+
+/**
+ * Three-way merge of the owner's corrections with a new sync (design §4, decisions #291, #298). `base` holds the field
+ * values the corrections were last reconciled with, `incoming` those of the new document, both by assessment ID. For every
+ * item or group correction whose assessment is in `incoming`, each overridable field it sets is decided as:
+ *
+ * - owner value equal to the base and not pinned: dropped, so the sync value shows;
+ * - owner value equal to the base and pinned: kept, with a `field` conflict when the sync changed it;
+ * - sync value equal to the base (only the owner changed it): kept;
+ * - sync value equal to the owner value (both changed alike): kept and pinned, and an open conflict on it is closed;
+ * - all three different: kept, with a `field` conflict `{ base, incoming, user }`;
+ * - no base entry for the assessment: the incoming value is the base, and nothing is recorded.
+ *
+ * `link` is never pinned and never conflicts; owner-only fields are always kept. A correction whose assessment was in the
+ * base and is not in `incoming` is kept unchanged with an `orphaned` conflict unless it only hides it; a `parent` or
+ * `mergeInto` naming such an item gets a `dangling` conflict. Both are raised only on that transition, and close when the
+ * assessment is back. A new conflict replaces the open one with the same ID; conflicts on dropped fields close. The
+ * result is normalised against `incoming`, which becomes the new base. Never modifies the input.
+ */
+export function mergeCorrections(base: Record<string, Fields>, incoming: Record<string, Fields>, store: MergeState & { courseId: string }, detectedAt: string): { corrections: Record<string, Correction>; pins: Record<string, string[]>; conflicts: Conflict[] } {
+  const { courseId } = store;
+  const corrections: Record<string, Correction> = {};
+  const pins: Record<string, string[]> = {};
+  const raised: Conflict[] = [];
+  const closed = new Set<string>();
+  const inBase = (id: string) => Object.hasOwn(base, id), inIncoming = (id: string) => Object.hasOwn(incoming, id);
+  for (const [key, correction] of Object.entries(store.corrections)) {
+    const parsed = parseKey(key, courseId);
+    const pinned = [...(own(store.pins, key) ?? [])];
+    if (!parsed || parsed.type === 'manual') { corrections[key] = correction; if (pinned.length) pins[key] = pinned; continue; }
+    const { id } = parsed;
+    for (const field of ['parent', 'mergeInto'] as const) {
+      const reference = typeof correction[field] === 'string' ? parseKey(correction[field], courseId) : null;
+      if (reference?.type !== 'item') continue;
+      if (inBase(reference.id) && !inIncoming(reference.id)) {
+        raised.push({ id: conflictId('dangling', key, field), type: 'dangling', key, assessmentId: id, field, base: null, incoming: null, user: correction[field], detectedAt });
+      } else if (inIncoming(reference.id)) closed.add(conflictId('dangling', key, field));
+    }
+    const incomingFields = own(incoming, id);
+    if (!incomingFields) {
+      // Gone from the sync: kept as it is; flagged only on the present -> absent transition.
+      corrections[key] = correction;
+      if (pinned.length) pins[key] = pinned;
+      for (const field of overridableFields) closed.add(conflictId('field', key, field));
+      const set = definedFields(correction);
+      if (inBase(id) && !(set.length === 1 && set[0] === 'hidden')) {
+        // The base keeps the assessment's last synced fields, so the page can still name it.
+        raised.push({ id: conflictId('orphaned', key, null), type: 'orphaned', key, assessmentId: id, field: null, base: own(base, id), incoming: null, user: { ...correction }, detectedAt });
+      }
+      continue;
+    }
+    closed.add(conflictId('orphaned', key, null));
+    const baseFields = own(base, id) ?? incomingFields;
+    const next: Record<string, unknown> = {};
+    for (const field of definedFields(correction)) {
+      const user = (correction as Record<string, unknown>)[field];
+      if (!(overridableFields as readonly string[]).includes(field)) { next[field] = user; continue; }
+      const name = field as OverridableField;
+      const before = baseFields[name], after = incomingFields[name];
+      const isPinned = pinned.includes(name);
+      const conflict = (): Conflict => ({ id: conflictId('field', key, name), type: 'field', key, assessmentId: id, field: name, base: before, incoming: after, user, detectedAt });
+      if (name === 'link') { if (isPinned || !sameValue(name, user, after)) next[name] = user; continue; }
+      if (sameValue(name, user, before)) {
+        if (!isPinned) continue;
+        next[name] = user;
+        if (!sameValue(name, after, before)) raised.push(conflict());
+        continue;
+      }
+      next[name] = user;
+      if (sameValue(name, after, before)) continue;
+      if (sameValue(name, after, user)) {
+        if (!isPinned) pinned.push(name);
+        closed.add(conflictId('field', key, name));
+        continue;
+      }
+      raised.push(conflict());
+    }
+    if (!Object.keys(next).length) continue;
+    corrections[key] = next as Correction;
+    if (pinned.length) pins[key] = pinned;
+  }
+  const replaced = new Map(raised.map(conflict => [conflict.id, conflict]));
+  const kept = store.conflicts.filter(conflict => !closed.has(conflict.id) || replaced.has(conflict.id)).map(conflict => replaced.get(conflict.id) ?? conflict);
+  const known = new Set(kept.map(conflict => conflict.id));
+  const conflicts = [...kept, ...[...replaced.values()].filter(conflict => !known.has(conflict.id))];
+  const normalised = normaliseCorrections({ courseId, base: { digest: null, assessments: incoming }, corrections, pins });
+  return { ...normalised, conflicts: pruneConflicts(conflicts, normalised.corrections) };
+}
+
+/**
+ * The owner's choice on one open conflict (design §5, decision #293). `sync`: a `field` or `dangling` conflict removes that
+ * field (and its pin; the correction goes when it has no field left), an `orphaned` conflict removes the correction. `mine`
+ * closes the conflict and changes nothing else. Conflicts on removed fields or corrections close too. Returns null when
+ * no open conflict has that ID. Never modifies the input.
+ */
+export function resolveConflict(store: MergeState, id: string, choice: 'sync' | 'mine'): { corrections: Record<string, Correction>; pins: Record<string, string[]>; conflicts: Conflict[] } | null {
+  const target = store.conflicts.find(conflict => conflict.id === id);
+  if (!target) return null;
+  const corrections = { ...store.corrections };
+  const pins: Record<string, string[]> = Object.fromEntries(Object.entries(store.pins).map(([key, fields]) => [key, [...fields]]));
+  if (choice === 'sync') {
+    const correction = own(corrections, target.key);
+    if (target.type === 'orphaned' || !target.field) delete corrections[target.key];
+    else if (correction) {
+      const { [target.field]: _removed, ...rest } = correction as Record<string, unknown>;
+      if (Object.keys(rest).length) corrections[target.key] = rest as Correction; else delete corrections[target.key];
+    }
+    const left = (own(pins, target.key) ?? []).filter(field => field !== target.field && !!own(corrections, target.key));
+    if (left.length) pins[target.key] = left; else delete pins[target.key];
+  }
+  return { corrections, pins, conflicts: pruneConflicts(store.conflicts.filter(conflict => conflict.id !== id), corrections) };
+}
+
 // SHA-256 (FIPS 180-4) over UTF-8, kept here so this module stays free of Node and async Web Crypto.
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,

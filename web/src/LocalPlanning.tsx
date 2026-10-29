@@ -7,7 +7,7 @@ import { CourseDocumentSchema, toDisplayDocument } from '../../shared/course-dat
 import { bandTargets, calculateGrades, finalNeeded, parentGrade, type Band } from '../../shared/course-calculations.js';
 import { parseAvailability, schedulePlan } from '../../shared/planning.js';
 import { importCourse, migrateStoredKeys, migrationPlan, storageKeys, writeCourseSlice, type CorrectionsRequest, type CourseSlice } from './local-stores.js';
-import type { CorrectionsView } from '../../shared/corrections.js';
+import type { Conflict, CorrectionsView } from '../../shared/corrections.js';
 
 type RecordValue = Record<string, unknown>;
 type Course = { id: string; name: string; subjectCode: string; term?: string };
@@ -218,12 +218,14 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const [courseTab, setCourseTab] = useState<'assessments' | 'revision'>('assessments');
   const [saveError, setSaveError] = useState(false);
   // Corrections of migrated courses are saved to `.local/corrections/` (decisions #294, #295); the rest stay in localStorage.
-  const [correctionsNotice, setCorrectionsNotice] = useState<'' | 'save' | 'refreshed' | 'unavailable'>('');
+  const [correctionsNotice, setCorrectionsNotice] = useState<'' | 'save' | 'refreshed' | 'unavailable' | 'resolve'>('');
   const latest = useRef<Stores>({ corrections, manual, order });
   const localCourses = useRef(new Set<string>());
   const revisions = useRef<Record<string, number>>({});
   const confirmed = useRef<Record<string, CourseSlice>>({});
   const sending = useRef(new Map<string, Promise<void>>());
+  // Open disagreements between a sync and the owner's corrections, per migrated course (decisions #249, #293).
+  const [conflicts, setConflicts] = useState<Record<string, Conflict[]>>({});
   const [notes, setNotes] = useState<RevisionNote[]>();
   const [notesError, setNotesError] = useState(false);
   // A response for a course the owner has already left is dropped, so one course never shows another's notes.
@@ -282,6 +284,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     const stored: Stores = { corrections: readStore<Correction>(correctionKey), manual: readStore<Assessment[]>(manualKey), order: readStore<string[]>(orderKey) };
     for (const id of plan.local) next = withSlice(next, id, sliceOf(stored, id));
     revisions.current = {}; confirmed.current = {};
+    const open: Record<string, Conflict[]> = {};
     let notice: typeof correctionsNotice = '';
     try {
       const response = await fetch('/api/local/corrections', { cache: 'no-store' });
@@ -291,11 +294,12 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         if (localCourses.current.has(id)) continue;
         if ('error' in view) { notice = 'unavailable'; continue; }
         revisions.current[id] = view.revision; confirmed.current[id] = viewSlice(view);
+        if (view.conflicts.length) open[id] = view.conflicts;
         next = withSlice(next, id, viewSlice(view));
       }
     } catch { notice = 'unavailable'; }
     latest.current = next; setCorrections(next.corrections); setManual(next.manual); setOrder(next.order);
-    setCorrectionsNotice(notice);
+    setConflicts(open); setCorrectionsNotice(notice);
   }
   const original = courses.find(item => item.course.id === courseId);
   // Owner corrections, grouping and grading inputs are shared by the course page and the course rail rings.
@@ -337,36 +341,82 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const selected = original && withCorrections(original);
   const primaryItems = selected ? visibleItems(selected) : [];
   const parents = selected ? groupParents(selected, primaryItems) : [];
+  // Conflict display (decision #293): names come from the corrected course data; a removed assessment falls back to the
+  // name in the owner's correction, then its ID.
+  const courseConflicts = selected ? conflicts[selected.course.id] ?? [] : [];
+  const fieldLabel: Record<string, [string, string]> = { name: ['名称', 'Name'], kind: ['类型', 'Type'], nature: ['性质', 'Nature'], weight: ['权重', 'Weight'], score: ['得分', 'Score'], outOf: ['满分', 'Out of'], due: ['截止', 'Due'], status: ['状态', 'Status'], rule: ['规则', 'Rule'], scoring: ['计分方式', 'Scoring'], parent: ['归属', 'Parent'], link: ['链接', 'Link'], mergeInto: ['合并到', 'Merged into'] };
+  const nameOfKey = (key: string): string | undefined => {
+    if (!selected) return undefined;
+    const groupPrefix = `${selected.course.id}:group:`;
+    const sourceKey = key.startsWith(groupPrefix) ? key.slice(groupPrefix.length) : key;
+    const found = selected.assessments.find(item => item.key === sourceKey);
+    return found && ((key !== sourceKey && corrections[key]?.name) || found.name);
+  };
+  const conflictName = (conflict: Conflict) => {
+    const named = [record(conflict.user).name, record(conflict.base).name].find(value => typeof value === 'string' && value.trim() !== '');
+    return nameOfKey(conflict.key) ?? (typeof named === 'string' ? named : conflict.assessmentId);
+  };
+  const natureName: Record<string, [string, string]> = { regular: ['普通考核', 'Regular'], bonus: ['加分', 'Bonus'], ungraded: ['不计分', 'Ungraded'], alternative: ['替代考试', 'Alternative'] };
+  const conflictValue = (field: string | null, value: unknown): string => {
+    if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return zh ? '无' : 'None';
+    if (field === 'due' && typeof value === 'string') return longDue(value);
+    if (field === 'weight' && typeof value === 'number') return `${value}%`;
+    if ((field === 'parent' || field === 'mergeInto') && typeof value === 'string') return nameOfKey(value) ?? value.slice(value.indexOf(':') + 1);
+    if (field === 'status' && typeof value === 'string') return statusLabel(value, zh);
+    if (field === 'kind' && typeof value === 'string' && value in kindName) return kindName[value as Kind];
+    if (field === 'nature' && typeof value === 'string' && natureName[value]) return natureName[value]![zh ? 0 : 1];
+    return typeof value === 'object' ? '' : String(value);
+  };
+  // A small mark beside a drawer field that has an open sync conflict.
+  const conflictMark = (key: string, ...fields: string[]) => courseConflicts.some(conflict => conflict.key === key && conflict.field !== null && fields.includes(conflict.field))
+    ? <span className="conflict-mark" title={zh ? '和最新同步结果不一致，见课程页顶部「同步冲突」' : 'Differs from the latest sync; see "Sync conflicts" at the top of the course page'}>{zh ? '冲突' : 'Conflict'}</span> : null;
   function commit(next: Stores) { latest.current = next; setCorrections(next.corrections); setManual(next.manual); setOrder(next.order); }
   // Updates the page at once; courses not yet migrated are written to localStorage, the others are sent to the server.
   function persist(next: Stores): boolean {
     const changed = changedCourses(latest.current, next);
     for (const id of changed.filter(id => localCourses.current.has(id))) if (!writeCourseSlice(localStorage, id, sliceOf(next, id))) { setSaveError(true); return false; }
     commit(next); setSaveError(false);
-    for (const id of changed.filter(id => !localCourses.current.has(id))) {
-      const run = (sending.current.get(id) ?? Promise.resolve()).then(() => send(id));
-      sending.current.set(id, run);
-    }
+    for (const id of changed.filter(id => !localCourses.current.has(id))) queue(id, () => send(id));
     return true;
+  }
+  // 「用同步的」 (`sync`) or 「保留我的」 (`mine`) on one conflict (decision #293); the server applies it and returns the course.
+  function chooseConflict(id: string, conflict: Conflict, choice: 'sync' | 'mine') {
+    queue(id, async () => {
+      const before = JSON.stringify(sliceOf(latest.current, id));
+      try {
+        const response = await fetch(`/api/local/corrections/${id}/conflicts/${conflict.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: revisions.current[id] ?? 0, choice }) });
+        const body = await response.json().catch(() => null) as (CorrectionsView & { current?: CorrectionsView }) | null;
+        if (response.ok && body && typeof body.revision === 'number') { adopt(id, body, JSON.stringify(sliceOf(latest.current, id)) === before); setCorrectionsNotice(notice => notice === 'resolve' ? '' : notice); return; }
+        if (response.status === 409 && body?.current) { adopt(id, body.current, true); setCorrectionsNotice('refreshed'); return; }
+        throw new Error('resolve failed');
+      } catch { setCorrectionsNotice('resolve'); }
+    });
+  }
+  // Takes a server view of one course as confirmed; the page copy is replaced only when no newer edit is waiting.
+  function adopt(id: string, view: CorrectionsView, replace: boolean) {
+    revisions.current[id] = view.revision; confirmed.current[id] = viewSlice(view);
+    setConflicts(current => { const next = { ...current }; if (view.conflicts.length) next[id] = view.conflicts; else delete next[id]; return next; });
+    if (replace) commit(withSlice(latest.current, id, viewSlice(view)));
+  }
+  // Requests for one course run one at a time (saves and conflict choices alike), each with the latest revision.
+  function queue(id: string, task: () => Promise<void>) {
+    const run = (sending.current.get(id) ?? Promise.resolve()).then(task);
+    sending.current.set(id, run);
   }
   // One request per course at a time, so a later edit carries the revision returned by the earlier one (decision #295).
   async function send(id: string) {
     const slice = sliceOf(latest.current, id), sent = JSON.stringify(slice);
     if (sent === JSON.stringify(confirmed.current[id] ?? { corrections: {}, manual: [], order: [] })) return;
-    const adopt = (view: CorrectionsView, replace: boolean) => {
-      revisions.current[id] = view.revision; confirmed.current[id] = viewSlice(view);
-      if (replace) commit(withSlice(latest.current, id, viewSlice(view)));
-    };
     try {
       const response = await fetch(`/api/local/corrections/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: revisions.current[id] ?? 0, ...slice }) });
       const body = await response.json().catch(() => null) as (CorrectionsView & { current?: CorrectionsView }) | null;
       if (response.ok && body && typeof body.revision === 'number') {
         // Take the server's normalised copy unless a newer edit is already waiting to be sent.
-        adopt(body, JSON.stringify(sliceOf(latest.current, id)) === sent);
+        adopt(id, body, JSON.stringify(sliceOf(latest.current, id)) === sent);
         setCorrectionsNotice(notice => notice === 'save' ? '' : notice);
         return;
       }
-      if (response.status === 409 && body?.current) { adopt(body.current, true); setCorrectionsNotice('refreshed'); return; }
+      if (response.status === 409 && body?.current) { adopt(id, body.current, true); setCorrectionsNotice('refreshed'); return; }
       throw new Error('save failed');
     } catch {
       commit(withSlice(latest.current, id, confirmed.current[id] ?? { corrections: {}, manual: [], order: [] }));
@@ -439,6 +489,20 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         {onAsk && <button className="small ask-agent" onClick={() => onAsk(selected.course.id)}>{zh ? '问 Agent' : 'Ask Agent'}</button>}</div>
       {!selected.available && <p className="needs">{zh ? '这门课尚无可用的同步结果。' : 'No sync result is available for this course yet.'}</p>}
       {syncIssues.filter(item => item.id === selected.course.id && item.status === 'failed').map(item => <p className="needs" key={item.id}>{zh ? '最近一次同步未完成，正在显示已保存的课程信息。' : 'The latest sync failed. Showing saved course information.'}</p>)}
+      {courseConflicts.length > 0 && <section className="sync-conflicts card" aria-label={zh ? '同步冲突' : 'Sync conflicts'}>
+        <h2>{zh ? '同步冲突' : 'Sync conflicts'}</h2>
+        <p className="muted">{zh ? '在你选择之前，页面先用你的修正。' : 'Your corrections are used until you choose.'}</p>
+        {courseConflicts.map(conflict => <div className="conflict-row" key={conflict.id}>
+          <div className="conflict-text"><strong>{conflictName(conflict)}</strong>
+            {conflict.type === 'field' ? <> · {fieldLabel[conflict.field ?? '']?.[zh ? 0 : 1] ?? conflict.field}
+              <span className="conflict-values"><span>{zh ? '同步：' : 'Sync: '}{conflictValue(conflict.field, conflict.incoming)}</span><span>{zh ? '你的：' : 'Yours: '}{conflictValue(conflict.field, conflict.user)}</span></span></>
+            : conflict.type === 'orphaned' ? <span className="conflict-values">{zh ? '这项已不在最新同步里，你的修正暂时未用' : 'This item is no longer in the latest sync; your correction is not used for now'}</span>
+            : <span className="conflict-values">{zh ? `「${fieldLabel[conflict.field ?? '']?.[0] ?? conflict.field}」指向的考核已不在最新同步里：${conflictValue(conflict.field, conflict.user)}` : `The ${(fieldLabel[conflict.field ?? '']?.[1] ?? conflict.field ?? '').toLowerCase()} target is no longer in the latest sync: ${conflictValue(conflict.field, conflict.user)}`}</span>}</div>
+          <div className="conflict-actions">
+            <button className="small" type="button" onClick={() => chooseConflict(selected.course.id, conflict, 'sync')}>{conflict.type === 'field' ? (zh ? '用同步的' : 'Use sync') : (zh ? '删除修正' : 'Delete correction')}</button>
+            <button className="small ghost" type="button" onClick={() => chooseConflict(selected.course.id, conflict, 'mine')}>{conflict.type === 'field' ? (zh ? '保留我的' : 'Keep mine') : (zh ? '保留' : 'Keep')}</button>
+          </div></div>)}
+      </section>}
       {selected.available && <div className="course-summary card">
         <ScoreOverview {...gradingInputs(primaryItems, parents)} identified={identifiedWeight(primaryItems, parents)} zh={zh} animateKey={selected.course.id} />
         <WeightBreakdown assessments={primaryItems} parents={parents} zh={zh} />
@@ -544,14 +608,14 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         const all = selected.assessments, visible = primaryItems, siblings = chosenSiblings;
         const close = closeDrawer;
         return <div className={`local-drawer-overlay${drawerClosing ? ' closing' : ''}`} role="presentation" onClick={event => { if (event.target === event.currentTarget) close(); }}><section className="local-drawer" role="dialog" aria-modal="true" aria-label={item.name}>
-        <div className="dialog-heading"><div><small>{selected.course.subjectCode}</small><h2>{item.name}</h2></div><button className="ghost" onClick={close}>{zh ? '关闭' : 'Close'}</button></div>
-        <div className="field"><span className="k">{zh ? '截止' : 'Due'}</span><span>{longDue(item.due)}</span></div>
-        <div className="field"><span className="k">{zh ? '权重' : 'Weight'}</span><span>{item.sourceZero ? '0%' : item.weight || '—'}{item.unsourced?.includes('weight') && <Unsourced zh={zh} />}
+        <div className="dialog-heading"><div><small>{selected.course.subjectCode}</small><h2>{item.name}{conflictMark(item.key, 'name')}</h2></div><button className="ghost" onClick={close}>{zh ? '关闭' : 'Close'}</button></div>
+        <div className="field"><span className="k">{zh ? '截止' : 'Due'}</span><span>{longDue(item.due)}{conflictMark(item.key, 'due')}</span></div>
+        <div className="field"><span className="k">{zh ? '权重' : 'Weight'}</span><span>{item.sourceZero ? '0%' : item.weight || '—'}{item.unsourced?.includes('weight') && <Unsourced zh={zh} />}{conflictMark(item.key, 'weight')}
           {item.weightQuote && <q className="source-quote" title={zh ? '同步时核对过的原文' : 'Source text checked during sync'}>{item.weightQuote}</q>}</span></div>
-        {siblings && <div className="field"><span className="k">{zh ? '类型' : 'Type'}</span><span>{kindName[item.kind] ?? '—'}{item.bonus ? ` · ${zh ? '加分' : 'Bonus'}` : item.caution ? ` · ${zh ? '替代考试' : 'Alternative'}` : item.ungraded ? ` · ${zh ? '不计分' : 'Ungraded'}` : ''}</span></div>}
-        <div className="field"><span className="k">{zh ? '分数' : 'Score'}</span><span>{item.score === undefined ? '—' : `${item.score}${item.outOf !== undefined ? ` / ${item.outOf}` : ''}${item.outOf ? ` · ${scoreText(item.score, item.outOf)}` : ''}`}</span></div>
-        {siblings && <div className="field"><span className="k">{zh ? '状态' : 'Status'}</span><span>{statusLabel(corrections[item.key]?.status || item.status || (item.score !== undefined ? 'graded' : 'unknown'), zh)}</span></div>}
-        {item.rule ? <p className="drawer-note">{item.rule}{item.ruleQuote && <q className="source-quote" title={zh ? '同步时核对过的原文' : 'Source text checked during sync'}>{item.ruleQuote}</q>}</p>
+        {siblings && <div className="field"><span className="k">{zh ? '类型' : 'Type'}</span><span>{kindName[item.kind] ?? '—'}{item.bonus ? ` · ${zh ? '加分' : 'Bonus'}` : item.caution ? ` · ${zh ? '替代考试' : 'Alternative'}` : item.ungraded ? ` · ${zh ? '不计分' : 'Ungraded'}` : ''}{conflictMark(item.key, 'kind', 'nature')}</span></div>}
+        <div className="field"><span className="k">{zh ? '分数' : 'Score'}</span><span>{item.score === undefined ? '—' : `${item.score}${item.outOf !== undefined ? ` / ${item.outOf}` : ''}${item.outOf ? ` · ${scoreText(item.score, item.outOf)}` : ''}`}{conflictMark(item.key, 'score', 'outOf')}</span></div>
+        {siblings && <div className="field"><span className="k">{zh ? '状态' : 'Status'}</span><span>{statusLabel(corrections[item.key]?.status || item.status || (item.score !== undefined ? 'graded' : 'unknown'), zh)}{conflictMark(item.key, 'status')}</span></div>}
+        {item.rule ? <p className="drawer-note">{item.rule}{conflictMark(item.key, 'rule')}{item.ruleQuote && <q className="source-quote" title={zh ? '同步时核对过的原文' : 'Source text checked during sync'}>{item.ruleQuote}</q>}</p>
           : item.unsourced?.includes('rule') && <p className="drawer-note">{zh ? '规则未知' : 'Rule unknown'}<Unsourced zh={zh} /></p>}
         {(item.link || item.sources.length > 0) && <p className="drawer-links">{item.link && !item.sources.some(source => source.link === item.link) && <><a href={item.link} target="_blank" rel="noreferrer">{zh ? '我的链接' : 'My link'}</a>{item.sources.length > 0 && ' · '}</>}{item.sources.map((source, index) => <span key={`${source.link}-${index}`}>{index > 0 && ' · '}<a href={source.link} target="_blank" rel="noreferrer">{source.platform.toLowerCase() === 'ed' ? 'Ed' : source.platform.toLowerCase() === 'canvas' ? 'Canvas' : source.platform.toLowerCase() === 'handbook' ? 'Handbook' : (zh ? '来源' : 'Source')}</a></span>)}</p>}
         {all.filter(other => corrections[other.key]?.mergeInto === item.key).map(other => <div key={other.key} className="local-group"><span>{zh ? '已合并来源' : 'Merged source'}: {other.name} {other.link && <a href={other.link} target="_blank" rel="noreferrer">{zh ? '查看' : 'View'}</a>}</span><button className="small" onClick={() => { const next = { ...corrections }; const change = { ...next[other.key] }; delete change.mergeInto; next[other.key] = change; saveCorrections(next); }}>{zh ? '撤销合并' : 'Undo merge'}</button></div>)}
@@ -585,6 +649,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}
     {correctionsNotice && <p role="alert">{correctionsNotice === 'refreshed' ? (zh ? '修正已在别处更新，已刷新；请重新编辑' : 'Corrections were updated elsewhere and have been refreshed; please edit again')
       : correctionsNotice === 'save' ? (zh ? '修正保存失败，已恢复为上次保存的内容；请确认本地服务在运行后重试。' : 'Could not save the corrections; the last saved version is shown. Check that the local server is running and try again.')
+      : correctionsNotice === 'resolve' ? (zh ? '冲突处理失败，请确认本地服务在运行后重试。' : 'Could not apply that choice. Check that the local server is running and try again.')
       : (zh ? '无法读取本地修正文件（.local/corrections），部分修正暂未显示。' : 'Could not read the local corrections (.local/corrections); some corrections are not shown.')}</p>}
   </div>;
   // Monday-first weekday names; 2026-01-05 is a Monday.
@@ -637,6 +702,8 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
           : (zh ? `已过截止 · ${codeOfWork(task)} · ${task.title}：预计时间已用完，还没标完成` : `Overdue · ${codeOfWork(task)} · ${task.title}: estimate used up, not marked done`))
         : (zh ? `排不下 · ${codeOfWork(task)} · ${task.title}：${shortDate(task.due)} 截止前还差 ${entry.minutes} 分钟` : `Does not fit · ${codeOfWork(task)} · ${task.title}: ${entry.minutes} min short before ${shortDate(task.due)}`) }]; }),
     ...syncIssues.filter(item => item.status === 'failed').map(item => ({ key: `sync:${item.id}`, courseId: item.id, text: zh ? `${codeOf(item.id)} 最近一次同步未完成` : `${codeOf(item.id)}: the latest sync failed` })),
+    ...courses.flatMap(({ course }) => { const count = conflicts[course.id]?.length ?? 0;
+      return count ? [{ key: `conflicts:${course.id}`, courseId: course.id, text: zh ? `${course.subjectCode}：${count} 项修正和同步结果不一致` : `${course.subjectCode}: ${count} ${count === 1 ? 'correction differs' : 'corrections differ'} from the latest sync` }] : []; }),
     ...assessmentDeadlines.filter(({ item, day, courseId, graded }) => graded && day >= today && day <= weekEnd && item.score === undefined
       && !['submitted', 'graded'].includes(item.status)
       && !tasks.some(task => covers(task, courseId, item.key) || (item.parent !== '' && covers(task, courseId, item.parent))))

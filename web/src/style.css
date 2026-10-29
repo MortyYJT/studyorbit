@@ -774,3 +774,12 @@ small.block { display:block; line-height:1.4; }
 .unsourced { display:inline-flex; align-items:center; font-size:11px; font-weight:400; padding:0 6px; border-radius:4px; border:1px dashed var(--signal); margin-left:6px; color:var(--signal); white-space:nowrap; vertical-align:1px; line-height:18px; }
 .source-quote { display:block; margin-top:4px; font-size:12px; color:var(--muted); font-style:normal; quotes:"“" "”"; overflow-wrap:anywhere; }
 .weight-legend .unsourced-row i { border:1px dashed var(--muted); background:transparent; }
+/* Sync conflicts on the course page and their mark in the drawer (local-corrections-merge, decision #293). */
+.sync-conflicts { padding:14px 18px 6px; margin-bottom:20px; border-color:var(--signal); }
+.sync-conflicts > h2 { font-size:14px; margin:0 0 4px; }
+.sync-conflicts > p { font-size:12px; margin:0 0 6px; }
+.conflict-row { display:flex; justify-content:space-between; align-items:center; gap:12px; border-top:1px solid var(--rule); padding:10px 0; font-size:13px; overflow-wrap:anywhere; }
+.conflict-values { display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:2px; color:var(--muted); }
+.conflict-actions { display:flex; gap:6px; flex-shrink:0; }
+.conflict-mark { display:inline-flex; align-items:center; font-size:11px; font-weight:400; padding:0 6px; border-radius:4px; border:1px solid var(--signal); margin-left:6px; color:var(--signal); white-space:nowrap; vertical-align:1px; line-height:18px; }
+@media (max-width: 640px) { .conflict-row { flex-direction:column; align-items:flex-start; } }

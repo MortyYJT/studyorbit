@@ -11,7 +11,7 @@ Prerequisite: course-contract-v2 PR 2 (stable IDs, `legacyIds`, the newest valid
 - [x] 1.7 Tests then the page-side migration helper (pure: localStorage slices per course, marker update): courses with corrections, manual items or order only; keys not of the form `<digits>:` ignored; marker per course; failed course left out (PR #269)
 - [x] 1.8 Page forms: the item edit form defaults the status to the item's effective status; the parent edit form defaults its date input to the Melbourne calendar date of the effective due (PR #269)
 - [x] 1.9 Page: run the migration after the v2 key migration; read corrections, manual items and order from the API for migrated courses and from localStorage for the rest; `PUT` per changed course with its revision, one at a time; `409` refreshes and shows 「修正已在别处更新，已刷新；请重新编辑」; other failures restore state and show the save error; localStorage never deleted (PR #269)
-- [ ] 1.10 `bash .claude/check.sh`; real-browser check with synthetic localStorage data (migration, edit, reload, cleared site data); fresh-context review; record the PR number here
+- [x] 1.10 `bash .claude/check.sh`; real-browser check with synthetic localStorage data (migration, edit, reload, cleared site data); fresh-context review; record the PR number here (PR #269)
 
 ## 2. Three-way merge and conflicts (PR 2)
 

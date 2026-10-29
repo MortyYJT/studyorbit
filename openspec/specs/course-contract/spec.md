@@ -49,7 +49,7 @@ The course page SHALL show a 「无出处」 tag beside the weight wherever the 
 - **THEN** the corrected weight is shown and used, and the 「无出处」 tag is not shown
 
 ### Requirement: Legacy ID map from the previous document
-When saving a course, the system SHALL fill `legacyIds` by matching each assessment of the newest valid earlier document of the same course to the new assessments: first by equal ID (such pairs are unchanged, write no entry, and are excluded from the later steps), then by platform identity (version 2 `canvas` and `ed` references; for version 1, Canvas assignment and Ed lesson IDs parsed from `sources` URLs, and an `id` of the form `<digits>`, `canvas-<digits>`, `canvas:<digits>`, `ed-<digits>` or `ed:<digits>`), then by equal name slug when that slug is unique on both sides. Only one-to-one pairs whose ID changed SHALL be kept. Entries from an earlier version 2 document's `legacyIds` SHALL be carried forward and composed, dropping entries whose target no longer exists.
+When saving a course, the system SHALL fill `legacyIds` by matching each assessment of the newest valid earlier document of the same course to the new assessments: first by equal ID (such pairs are unchanged, write no entry, and are excluded from the later steps), then by platform identity (version 2 `canvas` and `ed` references; for version 1, Canvas assignment and Ed lesson IDs parsed from `sources` URLs, and an `id` of the form `<digits>`, `canvas-<digits>`, `canvas:<digits>`, `ed-<digits>` or `ed:<digits>`, where bare digits are tried as a Canvas assignment first), then by equal name slug when that slug is unique on both sides. Only one-to-one pairs whose ID changed SHALL be kept. Entries from an earlier version 2 document's `legacyIds` SHALL be carried forward and composed, dropping entries whose target no longer exists. A version 1 group parent uses its Canvas assignment-group number as its ID: a version 1 `id` of the form `canvas-group-<digits>` or `canvas-group:<digits>`, or bare `<digits>` when the new document has no `canvas:<digits>`, SHALL be matched to a new `canvas-group:<digits>` before any other identity of that assessment (its source URLs point at its children); for bare digits the group SHALL be preferred over `ed:<digits>` only when the earlier assessment is the parent of another earlier assessment.
 
 #### Scenario: v1 Canvas item
 - **WHEN** the earlier v1 document has an assessment `a1` whose source URL is a Canvas assignment `5551` URL and the new document has `canvas:5551`
@@ -58,6 +58,10 @@ When saving a course, the system SHALL fill `legacyIds` by matching each assessm
 #### Scenario: v1 Ed item with a bare ID
 - **WHEN** the earlier v1 assessment has `id: '77'`, no Canvas assignment 77 exists in the new document, and the new document has `ed:77`
 - **THEN** `legacyIds` contains `77 → ed:77`
+
+#### Scenario: v1 group parent with a bare group number
+- **WHEN** the earlier v1 document has a parent `300` whose source URLs are its children's Canvas assignments `5551` and `5552`, and the new document has `canvas-group:300`, `canvas:5551` and `canvas:5552` but no `canvas:300`
+- **THEN** `legacyIds` contains `300 → canvas-group:300`, and the children are still paired with `canvas:5551` and `canvas:5552`
 
 #### Scenario: Unchanged item is not re-paired by name
 - **WHEN** the earlier v2 document has `handbook:exam` and `group:exam`, and the new document has `handbook:exam` and `group:exam-1` named "Exam"

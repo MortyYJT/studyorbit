@@ -6,10 +6,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { link, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  CORRECTION_LIMITS, StoreSchema, applyOwnerEdit, assessmentFields, dropImportNoise, emptyView, isCourseId, normaliseCorrections,
-  parseCorrectionsInput, pruneConflicts, transitionConflicts, viewOf,
+  CORRECTION_LIMITS, StoreSchema, applyOwnerEdit, assessmentFields, conflictId, dropImportNoise, emptyView, isCourseId, mergeCorrections,
+  normaliseCorrections, parseCorrectionsInput, parseKey, pruneConflicts, resolveConflict, transitionConflicts, viewOf,
 } from '../../shared/corrections.ts';
-import { migrateLocalKeys } from '../../shared/local-keys.ts';
+import { migrateKey, migrateLocalKeys } from '../../shared/local-keys.ts';
 import { foreignOrigin } from './local-origin.mjs';
 
 /** A store error carrying an API error code; `current` is the current view for `REVISION_MISMATCH`. */
@@ -66,6 +66,42 @@ async function createFile(projectDir, file, store) {
   finally { await rm(temp, { force: true }); }
 }
 
+const digestOf = document => createHash('sha256').update(JSON.stringify(document)).digest('hex');
+const CONFLICT_ID = /^[0-9a-f]{16}$/;
+
+/**
+ * Moves a store to a document's `legacyIds` before merging (design §4 step 1, decision #298): keys, references, manual
+ * parents and the order list through `migrateLocalKeys`; base entries (an existing new ID wins) and their `parent` values;
+ * pins and open conflicts with the corrections they belong to (new key, assessment ID and conflict ID). The pins and
+ * conflicts of an old key whose new key already had its own correction are dropped, since that correction is unused.
+ */
+export function moveStoreKeys(store, legacyIds) {
+  const { courseId } = store;
+  const migration = migrateLocalKeys({ corrections: store.corrections, manual: { [courseId]: store.manual }, order: { [courseId]: store.order }, work: [] }, courseId, legacyIds);
+  const rename = key => migrateKey(key, courseId, legacyIds);
+  const assessments = {};
+  for (const [id, fields] of Object.entries(store.base.assessments)) {
+    const target = rename(`${courseId}:${id}`).slice(courseId.length + 1);
+    const next = Object.hasOwn(store.base.assessments, target) || Object.hasOwn(assessments, target) ? id : target;
+    assessments[next] = typeof fields.parent === 'string' ? { ...fields, parent: rename(fields.parent) } : fields;
+  }
+  const keyOf = key => migration.moved[key] ?? key;
+  const pins = {};
+  for (const [key, fields] of Object.entries(store.pins)) if (!Object.hasOwn(migration.superseded, key)) pins[keyOf(key)] = fields;
+  const references = new Set(['parent', 'mergeInto']);
+  const conflicts = store.conflicts.filter(conflict => !Object.hasOwn(migration.superseded, conflict.key)).map(conflict => {
+    const key = keyOf(conflict.key);
+    const moved = key === conflict.key ? conflict : { ...conflict, key, assessmentId: parseKey(key, courseId)?.id ?? conflict.assessmentId, id: conflictId(conflict.type, key, conflict.field) };
+    if (!references.has(conflict.field)) return moved;
+    const value = entry => (typeof entry === 'string' ? rename(entry) : entry);
+    return { ...moved, base: value(moved.base), incoming: value(moved.incoming), user: value(moved.user) };
+  });
+  return {
+    ...store, base: { ...store.base, assessments }, corrections: migration.stores.corrections,
+    manual: migration.stores.manual[courseId] ?? [], order: migration.stores.order[courseId] ?? [], pins, conflicts,
+  };
+}
+
 /**
  * @param {{ projectDir: string, loadDocument: (courseId: string) => Promise<import('../../shared/course-data.ts').CourseDocument | null>, now?: () => Date }} options
  * `loadDocument` returns the newest valid course file of a course (null when there is none); it is read when a store is
@@ -86,7 +122,7 @@ export function createCorrectionsStore({ projectDir, loadDocument, now = () => n
     let document;
     try { document = await loadDocument(courseId); } catch { throw new CorrectionsError('CORRECTIONS_UNAVAILABLE'); }
     const base = document
-      ? { digest: createHash('sha256').update(JSON.stringify(document)).digest('hex'), assessments: assessmentFields(document, courseId) }
+      ? { digest: digestOf(document), assessments: assessmentFields(document, courseId) }
       : { digest: null, assessments: {} };
     const legacyIds = document?.version === 2 ? document.legacyIds : {};
     const moved = migrateLocalKeys({ corrections: input.corrections, manual: { [courseId]: input.manual }, order: { [courseId]: input.order }, work: [] }, courseId, legacyIds).stores;
@@ -102,8 +138,32 @@ export function createCorrectionsStore({ projectDir, loadDocument, now = () => n
     return store;
   }
 
+  /**
+   * The stored file after reconciling it with the course's newest valid course file (design §4): when that file's digest
+   * differs from the base digest, keys move through its `legacyIds`, corrections are merged with the base as the common
+   * ancestor, the base advances to the new file and the revision goes up by one. No file, no course document (or one that
+   * cannot be read right now) and an unchanged digest leave the store as it is. Runs inside the file's queue.
+   */
+  async function reconciled(courseId, file) {
+    const current = await readStoreFile(file, courseId);
+    if (!current) return null;
+    let document;
+    try { document = await loadDocument(courseId); } catch { return current; }
+    if (!document) return current;
+    const digest = digestOf(document);
+    if (digest === current.base.digest) return current;
+    const moved = document.version === 2 && document.legacyIds ? moveStoreKeys(current, document.legacyIds) : current;
+    const incoming = assessmentFields(document, courseId);
+    const at = now().toISOString();
+    const merged = mergeCorrections(moved.base.assessments, incoming, moved, at);
+    const next = { ...moved, revision: current.revision + 1, base: { digest, assessments: incoming }, ...merged, updatedAt: at };
+    if (!StoreSchema.safeParse(next).success) throw new CorrectionsError('CORRECTIONS_UNAVAILABLE');
+    await replaceFile(projectDir, file, next);
+    return next;
+  }
+
   return {
-    /** Every course with a store file; an unreadable file is reported for that course only. */
+    /** Every course with a store file, reconciled first; an unreadable file is reported for that course only. */
     async list() {
       let names;
       try { names = await readdir(directory(projectDir)); } catch (error) {
@@ -114,16 +174,18 @@ export function createCorrectionsStore({ projectDir, loadDocument, now = () => n
       for (const name of names.sort()) {
         const courseId = STORE_FILE.exec(name)?.[1];
         if (!courseId) continue;
-        try { const store = await readStoreFile(fileOf(courseId), courseId); if (store) courses[courseId] = viewOf(store); }
-        catch { courses[courseId] = { error: 'CORRECTIONS_UNREADABLE' }; }
+        const file = fileOf(courseId);
+        try { const store = await enqueue(file, () => reconciled(courseId, file)); if (store) courses[courseId] = viewOf(store); }
+        catch (error) { courses[courseId] = { error: error?.code === 'CORRECTIONS_UNREADABLE' ? 'CORRECTIONS_UNREADABLE' : 'CORRECTIONS_UNAVAILABLE' }; }
       }
       return { courses };
     },
 
-    /** One course; a missing file reads as an empty view with revision 0. */
+    /** One course, reconciled first; a missing file reads as an empty view with revision 0. */
     async read(courseId) {
       checkCourse(courseId);
-      const store = await readStoreFile(fileOf(courseId), courseId);
+      const file = fileOf(courseId);
+      const store = await enqueue(file, () => reconciled(courseId, file));
       return store ? viewOf(store) : emptyView();
     },
 
@@ -135,7 +197,8 @@ export function createCorrectionsStore({ projectDir, loadDocument, now = () => n
       try { checkCourse(courseId); body = parse(courseId, body, { revision: true }); } catch (error) { return Promise.reject(error); }
       const file = fileOf(courseId);
       return enqueue(file, async () => {
-        const current = await readStoreFile(file, courseId);
+        // Reconcile first, so a sync that landed after the page last read the store makes this revision stale.
+        const current = await reconciled(courseId, file);
         if (body.revision !== (current?.revision ?? 0)) throw new CorrectionsError('REVISION_MISMATCH', current ? viewOf(current) : emptyView());
         if (!current) {
           const store = await newStore(courseId, body, { importing: false });
@@ -163,20 +226,48 @@ export function createCorrectionsStore({ projectDir, loadDocument, now = () => n
       try { checkCourse(courseId); body = parse(courseId, body); } catch (error) { return Promise.reject(error); }
       const file = fileOf(courseId);
       return enqueue(file, async () => {
-        if (await readStoreFile(file, courseId)) return { imported: false };
+        if (await reconciled(courseId, file)) return { imported: false };
         const store = await newStore(courseId, body, { importing: true });
         return await createFile(projectDir, file, store) ? { imported: true, store: viewOf(store) } : { imported: false };
+      });
+    },
+
+    /**
+     * The owner's choice on one open conflict: `{ revision, choice: 'sync' | 'mine' }` (design §5). The store is reconciled
+     * first and the revision checked as for `save`; an unknown conflict is `CONFLICT_NOT_FOUND`. Returns the new view.
+     */
+    resolve(courseId, id, body) {
+      try {
+        checkCourse(courseId);
+        const valid = body && typeof body === 'object' && !Array.isArray(body) && Object.keys(body).length === 2
+          && Number.isInteger(body.revision) && body.revision >= 0 && (body.choice === 'sync' || body.choice === 'mine');
+        if (!valid) throw new CorrectionsError('INVALID_BODY');
+      } catch (error) { return Promise.reject(error); }
+      const file = fileOf(courseId);
+      return enqueue(file, async () => {
+        const current = await reconciled(courseId, file);
+        if (body.revision !== (current?.revision ?? 0)) throw new CorrectionsError('REVISION_MISMATCH', current ? viewOf(current) : emptyView());
+        const resolved = current && typeof id === 'string' && CONFLICT_ID.test(id) ? resolveConflict(current, id, body.choice) : null;
+        if (!resolved) throw new CorrectionsError('CONFLICT_NOT_FOUND');
+        const kept = normaliseCorrections({ courseId, base: current.base, corrections: resolved.corrections, pins: resolved.pins });
+        const next = {
+          ...current, revision: current.revision + 1, corrections: kept.corrections, pins: kept.pins,
+          conflicts: pruneConflicts(resolved.conflicts, kept.corrections), updatedAt: now().toISOString(),
+        };
+        if (!StoreSchema.safeParse(next).success) throw new CorrectionsError('INVALID_BODY');
+        await replaceFile(projectDir, file, next);
+        return viewOf(next);
       });
     },
   };
 }
 
 const LOOPBACK = ['127.0.0.1', '::1', '::ffff:127.0.0.1'];
-const STATUS = { INVALID_COURSE_ID: 400, INVALID_BODY: 400, TOO_LARGE: 413, REVISION_MISMATCH: 409, CONFLICT_NOT_FOUND: 404, CORRECTIONS_UNREADABLE: 500 };
+const STATUS = { INVALID_COURSE_ID: 400, INVALID_BODY: 400, TOO_LARGE: 413, REVISION_MISMATCH: 409, CONFLICT_NOT_FOUND: 404, CORRECTIONS_UNREADABLE: 500, CORRECTIONS_UNAVAILABLE: 500 };
 
 /**
  * Node request handler for `/api/local/corrections`, with `req.url` relative to that mount point:
- * `GET /` (all, or one with `?courseId=`), `PUT /<courseId>`, `POST /<courseId>/import`.
+ * `GET /` (all, or one with `?courseId=`), `PUT /<courseId>`, `POST /<courseId>/import`, `POST /<courseId>/conflicts/<conflictId>`.
  * Loopback and same-origin only; writes need an exact `Origin` and `Content-Type: application/json`; bodies up to 1 MB.
  */
 export function createCorrectionsHandler(store) {
@@ -187,9 +278,10 @@ export function createCorrectionsHandler(store) {
     const json = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(value)); };
     const [path = '/', query = ''] = (req.url ?? '/').split('?');
     const parts = path.split('/').filter(Boolean);
-    const route = parts.length === 0 ? 'list' : parts.length === 1 ? 'save' : parts.length === 2 && parts[1] === 'import' ? 'import' : null;
+    const route = parts.length === 0 ? 'list' : parts.length === 1 ? 'save' : parts.length === 2 && parts[1] === 'import' ? 'import'
+      : parts.length === 3 && parts[1] === 'conflicts' ? 'resolve' : null;
     if (!route) { json(404, { error: 'NOT_FOUND' }); return; }
-    if (req.method !== { list: 'GET', save: 'PUT', import: 'POST' }[route]) { json(405, { error: 'METHOD_NOT_ALLOWED' }); return; }
+    if (req.method !== { list: 'GET', save: 'PUT', import: 'POST', resolve: 'POST' }[route]) { json(405, { error: 'METHOD_NOT_ALLOWED' }); return; }
     if (req.method !== 'GET' && (!req.headers.origin || req.headers.origin !== `http://${req.headers.host}`
       || req.headers['content-type']?.split(';')[0] !== 'application/json')) { res.writeHead(403).end(); return; }
     try {
@@ -207,6 +299,7 @@ export function createCorrectionsHandler(store) {
       let body;
       try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { json(400, { error: 'INVALID_BODY' }); return; }
       if (route === 'save') { json(200, await store.save(courseId, body)); return; }
+      if (route === 'resolve') { json(200, await store.resolve(courseId, parts[2], body)); return; }
       const result = await store.importCourse(courseId, body);
       json(result.imported ? 201 : 200, result);
     } catch (error) {
