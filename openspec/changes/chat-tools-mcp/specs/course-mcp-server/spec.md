@@ -8,7 +8,7 @@ The repository SHALL provide an MCP server started by `node scripts/mcp-server.m
 - **THEN** the server answers with name `studyorbit` and the registry's tools
 
 ### Requirement: Same tools as the chat
-The server SHALL register every tool of the shared registry with the same name, description and input schema, annotated `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true` and `openWorldHint: false`. Each call SHALL run the registry's `runTool` and return its text as one text content item, with `isError: true` when the registry result is an error.
+The server SHALL register every tool of the shared registry with the same name and description and the tool's zod input schema (converted to JSON Schema by the SDK, so the listed schema has the same properties and required list but need not be byte-identical to the registry's), annotated `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true` and `openWorldHint: false`. Each call with valid arguments SHALL run the registry's `runTool` and return its text as one text content item, with `isError: true` when the registry result is an error. Arguments that fail the schema are rejected by the SDK before the tool runs; the result SHALL have `isError: true`, and its text is the SDK's.
 
 #### Scenario: Same answer as the chat tool
 - **WHEN** `calculate_grades` is called over MCP and through the registry with the same document, scope and arguments
@@ -16,7 +16,7 @@ The server SHALL register every tool of the shared registry with the same name, 
 
 #### Scenario: Invalid arguments
 - **WHEN** a client calls `final_needed` without `courseId`
-- **THEN** the call returns an error result and the server keeps running
+- **THEN** the call returns a result with `isError: true` (whatever its text) and the server keeps running
 
 ### Requirement: Reads the same course files, with an optional filter
 On every tool call the server SHALL load courses with the same loader the app uses (`.local/lms/courses.json` in the project and the newest valid course document per course in the Desktop course folders), convert them to display documents and use today's date in Melbourne time. The project and Desktop directories SHALL default to the repository containing the script and the user's Desktop and MAY be overridden with `--project` and `--desktop`. A comma-separated course ID filter from `--courses` or `STUDYORBIT_COURSES` SHALL limit the scope; without it every listed course is in scope. The server SHALL have no planning snapshot, so `plan_schedule` works only with tasks passed as arguments. A missing course list SHALL produce tool errors, not a crash.

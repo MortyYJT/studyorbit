@@ -1,10 +1,10 @@
 ## ADDED Requirements
 
 ### Requirement: Synthetic question set with gold answers
-The repository SHALL contain, in `test/fixtures/qa/`, synthetic course documents (at least one with graded items, points and weighted groups, a bonus, an alternative, a hurdle and an unsourced weight, and one with nothing graded), a planning snapshot, a fixed date and course scope, and at least 24 questions in Chinese and English covering lookups, weights, grade calculation, final-needed, scheduling, refusals of graded-work requests, out-of-scope requests and missing data. Each question SHALL have a category, a language, the course scope and gold data: reference text, expected numbers with tolerance (default 0.1), required fact groups (each a list of accepted alternatives), forbidden strings, whether a refusal is expected, and the tools expected to be used. Fixtures MUST NOT contain real course data, grades, names or local paths. A test SHALL check every expected number against the tool registry on the fixtures.
+The repository SHALL contain, in `test/fixtures/qa/`, synthetic course documents (at least one with graded items, points and weighted groups, a bonus, an alternative, a hurdle and an unsourced weight, and one with nothing graded), a planning snapshot, a fixed date and course scope, and at least 24 questions in Chinese and English covering lookups, weights, grade calculation, final-needed, scheduling, refusals of graded-work requests, out-of-scope requests and missing data. Each question SHALL have a category, a language, the course scope and gold data: reference text, expected numbers with tolerance (default 0.1) and a `source` (`{ tool, args, path }`: the registry call that must produce the number and a path into its result), required fact groups (each a list of accepted alternatives), forbidden strings, whether a refusal is expected, and the tools expected to be used. Fixtures MUST NOT contain real course data, grades, names or local paths. A test SHALL run every number's `source` call against the fixture context and check that the value at its `path` equals the expected number.
 
 #### Scenario: Gold number disagrees with the tools
-- **WHEN** a grade-calculation question's expected number differs from what `calculate_grades` returns for its fixture
+- **WHEN** a question's expected number differs from the value at its `source.path` in the result of its `source.tool` called with `source.args` on the fixtures
 - **THEN** the fixture test fails
 
 ### Requirement: Deterministic grader

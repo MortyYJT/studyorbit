@@ -34,7 +34,7 @@ The system SHALL parse every tool call's arguments with the tool's schema and SH
 - **THEN** `get_assessments` returns it with `weight: null` and `weightUnsourced: true`
 
 ### Requirement: Grade calculation tool
-`calculate_grades` SHALL compute a course's graded weight, earned points, average and remaining weight with `calculateGrades` on the same grading inputs the chat context uses, and SHALL list each counted item with its earned points and each excluded item with a reason (`bonus`, `ungraded`, `alternative`, `zero-weight`, `no-mark`, `incomplete-group`). The counted items' earned points and weights MUST sum to the totals. An optional `whatIf` list of `{ assessmentId, percent }` SHALL apply hypothetical marks to a copy of the inputs only.
+`calculate_grades` SHALL compute a course's graded weight, earned points, average and remaining weight with `calculateGrades` on the same grading inputs the chat context uses, and SHALL list each counted item with its earned points and each excluded item with a reason (`bonus`, `ungraded`, `alternative`, `zero-weight`, `no-mark`, `incomplete-group`). The counted items' earned points and weights MUST sum to the totals. An optional `whatIf` list of `{ assessmentId, percent }` SHALL apply hypothetical marks to a copy of the inputs only, and every entry SHALL be reported in `whatIfApplied` with `effect: 'counted'` when the item or its group is counted after applying, or `effect: 'none'` with a reason (`no-weight`, `parent-score-overrides`, `group-incomplete`, or the item's exclusion reason) when it cannot change the total.
 
 #### Scenario: Points group and a leaf item
 - **WHEN** a course has a 20% assessment scored 15/20 and a 30% `points` group whose two children scored 8/10 and 6/10
@@ -43,6 +43,10 @@ The system SHALL parse every tool call's arguments with the tool's schema and SH
 #### Scenario: What-if on the exam
 - **WHEN** `whatIf` sets the 50% exam (maximum score 100) to 70 percent on that course
 - **THEN** the result has graded weight 100 and earned 71, and no stored data changes
+
+#### Scenario: What-if that cannot change the total
+- **WHEN** `whatIf` sets a child of a group whose parent has its own score, or an item with no weight outside any weighted group
+- **THEN** the totals are unchanged and `whatIfApplied` lists that entry with `effect: 'none'` and reason `parent-score-overrides` or `no-weight`
 
 #### Scenario: What-if on a bonus item
 - **WHEN** `whatIf` names a bonus assessment
@@ -67,11 +71,15 @@ The system SHALL parse every tool call's arguments with the tool's schema and SH
 - **THEN** it is not listed unless `includeDone` is true
 
 ### Requirement: Schedule tool uses planning inputs only when provided
-`plan_schedule` SHALL compute the plan with `schedulePlan` (spec `weekly-plan`) from today and return the days within the requested window (from `from`, default today, for `days`, default 7, at most 28) and the overflow. Tasks SHALL come from the `tasks` argument, else the planning snapshot; availability from the argument, else the snapshot, else the default availability; the result SHALL say which source was used. When neither tasks nor a snapshot are available, it SHALL return `available: false` with a reason and no plan.
+`plan_schedule` SHALL compute the plan with `schedulePlan` (spec `weekly-plan`) from today over every task it is given, keeping each task's own key, and return only the days within the requested window (from `from`, default today, for `days`, default 7, at most 28), optionally only for the given `courseIds`, and the overflow. Filtering MUST apply to the output only, never to the tasks planned. Tasks SHALL come from the `tasks` argument, else the planning snapshot; availability from the argument, else the snapshot, else the default availability; the result SHALL say which source was used. When neither tasks nor a snapshot are available, it SHALL return `available: false` with a reason and no plan.
 
 #### Scenario: Chat with a snapshot
 - **WHEN** the snapshot holds a 180-minute task due in two days and availability is 120 minutes a day
 - **THEN** the plan places 120 minutes today and 60 minutes tomorrow, with `tasksSource: 'snapshot'`
+
+#### Scenario: Same plan as the weekly page
+- **WHEN** the snapshot holds two tasks of different courses due the same day, and `plan_schedule` is called with `courseIds` naming only the second course
+- **THEN** the second task's minutes are placed exactly as on the weekly page (ties broken by the page's task keys), and only the second course's entries are returned
 
 #### Scenario: No planning data
 - **WHEN** `plan_schedule` is called without `tasks` and the context has no planning snapshot
