@@ -9,7 +9,6 @@
 | `collect-ed-course.mjs` | 通过 `edstem` CLI 获取 Ed 目录、部分成绩和选定介绍 |
 | `edstem-scores.mjs` | 只读获取本人最终提交成绩，供 Ed 采集器使用 |
 | `collect-handbook.mjs` | 在 Edge 后台读取对应年份的 Handbook 考核页 |
-| `course-sync-runner.mjs` | 串行采集、并行模型整理、本地校验、取消、保存和用量 |
 | `eval-course-analysis.mjs` | 用已采集的数据或合成课程跑 N 次分析，与标准答案对比，统计准确率、一致性和校验拦截；不采集、不写桌面（[说明](../docs/eval-format.md)） |
 | `mcp-server.mjs` | 本机 stdio MCP 服务（`node scripts/mcp-server.mjs`），把对话用的只读课程工具开放给 MCP 客户端；参数 `--project`、`--desktop`、`--courses`（或 `STUDYORBIT_COURSES`），不写文件、不调用模型、不联网（[接法](../README.md#在-mcp-客户端里使用)） |
 | `lib/course-mcp.mjs` | MCP 服务本体：每个注册表工具一个 MCP 工具（只读标注），每次调用重新读取课程文件；所有 MCP SDK 用法都在这里 |
@@ -24,5 +23,7 @@
 | `lib/revision-store.mjs` | 复习笔记存储（`.local/revision/notes.json`） |
 | `lib/local-origin.mjs` | 本地接口的同源检查 |
 | `lib/server-lock.mjs`、`lib/sync-store.mjs` | 本地接口服务的单实例锁（`.local/server.lock`）和同步记录数据库（`.local/studyorbit.db`） |
+| `lib/sync-pipeline.mjs`、`lib/sync-stages.mjs` | 分阶段的课程同步：每门课采集 → 分析 → 校验 → 合并，各阶段检查点存进数据库，失败、取消或中断后可从检查点继续；取消、中断和用量记录 |
+| `lib/rate-limit.mjs`、`lib/collector-exit.mjs` | 各平台的限流与有限次重试（采集器一次一个、模型每家最多 4 个；HTTP 429/5xx 和网络错误最多试 3 次），以及采集器的临时失败退出码 75 |
 
 `.d.mts` 文件是这些模块给 TypeScript 用的类型声明。旧的复制式采集脚本和 Cookie 实验脚本已移除，需要时查 Git 历史。

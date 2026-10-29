@@ -8,7 +8,7 @@ import { loadCourseReports, newestCourseDocument } from '../scripts/lib/course-r
 import { analyseWithRepair, settleCourse, validateAnalysis } from '../scripts/lib/course-validation.mjs';
 
 // End to end on synthetic data: model output v2 + collected fixtures + an earlier v1 course file in a temporary
-// Desktop folder → the saved v2 file is read back by course-reports. Same steps as scripts/course-sync-runner.mjs.
+// Desktop folder → the saved v2 file is read back by course-reports. Same steps as the validate and merge stages of scripts/lib/sync-stages.mjs.
 const fixture = join(import.meta.dirname, 'fixtures', 'synthetic-course');
 const readJson = async (name: string) => JSON.parse(await readFile(join(fixture, name), 'utf8'));
 

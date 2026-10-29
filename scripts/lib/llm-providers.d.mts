@@ -1,6 +1,8 @@
 import type { AnalysisConfig } from './llm-config.mjs';
 export type TokenCounts = { input: number; cached: number | null; output: number; reasoning: number | null };
-export type AnalysisResult = { exitCode: number | null; lastMessage: string; usage: TokenCounts | null; threadId?: string | null; error?: string };
+export type AnalysisResult = { exitCode: number | null; lastMessage: string; usage: TokenCounts | null; threadId?: string | null; error?: string; httpStatus?: number; retryAfterMs?: number | null; retryable?: boolean };
+export function parseRetryAfter(value: string | null, now?: number): number | null;
+export function isTemporaryFailure(result: AnalysisResult | null | undefined): boolean;
 export type ConnectionTest = { ok: boolean; latencyMs: number; model: string | null; error?: string };
 export function counts(usage: unknown): TokenCounts | null;
 export function anthropicSchema(schema: unknown): unknown;

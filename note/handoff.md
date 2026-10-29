@@ -22,9 +22,12 @@
 - **v2 评测（PR #268 待审查，分支 `claude/eval-v2`）：** 照基线重跑 4 门课 × 5 次（`deepseek-flash`），基线和 v2 都用最终打分代码 `--rescore` 重新打分，前后对比在 `docs/eval-results.md`「v2 之后」（合计字段准确率 83.9% → 87.0%，只有 COMP20003 变高）；评测脚本新增「无出处」计数（20 次运行全是 0）、`--rescore`，配对补上 Canvas 作业分组（决定 #370–#374）。
 - **同步存储（`local-server-sync-pipeline` 第 2 部分，PR #272 已合并）：** `scripts/lib/sync-store.mjs`（`node:sqlite`，`.local/studyorbit.db` 0600、WAL、按 `user_version` 迁移、升级前备份、不可用的文件绝不改写、启动标记中断、按续跑链保留 50 条）和 `scripts/lib/server-lock.mjs`（单实例锁）；`engines.node` ≥ 24.15.0；还没接进服务和同步（等第 1、3 部分），决定 #405–#409。
 - **独立本地服务（`local-server-sync-pipeline` 第 1 部分，分支 `claude/local-server`，PR #275 待审查合并，决定 #415–#424）：** 所有 `/api/local/*` 从 `vite.config.ts` 搬到 `server/`（`app.ts` 路由表、`routes/` 每个路由一个文件、`guard.ts` 回环 → 令牌 → Host → Origin、`proxy.ts`、`main.ts` 接上单实例锁和数据库，不可用时同步接口 503）；`scripts/dev.mjs` 每次启动生成令牌，先起服务再起 Vite；顺手修了课程发现「取消」从来没生效的问题（#420）。测试：`server-guard`、`local-server`（每个路由）、`server-main`（子进程：令牌、锁、端口被占、坏数据库、信号）、`local-proxy`（真 Vite：令牌替换、Host、SSE 不缓冲、中断传到上游）、`dev-launcher`、`vite-config`。真实数据只读浏览器检查（5181/5191 端口）通过。
+- **分阶段同步（`local-server-sync-pipeline` 第 3 部分，分支 `claude/staged-sync`，PR #277 待合并，决定 #425–#434）：** `scripts/lib/sync-stages.mjs`（采集 → 分析 → 校验 → 合并，输入哈希、检查点、按来源复用、先记录再写的合并、按续跑链去重的变更记录）、`scripts/lib/sync-pipeline.mjs`（任务存数据库、续跑、取消与中断、模拟崩溃、用量记录照旧）、`scripts/lib/rate-limit.mjs`（采集一次一个、每家模型 4 个、最多 3 次、`Retry-After`、2 分钟上限）；模型结果带 `httpStatus`，采集器临时失败退出码 75；新接口 `GET /api/local/sync-jobs`、`POST /api/local/sync-jobs/<jobId>/resume`；页面「已中断」「继续上次同步」「沿用上次结果」；`scripts/course-sync-runner.mjs` 已删。每个阶段边界一个故障注入测试（`test/sync-faults.test.ts`），续跑与重来的假模型 token 用 `npx vitest run test/sync-faults.test.ts --silent=false` 打印。
 - **验证（较早）：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
 
 ## 未验证
+
+- 分阶段同步：没有跑过真实同步、真实采集器或真实模型；采集器退出码 75 只测了判断函数（Handbook 的 `responseStatus` 读取和 Ed 命令的报错格式都是推断）；Codex 子代理用量在续跑时没验证；浏览器只用假接口验证了续跑按钮。
 
 - 本地服务：对话经代理的流式回复和中途停止只在测试里用假模型验证过（浏览器检查只读，没发消息）；`vite --host` 暴露到局域网时的 403 只有单元测试；Windows 没测。
 - 预设提示词发出后的真实模型回复、真实回复「存到复习」（测试里拦截了对话请求，没花额度）。
@@ -39,8 +42,8 @@
 
 ## 下一步
 
-0. 审查并合并 PR #275（本地服务第 1 部分）；之后 `local-server-sync-pipeline` 第 3 部分（分阶段流水线）可以开始。新路由一律写进 `server/routes/`。
-1. 审查并合并 `local-corrections-merge` 第 3 部分的 PR（变更记录）；之后 `local-server-sync-pipeline` 的 3.11 要把变更记录的追加搬进合并阶段并按 lineage 去重。
+0. CI 通过后合并 PR #277（分阶段同步）；然后做 `local-server-sync-pipeline` 第 4 部分：`scripts/measure-sync-resume.mjs`、`docs/sync-optimization.md` 一节（全部注明「伪造模型」）、`docs/overview.md`（阶段、数据库、续跑），之后归档这个 change。新路由一律写进 `server/routes/`。
+1. 你：第一次真实同步后看一眼「同步数据」面板和 `.local/studyorbit.db` 是否正常；如果同步被中断，试一次「继续上次同步」。分阶段同步还没跑过真实采集和真实模型。
 2. 你：第一次 v2 同步后看一眼各课的「无出处」数量；太多的话再调提示词（评测可以量清空率）。
    - 评测里 20 次运行「无出处」都是 0。
    - 决定 #372 记下的 `legacyIds` 分组缺口已在第 2 部分修好（#385），spec 已改。

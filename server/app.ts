@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCourseSyncRunner } from '../scripts/course-sync-runner.mjs';
+import { createSyncPipeline, type PipelineDeps, type SyncPipeline } from '../scripts/lib/sync-pipeline.mjs';
 import type { OpenResult } from '../scripts/lib/sync-store.mjs';
 import type { Env, RouteContext, RouteHandler } from './context.ts';
 import { checkRequest } from './guard.ts';
@@ -13,10 +13,11 @@ import { correctionsRoute } from './routes/corrections.ts';
 import { courseCandidatesRoute } from './routes/course-candidates.ts';
 import { courseChangesRoute } from './routes/course-changes.ts';
 import { courseReportsRoute } from './routes/course-reports.ts';
-import { courseSyncRoute, type CourseRunner } from './routes/course-sync.ts';
+import { courseSyncRoute } from './routes/course-sync.ts';
 import { llmConfigRoute } from './routes/llm-config.ts';
 import { revisionNotesRoute } from './routes/revision-notes.ts';
 import { syncCoursesRoute } from './routes/sync-courses.ts';
+import { syncJobsRoute } from './routes/sync-jobs.ts';
 import { syncUsageRoute } from './routes/sync-usage.ts';
 
 export const API_PREFIX = '/api/local';
@@ -30,18 +31,21 @@ export type LocalApiOptions = {
   token: string;
   /** Port of the page (Vite); the only port accepted in `Host`. */
   webPort: number;
-  /** Result of `openSyncStore`; an unavailable store makes the sync routes answer 503. Absent: no store yet. */
+  /** Result of `openSyncStore`; without an open store the sync routes answer 503 SYNC_STORE_UNAVAILABLE. */
   store?: OpenResult;
   /** Defaults to `process.env`. */
   env?: Env;
-  /** Test seams: a fake sync runner and a stub discovery script. Real ones by default. */
-  courseRunner?: CourseRunner;
+  /**
+   * Test seams: fake collectors, model, clock and IDs for the sync pipeline, and a stub discovery script. Real ones by
+   * default. Hooks cannot be passed here: the server never creates the pipeline with hooks (design §10).
+   */
+  pipelineDeps?: Omit<Partial<PipelineDeps>, 'store' | 'projectDir' | 'desktopDir' | 'hooks'>;
   discoveryScript?: string;
 };
 
 export type LocalApi = {
   handle(req: IncomingMessage, res: ServerResponse): void;
-  /** Stops a running course sync (as a cancel) and course discovery; later requests get 503 (shutting down). */
+  /** Stops a running course sync (marked `interrupted`) and course discovery; later requests get 503 (shutting down). */
   close(): void;
   /** True while a course sync is running. */
   syncRunning(): boolean;
@@ -53,7 +57,9 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
     desktopDir: options.desktopDir ?? join(homedir(), 'Desktop'),
     env: options.env ?? process.env,
   };
-  const courseRunner = options.courseRunner ?? createCourseSyncRunner(options.projectDir);
+  const pipeline: SyncPipeline | null = options.store?.ok
+    ? createSyncPipeline({ ...options.pipelineDeps, hooks: undefined, store: options.store.store, projectDir: context.projectDir, desktopDir: context.desktopDir, env: context.env })
+    : null;
   const discovery = syncCoursesRoute(context, options.discoveryScript ?? DISCOVERY_SCRIPT);
   const routes: [string, RouteHandler][] = [
     ['sync-usage', syncUsageRoute(context)],
@@ -63,7 +69,8 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
     ['course-changes', courseChangesRoute(context)],
     ['revision-notes', revisionNotesRoute(context)],
     ['chats', chatsRoute(context)],
-    ['course-sync', courseSyncRoute(courseRunner, options.store?.ok !== false)],
+    ['course-sync', courseSyncRoute(pipeline)],
+    ['sync-jobs', syncJobsRoute(pipeline)],
     ['sync-courses', discovery.route],
     ['course-candidates', courseCandidatesRoute(context)],
   ];
@@ -92,9 +99,9 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
     handle,
     close() {
       closed = true;
-      if (courseRunner.status().running) courseRunner.cancel();
+      void pipeline?.shutdown();
       discovery.cancel();
     },
-    syncRunning: () => courseRunner.status().running,
+    syncRunning: () => pipeline?.running() ?? false,
   };
 }

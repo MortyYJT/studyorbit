@@ -4,10 +4,13 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { CourseSyncState } from '../scripts/course-sync-runner.mjs';
+import { manualClock } from '../scripts/lib/rate-limit.mjs';
+import { createSyncLimiters, type PipelineDeps } from '../scripts/lib/sync-pipeline.mjs';
+import { openSyncStore, type OpenResult } from '../scripts/lib/sync-store.mjs';
 import { createLocalApi, type LocalApiOptions } from '../server/app.ts';
 import { TOKEN_HEADER } from '../server/guard.ts';
 import { call, closeServer, eventReader, fakeModel, listen, open, syntheticCourse, syntheticToken, writeSyntheticCourses } from './local-api-helpers.ts';
+import { fakeCollectors, fakeConfig, fakeModel as fakeAnalysisModel, syntheticCourse as pipelineCourse } from './sync-fakes.ts';
 
 // Every route of the standalone local API through createLocalApi (specs/local-api-server, design §2-§3), on an
 // ephemeral loopback port with a temporary project directory, a temporary Desktop and synthetic files.
@@ -15,6 +18,7 @@ const webPort = 5999;
 const page = `http://localhost:${webPort}`;
 let root: string, projectDir: string, desktopDir: string, token: string, server: Server | undefined, port: number;
 let closeApi: (() => void) | undefined;
+let apiRunning: (() => boolean) | undefined;
 const extra: Server[] = [];
 
 beforeEach(async () => {
@@ -27,33 +31,37 @@ beforeEach(async () => {
 afterEach(async () => {
   closeApi?.();
   closeApi = undefined;
+  for (let waited = 0; apiRunning?.() && waited < 200; waited++) await new Promise(resolve => setTimeout(resolve, 10));
+  apiRunning = undefined;
+  for (const opened of openedStores.splice(0)) if (opened.ok) opened.store.close();
   await closeServer(server);
   server = undefined;
   for (const other of extra.splice(0)) await closeServer(other);
   await rm(root, { recursive: true, force: true });
 });
 
-/** A fake course sync runner: no collectors, no model. */
-function fakeRunner() {
-  let state: CourseSyncState = { running: false, courses: [], error: null };
-  const calls: string[][] = [];
+/** Fake collectors and a fake analysis model for the sync pipeline (course 900001); the model hangs until stopped. */
+function fakePipelineDeps(replies: Parameters<typeof fakeAnalysisModel>[1] = { SYNT10001: [{ hang: true }] }): Omit<Partial<PipelineDeps>, 'store' | 'projectDir' | 'desktopDir' | 'hooks'> {
+  const courses = [pipelineCourse(1)];
+  const clock = manualClock(Date.UTC(2026, 9, 30), { instant: true });
   return {
-    calls,
-    async start(ids: string[]) {
-      if (state.running) throw new Error('SYNC_RUNNING');
-      if (!ids.length) throw new Error('INVALID_SELECTION');
-      calls.push(ids);
-      state = { running: true, courses: ids.map(id => ({ id, code: 'SYNT10001', status: 'pending', reason: '' })), error: null };
-      return state;
-    },
-    status: () => state,
-    cancel() { state = { ...state, running: false, courses: state.courses.map(course => ({ ...course, status: 'cancelled' })) }; return state; },
+    runCollector: fakeCollectors(courses).runCollector, callModel: fakeAnalysisModel(courses, replies).callModel,
+    resolveModel: async () => fakeConfig, childUsage: async () => null, clock, limiters: createSyncLimiters({ clock }),
   };
+}
+const openedStores: OpenResult[] = [];
+async function openStore(): Promise<OpenResult> {
+  const result = await openSyncStore({ projectDir });
+  openedStores.push(result);
+  return result;
 }
 
 async function start(options: Partial<LocalApiOptions> = {}) {
-  const api = createLocalApi({ projectDir, desktopDir, token, webPort, env: {}, courseRunner: fakeRunner(), ...options });
+  // Every API gets a sync store in the temporary project unless the test passes its own result.
+  const store = 'store' in options ? options.store : await openStore();
+  const api = createLocalApi({ projectDir, desktopDir, token, webPort, env: {}, ...options, store });
   closeApi = api.close;
+  apiRunning = api.syncRunning;
   server = createServer(api.handle);
   port = await listen(server);
   return api;
@@ -254,35 +262,78 @@ describe('chats', () => {
 
 describe('course-sync', () => {
   it('reports status, starts, refuses a second start and cancels with the same codes as before', async () => {
-    await start();
-    expect((await get('/api/local/course-sync')).json()).toEqual({ running: false, courses: [], error: null });
+    await writeSyntheticCourses(projectDir, desktopDir);
+    await start({ store: await openStore(), pipelineDeps: fakePipelineDeps() });
+    expect((await get('/api/local/course-sync')).json()).toEqual({ running: false, courses: [], error: null, jobId: null, resumable: false });
     expect((await write('POST', '/api/local/course-sync', { ids: [] })).json()).toEqual({ error: 'INVALID_SELECTION' });
     expect((await write('POST', '/api/local/course-sync', { ids: ['900001'], extra: 1 })).json()).toEqual({ error: 'INVALID_SELECTION' });
     expect((await write('POST', '/api/local/course-sync', 'x'.repeat(10001))).json()).toEqual({ error: 'INVALID_SELECTION' });
     const started = await write('POST', '/api/local/course-sync', { ids: ['900001'] });
-    expect([started.status, started.json().running]).toEqual([202, true]);
+    expect([started.status, started.json().running, started.json().courses]).toEqual([202, true, [expect.objectContaining({ id: '900001', code: 'SYNT10001', reason: '', reused: false })]]);
     const again = await write('POST', '/api/local/course-sync', { ids: ['900001'] });
     expect([again.status, again.json()]).toEqual([409, { error: 'SYNC_RUNNING' }]);
     expect((await write('POST', '/api/local/course-sync', { ids: ['900001'] }, { origin: undefined })).status).toBe(403);
     expect((await write('PUT', '/api/local/course-sync', {})).status).toBe(405);
-    expect((await write('DELETE', '/api/local/course-sync', {})).json()).toMatchObject({ running: false, courses: [{ status: 'cancelled' }] });
+    expect((await write('DELETE', '/api/local/course-sync', {})).json()).toMatchObject({ courses: [{ status: 'cancelled' }] });
+    await expect.poll(async () => (await get('/api/local/course-sync')).json().running, { interval: 10 }).toBe(false);
+    expect((await get('/api/local/course-sync')).json()).toMatchObject({ jobId: expect.any(String), resumable: true, courses: [{ status: 'cancelled', reused: false }] });
+  });
+
+  it('keeps the status of the newest job across a restart of the server', async () => {
+    await writeSyntheticCourses(projectDir, desktopDir);
+    const api = await start({ store: await openStore(), pipelineDeps: fakePipelineDeps({}) });
+    await write('POST', '/api/local/course-sync', { ids: ['900001'] });
+    await expect.poll(() => api.syncRunning(), { interval: 10 }).toBe(false);
+    closeApi?.(); await closeServer(server); server = undefined;
+    for (const opened of openedStores.splice(0)) if (opened.ok) opened.store.close();
+    await start({ store: await openStore(), pipelineDeps: fakePipelineDeps({}) });
+    expect((await get('/api/local/course-sync')).json()).toMatchObject({ running: false, resumable: false, courses: [{ id: '900001', status: 'completed', stage: 'merge' }] });
+  });
+
+  it('lists jobs and resumes a stopped one with the write checks of the other routes', async () => {
+    await writeSyntheticCourses(projectDir, desktopDir);
+    const deps = fakePipelineDeps({ SYNT10001: [{ status: 503 }, { status: 503 }, { status: 503 }] });
+    const api = await start({ store: await openStore(), pipelineDeps: deps });
+    const started = (await write('POST', '/api/local/course-sync', { ids: ['900001'] })).json();
+    await expect.poll(() => api.syncRunning(), { interval: 10 }).toBe(false);
+    const listed = (await get('/api/local/sync-jobs')).json();
+    expect(listed).toEqual({ jobs: [expect.objectContaining({ id: started.jobId, status: 'failed', resumable: true, resumedFrom: null, courses: [{ id: '900001', code: 'SYNT10001', status: 'failed' }] })] });
+    const path = `/api/local/sync-jobs/${started.jobId}/resume`;
+    expect((await get(path)).status).toBe(405);
+    expect((await write('POST', path, {}, { origin: undefined })).status).toBe(403);
+    expect((await write('POST', path, {}, { 'content-type': 'text/plain' })).status).toBe(403);
+    expect((await write('POST', path, { force: true })).json()).toEqual({ error: 'INVALID_REQUEST' });
+    expect((await write('POST', path, 'not json')).status).toBe(400);
+    const missing = await write('POST', '/api/local/sync-jobs/no-such-job/resume', {});
+    expect([missing.status, missing.json()]).toEqual([404, { error: 'JOB_NOT_FOUND' }]);
+    expect((await write('POST', '/api/local/sync-jobs/x/y', {})).status).toBe(404);
+    const resumed = await write('POST', path, {});
+    expect(resumed.status).toBe(202);
+    expect(resumed.json()).toMatchObject({ running: true, resumedFrom: started.jobId });
+    await expect.poll(() => api.syncRunning(), { interval: 10 }).toBe(false);
+    const again = await write('POST', path, {});
+    expect([again.status, again.json()]).toEqual([409, { error: 'ALREADY_RESUMED' }]);
+    expect((await get('/api/local/course-sync')).json()).toMatchObject({ resumedFrom: started.jobId, courses: [{ status: 'completed' }] });
   });
 
   it('answers 503 SYNC_STORE_UNAVAILABLE when the store could not be opened, while other routes work', async () => {
     await start({ store: { ok: false, error: 'SYNC_STORE_UNAVAILABLE', reason: 'NEWER_VERSION', message: 'synthetic' } });
-    for (const reply of [await get('/api/local/course-sync'), await write('POST', '/api/local/course-sync', { ids: ['900001'] })]) {
+    for (const reply of [await get('/api/local/course-sync'), await write('POST', '/api/local/course-sync', { ids: ['900001'] }), await get('/api/local/sync-jobs')]) {
       expect([reply.status, reply.json()]).toEqual([503, { error: 'SYNC_STORE_UNAVAILABLE' }]);
     }
     await writeSyntheticCourses(projectDir, desktopDir);
     expect((await get('/api/local/course-reports')).status).toBe(200);
   });
 
-  it('close() cancels a running sync and refuses later requests', async () => {
-    const api = await start();
-    await write('POST', '/api/local/course-sync', { ids: ['900001'] });
+  it('close() interrupts a running sync and refuses later requests', async () => {
+    await writeSyntheticCourses(projectDir, desktopDir);
+    const store = await openStore();
+    const api = await start({ store, pipelineDeps: fakePipelineDeps() });
+    const started = (await write('POST', '/api/local/course-sync', { ids: ['900001'] })).json();
     expect(api.syncRunning()).toBe(true);
     api.close();
-    expect(api.syncRunning()).toBe(false);
+    await expect.poll(() => api.syncRunning(), { interval: 10 }).toBe(false);
+    if (store.ok) expect(store.store.getJob(started.jobId)).toMatchObject({ status: 'interrupted' });
     // Shutting down: no request can start another sync.
     const after = await write('POST', '/api/local/course-sync', { ids: ['900001'] });
     expect([after.status, after.body]).toEqual([503, '']);

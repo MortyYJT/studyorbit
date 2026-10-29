@@ -6,6 +6,7 @@ import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { parseCoursePage, normalizeCourses } from './lib/course-list.mjs';
+import { collectorExitCode, httpFailure } from './lib/collector-exit.mjs';
 const exec = promisify(execFile), wait = ms => new Promise(r => setTimeout(r, ms));
 const [course, dest] = process.argv.slice(2);
 if (process.platform !== 'darwin' || !(course === 'discover' || /^\d+$/.test(course ?? '')) || !dest) throw new Error('用法：node scripts/canvas-background.mjs <课程ID> <输出路径>');
@@ -83,7 +84,8 @@ try {
         try {
           if (attempt) await wait(500);
           response = JSON.parse(await run(read, [...target, expectedPath, readPage]));
-          if (response.status !== 200) throw new Error(`Canvas HTTP ${response.status}`);
+          // HTTP 429/5xx (or no response) on the final attempt exits with 75 so the sync retries it (design §9).
+          if (response.status !== 200) throw httpFailure('Canvas', response.status);
           rows = parseCoursePage(response.body); break;
         } catch (error) { err = error; }
       }
@@ -115,7 +117,7 @@ try {
 } catch (error) {
   const message = String(error.stderr || error.message).trim().slice(0, 500);
   console.error(`Canvas 后台采集失败：${message}。如提示 JavaScript from Apple Events，请在 Edge 开发者菜单允许后重试。`);
-  process.exitCode = 1;
+  process.exitCode = collectorExitCode(error);
 } finally {
   if (target) await run(close, target).catch(() => console.error('无法关闭本次后台采集标签页，请手动关闭。'));
 }

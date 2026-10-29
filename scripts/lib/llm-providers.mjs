@@ -1,5 +1,6 @@
 // Course-analysis model adapters behind one entry point, `analyse(config, prompt, options)`.
-// Every adapter returns { exitCode, lastMessage, usage, threadId?, error? }, stops after 15 minutes and can be
+// Every adapter returns { exitCode, lastMessage, usage, threadId?, error?, httpStatus?, retryAfterMs?, retryable? }
+// (the last three only from HTTP providers, for the sync's model limiter), stops after 15 minutes and can be
 // cancelled through `registerStop`. Keys are sent only in the provider's auth header and never logged or echoed.
 import { execFile, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -87,6 +88,32 @@ async function readEvents(body, onEvent) {
   if (buffer.trim()) flush(buffer);
 }
 
+/** `Retry-After` in milliseconds: delta seconds or an HTTP date (past dates give 0); anything else gives null. */
+export function parseRetryAfter(value, now = Date.now()) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return null;
+  if (/^\d+$/.test(text)) return Number(text) * 1000;
+  if (!/[a-z]/i.test(text)) return null;
+  const at = Date.parse(text);
+  return Number.isFinite(at) ? Math.max(0, at - now) : null;
+}
+
+/** Status and Retry-After of an unsuccessful provider response, for the model limiter (design §9). */
+function httpFields(response) {
+  return { httpStatus: response.status, retryAfterMs: parseRetryAfter(response.headers?.get?.('retry-after') ?? null) };
+}
+
+/** A connection error before any response is temporary; an abort (cancel or timeout) and a broken body are not. */
+function connectionFields(error, response) {
+  return !response && error?.name !== 'AbortError' ? { retryable: true } : {};
+}
+
+/** Whether a failed analysis may be retried: HTTP 429, HTTP 5xx, or a connection error before a response. */
+export function isTemporaryFailure(result) {
+  if (!result || result.exitCode === 0) return false;
+  return result.retryable === true || result.httpStatus === 429 || (Number.isInteger(result.httpStatus) && result.httpStatus >= 500 && result.httpStatus <= 599);
+}
+
 function withTimeout(registerStop, ms) {
   const controller = new AbortController();
   const untrack = registerStop(() => controller.abort());
@@ -97,19 +124,20 @@ function withTimeout(registerStop, ms) {
 // DeepSeek Responses API: native schema output and local semantic validation.
 async function runDeepSeek(config, prompt, schema, registerStop) {
   const { signal, done } = withTimeout(registerStop, ANALYSIS_TIMEOUT_MS);
+  let response;
   try {
-    const response = await fetch('https://api.deepseek.com/responses', {
+    response = await fetch('https://api.deepseek.com/responses', {
       method: 'POST', signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
       body: JSON.stringify({ model: config.model, input: prompt, text: { format: { type: 'json_schema', name: 'course_analysis', schema } } }),
     });
-    if (!response.ok) return { exitCode: 1, lastMessage: '', usage: null, error: `DeepSeek 接口返回 HTTP ${response.status}。` };
+    if (!response.ok) return { exitCode: 1, lastMessage: '', usage: null, error: `DeepSeek 接口返回 HTTP ${response.status}。`, ...httpFields(response) };
     const data = await response.json();
     const lastMessage = (data.output || []).filter(item => item.type === 'message').flatMap(item => item.content || []).filter(item => item.type === 'output_text').map(item => item.text || '').join('');
-    if (data.status !== 'completed') return { exitCode: 1, lastMessage, usage: counts(data.usage), error: `DeepSeek 结果未完成：${data.status || '未知'}。` };
-    return { exitCode: 0, lastMessage, usage: counts(data.usage), threadId: null };
+    if (data.status !== 'completed') return { exitCode: 1, lastMessage, usage: counts(data.usage), error: `DeepSeek 结果未完成：${data.status || '未知'}。`, httpStatus: response.status };
+    return { exitCode: 0, lastMessage, usage: counts(data.usage), threadId: null, httpStatus: response.status };
   } catch (error) {
-    return { exitCode: 1, lastMessage: '', usage: null, error: error.name === 'AbortError' ? '模型请求已中止或超时。' : 'DeepSeek 接口连接失败。' };
+    return { exitCode: 1, lastMessage: '', usage: null, error: error.name === 'AbortError' ? '模型请求已中止或超时。' : 'DeepSeek 接口连接失败。', ...connectionFields(error, response) };
   } finally { done(); }
 }
 
@@ -117,16 +145,17 @@ async function runDeepSeek(config, prompt, schema, registerStop) {
 async function runCompatible(config, prompt, registerStop) {
   if (!isAllowedEndpoint(config.baseUrl)) return { exitCode: 1, lastMessage: '', usage: null, error: '模型接口必须使用 HTTPS 或本机地址。' };
   const { signal, done } = withTimeout(registerStop, ANALYSIS_TIMEOUT_MS);
+  let response;
   try {
-    const response = await fetch(config.baseUrl, { method: 'POST', signal,
+    response = await fetch(config.baseUrl, { method: 'POST', signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
       body: JSON.stringify({ model: config.model, messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' } }),
     });
-    if (!response.ok) return { exitCode: 1, lastMessage: '', usage: null, error: `模型接口返回 HTTP ${response.status}。` };
+    if (!response.ok) return { exitCode: 1, lastMessage: '', usage: null, error: `模型接口返回 HTTP ${response.status}。`, ...httpFields(response) };
     const data = await response.json();
-    return { exitCode: 0, lastMessage: data.choices?.[0]?.message?.content ?? '', usage: counts(data.usage), threadId: null };
+    return { exitCode: 0, lastMessage: data.choices?.[0]?.message?.content ?? '', usage: counts(data.usage), threadId: null, httpStatus: response.status };
   } catch (error) {
-    return { exitCode: 1, lastMessage: '', usage: null, error: error.name === 'AbortError' ? '模型请求已中止或超时。' : '模型接口连接失败。' };
+    return { exitCode: 1, lastMessage: '', usage: null, error: error.name === 'AbortError' ? '模型请求已中止或超时。' : '模型接口连接失败。', ...connectionFields(error, response) };
   } finally { done(); }
 }
 
@@ -134,9 +163,10 @@ async function runCompatible(config, prompt, registerStop) {
 async function runAnthropic(config, prompt, schema, registerStop) {
   const request = buildAnthropicRequest({ model: config.model, apiKey: config.apiKey, prompt, schema });
   const { signal, done } = withTimeout(registerStop, ANALYSIS_TIMEOUT_MS);
+  let response;
   try {
-    const response = await fetch(request.url, { method: 'POST', signal, headers: request.headers, body: request.body });
-    if (!response.ok || !response.body) return { exitCode: 1, lastMessage: '', usage: null, error: `Anthropic 接口返回 HTTP ${response.status}${await providerError(response, config.apiKey)}。` };
+    response = await fetch(request.url, { method: 'POST', signal, headers: request.headers, body: request.body });
+    if (!response.ok || !response.body) return { exitCode: 1, lastMessage: '', usage: null, error: `Anthropic 接口返回 HTTP ${response.status}${await providerError(response, config.apiKey)}。`, ...httpFields(response) };
     let text = '', usage = null, stopReason = null, streamError = null;
     await readEvents(response.body, event => {
       if (event.type === 'message_start') usage = { ...event.message?.usage };
@@ -145,11 +175,11 @@ async function runAnthropic(config, prompt, schema, registerStop) {
       else if (event.type === 'error') streamError = event.error?.message ?? event.error?.type ?? 'unknown';
     });
     const normalised = anthropicUsage(usage);
-    if (streamError) return { exitCode: 1, lastMessage: text, usage: normalised, error: `Anthropic 接口出错：${redact(streamError, config.apiKey)}。` };
-    if (stopReason !== 'end_turn') return { exitCode: 1, lastMessage: text, usage: normalised, error: stopReason === 'refusal' ? 'Claude 拒绝了这次请求。' : stopReason === 'max_tokens' ? 'Claude 输出超出长度上限。' : `Claude 结果未完成：${stopReason || '未知'}。` };
-    return { exitCode: 0, lastMessage: text, usage: normalised, threadId: null };
+    if (streamError) return { exitCode: 1, lastMessage: text, usage: normalised, error: `Anthropic 接口出错：${redact(streamError, config.apiKey)}。`, httpStatus: response.status };
+    if (stopReason !== 'end_turn') return { exitCode: 1, lastMessage: text, usage: normalised, error: stopReason === 'refusal' ? 'Claude 拒绝了这次请求。' : stopReason === 'max_tokens' ? 'Claude 输出超出长度上限。' : `Claude 结果未完成：${stopReason || '未知'}。`, httpStatus: response.status };
+    return { exitCode: 0, lastMessage: text, usage: normalised, threadId: null, httpStatus: response.status };
   } catch (error) {
-    return { exitCode: 1, lastMessage: '', usage: null, error: error.name === 'AbortError' ? '模型请求已中止或超时。' : 'Anthropic 接口连接失败。' };
+    return { exitCode: 1, lastMessage: '', usage: null, error: error.name === 'AbortError' ? '模型请求已中止或超时。' : 'Anthropic 接口连接失败。', ...connectionFields(error, response) };
   } finally { done(); }
 }
 

@@ -6,6 +6,7 @@ import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { cliFailureIsTemporary, EX_TEMPFAIL } from './lib/collector-exit.mjs';
 const exec = promisify(execFile);
 const [code, term, dest] = process.argv.slice(2);
 if (!/^[A-Z]{4}[1-9]\d{4}$/.test(code ?? '') || !dest) throw new Error('Missing course code or output path');
@@ -13,6 +14,9 @@ const year = /\b(20\d{2})\b/.exec(term ?? '')?.[1];
 const semester = /(?:semester|sem)\s*([12])/i.exec(term ?? '')?.[1];
 if (!year || !semester) throw new Error('无法确定 Ed 的年份与学期');
 const cli = async (command, args) => JSON.parse((await exec(command, args, { timeout: 60000, maxBuffer: 12 * 1024 * 1024 })).stdout);
+// A failed Ed CLI call whose output names HTTP 429/5xx or a network error exits with 75 so the sync retries it
+// (design §9); every other failure exits with 1 as before.
+try {
 const units = await cli('edstem', ['units', 'list', '--json']);
 if (!Array.isArray(units)) throw new Error('Ed 课程列表格式错误');
 const matches = units.filter(u => typeof u.code === 'string' && u.code.toUpperCase().match(new RegExp(`^${code}(?![A-Z0-9])`)) && String(u.year) === year && new RegExp(`(?:semester|sem)\\s*${semester}\\b`, 'i').test(String(u.session)));
@@ -61,3 +65,7 @@ const path = resolve(dest); await mkdir(dirname(path), { recursive: true, mode: 
 const tmp = `${path}.${randomUUID()}.tmp`;
 await writeFile(tmp, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 }); await rename(tmp, path);
 console.log(JSON.stringify({ status: result.status, lessons: result.lessons.length, scores: result.scores.length }));
+} catch (error) {
+  console.error(`Ed 采集失败：${String(error?.stderr || error?.message || error).trim().slice(0, 400)}`);
+  process.exitCode = cliFailureIsTemporary(error) ? EX_TEMPFAIL : 1;
+}

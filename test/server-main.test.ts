@@ -89,7 +89,7 @@ describe('server/main.ts', () => {
     const port = await started.listening;
     expect(started.output()).toBe(`${LISTENING_LINE} http://127.0.0.1:${port}\n`);
     expect(await readFile(lockPath(), 'utf8')).toBe(`${started.child.pid}\n`);
-    expect((await statusOf(port)).json()).toEqual({ running: false, courses: [], error: null });
+    expect((await statusOf(port)).json()).toEqual({ running: false, courses: [], error: null, jobId: null, resumable: false });
     expect(existsSync(join(projectDir, '.local', 'studyorbit.db'))).toBe(true);
     started.child.kill('SIGTERM');
     expect(await started.exited).toBe(0);

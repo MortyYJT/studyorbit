@@ -3,7 +3,7 @@ import { appendFile, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { appendCourseChanges, createCourseChangesHandler, readCourseChanges, recordCourseChanges } from '../scripts/lib/course-changes-log.mjs';
+import { appendCourseChanges, changeLogHasRun, createCourseChangesHandler, readCourseChanges, recordCourseChanges } from '../scripts/lib/course-changes-log.mjs';
 import type { CourseDocumentV1, CourseDocumentV2 } from '../shared/course-data.js';
 
 // Scenarios from openspec/specs/course-change-log/spec.md (PR 3). Synthetic data only.
@@ -25,7 +25,27 @@ const logFile = () => join(dir, '.local', 'lms', 'changes.jsonl');
 const lines = async () => (await readFile(logFile(), 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line));
 const at = '2026-10-30T01:00:00.000Z';
 
+describe('changeLogHasRun', () => {
+  it('finds a line for the course with any of the given run IDs, skipping malformed lines', async () => {
+    expect(await changeLogHasRun(dir, '100', ['run-1'])).toBe(false);
+    await mkdir(join(dir, '.local', 'lms'), { recursive: true });
+    await appendFile(logFile(), `${JSON.stringify({ at, runId: 'run-1', courseId: '100' })}\nnot json\n${JSON.stringify({ at, runId: 'run-2', courseId: '200' })}\n`);
+    expect(await changeLogHasRun(dir, '100', ['run-0', 'run-1'])).toBe(true);
+    expect(await changeLogHasRun(dir, '100', ['run-2'])).toBe(false);
+    expect(await changeLogHasRun(dir, '200', ['run-2'])).toBe(true);
+    expect(await changeLogHasRun(dir, '100', [])).toBe(false);
+  });
+});
+
 describe('appendCourseChanges', () => {
+  it('writes nothing when beforeWrite throws', async () => {
+    const previous = v1([item('a1')]);
+    const current = v2([item('a1', { weight: 30 })]);
+    const halted = () => { throw new Error('PIPELINE_HALTED'); };
+    await expect(appendCourseChanges(dir, { at, runId: 'run-1', courseId: '100', previous, current }, { beforeWrite: halted })).rejects.toThrow('PIPELINE_HALTED');
+    await expect(stat(logFile())).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('appends one line per change with the run ID, in an owner-only file and directory', async () => {
     const previous = v1([item('a1'), item('a2')]);
     const current = v2([item('canvas:5551', { due: '2026-11-10T12:59:00Z', score: 9 }), item('a2', { weight: 25, score: 8, status: 'graded' })], { a1: 'canvas:5551' });

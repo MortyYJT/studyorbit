@@ -17,7 +17,7 @@
 ## 主流程
 
 1. **发现课程：** `POST /api/local/sync-courses` 启动 `scripts/canvas-background.mjs discover`，在已登录的 Edge 里读取全部 Canvas 课程，存 `.local/lms/courses.json`；读取时（`/api/local/course-candidates`、`scripts/lib/course-reports.mjs`）再由 `scripts/lib/course-list.mjs` 按课程代码筛出候选。
-2. **选课并同步：** `web/src/LocalCourseSelect.tsx` 把选择存进浏览器，调用 `POST /api/local/course-sync`（GET 查进度，DELETE 取消）。`scripts/course-sync-runner.mjs` 对每门课依次采集 Canvas、Ed、Handbook；采集串行，已采集课程的模型分析可与后续采集并行。
+2. **选课并同步：** `web/src/LocalCourseSelect.tsx` 把选择存进浏览器，调用 `POST /api/local/course-sync`（GET 查进度，DELETE 取消）。`scripts/lib/sync-pipeline.mjs` 对每门课依次采集 Canvas、Ed、Handbook；采集串行，已采集课程的模型分析可与后续采集并行。同步记录和各阶段检查点存在 `.local/studyorbit.db`，停下的同步可以用 `POST /api/local/sync-jobs/<jobId>/resume` 继续（阶段、数据库和续跑的完整说明在第 4 部分补充）。
 3. **模型整理：** `scripts/lib/course-analysis.mjs` 生成统一提示词和输出 Schema，`scripts/lib/llm-providers.mjs` 调用设置里选的模型（DeepSeek、OpenAI 兼容、Anthropic、Codex CLI）。结果经 `shared/course-data.ts` 校验，不合格时修复一次，合格的 JSON 存到桌面课程文件夹。
 4. **展示与修正：** `GET /api/local/course-reports` 读每门课最新的有效 JSON；`web/src/LocalPlanning.tsx` 展示课程页和周视图。你的修正、新增、排序和隐藏存在 `.local/corrections/<课程 ID>.json`（`/api/local/corrections`，`scripts/lib/corrections-store.mjs`），不改同步原件；同步结果变了时按三方合并保留你的修改，双方都改且不同的显示为「同步冲突」（`shared/corrections.ts`）。浏览器 localStorage 里的旧修正迁移后只作备份。
 5. **变更提醒：** 同步保存课程文件后，`scripts/lib/course-changes-log.mjs` 用 `shared/course-changes.ts` 的 `diffSnapshots` 按稳定 ID 和上一份有效文件比较，截止时间或权重变了就追加到 `.local/lms/changes.jsonl`（不记分数，第一次同步不记）；页面经 `GET /api/local/course-changes` 读最新 200 条，在「需要你处理」和课程页顶部提示，点「知道了」后不再显示。
@@ -44,7 +44,7 @@
 | `server/guard.ts`、`server/proxy.ts` | 访问检查（回环、令牌、Host、Origin）；Vite 的 `/api/local` 代理 |
 | `scripts/dev.mjs` | `npm run dev`：生成令牌，先启动接口服务再启动 Vite |
 | `vite.config.ts` | 只有页面、端口和代理 |
-| `scripts/course-sync-runner.mjs` | 编排、模型调用、校验、取消、保存、用量和变更记录 |
+| `scripts/lib/sync-pipeline.mjs`、`scripts/lib/sync-stages.mjs` | 分阶段编排（采集 → 分析 → 校验 → 合并）、检查点与续跑、模型调用、取消与中断、保存、用量和变更记录 |
 | `scripts/lib/` | 模型设置与适配器、对话存储与上下文、复习笔记存储、课程读取、修正存储、变更记录 |
 | `shared/` | 课程 JSON 契约、成绩计算、排期、修正合并、变更比较 |
 | `test/` | vitest 单元测试（只用合成数据） |

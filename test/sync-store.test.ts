@@ -229,6 +229,8 @@ describe('data API', () => {
     expect(store.lineage(last)).toEqual(ids.slice().reverse().slice(0, LINEAGE_ANCESTORS + 1));
     expect(store.lineage('unrelated')).toEqual(['unrelated']);
     expect(store.lineage('missing')).toEqual([]);
+    expect(store.childOf(ids[3]!)?.id).toBe(ids[4]);
+    expect(store.childOf(last)).toBeNull();
 
     const succeeded = (jobId: string, inputHash: string) => store.saveStage({ jobId, courseId: 'SYN-1', stage: 'collect', inputHash, status: 'succeeded' });
     succeeded('unrelated', 'same');

@@ -1,7 +1,8 @@
 // Entry point of the standalone local API (`npm run server`, normally started by `npm run dev`; design §2, §5, §8).
 // Order: parse the environment, take the single-instance lock, open the sync store (an unusable database keeps the
-// server up with the sync routes answering 503), listen on 127.0.0.1 only, print one listening line. SIGINT/SIGTERM
-// stop a running sync (as a cancel until the staged pipeline adds `interrupted`), close everything and exit.
+// server up with the sync routes answering 503), listen on 127.0.0.1 only, print one listening line. Opening the store
+// marks jobs left `running` by a dead server `interrupted`. SIGINT/SIGTERM stop a running sync and mark it
+// `interrupted` (resumable), wait for it to settle, close everything and exit.
 // The token is never printed or written anywhere.
 import { createServer, type Server } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -13,8 +14,8 @@ import { DEFAULT_API_PORT, DEFAULT_WEB_PORT, parsePort } from './ports.ts';
 
 export const LISTENING_LINE = 'StudyOrbit local API listening on';
 /**
- * Longest wait for a cancelled sync to settle on shutdown: a little longer than the runner's 5 s SIGTERM → SIGKILL
- * escalation for collector process groups, so that escalation runs before this process exits.
+ * Longest wait for an interrupted sync to settle on shutdown: a little longer than the collectors' 5 s SIGTERM → SIGKILL
+ * escalation for their process groups, so that escalation runs before this process exits.
  */
 const SHUTDOWN_WAIT_MS = 6000;
 
@@ -56,7 +57,7 @@ export async function startServer({ projectDir, desktopDir, env = process.env, w
     const port = await listen(server, apiPort);
     let stopping: Promise<void> | undefined;
     const stop = () => (stopping ??= (async () => {
-      // Stop accepting connections, refuse requests on open ones, then cancel the sync.
+      // Stop accepting connections, refuse requests on open ones, then interrupt the sync.
       const closed = new Promise<void>(resolve => server.close(() => resolve()));
       server.closeIdleConnections();
       api.close();
