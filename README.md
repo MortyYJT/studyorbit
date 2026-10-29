@@ -27,7 +27,7 @@ npm ci
 npm run dev
 ```
 
-打开 `http://localhost:5173/`。只看已同步的数据不需要额外准备；要同步课程还需要：
+打开 `http://localhost:5173/`。`npm run dev` 会先启动本地接口服务（`127.0.0.1:5190`），再启动页面（`localhost:5173`）；两个端口可用 `STUDYORBIT_API_PORT`、`STUDYORBIT_WEB_PORT` 修改，端口被占时直接报错，不会换端口。只看已同步的数据不需要额外准备；要同步课程还需要：
 
 1. 在 **macOS Microsoft Edge** 中登录墨大 Canvas，并保留一个浏览器窗口。Canvas 和 Handbook 采集依赖 Edge 的 Apple Events JavaScript 和系统自动化权限。
 2. 安装并登录澳区 `edstem` CLI（Ed 使用它自己的登录，不复用 Edge）。
@@ -98,13 +98,13 @@ claude mcp add studyorbit -- node <仓库绝对路径>/scripts/mcp-server.mjs
 | 选课、任务与用时、每天可用时间、外观设置、变更已读标记、背景图片（迁移前的修正留作备份） | 浏览器 localStorage / IndexedDB（背景图片不会上传） |
 
 - 存储只在本机；分析和对话时，课程数据（含成绩）会发给你选择的模型服务商，按该服务商的条款处理，模型调用可能产生费用。接口地址指向本机模型（例如 Ollama）时，数据不出本机。
-- 本地接口只接受本机、同源的请求；其他网站或本机其他端口的页面读不到你的数据。
+- 本地接口只接受本机、同源、带本次启动令牌的请求：令牌由 `npm run dev` 每次随机生成，只由页面服务器的代理加上，不发给浏览器；其他网站、本机其他端口的页面和局域网设备都读不到你的数据。
 - 不使用自签 Canvas token（学校禁止）；登录和多因素认证始终由你自己完成，模型看不到密码。
 
 ## 开发
 
 - `npm run check`：类型检查加 `test/` 下的 vitest 测试，与 CI 相同。成绩、「期末需要」和排期是 `shared/` 里的纯函数，测试只用合成数据。
-- `npm run build`：构建静态资源。**静态构建不包含同步、对话和复习笔记接口**，它们只在 Vite 开发服务器里。
+- `npm run build`：构建静态资源。**静态构建不包含同步、对话和复习笔记接口**，它们在本地接口服务（`server/`）里，只有 `npm run dev` 会把页面和它连起来。
 - 代码结构见 [项目结构和数据流](docs/overview.md)，脚本见 [scripts/README.md](scripts/README.md)；课程 JSON 契约见 [docs/course-json.md](docs/course-json.md)，分析提示词见 [docs/course-sync-prompt.md](docs/course-sync-prompt.md)，评测见 [docs/eval-format.md](docs/eval-format.md)；现行规格在 `openspec/specs/`。
 - 开发规则见 [CLAUDE.md](CLAUDE.md)；决定记录在 `note/decisions.md`，进度见 [路线图](note/product/roadmap.md)，当前交接在 [note/handoff.md](note/handoff.md)。
 

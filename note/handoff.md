@@ -4,7 +4,7 @@
 
 - **最后更新：** 2026-10-30，Claude。
 - **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）、#247（全局清理，#239）；规则精简为单一文件 `CLAUDE.md`（#241）。
-- **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，本地 `origin` 已指向新地址），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
+- **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，本地 `origin` 已指向新地址），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口在独立的本地服务（`server/`，`127.0.0.1:5190`），Vite（`localhost:5173`）只提供页面并代理 `/api/local`；`npm run dev` 一起启动（`local-server-sync-pipeline` 第 1 部分合并后）。
 - **OpenSpec：** `course-contract-v2` 已全部合并并归档（PR #259、#262、#265、#266）。`local-corrections-merge`（#290–#298）：第 1 部分（`.local/corrections/` 存储、接口、localStorage 一次性迁移，决定 #375–#384）PR #269、第 2 部分（三方合并和冲突，决定 #385–#394）PR #271 已合并；第 3 部分（变更记录和提醒，分支 `claude/change-log`，决定 #410–#414）已开 PR 待审查合并，该 PR 里已把整个变更归档到 `openspec/changes/archive/`，规格并入 `openspec/specs/`（`local-corrections`、`course-change-log`）。另有 `local-server-sync-pipeline`、`chat-tools-mcp` 已立项。
 - **现行规格：** 在 `openspec/specs/`（`course-analysis`、`course-contract`、`course-change-log`、`grade-target`、`local-corrections`、`revision`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
 
@@ -21,10 +21,12 @@
 - **变更记录和提醒（第 3 部分，待合并）：** `shared/course-changes.ts` 的 `diffSnapshots` 按稳定 ID（旧 ID 经 `legacyIds`）比较上一份和新课程文件，只记截止时间和权重，不记分数、新增和删除；同步脚本保存课程文件后经 `scripts/lib/course-changes-log.mjs` 追加到 `.local/lms/changes.jsonl`（第一次同步不记，写入失败只在原因后加「变更记录写入失败。」）；`GET /api/local/course-changes` 返回最新 200 条；周页「需要你处理」每条一行、标题旁「知道了」，课程页顶部「课程变更」块（只有不会连带隐藏别的课的提醒时才给「知道了」）；已读标记 `coursework.course-changes-seen.v1` 在 localStorage。无头 Chrome 在临时项目副本（两门合成课程、临时 HOME）里验证了显示、两处「知道了」、刷新后不再显示、之后的新变更重新出现、390 px 宽度，没跑真实同步。
 - **v2 评测（PR #268 待审查，分支 `claude/eval-v2`）：** 照基线重跑 4 门课 × 5 次（`deepseek-flash`），基线和 v2 都用最终打分代码 `--rescore` 重新打分，前后对比在 `docs/eval-results.md`「v2 之后」（合计字段准确率 83.9% → 87.0%，只有 COMP20003 变高）；评测脚本新增「无出处」计数（20 次运行全是 0）、`--rescore`，配对补上 Canvas 作业分组（决定 #370–#374）。
 - **同步存储（`local-server-sync-pipeline` 第 2 部分，PR #272 已合并）：** `scripts/lib/sync-store.mjs`（`node:sqlite`，`.local/studyorbit.db` 0600、WAL、按 `user_version` 迁移、升级前备份、不可用的文件绝不改写、启动标记中断、按续跑链保留 50 条）和 `scripts/lib/server-lock.mjs`（单实例锁）；`engines.node` ≥ 24.15.0；还没接进服务和同步（等第 1、3 部分），决定 #405–#409。
+- **独立本地服务（`local-server-sync-pipeline` 第 1 部分，分支 `claude/local-server`，PR #275 待审查合并，决定 #415–#424）：** 所有 `/api/local/*` 从 `vite.config.ts` 搬到 `server/`（`app.ts` 路由表、`routes/` 每个路由一个文件、`guard.ts` 回环 → 令牌 → Host → Origin、`proxy.ts`、`main.ts` 接上单实例锁和数据库，不可用时同步接口 503）；`scripts/dev.mjs` 每次启动生成令牌，先起服务再起 Vite；顺手修了课程发现「取消」从来没生效的问题（#420）。测试：`server-guard`、`local-server`（每个路由）、`server-main`（子进程：令牌、锁、端口被占、坏数据库、信号）、`local-proxy`（真 Vite：令牌替换、Host、SSE 不缓冲、中断传到上游）、`dev-launcher`、`vite-config`。真实数据只读浏览器检查（5181/5191 端口）通过。
 - **验证（较早）：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
 
 ## 未验证
 
+- 本地服务：对话经代理的流式回复和中途停止只在测试里用假模型验证过（浏览器检查只读，没发消息）；`vite --host` 暴露到局域网时的 403 只有单元测试；Windows 没测。
 - 预设提示词发出后的真实模型回复、真实回复「存到复习」（测试里拦截了对话请求，没花额度）。
 - 「7 天内截止但没排期」这一行在真实数据上没出现过（当前 7 天里没有符合条件的考核）。
 - 四家模型真实调用、真实同步、Safari / Firefox（同上一次交接）。
@@ -37,6 +39,7 @@
 
 ## 下一步
 
+0. 审查并合并 PR #275（本地服务第 1 部分）；之后 `local-server-sync-pipeline` 第 3 部分（分阶段流水线）可以开始。新路由一律写进 `server/routes/`。
 1. 审查并合并 `local-corrections-merge` 第 3 部分的 PR（变更记录）；之后 `local-server-sync-pipeline` 的 3.11 要把变更记录的追加搬进合并阶段并按 lineage 去重。
 2. 你：第一次 v2 同步后看一眼各课的「无出处」数量；太多的话再调提示词（评测可以量清空率）。
    - 评测里 20 次运行「无出处」都是 0。
@@ -52,7 +55,7 @@
 
 ## 运行与验证
 
-- `npm ci`；`npm run check`；`npm run dev`（端口 5173，你的浏览器数据在这个端口，不要换）。
+- `npm ci`；`npm run check`；`npm run dev`（页面端口 5173，你的浏览器数据在这个端口，不要换；本地接口 `127.0.0.1:5190`）。第二套开发服务器用 `STUDYORBIT_WEB_PORT=5181 STUDYORBIT_API_PORT=5191 npm run dev`，不要用 `--port`。
 - **不要随手点「立即同步」或保存选课**：会真用 Edge、Ed 和模型额度。复习页的预设按钮也会发消息、用额度。
 - 截图验证用独立临时浏览器（taste-skill `scripts/lib/cdp.mjs`），写入 `coursework.canonical-reset-v1=done` 和 `coursework.selected-course-ids`；要验证对话入口时拦截 `/api/local/chats` 的 POST。
 
@@ -63,5 +66,6 @@
 - 本机 shell 设了 `NODE_DEBUG=http,...`，跑测试和服务器时用 `NODE_DEBUG=`。
 - `sync-usage` 靠 `.local/lms/runs/*` 目录创建时间：移动数据用 `mv`，不要 `cp`。
 - 5174 端口被本机别的进程占用，第二个开发服务器用别的端口。
+- 直接跑 `vite` / `npx vite` 会报「请用 npm run dev 启动（需要本地接口服务）」：没有令牌就没有接口。同一项目只能跑一个本地服务（`.local/server.lock`）。
 - 规则以 `CLAUDE.md` 为准（#241）：Claude 开发并合并；大改动先写 OpenSpec；逻辑用 TDD；合并前新上下文审查；只有设计选择先问用户。
 - 下一阶段任务清单在用户桌面「StudyOrbit待办」，做完一条勾一条。
