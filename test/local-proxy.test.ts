@@ -2,11 +2,11 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer as createHttpServer, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createServer as createViteServer, type ViteDevServer } from 'vite';
+import { createServer as createViteServer, preview, type ViteDevServer } from 'vite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createLocalApi } from '../server/app.ts';
 import { TOKEN_HEADER } from '../server/guard.ts';
-import { localApiProxy } from '../server/proxy.ts';
+import { localApiProxy, previewWithoutApi } from '../server/proxy.ts';
 import { call, closeServer, eventReader, listen, open, portOf, syntheticCourse, syntheticToken, writeSyntheticCourses } from './local-api-helpers.ts';
 
 // The Vite proxy for `/api/local` (design §4, specs/local-api-server "Vite proxies the local API"): a Vite dev server
@@ -96,5 +96,25 @@ describe('localApiProxy', () => {
     expect(save.json()).toMatchObject({ hasKey: true });
     // A direct request to the API port without the proxy has no token.
     expect((await call(apiPort, '/api/local/course-reports', { headers: { host: page() } })).status).toBe(403);
+  });
+});
+
+describe('previewWithoutApi', () => {
+  it('answers 404 for /api/local in vite preview instead of the page fallback, and forwards nothing', async () => {
+    const dist = join(root, 'dist');
+    await mkdir(dist, { recursive: true });
+    await writeFile(join(dist, 'index.html'), '<!doctype html><title>synthetic build</title>');
+    let forwarded = 0;
+    upstream = (_req, res) => { forwarded += 1; res.writeHead(200).end(); };
+    const server = await preview({ configFile: false, root, logLevel: 'silent', plugins: [previewWithoutApi()], build: { outDir: dist }, preview: { host: '127.0.0.1', port: 0, strictPort: true, proxy: {} } });
+    try {
+      const port = portOf(server.httpServer as Server);
+      for (const method of ['GET', 'POST']) {
+        const reply = await call(port, '/api/local/course-sync', { method, headers: { host: `127.0.0.1:${port}`, accept: '*/*' } });
+        expect([reply.status, reply.json()]).toEqual([404, { error: 'NOT_FOUND' }]);
+      }
+      expect((await call(port, '/', { headers: { host: `127.0.0.1:${port}` } })).body).toContain('synthetic build');
+      expect(forwarded).toBe(0);
+    } finally { await server.close(); }
   });
 });

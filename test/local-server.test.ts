@@ -277,11 +277,15 @@ describe('course-sync', () => {
     expect((await get('/api/local/course-reports')).status).toBe(200);
   });
 
-  it('close() cancels a running sync', async () => {
+  it('close() cancels a running sync and refuses later requests', async () => {
     const api = await start();
     await write('POST', '/api/local/course-sync', { ids: ['900001'] });
     expect(api.syncRunning()).toBe(true);
     api.close();
+    expect(api.syncRunning()).toBe(false);
+    // Shutting down: no request can start another sync.
+    const after = await write('POST', '/api/local/course-sync', { ids: ['900001'] });
+    expect([after.status, after.body]).toEqual([503, '']);
     expect(api.syncRunning()).toBe(false);
   });
 });

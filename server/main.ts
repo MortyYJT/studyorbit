@@ -12,8 +12,11 @@ import type { Env } from './context.ts';
 import { DEFAULT_API_PORT, DEFAULT_WEB_PORT, parsePort } from './ports.ts';
 
 export const LISTENING_LINE = 'StudyOrbit local API listening on';
-/** Longest wait for a cancelled sync to settle on shutdown. */
-const SHUTDOWN_WAIT_MS = 5000;
+/**
+ * Longest wait for a cancelled sync to settle on shutdown: a little longer than the runner's 5 s SIGTERM → SIGKILL
+ * escalation for collector process groups, so that escalation runs before this process exits.
+ */
+const SHUTDOWN_WAIT_MS = 6000;
 
 export function parseServerEnv(env: Env): { token: string; apiPort: number; webPort: number } {
   const token = env.STUDYORBIT_API_TOKEN;
@@ -53,11 +56,14 @@ export async function startServer({ projectDir, desktopDir, env = process.env, w
     const port = await listen(server, apiPort);
     let stopping: Promise<void> | undefined;
     const stop = () => (stopping ??= (async () => {
+      // Stop accepting connections, refuse requests on open ones, then cancel the sync.
+      const closed = new Promise<void>(resolve => server.close(() => resolve()));
+      server.closeIdleConnections();
       api.close();
       const deadline = Date.now() + SHUTDOWN_WAIT_MS;
       while (api.syncRunning() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
       server.closeAllConnections();
-      await new Promise<void>(resolve => server.close(() => resolve()));
+      await closed;
       if (store?.ok) store.store.close();
       lock.release();
     })());

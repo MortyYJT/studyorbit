@@ -25,7 +25,7 @@ describe('vite.config.ts', () => {
     const proxy = (resolved.server!.proxy as Record<string, { target: string; changeOrigin: boolean; headers: Record<string, string> }>)['/api/local']!;
     expect(proxy).toMatchObject({ target: 'http://127.0.0.1:6190', changeOrigin: false, headers: { [TOKEN_HEADER]: 'c3'.repeat(32) } });
     expect(resolved.preview).toEqual({ proxy: {} });
-    expect(resolved.plugins).toHaveLength(1);
+    expect(resolved.plugins).toHaveLength(2);
   });
 
   it('builds and previews without a token, and preview has no API proxy', () => {

@@ -82,4 +82,26 @@ describe('dev launcher', () => {
       expect(await signals('web')).toEqual([signal]);
     }
   });
+
+  it('exits at once when the server cannot be spawned, without a later timeout message', async () => {
+    const messages: string[] = [];
+    const launcher = startLauncher({ server: { command: join(dir, 'missing-binary'), args: [] }, web: await stub('web', keepAlive), env, out: capture().out, log: line => messages.push(line), startTimeoutMs: 200 });
+    expect(await launcher.done).toBe(1);
+    await new Promise(resolve => setTimeout(resolve, 400));
+    expect(messages.join('\n')).not.toContain('没有开始监听');
+    expect(existsSync(join(dir, 'web.env'))).toBe(false);
+  });
+
+  it('treats Ctrl-C during startup as a clean stop even when the server takes longer than the start limit to exit', async () => {
+    const messages: string[] = [];
+    // Never listens; takes 400 ms to stop, longer than the 200 ms start limit.
+    await writeFile(join(dir, 'slow-server.mjs'), `process.on('SIGTERM', () => setTimeout(() => process.exit(0), 400)); setInterval(() => {}, 1000);\n`);
+    const slow = { command: process.execPath, args: [join(dir, 'slow-server.mjs')] };
+    const launcher = startLauncher({ server: slow, web: await stub('web', keepAlive), env, out: capture().out, log: line => messages.push(line), startTimeoutMs: 200 });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    launcher.signal('SIGTERM');
+    expect(await launcher.done).toBe(0);
+    expect(messages).toEqual([]);
+    expect(existsSync(join(dir, 'web.env'))).toBe(false);
+  });
 });

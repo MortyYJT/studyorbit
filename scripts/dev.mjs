@@ -42,7 +42,7 @@ export function startLauncher({ server, web, env, out = process.stdout, log = li
       settle(1);
       stopOthers(name);
       // A process that never spawned emits no exit event.
-      if (child.pid === undefined) { gone.add(name); finishIfIdle(); }
+      if (child.pid === undefined) { if (name === 'server') clearTimeout(timer); gone.add(name); finishIfIdle(); }
     });
     child.on('exit', (code, signal) => {
       gone.add(name);
@@ -80,6 +80,8 @@ export function startLauncher({ server, web, env, out = process.stdout, log = li
     done,
     signal(name) {
       stopping = true;
+      // A stop requested during startup is not a startup timeout.
+      clearTimeout(timer);
       for (const [childName, child] of children) {
         if (gone.has(childName)) continue;
         signalled.add(childName);

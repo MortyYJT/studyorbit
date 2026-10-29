@@ -41,7 +41,7 @@ export type LocalApiOptions = {
 
 export type LocalApi = {
   handle(req: IncomingMessage, res: ServerResponse): void;
-  /** Stops a running course sync (as a cancel) and course discovery. */
+  /** Stops a running course sync (as a cancel) and course discovery; later requests get 503 (shutting down). */
   close(): void;
   /** True while a course sync is running. */
   syncRunning(): boolean;
@@ -69,8 +69,10 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
   ];
   const mounts = routes.map(([name, handler]) => [`${API_PREFIX}/${name}`, handler] as const);
 
+  let closed = false;
   function handle(req: IncomingMessage, res: ServerResponse) {
     if (checkRequest(req, options)) { res.writeHead(403).end(); return; }
+    if (closed) { res.writeHead(503).end(); return; }
     const url = req.url ?? '/';
     const pathEnd = url.search(/[?#]/);
     const path = pathEnd === -1 ? url : url.slice(0, pathEnd);
@@ -89,6 +91,7 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
   return {
     handle,
     close() {
+      closed = true;
       if (courseRunner.status().running) courseRunner.cancel();
       discovery.cancel();
     },
