@@ -1,10 +1,10 @@
 # 交接
 
-> 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。决定看 `note/decisions.md`（#1–#233）。
+> 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。决定看 `note/decisions.md`（#1–#234）。
 
 - **最后更新：** 2026-10-29，Claude。
 - **主线：** `main` 已包含 v2 整合（PR #242，merge commit `1679e60`）与动画、背景（PR #243，`61ddbc2`），两次 CI 都通过。当前分支 `claude/docs-refresh`（README、About、本交接）。
-- **项目是什么：** 本地优先的墨大课业原型（原桌面 v2）。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed（`edstem` CLI）/ Handbook → 用户选的模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
+- **项目是什么：** StudyOrbit（仓库与包名 `study-orbit`，#234），本地优先的墨大课业原型（原桌面 v2）。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed（`edstem` CLI）/ Handbook → 用户选的模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
 
 ## 已完成（都在 `main`）
 
@@ -27,12 +27,10 @@
 ## 下一步
 
 1. 用户：设置里配好模型，点「测试连接」，在 Agent 页发一句话，确认真实调用可用（会花少量额度）。
-2. 用户决定项目是否改名（见下）。
-3. 视结果修模型适配器（真实流式事件、错误信息）。
+2. 视结果修模型适配器（真实流式事件、错误信息）。
 
 ## 等用户决定
 
-- **项目改名：** 仓库名 `unimelb-coursework-agent`、包名 `coursework`；Claude 已给出选项，等用户选。
 - 对话是否要包含用户在页面上的修正（现在只用同步原件）。
 
 ## 运行与验证

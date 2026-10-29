@@ -1,4 +1,6 @@
-# UniMelb coursework
+# StudyOrbit
+
+**UniMelb coursework assistant** · 墨大课业助手
 
 本地优先的墨大课业助手。它从你已登录的 Canvas、Ed 和 Handbook 读取课程信息，由你选择的模型整理成结构化的课程 JSON，经代码校验后在网页里展示成绩、安排每周学习，并能就你的课程回答问题。数据留在你自己的电脑上。
 
@@ -51,7 +53,7 @@ npm run dev
 
 ## 实验记录
 
-[四门课采集快照](docs/collection-snapshot.md)、[第一版试跑](docs/first-sync-run-20261029.md)、[同步用量](docs/sync-measurements.md)、[同步优化](docs/sync-optimization.md) 记录了真实运行的耗时和 token 用量，只代表当时那几门课，不等同于普遍结论。个人成绩已从这些记录中移除；含成绩的模型对比与混合同步实验只保存在本机。
+[第一版试跑](docs/first-sync-run-20261029.md)、[同步用量](docs/sync-measurements.md)、[同步优化](docs/sync-optimization.md) 记录了真实运行的耗时和 token 用量；[四门课采集快照](docs/collection-snapshot.md) 只记录各来源读到了多少条目。它们只代表当时那几门课，不等同于普遍结论。个人成绩已从这些记录中移除；含成绩的模型对比与混合同步实验只保存在本机。
 
 ## 仓库历史
 

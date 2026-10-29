@@ -71,7 +71,7 @@ Do not load the whole guidelines file for small edits. Read only the listed sect
 
 ## Project-specific (fill in per project)
 
-- **What this is:** `coursework`, a local-first University of Melbourne coursework prototype. It discovers Canvas courses through the owner's signed-in Edge, collects Canvas, Ed and Handbook data with scripts in `scripts/`, has a model analyse them into structured course JSON validated by `shared/course-data.ts`, and the web app (`web/src/`) shows grades (`shared/course-calculations.ts`), plans the week and runs syncs through a loopback-only local API in `vite.config.ts`.
+- **What this is:** StudyOrbit (repository and package `study-orbit`), a local-first University of Melbourne coursework prototype. It discovers Canvas courses through the owner's signed-in Edge, collects Canvas, Ed and Handbook data with scripts in `scripts/`, has a model analyse them into structured course JSON validated by `shared/course-data.ts`, and the web app (`web/src/`) shows grades (`shared/course-calculations.ts`), plans the week and runs syncs through a loopback-only local API in `vite.config.ts`.
 - **Stack and commands:** Node 24, strict TypeScript, React 19, Vite 8, zod, vitest. Install `npm ci`, run `npm run dev` (Vite dev server; the local API exists only there), check `bash .claude/check.sh` (= `npm run check` = type check + tests, the same command CI runs). Tests live in `test/`.
 - **Where data lives:** run data and collected raw material in `.local/` (git-ignored); course JSON in the owner's Desktop course folder (`~/Desktop/墨尔本大学 <year> S<n>/<code>/`), outside the repo; course selection, corrections and plans in browser localStorage.
 - **Domain red lines:**
