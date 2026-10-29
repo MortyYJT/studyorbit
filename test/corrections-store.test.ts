@@ -252,3 +252,250 @@ describe('corrections HTTP handler', () => {
     expect(await readFile(file(), 'utf8')).toBe('{ not json');
   });
 });
+
+describe('reconcile on read (PR 2)', () => {
+  // A re-synced course: `documents` is read on every call, so replacing an entry stands for a new course file.
+  const docOf = (assessments: CourseDocumentV1['assessments']) => v1Doc(assessments);
+  const v2Of = (assessments: CourseDocumentV1['assessments'], legacyIds: Record<string, string>): CourseDocumentV2 => ({
+    version: 2, course: { id: '100', code: 'SYNT10001', name: 'Synthetic Course', term: null }, materials: [], legacyIds,
+    assessments: assessments.map(entry => ({ ...entry, refs: [], weightQuote: null, ruleQuote: null, unsourced: [] })),
+  });
+  const save = (store: ReturnType<typeof storeWith>, revision: number, corrections: Record<string, unknown>) => store.save('100', { revision, corrections, manual: [], order: [] });
+
+  it('merges only when the newest file differs from the base, advancing the base and the revision once', async () => {
+    const documents: Record<string, CourseDocument> = { 100: docOf([item('a1'), item('a2')]) };
+    const store = storeWith(documents);
+    await save(store, 0, { '100:a1': { name: 'Mine' }, '100:a2': { weight: 30 } });
+    expect((await store.read('100')).revision).toBe(1);
+    documents[100] = docOf([item('a1', { weight: 25 }), item('a2', { weight: 35 })]);
+    const view = await store.read('100');
+    expect(view.revision).toBe(2);
+    expect(view.corrections).toEqual({ '100:a1': { name: 'Mine' }, '100:a2': { weight: 30 } });
+    expect(view.conflicts.map(conflict => [conflict.key, conflict.field, conflict.base, conflict.incoming, conflict.user])).toEqual([['100:a2', 'weight', 20, 35, 30]]);
+    const saved = await readJson();
+    expect(saved.base.digest).toBe(digest(documents[100]!));
+    expect(saved.base.assessments.a1.weight).toBe(25);
+    const text = await readFile(file(), 'utf8');
+    expect(await store.read('100')).toEqual(view);
+    expect((await store.list()).courses[100]).toEqual(view);
+    expect(await readFile(file(), 'utf8')).toBe(text);
+  });
+
+  it('two syncs without a read merge against the older base', async () => {
+    const documents: Record<string, CourseDocument> = { 100: docOf([item('a1')]) };
+    const store = storeWith(documents);
+    await save(store, 0, { '100:a1': { weight: 30 } });
+    documents[100] = docOf([item('a1', { weight: 30 })]); // file B, never read
+    documents[100] = docOf([item('a1', { weight: 30, name: 'Renamed' })]); // file C
+    await store.read('100');
+    // Against B the owner value would equal the base and be dropped; against A both changed alike, so it is pinned.
+    const saved = await readJson();
+    expect(saved.corrections).toEqual({ '100:a1': { weight: 30 } });
+    expect(saved.pins).toEqual({ '100:a1': ['weight'] });
+  });
+
+  it('a course without a readable course file is returned as stored', async () => {
+    const documents: Record<string, CourseDocument | null> = { 100: docOf([item('a1')]) };
+    await save(storeWith(documents), 0, { '100:a1': { weight: 30 } });
+    const text = await readFile(file(), 'utf8');
+    documents[100] = null;
+    expect((await storeWith(documents).read('100')).revision).toBe(1);
+    const failing = createCorrectionsStore({ projectDir: dir, loadDocument: async () => { throw new Error('disk'); } });
+    expect((await failing.read('100')).revision).toBe(1);
+    expect(await readFile(file(), 'utf8')).toBe(text);
+  });
+
+  it('moves keys, base, pins and open conflicts through legacyIds, so a renamed pinned field still raises a conflict', async () => {
+    const documents: Record<string, CourseDocument> = { 100: docOf([item('a1'), item('a2')]) };
+    const store = storeWith(documents);
+    await save(store, 0, { '100:a1': { weight: 30, name: 'Mine' }, '100:a2': { mergeInto: '100:a1' } });
+    // Sync 1 converges on the weight (pin) and changes the name (conflict).
+    documents[100] = docOf([item('a1', { weight: 30, name: 'Synced' }), item('a2')]);
+    const first = await store.read('100');
+    expect(first.conflicts.map(conflict => conflict.id)).toEqual([conflictId('field', '100:a1', 'name')]);
+    expect((await readJson()).pins).toEqual({ '100:a1': ['weight'] });
+    // Sync 2 is v2 and renames a1; nothing else changes.
+    documents[100] = v2Of([item('canvas:5551', { weight: 30, name: 'Synced' }), item('a2')], { a1: 'canvas:5551' });
+    const second = await store.read('100');
+    expect(second.corrections).toEqual({ '100:canvas:5551': { weight: 30, name: 'Mine' }, '100:a2': { mergeInto: '100:canvas:5551' } });
+    expect(second.conflicts).toEqual([{ ...first.conflicts[0], id: conflictId('field', '100:canvas:5551', 'name'), key: '100:canvas:5551', assessmentId: 'canvas:5551' }]);
+    const saved = await readJson();
+    expect(saved.pins).toEqual({ '100:canvas:5551': ['weight'] });
+    expect(Object.keys(saved.base.assessments)).toEqual(['canvas:5551', 'a2']);
+    // Sync 3 changes the pinned weight: the owner value stays and a conflict is raised.
+    documents[100] = v2Of([item('canvas:5551', { weight: 25, name: 'Synced' }), item('a2')], { a1: 'canvas:5551' });
+    const third = await store.read('100');
+    expect(third.corrections['100:canvas:5551']).toEqual({ weight: 30, name: 'Mine' });
+    expect(third.conflicts.map(conflict => [conflict.key, conflict.field, conflict.incoming, conflict.user])).toEqual([
+      ['100:canvas:5551', 'name', 'Synced', 'Mine'], ['100:canvas:5551', 'weight', 25, 30],
+    ]);
+    expect(third.revision).toBe(4);
+  });
+
+  it('drops the pins and conflicts of an old key whose new key already has its own correction', async () => {
+    const documents: Record<string, CourseDocument> = { 100: docOf([item('a1'), item('canvas:5551')]) };
+    const store = storeWith(documents);
+    await save(store, 0, { '100:a1': { weight: 30 }, '100:canvas:5551': { name: 'Own' } });
+    documents[100] = docOf([item('a1', { weight: 30 }), item('canvas:5551')]);
+    await store.read('100');
+    expect((await readJson()).pins).toEqual({ '100:a1': ['weight'] });
+    documents[100] = v2Of([item('canvas:5551')], { a1: 'canvas:5551' });
+    const view = await store.read('100');
+    const saved = await readJson();
+    expect(saved.pins).toEqual({});
+    expect(view.corrections['100:canvas:5551']).toEqual({ name: 'Own' });
+    expect(view.conflicts.every(conflict => conflict.key !== '100:a1' || conflict.type === 'orphaned')).toBe(true);
+  });
+
+  it('flags an old key left unused because its new key has its own correction, once', async () => {
+    const documents: Record<string, CourseDocument> = { 100: docOf([item('a1')]) };
+    const store = storeWith(documents);
+    await save(store, 0, { '100:a1': { weight: 30 }, '100:canvas:5551': { name: 'Own' } });
+    documents[100] = v2Of([item('canvas:5551')], { a1: 'canvas:5551' });
+    const view = await store.read('100');
+    expect(view.corrections).toEqual({ '100:a1': { weight: 30 }, '100:canvas:5551': { name: 'Own' } });
+    expect(view.conflicts.map(conflict => [conflict.type, conflict.key])).toEqual([['orphaned', '100:a1']]);
+    expect(view.conflicts[0]).toMatchObject({ assessmentId: 'a1', user: { weight: 30 }, base: { name: 'Synthetic a1' } });
+    // 「保留」, then another sync: not raised again.
+    const kept = await store.resolve('100', view.conflicts[0]!.id, { revision: view.revision, choice: 'mine' });
+    documents[100] = v2Of([item('canvas:5551', { weight: 25 })], { a1: 'canvas:5551' });
+    expect((await store.read('100')).conflicts).toEqual([]);
+    expect(kept.corrections['100:a1']).toEqual({ weight: 30 });
+  });
+
+  it('keeps every owner correction in effect across several syncs, including pins and a legacyIds rename', async () => {
+    const documents: Record<string, CourseDocument> = { 100: docOf([
+      item('a1', { name: 'Essay' }), item('a2', { weight: 15 }), item('g1', { name: 'Quizzes', weight: 10 }), item('q1', { parentId: 'g1', weight: null }), item('a4', { weight: 0 }),
+    ]) };
+    const store = storeWith(documents);
+    const owner = {
+      '100:a1': { name: 'My essay', weight: 25 },
+      '100:a2': { due: '2026-11-05T12:59:00Z', score: 12, outOf: 20 },
+      '100:group:100:g1': { weight: 12 },
+      '100:q1': { parent: '' },
+      '100:a4': { hidden: true },
+    };
+    await save(store, 0, owner);
+    const syncs = [
+      docOf([item('a1', { name: 'Essay', weight: 25 }), item('a2', { weight: 15, due: '2026-11-10T12:59:00Z' }), item('g1', { name: 'Quizzes', weight: 10 }), item('q1', { parentId: 'g1', weight: null }), item('a4', { weight: 0 })]),
+      v2Of([item('canvas:5551', { name: 'Essay', weight: 25 }), item('a2', { weight: 15, due: '2026-11-10T12:59:00Z' }), item('canvas-group:300', { name: 'Quizzes', weight: 11 }), item('q1', { parentId: 'canvas-group:300', weight: null }), item('a4', { weight: 0 })],
+        { a1: 'canvas:5551', g1: 'canvas-group:300' }),
+      v2Of([item('canvas:5551', { name: 'Essay', weight: 30 }), item('a2', { weight: 15, due: '2026-11-12T12:59:00Z', score: 18, maxScore: 20 }), item('canvas-group:300', { name: 'Quizzes', weight: 11 }), item('q1', { parentId: 'canvas-group:300', weight: null }), item('a4', { weight: 0 })],
+        { a1: 'canvas:5551', g1: 'canvas-group:300' }),
+    ];
+    const renamed: Record<string, string> = { '100:a1': '100:canvas:5551', '100:group:100:g1': '100:group:100:canvas-group:300' };
+    let view = await store.read('100');
+    for (const document of syncs) {
+      documents[100] = document;
+      view = await store.read('100');
+      const fieldsById = Object.fromEntries(document.assessments.map(entry => [entry.id, entry]));
+      for (const [key, correction] of Object.entries(owner)) {
+        const now = (document.version === 2 ? renamed[key] : undefined) ?? key;
+        for (const [field, value] of Object.entries(correction)) {
+          const stored = (view.corrections[now] as Record<string, unknown> | undefined)?.[field];
+          const id = now.startsWith('100:group:100:') ? now.slice(14) : now.slice(4);
+          const synced = (fieldsById[id] as Record<string, unknown> | undefined)?.[{ outOf: 'maxScore', parent: 'parentId' }[field] ?? field];
+          const shown = stored !== undefined ? stored : field === 'parent' ? (synced ? `100:${synced}` : '') : synced;
+          expect([document.version, now, field, shown]).toEqual([document.version, now, field, value]);
+        }
+      }
+    }
+    // Open conflicts: the group weight (sync 2), the due date and score the owner set differently, and the converged weight
+    // the last sync moved. The maximum score converged on the owner's value and raised nothing.
+    expect(view.conflicts.map(conflict => [conflict.key, conflict.field]).sort()).toEqual([
+      ['100:a2', 'due'], ['100:a2', 'score'], ['100:canvas:5551', 'weight'], ['100:group:100:canvas-group:300', 'weight'],
+    ]);
+    expect((await readJson()).revision).toBe(4);
+  });
+});
+
+describe('owner edits and conflict resolution (PR 2)', () => {
+  const documents: Record<string, CourseDocument> = {};
+  beforeEach(() => { documents[100] = v1Doc([item('a1'), item('a2')]); });
+  const setup = async () => {
+    const store = storeWith(documents);
+    await store.save('100', { revision: 0, corrections: { '100:a1': { weight: 30, due: '2026-11-17T12:59:00Z' }, '100:a2': { name: 'Mine' } }, manual: [], order: [] });
+    documents[100] = v1Doc([item('a1', { weight: 25, due: '2026-11-17T12:59:00Z' }), item('a2')]);
+    return { store, view: await store.read('100') };
+  };
+
+  it('a stale PUT after an unseen sync gets 409 with the reconciled store', async () => {
+    const store = storeWith(documents);
+    await store.save('100', { revision: 0, corrections: { '100:a1': { weight: 30 } }, manual: [], order: [] });
+    documents[100] = v1Doc([item('a1', { weight: 25 }), item('a2')]);
+    const error = await store.save('100', { revision: 1, corrections: { '100:a1': { weight: 31 } }, manual: [], order: [] }).catch(caught => caught);
+    expect(error.message).toBe('REVISION_MISMATCH');
+    expect(error.current).toMatchObject({ revision: 2, corrections: { '100:a1': { weight: 30 } } });
+    expect(error.current.conflicts).toHaveLength(1);
+  });
+
+  it('a resent value in another notation keeps the stored value, pin and conflict; a changed value closes the conflict and releases the pin', async () => {
+    const { store, view } = await setup();
+    expect((await readJson()).pins).toEqual({ '100:a1': ['due'] });
+    expect(view.conflicts.map(conflict => conflict.field)).toEqual(['weight']);
+    const resent = await store.save('100', { revision: view.revision, corrections: { '100:a1': { weight: 30, due: '2026-11-17T23:59:00+11:00' }, '100:a2': { name: 'Mine' } }, manual: [], order: [] });
+    expect(resent.corrections['100:a1']).toEqual({ weight: 30, due: '2026-11-17T12:59:00Z' });
+    expect(resent.conflicts).toEqual(view.conflicts);
+    expect((await readJson()).pins).toEqual({ '100:a1': ['due'] });
+    const changed = await store.save('100', { revision: resent.revision, corrections: { '100:a1': { weight: 35, due: '2026-11-18T12:59:00Z' }, '100:a2': { name: 'Mine' } }, manual: [], order: [] });
+    expect(changed.corrections['100:a1']).toEqual({ weight: 35, due: '2026-11-18T12:59:00Z' });
+    expect(changed.conflicts).toEqual([]);
+    expect((await readJson()).pins).toEqual({});
+  });
+
+  it('resolves with sync or mine under a revision check; mine is not raised again', async () => {
+    const { store, view } = await setup();
+    const id = view.conflicts[0]!.id;
+    await expect(store.resolve('100', id, { revision: view.revision - 1, choice: 'sync' })).rejects.toThrow('REVISION_MISMATCH');
+    await expect(store.resolve('100', 'ffffffffffffffff', { revision: view.revision, choice: 'sync' })).rejects.toThrow('CONFLICT_NOT_FOUND');
+    await expect(store.resolve('100', id, { revision: view.revision, choice: 'maybe' })).rejects.toThrow('INVALID_BODY');
+    const kept = await store.resolve('100', id, { revision: view.revision, choice: 'mine' });
+    expect(kept).toMatchObject({ revision: view.revision + 1, conflicts: [], corrections: { '100:a1': { weight: 30, due: '2026-11-17T12:59:00Z' } } });
+    documents[100] = v1Doc([item('a1', { weight: 25, due: '2026-11-17T12:59:00Z', name: 'Renamed' }), item('a2')]);
+    expect((await store.read('100')).conflicts).toEqual([]);
+  });
+
+  it('choosing the sync value removes the field and its conflict', async () => {
+    const { store, view } = await setup();
+    const result = await store.resolve('100', view.conflicts[0]!.id, { revision: view.revision, choice: 'sync' });
+    expect(result.corrections).toEqual({ '100:a1': { due: '2026-11-17T12:59:00Z' }, '100:a2': { name: 'Mine' } });
+    expect(result.conflicts).toEqual([]);
+    // Unknown course file, no store: revision 0 and nothing to resolve.
+    await expect(store.resolve('200', 'ffffffffffffffff', { revision: 0, choice: 'sync' })).rejects.toThrow('CONFLICT_NOT_FOUND');
+  });
+});
+
+describe('conflict route (PR 2)', () => {
+  let server: Server;
+  let origin: string;
+  const documents: Record<string, CourseDocument> = {};
+  beforeEach(async () => {
+    documents[100] = v1Doc();
+    const handle = createCorrectionsHandler(storeWith(documents));
+    server = createServer((req, res) => { req.url = req.url!.slice('/api/local/corrections'.length) || '/'; void handle(req, res); });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    origin = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  });
+  afterEach(async () => { await new Promise(resolve => server.close(resolve)); });
+  const post = (path: string, json: unknown, headers: Record<string, string> = {}) => fetch(`${origin}/api/local/corrections${path}`, {
+    method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(json),
+  });
+
+  it('resolves a conflict with revision checks and error codes', async () => {
+    await fetch(`${origin}/api/local/corrections/100`, { method: 'PUT', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: 0, corrections: { '100:a1': { weight: 30 } }, manual: [], order: [] }) });
+    documents[100] = v1Doc([item('a1', { weight: 25 }), item('a2')]);
+    const view = await (await fetch(`${origin}/api/local/corrections?courseId=100`)).json() as CorrectionsView;
+    const id = view.conflicts[0]!.id;
+    const codes = async (response: Response) => [response.status, (await response.json()).error];
+    expect(await codes(await post(`/100/conflicts/${id}`, { revision: 1, choice: 'sync' }))).toEqual([409, 'REVISION_MISMATCH']);
+    expect(await codes(await post('/100/conflicts/ffffffffffffffff', { revision: view.revision, choice: 'sync' }))).toEqual([404, 'CONFLICT_NOT_FOUND']);
+    expect(await codes(await post('/100/conflicts/not-an-id', { revision: view.revision, choice: 'sync' }))).toEqual([404, 'CONFLICT_NOT_FOUND']);
+    expect(await codes(await post(`/100/conflicts/${id}`, { revision: view.revision, choice: 'both' }))).toEqual([400, 'INVALID_BODY']);
+    expect((await post(`/100/conflicts/${id}`, { revision: view.revision, choice: 'sync' }, { Origin: 'http://localhost:5999' })).status).toBe(403);
+    expect((await fetch(`${origin}/api/local/corrections/100/conflicts/${id}`, { method: 'GET' })).status).toBe(405);
+    const resolved = await post(`/100/conflicts/${id}`, { revision: view.revision, choice: 'sync' });
+    expect(resolved.status).toBe(200);
+    expect(await resolved.json()).toMatchObject({ revision: view.revision + 1, corrections: {}, conflicts: [] });
+  });
+});

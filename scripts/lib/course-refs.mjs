@@ -267,8 +267,9 @@ export function platformIdentities(item) {
 }
 
 /**
- * Earlier assessment ID → current ID (design §6): equal IDs are paired first and excluded; then platform identity; then a
- * name slug unique among the remaining items on both sides. Only one-to-one pairs whose ID changed are kept. An earlier
+ * Earlier assessment ID → current ID (design §6): equal IDs are paired first and excluded; then platform identity (for v1,
+ * a group number ID matches `canvas-group:<n>` before anything else); then a name slug unique among the remaining items
+ * on both sides. Only one-to-one pairs whose ID changed are kept. An earlier
  * v2 map is carried forward and composed; entries whose target is gone, or whose source is a current ID, are dropped.
  * `previous` is a stored v1/v2 document or null; `current` has `assessments: [{ id, name, refs }]`.
  */
@@ -283,8 +284,24 @@ export function buildLegacyIds(previous, current) {
   for (const item of cur) for (const ref of list(item.refs)) if (ref.platform === 'canvas' || ref.platform === 'ed') owner.set(`${ref.platform}\u0000${ref.id}`, item);
   const find = (platform, id) => owner.get(`${platform}\u0000${id}`);
 
+  // A v1 group parent's ID is its bare Canvas assignment-group number, and its source links point at its children, so a
+  // group match by ID is decisive (decision #385): `canvas-group-<n>` / `canvas-group:<n>`, or bare digits with no
+  // `canvas:<n>`, preferring the group over `ed:<n>` only when the earlier item is a parent.
+  const groups = new Map(cur.filter(item => /^canvas-group:\d+$/.test(item.id)).map(item => [item.id.slice('canvas-group:'.length), item]));
+  const parents = new Set(previous.assessments.map(item => item.parentId).filter(id => typeof id === 'string'));
+  const groupOf = item => {
+    if (previous.version === 2) return undefined;
+    const id = String(item.id);
+    const shaped = /^canvas-group[-:](\d+)$/.exec(id);
+    if (shaped) return groups.get(shaped[1]);
+    if (!/^\d+$/.test(id) || find('canvas', id) || (find('ed', id) && !parents.has(item.id))) return undefined;
+    return groups.get(id);
+  };
+
   const candidates = new Map();
   for (const item of prev) {
+    const group = groupOf(item);
+    if (group) { candidates.set(item, new Set([group])); continue; }
     const found = new Set();
     for (const identity of previousIdentities(item, previous.version)) {
       const match = identity.bare === undefined ? find(identity.platform, identity.id) : find('canvas', identity.bare) ?? find('ed', identity.bare);
