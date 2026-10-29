@@ -1,5 +1,9 @@
 import type { TokenCounts } from './llm-providers.mjs';
-export type ChatMessage = { role: 'user' | 'assistant'; content: string; at: string; usage?: TokenCounts | null; model?: string | null; status?: 'stopped' | 'error' };
+export type ChatStep = { name: string; args: string; ok: boolean; result: string; ms: number };
+export type ChatMessage = {
+  role: 'user' | 'assistant'; content: string; at: string; usage?: TokenCounts | null; model?: string | null; status?: 'stopped' | 'error';
+  mode?: 'tools' | 'context'; fallback?: true; steps?: ChatStep[]; reasoning?: string;
+};
 export type Chat = { id: string; title: string; createdAt: string; updatedAt: string; courseIds: string[]; messages: ChatMessage[] };
 export type ChatSummary = Omit<Chat, 'messages'> & { messageCount: number };
 export function isChatId(value: unknown): value is string;

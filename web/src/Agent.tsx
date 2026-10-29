@@ -1,8 +1,9 @@
 // Agent chat page (decision #230): conversation list beside the open conversation, streamed replies over SSE.
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { Language } from './i18n.js';
-import type { SidebarCourse } from './LocalPlanning.js';
-import type { Chat, ChatMessage, ChatSummary } from '../../scripts/lib/chat-store.mjs';
+import { readAvailability, readTargets, readWork, type SidebarCourse } from './LocalPlanning.js';
+import type { Chat, ChatMessage, ChatStep, ChatSummary } from '../../scripts/lib/chat-store.mjs';
+import { buildPlanningSnapshot } from '../../shared/planning-snapshot.js';
 
 import type { AgentRequest } from './agent-request.js';
 
@@ -14,6 +15,28 @@ function selectedCourseIds(): string[] {
   try { const value: unknown = JSON.parse(localStorage.getItem('coursework.selected-course-ids') ?? '[]'); return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []; }
   catch { return []; }
 }
+// Localised labels for the course tools (decision #327); unknown names are shown as sent.
+const toolLabels: Record<string, [string, string]> = {
+  list_courses: ['课程列表', 'Course list'], get_assessments: ['考核项目', 'Assessments'], calculate_grades: ['成绩计算', 'Grade calculation'],
+  final_needed: ['期末所需分数', 'Final needed'], upcoming_deadlines: ['近期截止', 'Upcoming deadlines'], plan_schedule: ['学习排期', 'Study schedule'],
+};
+const toolLabel = (name: string, zh: boolean) => toolLabels[name]?.[zh ? 0 : 1] ?? name;
+/** Pretty-printed JSON when the text parses, else the text as stored. */
+function pretty(text: string): string { try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; } }
+
+/** The tool calls behind one reply, collapsed by default, with arguments and the exact results the model saw. */
+function ToolSteps({ steps, zh }: { steps: ChatStep[]; zh: boolean }) {
+  const failed = steps.filter(step => !step.ok).length;
+  return <details className="tool-steps">
+    <summary>{zh ? `用了 ${steps.length} 个工具${failed ? `，${failed} 个出错` : ''}` : `Used ${steps.length} tool${steps.length === 1 ? '' : 's'}${failed ? `, ${failed} failed` : ''}`}</summary>
+    <ol>{steps.map((step, index) => <li key={index} className={step.ok ? undefined : 'failed'}>
+      <b>{toolLabel(step.name, zh)}</b> <small className="muted">{step.name} · {step.ms} ms{step.ok ? '' : zh ? ' · 出错' : ' · failed'}</small>
+      <small className="muted">{zh ? '参数' : 'Arguments'}</small><pre>{pretty(step.args)}</pre>
+      <small className="muted">{zh ? '结果' : 'Result'}</small><pre>{pretty(step.result)}</pre>
+    </li>)}</ol>
+  </details>;
+}
+
 // The page remounts on every visit, so the last handled request lives outside it: a request is acted on (and its prompt sent) once.
 let handledNonce: number | undefined;
 const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every(id => b.includes(id));
@@ -63,6 +86,8 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
   const [draft, setDraft] = useState<Draft>({ scope: request?.courseId ? [request.courseId] : null });
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState<string>();
+  // The tool call running right now in the streamed reply, if any.
+  const [lookup, setLookup] = useState<string>();
   const [pending, setPending] = useState<string>();
   const [failure, setFailure] = useState<Failure>();
   const [remoteRunning, setRemoteRunning] = useState(false);
@@ -134,6 +159,7 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
     if (code === 'REPLY_RUNNING') return zh ? '这个对话正在回复，请等它结束或先停止。' : 'A reply is already running in this chat.';
     if (code === 'CONTENT_TOO_LONG') return zh ? '消息太长（最多 8000 字）。' : 'Message is too long (8,000 characters max).';
     if (code === 'CHAT_NOT_FOUND') return zh ? '这个对话已被删除。' : 'This chat was deleted.';
+    if (code === 'INVALID_PLANNING') return zh ? '本地计划数据无法读取，请检查每周计划页的任务。' : 'The local planning data could not be read. Check the tasks on the weekly page.';
     return fallback || (zh ? '无法完成回复，请重试。' : 'Could not complete the reply. Please retry.');
   }
 
@@ -156,7 +182,10 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
         chat = created = await response.json() as Chat;
         setActive(chat);
       }
-      const response = await fetch(`/api/local/chats/${chat.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, courseIds: scope, language }) });
+      // The weekly page's tasks, availability and targets for the loaded courses, regardless of the chat scope (decision #322).
+      const loaded = courses.length ? courses.map(course => course.id) : selectedCourseIds();
+      const planning = buildPlanningSnapshot({ work: readWork(), availability: readAvailability(), targets: readTargets(), courseIds: loaded });
+      const response = await fetch(`/api/local/chats/${chat.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, courseIds: scope, language, planning }) });
       if (!response.ok || !response.body) {
         const data = await response.json().catch(() => ({})) as { error?: string };
         const code = data.error ?? 'CHAT_UNAVAILABLE';
@@ -167,6 +196,7 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
         accepted = true;
         await readStream(response.body, (event, data) => {
           if (event === 'delta' && typeof data.text === 'string') setStreaming(current => (current ?? '') + data.text);
+          if (event === 'step') setLookup(data.state === 'running' && typeof data.name === 'string' ? data.name : undefined);
           if (event === 'error') setFailure({ code: String(data.error ?? 'MODEL_ERROR'), message: describeFailure(String(data.error ?? ''), typeof data.message === 'string' ? data.message : undefined) });
         });
       }
@@ -175,7 +205,7 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
       if (!accepted) { setInput(content); await discardCreated(); }
     } finally {
       if (chat) { const fresh = await loadChat(chat.id).catch(() => undefined); if (fresh) { entered.current = fresh.messages.length; setActive(fresh); } }
-      setStreaming(undefined); setPending(undefined);
+      setStreaming(undefined); setPending(undefined); setLookup(undefined);
       void loadList();
     }
   }
@@ -213,7 +243,8 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
     : ['What should I do first this week?', 'What do I need on the final to get an H1?', 'Give me 5 revision questions', 'Explain how my assessments are weighted'];
   const note = (message: ChatMessage, index: number) => {
     const parts = [message.model, message.usage ? `${(message.usage.input + message.usage.output).toLocaleString(language)} tokens` : null,
-      message.status === 'stopped' ? (zh ? '已停止' : 'Stopped') : message.status === 'error' ? (zh ? '未完成' : 'Incomplete') : null].filter(Boolean);
+      message.status === 'stopped' ? (zh ? '已停止' : 'Stopped') : message.status === 'error' ? (zh ? '未完成' : 'Incomplete') : null,
+      message.fallback ? (zh ? '这个模型接口不支持工具调用，本条未用工具' : 'This model endpoint does not support tools; this reply did not use them') : null].filter(Boolean);
     // Only stored, finished replies of a chat about exactly one course can be saved; stopped or failed replies are partial.
     const savable = active && active.courseIds.length === 1 && index < active.messages.length && !message.status && message.content.trim();
     const state = active ? saved[`${active.id}:${index}`] : undefined;
@@ -244,8 +275,9 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
         </div>}
         {messages.map((message, index) => message.role === 'user'
           ? <div key={index} className={`msg me${index >= entered.current ? ' enter' : ''}`}>{message.content}</div>
-          : <Fragment key={index}><div className={`msg ag${index >= entered.current ? ' enter' : ''}`}><RichText text={message.content} /></div>{note(message, index)}</Fragment>)}
-        {busy && <div className={`msg ag enter${streaming ? ' streaming' : ''}`}>{streaming ? <RichText text={streaming} /> : <span className="muted">{zh ? '思考中…' : 'Thinking…'}</span>}</div>}
+          : <Fragment key={index}><div className={`msg ag${index >= entered.current ? ' enter' : ''}`}>{!!message.steps?.length && <ToolSteps steps={message.steps} zh={zh} />}<RichText text={message.content} /></div>{note(message, index)}</Fragment>)}
+        {busy && <div className={`msg ag enter${streaming ? ' streaming' : ''}`}>{streaming ? <RichText text={streaming} /> : !lookup && <span className="muted">{zh ? '思考中…' : 'Thinking…'}</span>}
+          {lookup && <span className="muted tool-running">{zh ? `正在查询：${toolLabel(lookup, zh)}…` : `Looking up: ${toolLabel(lookup, zh)}…`}</span>}</div>}
         {remoteRunning && !busy && <div className="msg ag"><span className="muted">{zh ? '正在回复…' : 'Replying…'}</span></div>}
       </div>
       {failure && <p className="chat-error error-line" role="status"><i className="signal" aria-hidden="true" />{failure.message}

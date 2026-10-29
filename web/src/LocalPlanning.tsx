@@ -592,3 +592,6 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     </div></div>
   </>;
 }
+
+// The Agent page sends the same planning inputs with each chat message (decision #322).
+export { readAvailability, readTargets, readWork };
