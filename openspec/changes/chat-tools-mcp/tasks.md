@@ -30,7 +30,7 @@
 - [x] 3.3 Tests then `scripts/eval-chat-qa.mjs` with `--fake`: both modes, N, `--only`, output layout and file modes, summary metrics, Desktop output refused
 - [x] 3.4 `docs/eval-chat-qa.md`: question format, grading rules, runner options, cost note, limitations
 - [x] 3.5 Context-mode baseline with DeepSeek Flash, N = 5 (can run before PR 2 merges); after PR 2 merges, tool-mode run with the same settings; record both in `docs/eval-results.md` (both modes in one run after PR 2, decisions #396–#399)
-- [ ] 3.6 `bash .claude/check.sh`; fresh-context review; record the PR number here
+- [x] 3.6 `bash .claude/check.sh`; fresh-context review; record the PR number here (PR #273; check passes, review done, two findings fixed)
 
 ## 4. MCP server (PR 4)
 
