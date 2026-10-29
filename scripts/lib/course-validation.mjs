@@ -1,41 +1,84 @@
-import { CourseDocumentV1Schema } from '../../shared/course-data.ts';
+import { CourseModelOutputSchema } from '../../shared/course-data.ts';
+import { buildStoredDocument, canonicalRefs, generateIds, indexCollected, resolveRef } from './course-refs.mjs';
 
 const REPORT_STATUSES = ['completed', 'partial', 'failed'];
+const PLATFORM_LABELS = { canvas: 'Canvas 作业 ID', 'canvas-group': 'Canvas 作业分组 ID', ed: 'Ed lesson ID' };
 
-// Checks one model output: JSON shape, the course document schema, semantic
-// rules the schema cannot express, and that the document belongs to `course`.
-export function validateAnalysis(raw, { course, canvas, ed }) {
+// Checks one model output (contract v2): JSON shape, the model output schema, references against the collected data,
+// keys and parents, semantic rules the schema cannot express, generated IDs, and that the document belongs to `course`.
+// Also returns the Handbook components parsed from the collected Handbook text.
+export function validateAnalysis(raw, { course, canvas, ed, handbook }) {
   let report;
   try { report = JSON.parse(raw); } catch { report = null; }
-  const parsed = CourseDocumentV1Schema.safeParse(report?.document);
+  const index = indexCollected({ canvas, ed, handbook });
+  const parsed = CourseModelOutputSchema.safeParse(report?.document);
   const issues = parsed.success ? [] : parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`);
-  if (parsed.success) issues.push(...semanticIssues(parsed.data, canvas, ed));
+  if (parsed.success) issues.push(...referenceIssues(parsed.data, index), ...structureIssues(parsed.data));
+  if (parsed.success && !issues.length) issues.push(...idIssues(parsed.data, index));
   const valid = Boolean(report) && typeof report.reason === 'string' && REPORT_STATUSES.includes(report.status)
     && (report.status === 'failed' ? report.document === null
       : parsed.success && issues.length === 0 && parsed.data.course.id === course.id && parsed.data.course.code === course.subjectCode);
   if (!valid && !issues.length) issues.push('结果格式或课程身份不匹配');
-  return { report, parsed, issues, valid };
+  return { report, parsed, issues, valid, components: index.components };
 }
 
-function semanticIssues(document, canvasData, edData) {
+// Every reference must exist in the collected data; a Canvas assignment or Ed lesson belongs to one item only.
+function referenceIssues(document, index) {
+  const issues = [];
+  const owners = new Map();
+  for (const [itemIndex, item] of document.assessments.entries()) {
+    for (const [refIndex, ref] of item.refs.entries()) {
+      const where = `assessments.${itemIndex}.refs.${refIndex}: 「${item.name}」引用的 ${ref.platform} ${ref.id}`;
+      if (!resolveRef(index, ref)) {
+        issues.push(`${where} ${ref.platform === 'handbook' ? '不是 Handbook 考核表中列出的考核项名称' : `不是采集到的 ${PLATFORM_LABELS[ref.platform]}`}`);
+        continue;
+      }
+      if (ref.platform !== 'canvas' && ref.platform !== 'ed') continue;
+      const key = `${ref.platform}\u0000${ref.id}`;
+      const owner = owners.get(key);
+      if (owner === undefined) owners.set(key, itemIndex);
+      else if (owner !== itemIndex) issues.push(`${where} 已被 assessments.${owner} 引用，同一作业只能属于一个考核项`);
+    }
+  }
+  return issues;
+}
+
+// Keys are unique; parents exist, are acyclic and one level deep; a leaf needs a reference; scoring rules on parents.
+function structureIssues(document) {
   const issues = [];
   const items = document.assessments;
+  const byKey = new Map();
   for (const [index, item] of items.entries()) {
-    const children = items.filter(child => child.parentId === item.id && child.nature === 'regular');
-    if (item.scoring !== 'none' && (item.parentId !== null || children.length === 0)) issues.push(`assessments.${index}.scoring: 只有有计分子项的顶层父项可使用 points 或 weighted`);
-    if (item.scoring === 'weighted' && children.some(child => child.weight === null || child.weight <= 0)) issues.push(`assessments.${index}.scoring: weighted 要求每个计分子项有明确正权重`);
-    if (!children.length && item.score !== null && item.maxScore !== null) {
-      // An Ed score must keep its own maximum unless Canvas confirms the same pair.
-      const lessons = Array.isArray(edData?.lessons) ? edData.lessons : [];
-      const scores = Array.isArray(edData?.scores) ? edData.scores : [];
-      const matched = lessons.filter(lesson => item.sources.some(source => source.platform === 'ed' && source.url === lesson.url))
-        .flatMap(lesson => scores.filter(score => String(score.lessonId) === String(lesson.id) && score.status === 'graded'));
-      const canvasMatches = (Array.isArray(canvasData?.assignments) ? canvasData.assignments : []).some(assignment =>
-        item.sources.some(source => source.platform === 'canvas' && source.url === assignment.html_url)
-        && assignment.submission?.score === item.score && assignment.points_possible === item.maxScore);
-      if (matched.length === 1 && matched[0].score === item.score && matched[0].maxScore !== item.maxScore && !canvasMatches)
-        issues.push(`assessments.${index}: Ed 已得 ${matched[0].score}/${matched[0].maxScore}，请使用同一来源的得分和满分`);
+    if (byKey.has(item.key)) issues.push(`assessments.${index}.key: key ${item.key} 重复`);
+    else byKey.set(item.key, item);
+  }
+  for (const [index, item] of items.entries()) {
+    const visited = new Set([item.key]);
+    let parent = item.parentKey, broken = false;
+    while (parent !== null) {
+      if (!byKey.has(parent) || visited.has(parent)) { broken = true; break; }
+      visited.add(parent); parent = byKey.get(parent).parentKey;
     }
+    if (broken) issues.push(`assessments.${index}.parentKey: parentKey 指向的考核项不存在或成环`);
+    else if (item.parentKey !== null && byKey.get(item.parentKey).parentKey !== null) issues.push(`assessments.${index}.parentKey: 只支持一层父子`);
+    const children = items.filter(child => child.parentKey === item.key && child !== item);
+    if (!item.refs.length && !children.length) issues.push(`assessments.${index}.refs: 「${item.name}」没有任何引用，也没有子项`);
+    const scoringChildren = children.filter(child => child.nature === 'regular');
+    if (item.scoring !== 'none' && (item.parentKey !== null || scoringChildren.length === 0)) issues.push(`assessments.${index}.scoring: 只有有计分子项的顶层父项可使用 points 或 weighted`);
+    if (item.scoring === 'weighted' && scoringChildren.some(child => child.weight === null || child.weight <= 0)) issues.push(`assessments.${index}.scoring: weighted 要求每个计分子项有明确正权重`);
+  }
+  return issues;
+}
+
+// Generated IDs (from canonical references) must be unique and fit the stored schema.
+function idIssues(document, index) {
+  const issues = [];
+  const { ids } = generateIds(document.assessments.map(item => ({ ...item, refs: canonicalRefs(index, item.refs) })));
+  const first = new Map();
+  for (const [itemIndex, id] of ids.entries()) {
+    if (id.length > 500) { issues.push(`assessments.${itemIndex}: 生成的 ID 超过 500 个字符，请缩短名称`); continue; }
+    if (first.has(id)) issues.push(`assessments.${itemIndex}: 生成的 ID ${id} 与 assessments.${first.get(id)} 重复，请给这些考核项不同的名称`);
+    else first.set(id, itemIndex);
   }
   return issues;
 }
@@ -71,19 +114,23 @@ export async function analyseWithRepair({ instructions, run, validate, isCancell
 // Decides what to save after analysis. Rejected output is never saved; its raw
 // text and issues are returned as a diagnostic for `.local/lms/sync-errors/`.
 // `collection` flags: canvasFailed, canvasUnpaginated, edFailed, edPartial, handbookFailed.
-export function settleCourse({ result, validation, collection }) {
+// `data` is the collected `{ canvas, ed, handbook }` and `previous` the newest valid earlier document (or null); an
+// accepted document is saved as the stored v2 document built from them. A Handbook that was collected but has no
+// parsable assessment table also makes the course at most partial.
+export function settleCourse({ result, validation, collection, data, previous = null }) {
   const { report, parsed, issues } = validation;
   if (result.exitCode === 0 && validation.valid) {
     let status = report.status;
     let reason = report.reason.slice(0, 500);
     const { canvasFailed, canvasUnpaginated, edFailed, edPartial, handbookFailed } = collection;
-    if (canvasFailed || canvasUnpaginated || edFailed || edPartial || handbookFailed) {
+    const handbookUnparsed = !handbookFailed && data?.handbook?.status === 'available' && validation.components.length === 0;
+    if (canvasFailed || canvasUnpaginated || edFailed || edPartial || handbookFailed || handbookUnparsed) {
       if (status === 'completed') status = 'partial';
-      reason = `${canvasFailed ? 'Canvas 数据未能读取；' : canvasUnpaginated ? 'Canvas 分页未验证；' : ''}${edFailed ? 'Ed 数据未能读取；' : edPartial ? '部分 Ed 数据未能读取；' : ''}${handbookFailed ? 'Handbook 数据未能读取；' : ''}${reason}`;
+      reason = `${canvasFailed ? 'Canvas 数据未能读取；' : canvasUnpaginated ? 'Canvas 分页未验证；' : ''}${edFailed ? 'Ed 数据未能读取；' : edPartial ? '部分 Ed 数据未能读取；' : ''}${handbookFailed ? 'Handbook 数据未能读取；' : handbookUnparsed ? 'Handbook 考核表未能解析；' : ''}${reason}`;
     }
     return {
       accepted: true, status, reason,
-      document: report.status !== 'failed' && parsed.success ? parsed.data : null,
+      document: report.status !== 'failed' && parsed.success ? buildStoredDocument(parsed.data, data, previous) : null,
       diagnostic: report.status === 'failed' ? { raw: result.lastMessage, issues: [] } : null,
     };
   }

@@ -17,21 +17,35 @@ function termLabel(term) {
   return match ? `${match[1]} S${match[2]}` : value.replace(/[^\w\u4e00-\u9fff -]/g, '').trim().slice(0, 50) || '未知学期';
 }
 
+/**
+ * Newest valid course document (version 1 or 2) of `courseId` among `分数结构*.json` in `dir`, by modification time, or null.
+ * Also used by the sync to find the earlier document for the legacy ID map.
+ */
+export async function newestCourseDocument(dir, courseId) {
+  let names;
+  try { names = (await readdir(dir)).filter(name => /^分数结构(?:-[a-zA-Z0-9-]+)?\.json$/.test(name)); }
+  catch { return null; }
+  const files = (await Promise.all(names.map(async name => {
+    try { return { name, mtime: (await stat(join(dir, name))).mtimeMs }; } catch { return null; }
+  }))).filter(Boolean);
+  files.sort((a, b) => b.mtime - a.mtime);
+  for (const file of files) {
+    try {
+      const data = CourseDocumentSchema.safeParse(JSON.parse(await readFile(join(dir, file.name), 'utf8')));
+      if (data.success && data.data.course.id === courseId) return data.data;
+    } catch { /* Older valid reports may still be usable. */ }
+  }
+  return null;
+}
+
+/** Desktop course folder of a course: `<desktop>/墨尔本大学 <term label>/<CODE>`. */
+function courseFolder(course, desktop) {
+  return join(desktop, `墨尔本大学 ${termLabel(course.term)}`, course.subjectCode);
+}
+
 async function newestReport(course, desktop) {
   if (!/^[A-Z]{4}[1-9]\d{4}$/.test(course.subjectCode)) return null;
-  const dir = join(desktop, `墨尔本大学 ${termLabel(course.term)}`, course.subjectCode);
-  try {
-    const names = (await readdir(dir)).filter(name => /^分数结构(?:-[a-zA-Z0-9-]+)?\.json$/.test(name));
-    const files = await Promise.all(names.map(async name => ({ name, mtime: (await stat(join(dir, name))).mtimeMs })));
-    files.sort((a, b) => b.mtime - a.mtime);
-    for (const file of files) {
-      try {
-        const data = CourseDocumentSchema.safeParse(JSON.parse(await readFile(join(dir, file.name), 'utf8')));
-        if (data.success && data.data.course.id === course.id) return { id: course.id, report: data.data };
-      } catch { /* Older valid reports may still be usable. */ }
-    }
-  } catch { /* A selected course may not have a report yet. */ }
-  return { id: course.id, report: null };
+  return { id: course.id, report: await newestCourseDocument(courseFolder(course, desktop), course.id) };
 }
 
 /**

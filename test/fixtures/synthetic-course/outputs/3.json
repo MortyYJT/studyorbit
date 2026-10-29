@@ -2,7 +2,7 @@
   "status": "completed",
   "reason": "",
   "document": {
-    "version": 1,
+    "version": 2,
     "course": {
       "id": "900001",
       "code": "SYNT10001",
@@ -11,156 +11,146 @@
     },
     "assessments": [
       {
-        "id": "501",
+        "key": "quizzes",
+        "parentKey": null,
+        "refs": [
+          {
+            "platform": "canvas-group",
+            "id": "501"
+          },
+          {
+            "platform": "handbook",
+            "id": "Weekly online quizzes"
+          }
+        ],
         "name": "Weekly quizzes",
         "kind": "quiz",
         "nature": "regular",
-        "parentId": null,
-        "weight": 20,
-        "score": null,
-        "maxScore": null,
-        "due": null,
-        "status": "in_progress",
         "scoring": "weighted",
+        "weight": 20,
+        "weightQuote": null,
         "rule": null,
-        "sources": [
-          {
-            "platform": "handbook",
-            "url": "https://handbook.example.edu/2026/subjects/synt10001/assessment",
-            "evidence": "Model note: Weekly online quizzes (20%), two quizzes of 10% each"
-          }
-        ]
+        "ruleQuote": null
       },
       {
-        "id": "7101",
+        "key": "q1",
+        "parentKey": "quizzes",
+        "refs": [
+          {
+            "platform": "canvas",
+            "id": "7101"
+          }
+        ],
         "name": "Quiz 1",
         "kind": "quiz",
         "nature": "regular",
-        "parentId": "501",
-        "weight": 10,
-        "score": 8,
-        "maxScore": 10,
-        "due": "2026-08-07T13:59:00Z",
-        "status": "graded",
         "scoring": "none",
+        "weight": 10,
+        "weightQuote": "Weekly online quizzes Two quizzes of 10% each",
         "rule": null,
-        "sources": [
-          {
-            "platform": "canvas",
-            "url": "https://canvas.example.edu/courses/900001/assignments/7101",
-            "evidence": "Model note: Graded 8/10"
-          }
-        ]
+        "ruleQuote": null
       },
       {
-        "id": "7102",
+        "key": "q2",
+        "parentKey": "quizzes",
+        "refs": [
+          {
+            "platform": "canvas",
+            "id": "7102"
+          }
+        ],
         "name": "Quiz 2",
-        "kind": "quiz",
-        "nature": "regular",
-        "parentId": "501",
-        "weight": 10,
-        "score": null,
-        "maxScore": 10,
-        "due": "2026-09-20T13:59:00Z",
-        "status": "unknown",
-        "scoring": "none",
-        "rule": null,
-        "sources": [
-          {
-            "platform": "canvas",
-            "url": "https://canvas.example.edu/courses/900001/assignments/7102",
-            "evidence": "Model note: Not submitted"
-          }
-        ]
-      },
-      {
-        "id": "7001",
-        "name": "Assignment 1",
         "kind": "assignment",
         "nature": "regular",
-        "parentId": null,
-        "weight": 30,
-        "score": 24,
-        "maxScore": 30,
-        "due": "2026-08-28T13:59:00Z",
-        "status": "graded",
         "scoring": "none",
+        "weight": 10,
+        "weightQuote": "Weekly online quizzes Two quizzes of 10% each",
         "rule": null,
-        "sources": [
+        "ruleQuote": null
+      },
+      {
+        "key": "a1",
+        "parentKey": null,
+        "refs": [
           {
             "platform": "canvas",
-            "url": "https://canvas.example.edu/courses/900001/assignments/7001",
-            "evidence": "Model note: Assignment 1 in the 30% group"
+            "id": "7001"
           },
           {
             "platform": "ed",
-            "url": "https://edstem.example.org/courses/42/lessons/3001",
-            "evidence": "Model note: Graded 24/30 on Ed"
+            "id": "3001"
+          },
+          {
+            "platform": "handbook",
+            "id": "Assignment 1"
           }
-        ]
+        ],
+        "name": "Assignment 1",
+        "kind": "assignment",
+        "nature": "regular",
+        "scoring": "none",
+        "weight": 30,
+        "weightQuote": null,
+        "rule": null,
+        "ruleQuote": null
       },
       {
-        "id": "3003",
+        "key": "bonus",
+        "parentKey": null,
+        "refs": [
+          {
+            "platform": "ed",
+            "id": "3003"
+          }
+        ],
         "name": "Bonus Challenge",
         "kind": "assignment",
         "nature": "bonus",
-        "parentId": null,
-        "weight": null,
-        "score": null,
-        "maxScore": 2,
-        "due": "2026-10-10T12:59:00Z",
-        "status": "not_started",
         "scoring": "none",
+        "weight": null,
+        "weightQuote": null,
         "rule": "Up to 2 bonus marks added to the final total, capped at 100",
-        "sources": [
-          {
-            "platform": "ed",
-            "url": "https://edstem.example.org/courses/42/lessons/3003",
-            "evidence": "Model note: Optional, up to 2 bonus marks"
-          }
-        ]
+        "ruleQuote": "Up to 2 bonus marks are added to your final total, capped at 100."
       },
       {
-        "id": "7201",
+        "key": "exam",
+        "parentKey": null,
+        "refs": [
+          {
+            "platform": "canvas",
+            "id": "7201"
+          },
+          {
+            "platform": "handbook",
+            "id": "Final examination"
+          }
+        ],
         "name": "Final Exam",
         "kind": "test",
         "nature": "regular",
-        "parentId": null,
-        "weight": 50,
-        "score": null,
-        "maxScore": 50,
-        "due": null,
-        "status": "not_started",
         "scoring": "none",
+        "weight": 50,
+        "weightQuote": null,
         "rule": "Hurdle: at least 25 out of 50 on the exam",
-        "sources": [
-          {
-            "platform": "handbook",
-            "url": "https://handbook.example.edu/2026/subjects/synt10001/assessment",
-            "evidence": "Model note: Final examination (50%), must pass"
-          }
-        ]
+        "ruleQuote": "students must pass the final examination (at least 25 out of 50)"
       },
       {
-        "id": "3002",
+        "key": "practice",
+        "parentKey": null,
+        "refs": [
+          {
+            "platform": "ed",
+            "id": "3002"
+          }
+        ],
         "name": "Week 1 Practice",
         "kind": "quiz",
         "nature": "ungraded",
-        "parentId": null,
-        "weight": null,
-        "score": null,
-        "maxScore": null,
-        "due": null,
-        "status": "in_progress",
         "scoring": "none",
+        "weight": null,
+        "weightQuote": null,
         "rule": null,
-        "sources": [
-          {
-            "platform": "ed",
-            "url": "https://edstem.example.org/courses/42/lessons/3002",
-            "evidence": "Practice lesson"
-          }
-        ]
+        "ruleQuote": null
       }
     ],
     "materials": []
