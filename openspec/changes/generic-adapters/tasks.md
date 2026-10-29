@@ -19,17 +19,17 @@
 
 ## 3. Settings, generic institution and generic Canvas (PR 3)
 
-- [x] 3.1 Tests then `scripts/lib/source-settings.mjs` (+ `.d.mts`): defaults when missing, every validation rule, atomic 0600 write, platform availability
-- [x] 3.2 Tests then `server/routes/source-settings.ts`: `GET` shape, `PUT` validation errors, `409 SYNC_RUNNING`, access checks; remove the PR 2 environment override
-- [x] 3.3 Tests then `scripts/institutions/generic.mjs`: default and custom code pattern, term key, folder sanitisation (reserved names, trailing dots, `.`/`..`), time zone, neutral wording, no framework
-- [x] 3.4 Canvas origin from settings; discovery writes `canvasOrigin` and `institution`; `COURSE_LIST_STALE` in sync and course reports; old lists read as UniMelb; tests with synthetic responses from another origin, including a foreign `rel="next"`
-- [x] 3.5 Ed region `auto`/`au`/`us`/`eu` with the CLI region check; tests with synthetic `auth status` output
-- [x] 3.6 Wording: analysis prompt rules from the plugin and framework source, framework clauses omitted without one; English and Chinese chat intros from `wording`; chat tool descriptions from `wording.timeLabel.en` (UniMelb unchanged); chat-context due-date formatting, MCP and chat "today" with the institution time zone; `timeZone` parameter in `shared/corrections.ts` and `shared/course-tools.ts`; page reads the time zone from the settings route; golden tests still pass for `unimelb`
-- [x] 3.7 Collect input hash adds institution, Canvas origin, Ed region and source ids; bump `COLLECT_VERSION`; resume test across a browser change reuses collected data
-- [x] 3.8 `test/no-institution-literals.test.ts` with its allowlist and reasons (including the `shared/course-data.ts` schema descriptions); rename remaining generic identifiers and comments (`handbookFailed` → per-source flags, Handbook comments in `course-refs.mjs`, `course-quotes.mjs`, `shared/course-data.ts`)
-- [x] 3.9 Settings page 「数据来源」 section; browser check on synthetic `.local` data without a real sync
-- [x] 3.10 README, `docs/overview.md`, `scripts/README.md`, `openspec/config.yaml` context: supported setups with verified/unverified labels (decisions #460–#469)
-- [ ] 3.11 `bash .claude/check.sh`; fresh-context review; record the PR number here
+- [x] 3.1 Tests then `scripts/lib/source-settings.mjs` (+ `.d.mts`): defaults when missing, every validation rule, atomic 0600 write, platform availability (PR #282)
+- [x] 3.2 Tests then `server/routes/source-settings.ts`: `GET` shape, `PUT` validation errors, `409 SYNC_RUNNING`, access checks; remove the PR 2 environment override (PR #282)
+- [x] 3.3 Tests then `scripts/institutions/generic.mjs`: default and custom code pattern, term key, folder sanitisation (reserved names, trailing dots, `.`/`..`), time zone, neutral wording, no framework (PR #282)
+- [x] 3.4 Canvas origin from settings; discovery writes `canvasOrigin` and `institution`; `COURSE_LIST_STALE` in sync and course reports; old lists read as UniMelb; tests with synthetic responses from another origin, including a foreign `rel="next"` (PR #282)
+- [x] 3.5 Ed region `auto`/`au`/`us`/`eu` with the CLI region check; tests with synthetic `auth status` output (PR #282)
+- [x] 3.6 Wording: analysis prompt rules from the plugin and framework source, framework clauses omitted without one; English and Chinese chat intros from `wording`; chat tool descriptions from `wording.timeLabel.en` (UniMelb unchanged); chat-context due-date formatting, MCP and chat "today" with the institution time zone; `timeZone` parameter in `shared/corrections.ts` and `shared/course-tools.ts`; page reads the time zone from the settings route; golden tests still pass for `unimelb` (PR #282)
+- [x] 3.7 Collect input hash adds institution, Canvas origin, Ed region and source ids; bump `COLLECT_VERSION`; resume test across a browser change reuses collected data (PR #282)
+- [x] 3.8 `test/no-institution-literals.test.ts` with its allowlist and reasons (including the `shared/course-data.ts` schema descriptions); rename remaining generic identifiers and comments (`handbookFailed` → per-source flags, Handbook comments in `course-refs.mjs`, `course-quotes.mjs`, `shared/course-data.ts`) (PR #282)
+- [x] 3.9 Settings page 「数据来源」 section; browser check on synthetic `.local` data without a real sync (PR #282)
+- [x] 3.10 README, `docs/overview.md`, `scripts/README.md`, `openspec/config.yaml` context: supported setups with verified/unverified labels (decisions #460–#469; PR #282)
+- [x] 3.11 `bash .claude/check.sh`; fresh-context review; record the PR number here: PR #282
 
 ## 4. CDP bridge for Windows and Linux, experimental (PR 4)
 
