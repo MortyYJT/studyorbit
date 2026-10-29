@@ -32,10 +32,8 @@ type(scope): imperative summary
 
 ## Pull requests
 
-- Open one PR per branch into `main`. Fill in the PR template.
-- Keep PRs reviewable: one topic, with verification evidence in the description.
-- Verification evidence lives only in the PR description. Do not add per-issue evidence or report files to the repository.
-- CI must pass for code PRs; doc-only PRs merge after review without waiting for CI (#156). Who merges follows `AGENTS.md`, "Agents and human gates".
+- Open one PR per branch into `main`, one topic each. Say briefly what changed and paste the check command's result.
+- Merge once CI passes. No review step.
 
 ## Checks
 
