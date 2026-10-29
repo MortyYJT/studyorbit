@@ -1,7 +1,7 @@
 schema: spec-driven
 
 context: |
-  Product: `coursework`, a local-first action center for a University of Melbourne student.
+  Product: StudyOrbit (`study-orbit`), a local-first action center for a University of Melbourne student.
   Coursework from Canvas and Ed is ingested automatically (iCal dropped, decision #77); other
   modules (internship, gaming, ...) hold manual and recurring tasks. Value: automatic,
   trustworthy (every derived step cites verbatim source text), schedulable, and time-saving
