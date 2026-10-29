@@ -60,3 +60,7 @@ npm run dev
 ## 仓库历史
 
 2026-10-29 起，本仓库以本地原型 v2 为准：v2 的开发历史已在去掉个人成绩后并入主线。早先的 v1 实现（Codex 读页面、`coursework` CLI、SQLite 存储、v1 的 OpenSpec 规格）已从主线移除，仍可在 Git 历史中查看。
+
+## 许可证
+
+[MIT](LICENSE) © 2026 MortyYJT。依赖各自的许可证；外部命令 `edstem` CLI 不随本仓库分发。
