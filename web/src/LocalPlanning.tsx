@@ -5,6 +5,7 @@ import { RichText } from './Agent.js';
 import type { RevisionNote } from '../../scripts/lib/revision-store.mjs';
 import { CourseDocumentSchema } from '../../shared/course-data.js';
 import { bandTargets, calculateGrades, finalNeeded, parentGrade, type Band } from '../../shared/course-calculations.js';
+import { parseAvailability, schedulePlan } from '../../shared/planning.js';
 
 type RecordValue = Record<string, unknown>;
 type Course = { id: string; name: string; subjectCode: string; term?: string };
@@ -14,12 +15,14 @@ type Correction = { kind?: Kind; nature?: 'regular' | 'ungraded' | 'bonus' | 'al
 type CourseData = { course: Course; assessments: Assessment[]; materials: RecordValue[]; available: boolean };
 type ParentAssessment = { name: string; displayName?: string; kind?: Kind; weight?: number; children: Assessment[]; scoringRule: string; score?: number; outOf?: number; status?: string; due?: string; sourceKey?: string };
 export type SidebarCourse = { id: string; code: string; name: string; graded?: number };
-type Work = { key: string; courseId: string; courseCode: string; title: string; due: string; minutes: number };
+// `due` is the deadline; `spent` and `done` record actual time (older entries have neither). courseId '' is a personal task.
+type Work = { key: string; courseId: string; courseCode: string; title: string; due: string; minutes: number; spent?: number; done?: boolean };
 const workKey = 'coursework.local-planning.work.v1';
 const correctionKey = 'coursework.local-planning.corrections.v1';
 const manualKey = 'coursework.local-planning.assessments.v1';
 const orderKey = 'coursework.local-planning.order.v1';
 const targetKey = 'coursework.local-planning.targets.v1';
+const availabilityKey = 'coursework.local-planning.availability.v1';
 const record = (value: unknown): RecordValue => value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {};
 function text(value: unknown): string {
   if (typeof value === 'string' || typeof value === 'number') return String(value);
@@ -44,9 +47,10 @@ function url(value: unknown): string {
 }
 function readWork(): Work[] {
   try { const value: unknown = JSON.parse(localStorage.getItem(workKey) ?? '[]');
-    return Array.isArray(value) ? value.filter(item => item && typeof item.key === 'string' && typeof item.courseId === 'string' && typeof item.courseCode === 'string' && typeof item.title === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.due) && typeof item.minutes === 'number' && Number.isFinite(item.minutes) && item.minutes > 0) : [];
+    return Array.isArray(value) ? value.filter(item => item && typeof item.key === 'string' && typeof item.courseId === 'string' && typeof item.courseCode === 'string' && typeof item.title === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.due) && typeof item.minutes === 'number' && Number.isFinite(item.minutes) && item.minutes > 0).map(item => ({ ...item, spent: typeof item.spent === 'number' && Number.isFinite(item.spent) && item.spent >= 0 ? item.spent : undefined, done: item.done === true })) : [];
   } catch { return []; }
 }
+function readAvailability(): number[] { try { return parseAvailability(JSON.parse(localStorage.getItem(availabilityKey) ?? 'null')); } catch { return parseAvailability(null); } }
 function localDay(date = new Date()): string { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date); }
 function addDays(day: string, count: number): string { const date = new Date(`${day}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + count); return date.toISOString().slice(0, 10); }
 function normalize(course: Course, value: unknown): CourseData {
@@ -140,6 +144,8 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const [order, setOrder] = useState<Record<string, string[]>>(() => { try { return record(JSON.parse(localStorage.getItem(orderKey) ?? '{}')) as Record<string, string[]>; } catch { return {}; } });
   const [adding, setAdding] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
+  const [availability, setAvailability] = useState<number[]>(readAvailability);
+  const [editingHours, setEditingHours] = useState(false);
   const [week, setWeek] = useState(() => { const today = localDay(); return addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)); });
   const [chosen, setChosen] = useState<Assessment>();
   const [chosenSiblings, setChosenSiblings] = useState<string[]>();
@@ -250,13 +256,9 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(due) || !Number.isFinite(minutes) || minutes <= 0 || minutes > 100000) return;
     if (saveWork([...work, { key: `task:${crypto.randomUUID()}`, courseId: course?.course.id ?? '', courseCode: course?.course.subjectCode ?? '', title, due, minutes }])) setAddingTask(false);
   }
-  const plan = useMemo(() => {
-    const days = new Map<string, { work: Work; minutes: number }[]>();
-    for (const item of [...work].filter(inScope).sort((a, b) => a.due.localeCompare(b.due) || a.key.localeCompare(b.key))) {
-      days.set(item.due, [...(days.get(item.due) ?? []), { work: item, minutes: item.minutes }]);
-    }
-    return { days };
-  }, [work, courses]);
+  // Decision #237: the schedule is recomputed from tasks, spent time and availability; nothing about it is stored.
+  const today = localDay();
+  const plan = useMemo(() => schedulePlan(work.filter(inScope), availability, today), [work, courses, availability, today]);
   function saveWork(next: Work[]): boolean { try { localStorage.setItem(workKey, JSON.stringify(next)); setWork(next); setSaveError(false); return true; } catch { setSaveError(true); return false; } }
   function schedule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!selected || !chosen) return;
@@ -436,12 +438,54 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     </> : <p>{zh ? '课程不可用或未选中。' : 'Course unavailable or not selected.'}</p>}
     {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}
   </div>;
-  const today = localDay();
+  // Monday-first weekday names; 2026-01-05 is a Monday.
+  const weekdayName = (index: number) => new Intl.DateTimeFormat(language, { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${addDays('2026-01-05', index)}T12:00:00Z`));
   const dayName = (day: string) => new Intl.DateTimeFormat(language, { weekday: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`));
   const shortDate = (day: string) => new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`));
   const currentMonth = week.slice(0, 7);
   const first = `${currentMonth}-01`;
   const monthStart = addDays(first, -((new Date(`${first}T12:00:00Z`).getUTCDay() + 6) % 7));
+  // Deadlines on the calendar: synced and manual assessments with the owner's corrections, then tasks not already shown.
+  const dueDay = (due: string): string | undefined => { if (/^\d{4}-\d{2}-\d{2}$/.test(due)) return due; const date = dueDate(due); return date ? localDay(date) : undefined; };
+  const covers = (task: Work, courseId: string, key: string) => task.courseId === courseId && (task.key === key || task.key === `${courseId}:group:${key}`);
+  const assessmentDeadlines = courses.flatMap(original => {
+    if (!original.available) return [];
+    const course = withCorrections(original);
+    return visibleItems(course).flatMap(item => { const day = dueDay(item.due); return day ? [{ item, day, courseId: course.course.id, code: course.course.subjectCode }] : []; });
+  });
+  const tasks = work.filter(inScope);
+  const workByKey = new Map(tasks.map(item => [item.key, item]));
+  type Deadline = { key: string; day: string; courseId: string; label: string; done: boolean };
+  const deadlines: Deadline[] = [
+    ...assessmentDeadlines.map(({ item, day, courseId, code }) => ({ key: item.key, day, courseId, label: `${code} · ${item.name}`, done: ['submitted', 'graded'].includes(corrections[item.key]?.status || item.status) || item.score !== undefined })),
+    ...tasks.filter(task => !assessmentDeadlines.some(entry => covers(task, entry.courseId, entry.item.key))).map(task => ({ key: task.key, day: task.due, courseId: task.courseId, label: `${codeOfWork(task)} · ${task.title}`, done: task.done === true })),
+  ];
+  const deadlinesOn = (day: string) => deadlines.filter(entry => entry.day === day);
+  const deadlineButton = (entry: Deadline, prefix: boolean) => { const label = `${prefix ? `${zh ? '截止' : 'Due'} · ` : ''}${entry.label}`;
+    return entry.courseId ? <button type="button" className={`due${entry.done ? ' done' : ''}`} key={entry.key} onClick={() => onCourse(entry.courseId)}>{label}</button>
+      : <span className={`due${entry.done ? ' done' : ''}`} key={entry.key}>{label}</span>; };
+  // Needs you: overflow and overdue tasks, failed syncs, and weighted assessments due within 7 days with no task.
+  const weekEnd = addDays(today, 6);
+  const codeOf = (id: string) => courses.find(item => item.course.id === id)?.course.subjectCode ?? id;
+  const needs = [
+    ...plan.overflow.flatMap(entry => { const task = workByKey.get(entry.key); if (!task) return [];
+      return [{ key: `plan:${entry.key}`, courseId: task.courseId, text: entry.overdue
+        ? (zh ? `已过截止 · ${codeOfWork(task)} · ${task.title}：还剩 ${entry.minutes} 分钟` : `Overdue · ${codeOfWork(task)} · ${task.title}: ${entry.minutes} min left`)
+        : (zh ? `排不下 · ${codeOfWork(task)} · ${task.title}：${shortDate(task.due)} 截止前还差 ${entry.minutes} 分钟` : `Does not fit · ${codeOfWork(task)} · ${task.title}: ${entry.minutes} min short before ${shortDate(task.due)}`) }]; }),
+    ...syncIssues.filter(item => item.status === 'failed').map(item => ({ key: `sync:${item.id}`, courseId: item.id, text: zh ? `${codeOf(item.id)} 最近一次同步未完成` : `${codeOf(item.id)}: the latest sync failed` })),
+    ...assessmentDeadlines.filter(({ item, day, courseId }) => day >= today && day <= weekEnd && item.score === undefined && !item.caution && !item.ungraded && item.kind !== 'ungraded' && !(item.sourceZero && !item.bonus)
+      && !['submitted', 'graded'].includes(corrections[item.key]?.status || item.status)
+      && !tasks.some(task => covers(task, courseId, item.key) || (item.parent !== '' && covers(task, courseId, item.parent))))
+      .sort((a, b) => a.day.localeCompare(b.day))
+      .map(({ item, day, courseId, code }) => ({ key: `soon:${item.key}`, courseId, text: zh ? `${shortDate(day)} 截止 · ${code} · ${item.name}：还没有安排` : `Due ${shortDate(day)} · ${code} · ${item.name}: not planned` })),
+  ];
+  function updateTask(key: string, change: Partial<Work>) { saveWork(work.map(item => item.key === key ? { ...item, ...change } : item)); }
+  function saveAvailability(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); const data = new FormData(event.currentTarget);
+    const next = parseAvailability(Array.from({ length: 7 }, (_, index) => { const raw = String(data.get(`day${index}`) ?? '').trim(); return raw === '' ? Number.NaN : Number(raw); }));
+    try { localStorage.setItem(availabilityKey, JSON.stringify(next)); setSaveError(false); } catch { setSaveError(true); }
+    setAvailability(next); setEditingHours(false);
+  }
   const shift = (direction: number) => {
     if (mode === 'plan') setWeek(addDays(week, direction * 7));
     else { const d = new Date(`${first}T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() + direction); setWeek(d.toISOString().slice(0, 10)); }
@@ -451,7 +495,15 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     <div className="week-layout"><div className="week-main">
       <div className="week-toolbar"><div className="week-nav" role="group" aria-label={zh ? '周切换' : 'Navigate weeks'}>
         <button onClick={() => shift(-1)}>‹</button><button onClick={() => setWeek(addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)))}>{zh ? '今天' : 'Today'}</button><button onClick={() => shift(1)}>›</button><span className="range">{mode === 'plan' ? `${shortDate(week)} – ${shortDate(addDays(week, 6))}` : currentMonth}</span></div>
-        <div className="week-actions"><span className="muted">{zh ? '学期' : 'Term'}: {courses[0]?.course.term || '—'}</span><div className="seg" role="group" aria-label={zh ? '视图' : 'View'}><button aria-pressed={mode === 'plan'} onClick={() => { setWeek(addDays(week, -((new Date(`${week}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{zh ? '周视图' : 'Week'}</button><button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>{zh ? '月历' : 'Month'}</button></div><button aria-expanded={addingTask} onClick={() => setAddingTask(value => !value)}>{addingTask ? (zh ? '取消' : 'Cancel') : (zh ? '添加任务' : 'Add task')}</button></div></div>
+        <div className="week-actions"><span className="muted">{zh ? '学期' : 'Term'}: {courses[0]?.course.term || '—'}</span><div className="seg" role="group" aria-label={zh ? '视图' : 'View'}><button aria-pressed={mode === 'plan'} onClick={() => { setWeek(addDays(week, -((new Date(`${week}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{zh ? '周视图' : 'Week'}</button><button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>{zh ? '月历' : 'Month'}</button></div><button aria-expanded={editingHours} onClick={() => setEditingHours(value => !value)}>{zh ? '每天可用时间' : 'Daily hours'}</button><button aria-expanded={addingTask} onClick={() => setAddingTask(value => !value)}>{addingTask ? (zh ? '取消' : 'Cancel') : (zh ? '添加任务' : 'Add task')}</button></div></div>
+      {needs.length > 0 && <section className="needs" aria-label={zh ? '需要你处理' : 'Needs you'}><h2>{zh ? '需要你处理' : 'Needs you'}</h2>
+        {needs.map(entry => entry.courseId
+          ? <button type="button" className="needs-line ghost" key={entry.key} onClick={() => onCourse(entry.courseId)}><i className="signal" aria-hidden="true" /><span>{entry.text}</span><span className="needs-line-go">›</span></button>
+          : <div className="needs-line" key={entry.key}><i className="signal" aria-hidden="true" /><span>{entry.text}</span></div>)}</section>}
+      {editingHours && <form className="local-confirm hours-form" onSubmit={saveAvailability}>
+        {Array.from({ length: 7 }, (_, index) => <label key={index}>{weekdayName(index)}<input name={`day${index}`} type="number" min="0" max="1440" step="5" defaultValue={availability[index]} /></label>)}
+        <small className="muted">{zh ? '每天可用于学习的分钟数；改动后计划立即重排。' : 'Minutes available for study each day; the plan updates at once.'}</small>
+        <button type="submit" className="primary">{zh ? '保存' : 'Save'}</button></form>}
       {addingTask && <form className="local-confirm task-form" onSubmit={addTask}>
         <label>{zh ? '任务' : 'Task'}<input name="title" required maxLength={200} placeholder={zh ? '例如：投递实习申请' : 'e.g. Internship application'} /></label>
         <label>{zh ? '截止日期' : 'Deadline'}<input name="due" type="date" required defaultValue={today} /></label>
@@ -459,15 +511,23 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         <label>{zh ? '课程' : 'Course'}<select name="course" defaultValue=""><option value="">{zh ? '无（校外任务）' : 'None (personal)'}</option>{courses.map(item => <option key={item.course.id} value={item.course.id}>{item.course.subjectCode}</option>)}</select></label>
         <button type="submit" className="primary">{zh ? '添加' : 'Add'}</button></form>}
       {mode === 'plan' ? <div className="local-week-grid">{Array.from({ length: 7 }, (_, index) => {
-        const day = addDays(week, index); const entries = plan.days.get(day) ?? []; const due = work.filter(item => item.due === day && inScope(item));
+        const day = addDays(week, index); const entries = (plan.days[day] ?? []).flatMap(block => { const task = workByKey.get(block.key); return task ? [{ work: task, minutes: block.minutes }] : []; }); const due = deadlinesOn(day);
         return <section key={day} style={{ '--i': index } as CSSProperties} className={`local-week-day${day === today ? ' today' : ''}${day < today ? ' past' : ''}`}>
           <div className="local-week-heading"><b>{dayName(day)}</b></div>
-          <div className="local-week-body"><div className="day-deadlines">{due.map(item => <span className="due" key={item.key}>{zh ? '截止' : 'Due'} · {codeOfWork(item)} · {item.title}</span>)}</div>
-          <div className="day-items">{entries.length ? entries.map(entry => <button className="blk" key={entry.work.key} disabled={!entry.work.courseId} onClick={() => entry.work.courseId && onCourse(entry.work.courseId)}><span className="tm">{entry.minutes} min</span><span className="tt">{entry.work.title}</span><span className="cr">{codeOfWork(entry.work)}</span></button>) : <span className="muted empty-day">{zh ? '无计划' : 'No plan'}</span>}</div>
+          <div className="local-week-body"><div className="day-deadlines">{due.map(entry => deadlineButton(entry, true))}</div>
+          <div className="day-items">{entries.length ? entries.map(entry => { const body = <><span className="tm">{entry.minutes} min</span><span className="tt">{entry.work.title}</span><span className="cr">{codeOfWork(entry.work)}</span></>;
+            return entry.work.courseId ? <button className="blk" key={entry.work.key} onClick={() => onCourse(entry.work.courseId)}>{body}</button> : <div className="blk" key={entry.work.key}>{body}</div>; }) : <span className="muted empty-day">{zh ? '无计划' : 'No plan'}</span>}</div>
           </div>
         </section>; })}</div>
-        : <div className="card month" role="grid"><div className="month-row" role="row">{Array.from({ length: 7 }, (_, i) => <div className="dow" key={i}>{dayName(addDays('2026-01-05', i)).replace(/\d+/g, '')}</div>)}</div>{Array.from({ length: 6 }, (_, row) => <div className="month-row" role="row" key={row}>{Array.from({ length: 7 }, (_, col) => { const day = addDays(monthStart, row * 7 + col); return <div role="gridcell" className={`cell${day.slice(0, 7) === currentMonth ? '' : ' out'}${day === today ? ' today' : ''}`} key={day}><button className="num" onClick={() => { setWeek(addDays(day, -((new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{Number(day.slice(8))}</button>{work.filter(item => item.due === day && inScope(item)).map(item => <span className="due" key={item.key}>{codeOfWork(item)} · {item.title}</span>)}</div>; })}</div>)}</div>}
-      {!!work.length && <details><summary>{zh ? '已加入的学习任务' : 'Planned work'}</summary>{work.filter(inScope).map(item => <div className="local-group" key={item.key}><span>{codeOfWork(item)} · {item.title} · {item.due} · {item.minutes} min</span><button onClick={() => saveWork(work.filter(row => row.key !== item.key))}>{zh ? '移除' : 'Remove'}</button></div>)}</details>}
+        : <div className="card month" role="grid"><div className="month-row" role="row">{Array.from({ length: 7 }, (_, i) => <div className="dow" key={i}>{weekdayName(i)}</div>)}</div>{Array.from({ length: 6 }, (_, row) => <div className="month-row" role="row" key={row}>{Array.from({ length: 7 }, (_, col) => { const day = addDays(monthStart, row * 7 + col); return <div role="gridcell" className={`cell${day.slice(0, 7) === currentMonth ? '' : ' out'}${day === today ? ' today' : ''}`} key={day}><button className="num" onClick={() => { setWeek(addDays(day, -((new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{Number(day.slice(8))}</button>{deadlinesOn(day).map(entry => deadlineButton(entry, false))}</div>; })}</div>)}</div>}
+      {tasks.length > 0 && <details className="task-list"><summary><i className="chevron" aria-hidden="true" />{zh ? '任务与用时' : 'Tasks and time'} ({tasks.length})</summary>
+        {[...tasks].sort((a, b) => Number(a.done) - Number(b.done) || a.due.localeCompare(b.due)).map(item => { const spent = item.spent ?? 0; const diff = item.minutes ? Math.round((spent - item.minutes) / item.minutes * 100) : 0;
+          return <div className={`task-row${item.done ? ' done' : ''}`} key={item.key}>
+            <span className="task-name">{codeOfWork(item)} · {item.title}<small className="muted block">{zh ? `截止 ${shortDate(item.due)} · 预计 ${item.minutes} 分钟` : `Due ${shortDate(item.due)} · estimate ${item.minutes} min`}{item.done && ` · ${zh ? '实际' : 'actual'} ${spent} ${zh ? '分钟' : 'min'} (${diff > 0 ? '+' : ''}${diff}%)`}</small></span>
+            <span className="task-controls"><label className="inline">{zh ? '已用' : 'Spent'}<input key={`${item.key}:${spent}`} type="number" min="0" max="100000" step="5" defaultValue={item.spent ?? ''} aria-label={zh ? `${item.title} 已用分钟` : `${item.title} minutes spent`}
+              onBlur={event => { const raw = event.currentTarget.value.trim(); const value = raw === '' ? undefined : Number(raw); if (value === undefined || (Number.isFinite(value) && value >= 0 && value <= 100000)) { if (value !== item.spent) updateTask(item.key, { spent: value }); } else event.currentTarget.value = String(item.spent ?? ''); }} /></label>
+            <label className="inline"><input type="checkbox" checked={item.done === true} onChange={event => updateTask(item.key, { done: event.currentTarget.checked })} />{zh ? '完成' : 'Done'}</label>
+            <button className="small ghost" onClick={() => saveWork(work.filter(row => row.key !== item.key))}>{zh ? '移除' : 'Remove'}</button></span></div>; })}</details>}
       {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}
     </div></div>
   </>;
