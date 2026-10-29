@@ -6,9 +6,10 @@ Course JSON v1 asks the model to write everything: assessment IDs, due dates, sc
 
 - **Two schemas.** A new *model output* schema (what the model returns) and a *stored document* v2 (what is saved to the Desktop course folder and displayed). The model returns platform references (`refs`), grouping (`key`, `parentKey`), `name`, `kind`, `nature`, `scoring`, `weight` + `weightQuote` and `rule` + `ruleQuote`. It no longer returns IDs, due dates, scores, maximum scores, statuses or `sources`.
 - **Code-generated IDs.** IDs are derived deterministically from references: `canvas:<id>`, `ed:<id>`, `canvas-group:<id>`, `handbook:<slug>`, or `group:<slug>` for a group only the model knows.
-- **Reference validation.** A reference that is not in the collected data is a validation issue and goes through the existing one-repair loop.
+- **Reference validation.** A reference that is not in the collected data is a validation issue and goes through the existing one-repair loop. Handbook references must name a component parsed from the Handbook assessment table.
 - **Fact back-fill.** Due date, score, maximum score and status come from the collected Canvas and Ed data by platform ID; `sources` links are built by code.
-- **Quote verification.** Every weight and rule must carry a verbatim quote found in the collected source text (a Canvas assignment group weight that matches counts as sourced). A failing field is cleared, listed in `unsourced`, and the page shows 「无出处」.
+- **Quote verification.** Every weight and rule must be backed by the collected data: a matching Canvas group weight or cited Handbook row percentage, or a verbatim quote found in assessment-description text (Handbook rows and lines, Ed context, Canvas group names and rendered drop rules). A failing field is cleared, listed in `unsourced`, and the page shows 「无出处」.
+- **Local keys follow the new IDs.** The stored document records `legacyIds` (earlier ID → new ID); corrections, planned work, manual items and ordering are moved to the new keys once.
 - **Backward-compatible reading.** `CourseDocumentSchema` accepts version 1 and version 2; a helper turns either into one display shape, so v1 files on the Desktop keep working.
 - **BREAKING (model contract only):** the JSON Schema and prompt sent to the model change. Stored v1 files stay readable; new syncs write v2.
 - Out of scope: moving corrections to `.local/` (#248), correction conflict handling (#249), `node:sqlite` (#250), new collectors or new collected fields, and the evaluation runner itself.
@@ -17,7 +18,7 @@ Course JSON v1 asks the model to write everything: assessment IDs, due dates, sc
 
 ### New Capabilities
 
-- `course-contract`: the stored course document v2, reading v1 and v2 into one display shape, and showing 「无出处」.
+- `course-contract`: the stored course document v2, reading v1 and v2 into one display shape, showing 「无出处」, and moving local keys to the new IDs through `legacyIds`.
 - `course-analysis`: the model output schema, reference validation, ID generation, fact back-fill and quote verification during sync.
 
 ### Modified Capabilities
