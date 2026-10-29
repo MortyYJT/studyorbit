@@ -29,4 +29,3 @@ Baseline: <!-- the check command on main before this change: passed / failed (pr
 - [ ] No secrets, real names, or identifying local paths
 - [ ] OpenSpec change updated or archived (product/logic changes only)
 - [ ] One commit per plan step; about 400 changed lines or fewer (excluding tests and lockfiles)
-- [ ] `TODO(human)` parts left for the user

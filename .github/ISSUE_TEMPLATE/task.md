@@ -23,7 +23,3 @@ labels: task
 
 - May change: <!-- paths -->
 - Must not touch: <!-- paths -->
-
-## Written by the user
-
-<!-- Functions or files left as TODO(human). Implementers must not fill them. Write "none" if none. -->
