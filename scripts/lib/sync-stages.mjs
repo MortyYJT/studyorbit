@@ -11,7 +11,8 @@ import { buildAnalysisPrompt } from './course-analysis.mjs';
 import { changeLogHasRun } from './course-changes-log.mjs';
 import { newestCourseDocument } from './course-reports.mjs';
 import { analyseWithRepair, settleCourse, validateAnalysis } from './course-validation.mjs';
-import { EX_TEMPFAIL } from './collector-exit.mjs';
+import { CDP_SIGN_IN } from '../browser/cdp.mjs';
+import { EX_SIGN_IN, EX_TEMPFAIL } from './collector-exit.mjs';
 import { isTemporaryFailure } from './llm-providers.mjs';
 import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
 
@@ -227,11 +228,17 @@ function toFailure(ctx, stage, error) {
 
 /**
  * Real collector: a detached child process of `scripts/<script>` with the command's `env` added to this process's
- * environment, stopped through `registerStop` (SIGTERM, SIGKILL after 5 s) or after 120 s.
+ * environment, stopped through `registerStop` (SIGTERM, SIGKILL after 5 s) or after 120 s. A browser-using collector
+ * configured for the experimental CDP bridge also gets a Node IPC channel served by `browserHost`, the server's
+ * dedicated browser (generic-adapters design §7); killing the collector closes its tabs, never the browser.
  */
-export function spawnCollector({ script, args, env = {}, cwd, registerStop }) {
+export function spawnCollector({ script, args, env = {}, cwd, registerStop, usesBrowser = false, browserHost }) {
   return new Promise(resolveTask => {
-    const proc = spawn(process.execPath, [join(cwd, 'scripts', script), ...args], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' });
+    let client = null;
+    try { client = usesBrowser && browserHost ? browserHost.clientFor(env) : null; } catch { /* The collector reports the invalid configuration itself. */ }
+    const stdio = client ? ['ignore', 'ignore', 'pipe', 'ipc'] : ['ignore', 'ignore', 'pipe'];
+    const proc = spawn(process.execPath, [join(cwd, 'scripts', script), ...args], { cwd, env: { ...process.env, ...env }, stdio, detached: process.platform !== 'win32' });
+    if (client) browserHost.attach(proc, client);
     let stderr = '', done = false, escalation;
     proc.stderr.on('data', chunk => { if (stderr.length < 4000) stderr += chunk.toString().slice(0, 4000 - stderr.length); });
     const stop = () => {
@@ -286,7 +293,7 @@ export async function collectStage(ctx, course) {
           const outcome = await ctx.limiters.collect(limiterKey(source)).run(async () => {
             ctx.assertAlive();
             attempts++;
-            const result = await ctx.runCollector({ source: id, script: command.script, args: command.args, env: command.env, cwd: ctx.projectDir, registerStop: ctx.registerStop, signal: ctx.signal });
+            const result = await ctx.runCollector({ source: id, script: command.script, args: command.args, env: command.env, usesBrowser: source.usesBrowser, cwd: ctx.projectDir, registerStop: ctx.registerStop, signal: ctx.signal });
             if (result.code === 0) return { ok: true, value: result };
             return { ok: false, retryable: result.code === EX_TEMPFAIL && !ctx.stopStatus(), error: result.error, code: result.code };
           }, { signal: ctx.signal, budget });
@@ -296,6 +303,8 @@ export async function collectStage(ctx, course) {
           if (code === EX_TEMPFAIL) {
             throw new StageError('COLLECT_TEMPORARY', `${source.label} 暂时无法访问（限流或服务器错误，已重试 ${outcome.attempts} 次），可以继续上次同步。`, { phases, attempts });
           }
+          // The dedicated browser (CDP) is signed out: no placeholder, so a resume collects the source again.
+          if (code === EX_SIGN_IN) throw new StageError('COLLECT_SIGN_IN', `${source.label}：${CDP_SIGN_IN}。`, { phases, attempts });
         } else phases[`${id}Ms`] = ctx.now() - started;
         if (code !== 0) await ctx.io.writeFile(file, JSON.stringify(source.placeholder()), { mode: 0o600 });
         sources[id] = { file, sha256: await fileHash(file), exitCode: code };

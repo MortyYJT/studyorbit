@@ -16,7 +16,7 @@
 
 ## 主流程
 
-0. **数据来源设置：** `GET`/`PUT /api/local/source-settings`（`server/routes/source-settings.ts`、`scripts/lib/source-settings.mjs`）读写 `.local/config/sources.json`：学校（`unimelb` 或 `generic`）、Canvas 地址、浏览器、浏览器路径、Ed 区域，以及只给 `generic` 的时区和课程代码正则。没有文件时等于墨大 + macOS Edge（其他系统默认专用浏览器，尚未实现）。同步或获取课程进行中保存回 `409 SYNC_RUNNING`。每次同步和每次获取课程各读一次，换成采集器配置（环境变量 `STUDYORBIT_SOURCE_CONFIG`，不含凭据）传给采集子进程；采集器自己不读设置文件。
+0. **数据来源设置：** `GET`/`PUT /api/local/source-settings`（`server/routes/source-settings.ts`、`scripts/lib/source-settings.mjs`）读写 `.local/config/sources.json`：学校（`unimelb` 或 `generic`）、Canvas 地址、浏览器、浏览器路径、Ed 区域，以及只给 `generic` 的时区和课程代码正则。没有文件时等于墨大 + macOS Edge（其他系统默认 Chrome 专用浏览器，实验性）。同步或获取课程进行中保存回 `409 SYNC_RUNNING`。每次同步和每次获取课程各读一次，换成采集器配置（环境变量 `STUDYORBIT_SOURCE_CONFIG`，不含凭据）传给采集子进程；采集器自己不读设置文件。
 1. **发现课程：** `POST /api/local/sync-courses` 启动 Canvas 来源的发现采集器（`scripts/sources/canvas/collect.mjs discover`），在已登录的浏览器里读取全部 Canvas 课程，存 `.local/lms/courses.json`，并记下 `canvasOrigin` 和学校；读取时（`/api/local/course-candidates`、`scripts/lib/course-reports.mjs`）再按当前学校插件的课程代码规则筛出候选。课程列表的 Canvas 地址和设置不一致时（没有这个字段的旧列表按墨大地址算），同步、课程页和选课都回 `409 COURSE_LIST_STALE`（两个 Canvas 的课程 ID 可能撞号）。
 2. **选课并同步：** `web/src/LocalCourseSelect.tsx` 把选择存进浏览器，调用 `POST /api/local/course-sync`（GET 查进度，DELETE 取消）。`scripts/lib/sync-pipeline.mjs` 对每门课依次采集当前设置的来源：Canvas、Ed，再加学校的框架来源（墨大是 Handbook，通用学校没有）；采集串行，已采集课程的模型分析可与后续采集并行。每门课分四步：采集 → 分析 → 校验 → 合并（`scripts/lib/sync-stages.mjs`），每步完成后把检查点写进 `.local/studyorbit.db`（`scripts/lib/sync-store.mjs`，`node:sqlite`）。失败、取消或服务退出（标为「已中断」）的同步，可以在第一次开始后 24 小时内用 `POST /api/local/sync-jobs/<jobId>/resume`（页面上「继续上次同步」）继续：检查点和文件核对无误的步骤直接沿用，不再采集或调模型。采集一门课接一门课地跑（Canvas 和 Handbook 共用一个浏览器限速器，Ed 单独一个，同一个限速器两次开始至少隔 500 毫秒）；模型每家最多 4 个并发；临时失败（模型的 HTTP 429、5xx、连接错误，采集器的退出码 75）最多试 3 次（`scripts/lib/rate-limit.mjs`）。
 3. **模型整理：** `scripts/lib/course-analysis.mjs` 生成统一提示词和输出 Schema（来源规则、框架引用和引文规则来自学校插件，没有框架来源时整段省略），`scripts/lib/llm-providers.mjs` 调用设置里选的模型（DeepSeek、OpenAI 兼容、Anthropic、Codex CLI）。结果经 `shared/course-data.ts` 校验，不合格时修复一次，合格的 JSON 存到桌面课程文件夹。
@@ -27,9 +27,11 @@
 
 ## 采集范围
 
-- **Canvas：** `scripts/sources/canvas/collect.mjs`（旧入口 `canvas-background.mjs`）用已登录浏览器（Edge 或 Chrome，经浏览器桥）的同源请求读取活动课程、作业分组、作业和本人提交，所有地址都是设置里的 Canvas 地址加固定的 Canvas REST 路径，按 Link 分页且只跟同一地址、同一路径。不读大纲、测验、公告或作业正文。
+- **Canvas：** `scripts/sources/canvas/collect.mjs`（旧入口 `canvas-background.mjs`）用已登录浏览器（Edge、Chrome 或专用浏览器，经浏览器桥）的同源请求读取活动课程、作业分组、作业和本人提交，所有地址都是设置里的 Canvas 地址加固定的 Canvas REST 路径，按 Link 分页且只跟同一地址、同一路径。不读大纲、测验、公告或作业正文。
 - **Ed：** `scripts/sources/ed/collect.mjs`（旧入口 `collect-ed-course.mjs`）用独立的 `edstem` CLI 读取课程目录、最多 50 个成绩候选和有限的介绍；`scripts/sources/ed/scores.mjs` 读取本人最终提交成绩，接口地址按 CLI 登录的区域（`au`/`us`/`eu`）。设置了明确区域而和 CLI 不一致时不发任何 Ed 请求，这门课的 Ed 记为未读取。接口可能返回 403，不能当作零分。
 - **Handbook（只有墨大）：** `scripts/institutions/unimelb/handbook-collect.mjs`（旧入口 `collect-handbook.mjs`）在浏览器后台读取对应年份的考核页面。
+
+- **浏览器桥：** macOS 上用 Apple 事件脚本控制 Edge 或 Chrome（`scripts/browser/applescript.mjs`）。Windows 和 Linux 用专用浏览器（`cdp-chrome`、`cdp-edge`，实验性，未在这两个系统上验证）：本地服务用单独的配置目录 `.local/browser/<浏览器>`（700）和 `--remote-debugging-pipe` 启动已安装的 Chrome 或 Edge（不开调试端口），按需启动、跨采集和跨同步保持，你关窗口、改浏览器设置或服务退出时才关（`Browser.close`，5 秒后强制结束）；`POST /api/local/browser/open`（设置里的「打开专用浏览器」）在其中打开 Canvas 地址让你自己登录。采集子进程经 Node IPC 请服务代为开、查、读、关标签页，服务按采集器的地址白名单检查，只发白名单里的 CDP 命令（`Target.createTarget`/`attachToTarget`/`getTargetInfo`/`closeTarget`、只带固定表达式的 `Runtime.evaluate`、`Browser.close`）；采集器退出时只关它自己的标签页。专用浏览器里登录失效时，Canvas 采集以退出码 77 结束，这一步记为失败（「Canvas：请在专用浏览器里登录后继续同步。」），登录后可以继续上次同步，重新采集这门课。
 
 不下载课程文件，不提交作业。采集范围不保证完整；站点改版需要重新核对。
 
@@ -77,4 +79,4 @@
 
 ## 当前边界
 
-Node.js 24+；只在 macOS + Edge + 墨大 Canvas 上实际跑过。macOS Chrome、其他学校的 Canvas、Ed 美区和欧区都只有合成数据测试，未实测；Windows 和 Linux 的专用浏览器还没实现。「今天」和截止日期按学校时区计算（墨大是墨尔本时间，通用学校按设置）。`edstem` 和模型密钥属于外部依赖。同步状态存在数据库里，Vite 或本地服务重启不会丢；服务退出时正在跑的同步标为「已中断」，可以继续。分阶段同步还没有跑过真实同步（只用假采集器和假模型测过）；对话工具模式只用 DeepSeek 实测过 3 次请求，其他模型的真实调用在 v2 并入后还没有重新验证；MCP 没有从 Claude Code / Claude Desktop 实际连接过。
+Node.js 24+；只在 macOS + Edge + 墨大 Canvas 上实际跑过。macOS Chrome、其他学校的 Canvas、Ed 美区和欧区都只有合成数据测试，未实测；Windows 和 Linux 的专用浏览器（CDP）是实验性的，只有单元测试，没有在这两个系统上跑过。「今天」和截止日期按学校时区计算（墨大是墨尔本时间，通用学校按设置）。`edstem` 和模型密钥属于外部依赖。同步状态存在数据库里，Vite 或本地服务重启不会丢；服务退出时正在跑的同步标为「已中断」，可以继续。分阶段同步还没有跑过真实同步（只用假采集器和假模型测过）；对话工具模式只用 DeepSeek 实测过 3 次请求，其他模型的真实调用在 v2 并入后还没有重新验证；MCP 没有从 Claude Code / Claude Desktop 实际连接过。

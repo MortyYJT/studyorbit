@@ -4,6 +4,8 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createCdpHost } from '../scripts/browser/cdp-host.mjs';
+import { PROFILE_IN_USE } from '../scripts/browser/cdp-launch.mjs';
 import { manualClock } from '../scripts/lib/rate-limit.mjs';
 import { createSyncLimiters, type PipelineDeps } from '../scripts/lib/sync-pipeline.mjs';
 import { openSyncStore, type OpenResult } from '../scripts/lib/sync-store.mjs';
@@ -11,6 +13,7 @@ import { DEFAULT_SOURCE_CONFIG } from '../scripts/sources/config.mjs';
 import { createLocalApi, type LocalApiOptions } from '../server/app.ts';
 import { TOKEN_HEADER } from '../server/guard.ts';
 import { call, closeServer, eventReader, fakeModel, listen, open, syntheticCourse, syntheticToken, writeSyntheticCourses } from './local-api-helpers.ts';
+import { fakeCdpBrowsers } from './cdp-fakes.ts';
 import { fakeCollectors, fakeConfig, fakeModel as fakeAnalysisModel, syntheticCourse as pipelineCourse } from './sync-fakes.ts';
 
 // Every route of the standalone local API through createLocalApi (specs/local-api-server, design §2-§3), on an
@@ -484,5 +487,61 @@ describe('sync-courses (course discovery)', () => {
     const cancelled = await running;
     expect([cancelled.status, cancelled.json()]).toEqual([409, { error: 'SYNC_CANCELLED' }]);
     expect(await readdir(root)).not.toContain('args.json');
+  });
+});
+
+describe('browser (the dedicated browser of the experimental CDP bridge)', () => {
+  const linuxGeneric = { institution: 'generic', canvasOrigin: 'https://canvas.example.edu', browser: 'cdp-chrome', edRegion: 'auto', timeZone: 'America/New_York', codePattern: null };
+
+  it('uses the same access checks as the other write routes and refuses an AppleScript browser', async () => {
+    const browsers = fakeCdpBrowsers();
+    await start({ browserHost: createCdpHost({ projectDir, platform: 'darwin', env: {}, start: browsers.start }) });
+    expect((await write('POST', '/api/local/browser/open', {}, { origin: undefined })).status).toBe(403);
+    expect((await write('POST', '/api/local/browser/open', {}, { 'content-type': 'text/plain' })).status).toBe(403);
+    expect((await write('POST', '/api/local/browser/open', {}, { [TOKEN_HEADER]: 'wrong' })).status).toBe(403);
+    expect((await get('/api/local/browser/open', { origin: page })).status).toBe(405);
+    expect((await write('POST', '/api/local/browser/other', {})).status).toBe(404);
+    const refused = await write('POST', '/api/local/browser/open', {});
+    expect([refused.status, refused.json().error]).toEqual([409, 'NOT_DEDICATED_BROWSER']);
+    expect(browsers.launches).toHaveLength(0);
+  });
+
+  it('opens the Canvas address in the dedicated browser, closes it when the browser setting changes and on close', async () => {
+    const browsers = fakeCdpBrowsers();
+    const api = await start({ platform: 'linux', browserHost: createCdpHost({ projectDir, platform: 'linux', env: {}, start: browsers.start }) });
+    expect((await write('PUT', '/api/local/source-settings', linuxGeneric)).status).toBe(200);
+    const opened = await write('POST', '/api/local/browser/open', {});
+    expect([opened.status, opened.json()]).toEqual([200, { ok: true }]);
+    expect(browsers.commands).toEqual([expect.objectContaining({ method: 'Target.createTarget', params: { url: 'https://canvas.example.edu/', background: false } })]);
+    // Saving the same browser keeps it; another browser closes it.
+    expect((await write('PUT', '/api/local/source-settings', { ...linuxGeneric, edRegion: 'us' })).status).toBe(200);
+    expect(browsers.alive()).toBe(1);
+    expect((await write('PUT', '/api/local/source-settings', { ...linuxGeneric, browser: 'cdp-edge' })).status).toBe(200);
+    expect(browsers.alive()).toBe(0);
+    await write('POST', '/api/local/browser/open', {});
+    expect(browsers.launches.map(launch => launch.id)).toEqual(['cdp-chrome', 'cdp-edge']);
+    await api.close();
+    expect(browsers.alive()).toBe(0);
+    expect(browsers.methods().at(-1)).toBe('Browser.close');
+  });
+
+  it('reports a profile already in use', async () => {
+    const browsers = fakeCdpBrowsers();
+    browsers.failNextLaunch(new Error(PROFILE_IN_USE));
+    await start({ platform: 'linux', browserHost: createCdpHost({ projectDir, platform: 'linux', env: {}, start: browsers.start }) });
+    const reply = await write('POST', '/api/local/browser/open', {});
+    expect([reply.status, reply.json()]).toEqual([409, { error: 'BROWSER_PROFILE_IN_USE', reason: PROFILE_IN_USE }]);
+  });
+
+  it('runs course discovery through the dedicated browser over an IPC channel', async () => {
+    const courses = `${DEFAULT_SOURCE_CONFIG.canvasOrigin}/api/v1/courses?enrollment_state=active&include[]=term&per_page=100`;
+    const browsers = fakeCdpBrowsers({ [courses]: { json: { status: 200, link: null, body: JSON.stringify([{ id: 900001, name: 'Synthetic Course', course_code: 'SYNT10001_2026_SM2', term: { name: '2026 Semester 2' } }]) } } });
+    await start({ platform: 'linux', browserHost: createCdpHost({ projectDir, platform: 'linux', env: {}, start: browsers.start }) });
+    const reply = await write('POST', '/api/local/sync-courses', {});
+    expect(reply.status, reply.body).toBe(200);
+    const list = JSON.parse(await readFile(join(projectDir, '.local', 'lms', 'courses.json'), 'utf8'));
+    expect(list.courses.map((course: { id: string }) => course.id)).toEqual(['900001']);
+    expect(browsers.launches).toHaveLength(1);
+    expect(browsers.alive()).toBe(1);
   });
 });

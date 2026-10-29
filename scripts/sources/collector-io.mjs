@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { createAppleScriptBridge } from '../browser/applescript.mjs';
+import { createCdpBridge } from '../browser/cdp.mjs';
 import { institutionById } from '../institutions/registry.mjs';
 
 /** A flag set by SIGTERM or SIGINT: the collector finishes its current step and stops. */
@@ -28,11 +29,11 @@ export function allowedOrigins(config) {
   return [config.canvasOrigin, ...(institution.framework?.origins ?? [])];
 }
 
-/** Until the CDP bridge exists (generic-adapters PR 4), a collector configured for it stops with this message. */
-export const CDP_NOT_READY = 'Windows 和 Linux 的专用浏览器（CDP）还没有实现；目前只能在 macOS 上用 Edge 或 Chrome 采集';
-
-/** The bridge chosen in the configuration. */
-export function bridgeFor(config) {
-  if (config.browser.startsWith('cdp-')) throw new Error(CDP_NOT_READY);
+/**
+ * The bridge chosen in the configuration: Apple Events on macOS, or the experimental CDP bridge, which asks the local
+ * server's dedicated browser over the IPC channel `channel` (the collector's own process by default).
+ */
+export function bridgeFor(config, { channel = process } = {}) {
+  if (config.browser.startsWith('cdp-')) return createCdpBridge({ id: config.browser, allowedOrigins: allowedOrigins(config), channel });
   return createAppleScriptBridge({ id: config.browser, allowedOrigins: allowedOrigins(config) });
 }

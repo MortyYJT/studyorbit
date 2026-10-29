@@ -5,7 +5,8 @@ context: |
   student and generalised behind institution plugins (`scripts/institutions/`: `unimelb` holds every UniMelb
   specific and is the default; `generic` works with any Canvas, unverified) and source settings
   (`.local/config/sources.json`, page section 「数据来源」). Scripts collect Canvas (through the owner's signed-in
-  Edge or Chrome on macOS; only macOS Edge with UniMelb is verified), Ed (the `edstem` CLI) and the
+  Edge or Chrome on macOS, or, experimental and unverified, a server-owned dedicated Chrome/Edge over a CDP pipe
+  on Windows and Linux; only macOS Edge with UniMelb is verified), Ed (the `edstem` CLI) and the
   institution's framework source (the UniMelb Handbook);
   a model the owner picks (DeepSeek, OpenAI-compatible, Anthropic, Codex CLI) turns them into one course
   JSON per course, validated by `shared/course-data.ts`. The React app shows grades, the final-needed

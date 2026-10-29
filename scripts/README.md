@@ -14,6 +14,7 @@
 | `institutions/` | 学校插件：`unimelb` 放墨大特有的课程代码、学期、桌面文件夹、时区、措辞和 Handbook 来源；`generic.mjs` 适用任何 Canvas（课程代码规则、`StudyOrbit <学期>/<代码>` 文件夹、设置的时区、中性措辞，没有框架来源） |
 | `lib/source-settings.mjs` | 数据来源设置 `.local/config/sources.json` 的默认值、校验、原子写入（600）和生效值 |
 | `browser/bridge.mjs`、`browser/applescript.mjs` | 浏览器桥：只能打开允许的地址、查状态、按固定方式读、关闭；macOS 上用 AppleScript 控制 Edge 或 Chrome |
+| `browser/cdp-pipe.mjs`、`browser/cdp-launch.mjs`、`browser/cdp-host.mjs`、`browser/cdp.mjs` | 专用浏览器（CDP，实验性，未在 Windows 和 Linux 上验证）：管道传输（NUL 分隔 JSON）和命令白名单；找程序、用单独配置目录和 `--remote-debugging-pipe` 启动、关闭（`Browser.close`，5 秒后强制结束）；本地服务持有的长期浏览器（按采集器的地址白名单代为开、查、读、关标签页）；采集器一侧经 Node IPC 发请求的桥 |
 | `eval-course-analysis.mjs` | 用已采集的数据或合成课程跑 N 次分析，与标准答案对比，统计准确率、一致性和校验拦截；不采集、不写桌面（[说明](../docs/eval-format.md)） |
 | `mcp-server.mjs` | 本机 stdio MCP 服务（`node scripts/mcp-server.mjs`），把对话用的只读课程工具开放给 MCP 客户端；参数 `--project`、`--desktop`、`--courses`（或 `STUDYORBIT_COURSES`），不写文件、不调用模型、不联网（[接法](../README.md#在-mcp-客户端里使用)） |
 | `lib/course-mcp.mjs` | MCP 服务本体：每个注册表工具一个 MCP 工具（只读标注），每次调用重新读取课程文件；所有 MCP SDK 用法都在这里 |

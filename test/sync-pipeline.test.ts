@@ -175,6 +175,25 @@ describe('a sync through the four stages', () => {
     expect(db.getJob('run-1')!.status).toBe('failed');
   });
 
+  it('fails collect without retry when the dedicated browser is signed out (exit 77), and a resume collects that source again', async () => {
+    const courses = await setup(1);
+    const collectors = fakeCollectors(courses, { '900001:canvas': { exit: [77, 0] } });
+    const db = await store();
+    const deps = { runCollector: collectors.runCollector, callModel: fakeModel(courses).callModel };
+    const pipeline = pipelineFor(project!, db, deps, { ids: ['run-1', 'run-2'] });
+    const status = await run(pipeline, () => pipeline.start(ids(courses)));
+    expect(status.courses[0]).toMatchObject({ status: 'failed', stage: 'collect', reason: 'Canvas：请在专用浏览器里登录后继续同步。' });
+    expect(collectors.count(key => key === '900001:canvas')).toBe(1);
+    expect(collectors.count(key => key !== '900001:canvas')).toBe(0);
+    // No placeholder is kept for the signed-out source.
+    expect(db.getStage('run-1', '900001', 'collect')).toMatchObject({ status: 'failed', errorCode: 'COLLECT_SIGN_IN' });
+    expect((db.getStage('run-1', '900001', 'collect')!.checkpoint as { sources?: object } | null)?.sources ?? {}).toEqual({});
+    expect(status).toMatchObject({ resumable: true });
+    const resumed = await run(pipeline, () => pipeline.resume('run-1'));
+    expect(resumed.courses[0]).toMatchObject({ status: 'completed' });
+    expect(collectors.count(key => key === '900001:canvas')).toBe(2);
+  });
+
   it('runs at most four model calls at a time', async () => {
     const courses = await setup(6);
     const scripts = Object.fromEntries(courses.map(course => [course.code, [{ hang: true }]]));
