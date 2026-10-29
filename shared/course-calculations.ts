@@ -24,3 +24,15 @@ export function calculateGrades(assessments: GradingItem[], parents: GradingGrou
   const earned = graded.reduce((sum, item) => sum + item.weightValue! * item.score! / item.outOf!, 0) + completed.reduce((sum, item) => sum + item.grade.earned, 0);
   return { weight, earned, average: weight ? earned / weight * 100 : undefined };
 }
+/** UniMelb grade bands, as a percentage of the course total. */
+export const bandTargets = { H1: 80, H2A: 75, H2B: 70, H3: 65, P: 50 } as const;
+export type Band = keyof typeof bandTargets;
+export type FinalNeeded = { status: 'secured' } | { status: 'unreachable' } | { status: 'reachable'; percent: number };
+/** Average still needed across every weight without a mark (100 − graded), so unidentified weight counts as remaining. */
+export function finalNeeded(grades: { earned: number; weight: number }, target: number): FinalNeeded {
+  if (grades.earned >= target) return { status: 'secured' };
+  const remaining = 100 - grades.weight;
+  if (remaining <= 0) return { status: 'unreachable' };
+  const percent = (target - grades.earned) / remaining * 100;
+  return percent > 100 ? { status: 'unreachable' } : { status: 'reachable', percent };
+}

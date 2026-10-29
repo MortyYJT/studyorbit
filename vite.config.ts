@@ -10,6 +10,7 @@ import { LlmConfigValidationError, configProblem, publicLlmConfig, readLlmConfig
 import { chat as streamChat, testConnection, type ChatTurn } from './scripts/lib/llm-providers.mjs';
 import { appendMessages, createChat, deleteChat, isChatId, listChats, readChat } from './scripts/lib/chat-store.mjs';
 import { buildChatContext, chatSystemPrompt } from './scripts/lib/chat-context.mjs';
+import { createNote, deleteNote, listNotes } from './scripts/lib/revision-store.mjs';
 import { loadCourseReports } from './scripts/lib/course-reports.mjs';
 import { createReplyRegistry } from './scripts/lib/chat-replies.mjs';
 import { foreignOrigin } from './scripts/lib/local-origin.mjs';
@@ -135,6 +136,37 @@ export default defineConfig({
           res.end(JSON.stringify(await loadCourseReports(projectDir)));
         } catch (error) {
           res.writeHead((error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500).end(JSON.stringify({ error: 'COURSES_UNAVAILABLE' }));
+        }
+      });
+      // Revision notes saved from Agent replies (decision #236). GET ?courseId=, POST, DELETE /:id; stored in .local/revision.
+      server.middlewares.use('/api/local/revision-notes', async (req, res) => {
+        const remote = req.socket.remoteAddress;
+        if (!remote || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)) { res.writeHead(403).end(); return; }
+        res.setHeader('Cache-Control', 'no-store');
+        const json = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(value)); };
+        const [path, query = ''] = (req.url ?? '/').split('?');
+        const parts = path!.split('/').filter(Boolean);
+        const allowed = parts.length === 0 ? ['GET', 'POST'] : parts.length === 1 ? ['DELETE'] : [];
+        if (!allowed.length) { json(404, { error: 'NOT_FOUND' }); return; }
+        if (!allowed.includes(req.method ?? '')) { json(405, { error: 'METHOD_NOT_ALLOWED' }); return; }
+        if (req.method !== 'GET' && (!req.headers.origin || req.headers.origin !== `http://${req.headers.host}`
+          || req.headers['content-type']?.split(';')[0] !== 'application/json')) { res.writeHead(403).end(); return; }
+        const known = ['INVALID_COURSE_ID', 'INVALID_NOTE_ID', 'CONTENT_EMPTY', 'CONTENT_TOO_LONG', 'TOO_MANY_NOTES'];
+        try {
+          if (req.method === 'GET') { json(200, { notes: await listNotes(projectDir, new URLSearchParams(query).get('courseId') ?? '') }); return; }
+          if (req.method === 'DELETE') { if (await deleteNote(projectDir, parts[0]!)) json(200, { ok: true }); else json(404, { error: 'NOTE_NOT_FOUND' }); return; }
+          let raw = '';
+          for await (const chunk of req) {
+            raw += chunk.toString();
+            if (raw.length > 60000) { json(413, { error: 'TOO_LARGE' }); return; }
+          }
+          let body: Record<string, unknown>;
+          try { const parsed: unknown = JSON.parse(raw); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('shape'); body = parsed as Record<string, unknown>; }
+          catch { json(400, { error: 'INVALID_JSON' }); return; }
+          json(201, await createNote(projectDir, { courseId: body.courseId, content: body.content, chatId: body.chatId }));
+        } catch (error) {
+          const code = (error as Error).message;
+          json(known.includes(code) ? (code === 'TOO_MANY_NOTES' ? 409 : 400) : 500, { error: known.includes(code) ? code : 'REVISION_UNAVAILABLE' });
         }
       });
       // Agent chat (decision #230). Conversations live in .local/chat; replies stream as Server-Sent Events.
