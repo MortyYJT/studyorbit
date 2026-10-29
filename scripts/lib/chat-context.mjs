@@ -26,6 +26,7 @@ function formatDue(due) {
 function describe(item) {
   const fields = [item.name, KIND[item.kind] ?? item.kind];
   if (item.weight !== null) fields.push(`权重 ${round(item.weight)}%`);
+  else if (item.unsourced.includes('weight')) fields.push('权重无出处');
   if (item.score !== null || item.maxScore !== null) fields.push(item.score !== null ? `得分 ${round(item.score)}/${item.maxScore === null ? '?' : round(item.maxScore)}` : `满分 ${round(item.maxScore)}`);
   const due = formatDue(item.due);
   if (due) fields.push(`截止 ${due}`);
@@ -36,6 +37,7 @@ function describe(item) {
   if (item.kind === 'hurdle') fields.push('Hurdle 要求');
   if (SCORING[item.scoring]) fields.push(`计分：${SCORING[item.scoring]}`);
   if (item.rule) fields.push(`规则：${item.rule.replace(/\s+/g, ' ').trim()}`);
+  else if (item.unsourced.includes('rule')) fields.push('规则无出处');
   return fields.join('｜');
 }
 
@@ -65,6 +67,7 @@ function courseBlock(doc) {
   lines.push(weight > 0
     ? `已出分权重 ${round(weight)}%，已得 ${round(earned)} 分（总分 100），已出分部分平均 ${round(average)}%。`
     : '还没有可计算的已出分项目。');
+  if (doc.assessments.some(item => item.unsourced.length)) lines.push('标「权重无出处」「规则无出处」的项目：同步时没有在采集数据里找到依据，值已留空，不要当作已确认的信息。');
   if (!doc.assessments.length) lines.push('（没有记录到评估项目。）');
   for (const item of doc.assessments.filter(entry => entry.parentId === null)) {
     lines.push(`- ${describe(item)}`);

@@ -1,5 +1,6 @@
 // Pure scoring for the course-analysis evaluation harness (docs/eval-format.md).
 // Compares validated model documents with a gold course document; no I/O.
+import { platformIdentities, slug } from './course-refs.mjs';
 
 /** Assessment fields compared against the gold document, in report order. */
 export const SCORED_FIELDS = ['kind', 'nature', 'parentId', 'weight', 'maxScore', 'score', 'due', 'scoring', 'status'];
@@ -26,8 +27,10 @@ function sameValue(a, b) {
 }
 
 /**
- * Pair each gold assessment with at most one predicted assessment: same id first, then the first unused
- * predicted item with the same normalised name. Returns one `{ gold, predicted }` entry per gold item, in gold order.
+ * Pair each gold assessment with at most one predicted assessment (course-contract-v2 design §7): same id first; then a
+ * shared Canvas assignment or Ed lesson (v2 `refs`, v1 source URLs or platform-shaped ids, a bare-number gold id tried as
+ * Canvas then Ed); then the same name slug. Each pass takes the first unused predicted item.
+ * Returns one `{ gold, predicted }` entry per gold item, in gold order.
  */
 export function matchAssessments(goldItems, predictedItems) {
   const used = new Set();
@@ -36,11 +39,22 @@ export function matchAssessments(goldItems, predictedItems) {
     if (index >= 0) used.add(index);
     return { gold, predicted: index >= 0 ? predictedItems[index] : null };
   });
+  // Predicted identities are concrete only: a bare-number predicted id is matched by the id pass.
+  const known = predictedItems.map(item => new Set(platformIdentities(item).flatMap(identity => ('bare' in identity ? [] : [`${identity.platform}:${identity.id}`]))));
+  const take = index => { used.add(index); return predictedItems[index]; };
   for (const pair of pairs) {
     if (pair.predicted) continue;
-    const name = normaliseName(pair.gold.name);
-    const index = predictedItems.findIndex((item, i) => !used.has(i) && normaliseName(item.name) === name);
-    if (index >= 0) { used.add(index); pair.predicted = predictedItems[index]; }
+    for (const identity of platformIdentities(pair.gold)) {
+      const wanted = 'bare' in identity ? [`canvas:${identity.bare}`, `ed:${identity.bare}`] : [`${identity.platform}:${identity.id}`];
+      const index = wanted.map(key => known.findIndex((set, i) => !used.has(i) && set.has(key))).find(i => i >= 0);
+      if (index !== undefined) { pair.predicted = take(index); break; }
+    }
+  }
+  for (const pair of pairs) {
+    if (pair.predicted) continue;
+    const name = slug(pair.gold.name);
+    const index = predictedItems.findIndex((item, i) => !used.has(i) && slug(item.name) === name);
+    if (index >= 0) pair.predicted = take(index);
   }
   return pairs;
 }

@@ -1,11 +1,11 @@
 # 交接
 
-> 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。决定看 `note/decisions.md`（#1–#240）。
+> 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。决定看 `note/decisions.md`。
 
 - **最后更新：** 2026-10-30，Claude。
 - **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）、#247（全局清理，#239）；规则精简为单一文件 `CLAUDE.md`（#241）。
 - **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，本地 `origin` 已指向新地址），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
-- **OpenSpec：** 进行中的 change：`course-contract-v2`（课程 JSON v2）。第 1 部分（v2 存盘 Schema、兼容读取）已合并（PR #259）。第 2 部分（模型输出 v2 接入同步：Handbook 考核项解析、引用校验、代码生成 ID、回填截止/得分/状态、`legacyIds`、存盘写 v2；分支 `claude/contract-v2-sync`）已开 PR 待审查合并，决定 #300–#305；引文核对、本地键迁移、「无出处」显示和评测按平台身份配对在第 3 部分，见其 `tasks.md`。合并后新同步写 v2，页面仍按 v1/v2 兼容读取；本地修正要等第 3 部分迁移才会跟到新 ID。
+- **OpenSpec：** 进行中的 change：`course-contract-v2`（课程 JSON v2）。第 1 部分（PR #259）、第 2 部分（PR #262，同步写 v2）已合并；第 3 部分（引文核对、本地键迁移、「无出处」显示、评测按平台身份配对、`docs/course-json.md` 重写；分支 `claude/contract-v2-quotes`，决定 #306–#313）已开 PR 待审查合并，合并后再归档该 change。已立项未实现：`local-corrections-merge`（#290–#298，依赖本 change 的 `migrateLocalKeys`）、`chat-tools-mcp`（#320–#332）。
 - **现行规格：** 在 `openspec/specs/`（`grade-target`、`revision`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
 
 ## 已完成
@@ -15,20 +15,24 @@
 - **添加任务：** 校外任务（不选课程）也可以；存在原来的 `coursework.local-planning.work.v1`。
 - **每周计划（#237，PR #246）：** `shared/planning.ts` 截止最早先排，从今天往后、按每天可用时间拆分到多天，按整分钟、最多排一年；排不下和已过截止列进「需要你处理」；周视图和月历显示同步来的截止日期（含你的修正）；任务可记已用时间和完成。测试 `test/planning.test.ts`。
 - **清理（#239）：** 删了 6 份过时文档和约 130 条死 CSS 规则（13 个页面状态 × 6 种主题和背景组合，逐元素对比新旧计算样式，0 差异；同步弹窗和选课弹窗没测，因为打开会触发真实同步）；README、overview、scripts/README、OpenSpec 项目背景按代码重写；品牌名改为 StudyOrbit。
-- **验证：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
+- **课程 JSON v2 第 3 部分（待合并）：** 同步保存前核对权重和规则的引文（`scripts/lib/course-quotes.mjs`，在 `settleCourse` 里），找不到出处就清空、记入 `unsourced`、原因追加「N 项权重或规则无出处」；`shared/local-keys.ts` 的 `migrateLocalKeys` 在页面读取课程时把修正、手动考核归属、学习任务和排序迁到新 ID（`web/src/local-stores.ts`）；课程页在列表、权重图例、抽屉、复习页显示「无出处」，修正填了值就不显示；对话上下文写「权重无出处」「规则无出处」；评测按 ID → 平台身份 → 名称 slug 配对。`npm run check` 24 个文件、302 个测试通过；无头浏览器（临时配置、拦截所有非 GET 本地请求）看了 4 门真实 v1 课程（无标记、正常显示），并用拦截课程接口返回的合成课程验证 v1 → v2 后本地键迁移、标记和引文显示、重复加载不再改动。
+- **验证（较早）：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
 
 ## 未验证
 
 - 预设提示词发出后的真实模型回复、真实回复「存到复习」（测试里拦截了对话请求，没花额度）。
 - 「7 天内截止但没排期」这一行在真实数据上没出现过（当前 7 天里没有符合条件的考核）。
 - 四家模型真实调用、真实同步、Safari / Firefox（同上一次交接）。
+- 契约 v2 没跑过真实同步：真实 Handbook / Ed 文本下有多少权重会被标「无出处」未知（模型改写而非逐字复制时会大量清空，见 design 风险一节）；真实 v1 → v2 迁移只在合成数据上验证过。
 
 ## 下一步
 
-1. 你：打开 `localhost:5173`，在复习页点一个预设按钮，确认对话正常，把一条回复「存到复习」。
-2. L0/L1/L2（#238 先不做）：以后做时先定方案；Claude 的立场是执行器只在合成演示课程上跑。
-3. 小问题（未排期）：`RichText` 遇到「标题 + 列表」混在一段时列表符号原样显示。
-4. 工具调用对话 + MCP：OpenSpec 变更 `chat-tools-mcp`（决定 #320–#332，待你复核），按其 `tasks.md` 分 4 个 PR 实现；#330 需要你定 MCP 是否改用 SDK v2。
+1. 审查并合并 `claude/contract-v2-quotes` 的 PR，然后归档 `course-contract-v2`；之后可以开始 `local-corrections-merge` 第 1 部分。
+2. 你：第一次 v2 同步后看一眼各课的「无出处」数量；太多的话再调提示词（评测可以量清空率）。
+3. 你：打开 `localhost:5173`，在复习页点一个预设按钮，确认对话正常，把一条回复「存到复习」。
+4. L0/L1/L2（#238 先不做）：以后做时先定方案；Claude 的立场是执行器只在合成演示课程上跑。
+5. 小问题（未排期）：`RichText` 遇到「标题 + 列表」混在一段时列表符号原样显示。
+6. 工具调用对话 + MCP：OpenSpec 变更 `chat-tools-mcp`（决定 #320–#332，待你复核），按其 `tasks.md` 分 4 个 PR 实现；#330 需要你定 MCP 是否改用 SDK v2。
 
 ## 等用户决定
 

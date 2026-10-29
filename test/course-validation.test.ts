@@ -272,14 +272,15 @@ describe('settleCourse', () => {
   };
 
   it('downgrades completed to partial when a collector failed', async () => {
-    expect(await settle(raw(documentWith([item('a')])), { edFailed: true })).toMatchObject({ accepted: true, status: 'partial', reason: 'Ed 数据未能读取；' });
+    // A null weight needs no source, so quote verification adds nothing to the reason.
+    expect(await settle(raw(documentWith([item('a', { weight: null })])), { edFailed: true })).toMatchObject({ accepted: true, status: 'partial', reason: 'Ed 数据未能读取；' });
   });
 
   it('downgrades to partial when the Handbook was collected but no component parsed', async () => {
     const unparsed = { ...data, handbook: { ...handbook, text: 'Final exam (65%)' } };
-    expect(await settle(raw(documentWith([item('a')])), {}, unparsed)).toMatchObject({ accepted: true, status: 'partial', reason: 'Handbook 考核表未能解析；' });
+    expect(await settle(raw(documentWith([item('a', { weight: null })])), {}, unparsed)).toMatchObject({ accepted: true, status: 'partial', reason: 'Handbook 考核表未能解析；' });
     const failed = { ...data, handbook: { status: 'unavailable' } };
-    expect(await settle(raw(documentWith([item('a')])), { handbookFailed: true }, failed)).toMatchObject({ status: 'partial', reason: 'Handbook 数据未能读取；' });
+    expect(await settle(raw(documentWith([item('a', { weight: null })])), { handbookFailed: true }, failed)).toMatchObject({ status: 'partial', reason: 'Handbook 数据未能读取；' });
   });
 
   it('keeps a failed report as a diagnostic without saving a document', async () => {
