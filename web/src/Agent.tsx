@@ -66,6 +66,8 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
   const messagesRef = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const handled = useRef(request?.nonce);
+  // Messages at or after this index were added in this view and rise in; history and the saved copy of a streamed reply do not.
+  const entered = useRef(0);
   const busy = streaming !== undefined;
 
   async function loadList() {
@@ -86,10 +88,12 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
     setFailure(undefined);
     const chat = await loadChat(id);
     if (!chat) { await loadList(); return; }
+    entered.current = chat.messages.length;
     setActive(chat); setRemoteRunning(!!chat.running);
   }
   function startDraft(courseId?: string) {
     if (busy) return;
+    entered.current = 0;
     setActive(undefined); setFailure(undefined); setRemoteRunning(false); setDraft({ scope: courseId ? [courseId] : null });
     composer.current?.focus();
   }
@@ -102,7 +106,7 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
     if (!remoteRunning || !active) return;
     const timer = window.setInterval(async () => {
       const chat = await loadChat(active.id).catch(() => undefined);
-      if (chat && !chat.running) { setActive(chat); setRemoteRunning(false); void loadList(); }
+      if (chat && !chat.running) { entered.current = chat.messages.length; setActive(chat); setRemoteRunning(false); void loadList(); }
     }, 1500);
     return () => window.clearInterval(timer);
   }, [remoteRunning, active?.id]);
@@ -160,7 +164,7 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
       setFailure({ code: 'CHAT_UNAVAILABLE', message: zh ? '无法连接本地服务（仅在本地开发服务器中可用）。' : 'Could not reach the local server (dev server only).' });
       if (!accepted) { setInput(content); await discardCreated(); }
     } finally {
-      if (chat) { const fresh = await loadChat(chat.id).catch(() => undefined); if (fresh) setActive(fresh); }
+      if (chat) { const fresh = await loadChat(chat.id).catch(() => undefined); if (fresh) { entered.current = fresh.messages.length; setActive(fresh); } }
       setStreaming(undefined); setPending(undefined);
       void loadList();
     }
@@ -215,9 +219,9 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
           <div className="suggestions">{suggestions.map(text => <button key={text} onClick={() => void send(text)} disabled={remoteRunning}>{text}</button>)}</div>
         </div>}
         {messages.map((message, index) => message.role === 'user'
-          ? <div key={index} className="msg me">{message.content}</div>
-          : <Fragment key={index}><div className="msg ag"><RichText text={message.content} /></div>{note(message)}</Fragment>)}
-        {busy && <div className="msg ag">{streaming ? <RichText text={streaming} /> : <span className="muted">{zh ? '思考中…' : 'Thinking…'}</span>}</div>}
+          ? <div key={index} className={`msg me${index >= entered.current ? ' enter' : ''}`}>{message.content}</div>
+          : <Fragment key={index}><div className={`msg ag${index >= entered.current ? ' enter' : ''}`}><RichText text={message.content} /></div>{note(message)}</Fragment>)}
+        {busy && <div className={`msg ag enter${streaming ? ' streaming' : ''}`}>{streaming ? <RichText text={streaming} /> : <span className="muted">{zh ? '思考中…' : 'Thinking…'}</span>}</div>}
         {remoteRunning && !busy && <div className="msg ag"><span className="muted">{zh ? '正在回复…' : 'Replying…'}</span></div>}
       </div>
       {failure && <p className="chat-error error-line" role="status"><i className="signal" aria-hidden="true" />{failure.message}

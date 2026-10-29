@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import type { Language } from './i18n.js';
+import { durations, easeOut, reducedMotion, useCountUp, useSlidingIndicator } from './motion.js';
 import { CourseDocumentSchema } from '../../shared/course-data.js';
 import { calculateGrades, parentGrade } from '../../shared/course-calculations.js';
 
@@ -67,18 +68,30 @@ function assessmentParents(_course: CourseData, visible: Assessment[]): ParentAs
       kind: source.kind, children, scoringRule: source.scoring ?? 'none', score: source.score, outOf: source.outOf, status: source.status, due: source.due }] : [];
   });
 }
-function ScoreOverview({ assessments, parents, zh }: { assessments: Assessment[]; parents: ParentAssessment[]; zh: boolean }) {
+const ringLength = 439.8;
+const averageText = (value: number) => `${value.toFixed(1)}%`;
+const weightText = (value: number) => `${value.toFixed(2).replace(/\.00$/, '')}%`;
+function ScoreOverview({ assessments, parents, zh, animateKey }: { assessments: Assessment[]; parents: ParentAssessment[]; zh: boolean; animateKey: string }) {
   const [target, setTarget] = useState('H1');
   const { weight, earned, average } = calculateGrades(assessments, parents);
+  // The earned arc draws in from zero and the two facts count up when a course opens; edits apply at once.
+  const earnedRing = useRef<SVGCircleElement>(null);
+  const offset = ringLength - Math.min(earned, 100) * 4.398;
+  useLayoutEffect(() => {
+    if (reducedMotion()) return;
+    earnedRing.current?.animate([{ strokeDashoffset: ringLength }, { strokeDashoffset: offset }], { duration: 700, easing: easeOut });
+  }, [animateKey]);
+  const averageShown = useCountUp(average, averageText, animateKey);
+  const weightShown = useCountUp(weight || undefined, weightText, animateKey);
   return <section className="score" aria-label={zh ? '分数构成' : 'Score structure'}>
     <svg className="donut" viewBox="0 0 170 170" role="img" aria-label={zh ? '已得成绩' : 'Earned grades'}>
       <circle className="track" cx="85" cy="85" r="70" />
-      {weight > 0 && <circle className="earned" cx="85" cy="85" r="70" strokeDasharray={`${Math.min(earned, 100) * 4.398} 439.8`} transform="rotate(-90 85 85)" />}
+      {weight > 0 && <circle ref={earnedRing} className="earned" cx="85" cy="85" r="70" strokeDasharray={`${ringLength} ${ringLength}`} strokeDashoffset={offset} transform="rotate(-90 85 85)" />}
       <text x="85" y="90" className="total">{weight ? earned.toFixed(1) : '—'}</text><text x="85" y="110" className="caption">{zh ? '已得 / 100' : 'earned / 100'}</text>
     </svg>
     <div><div className="facts">
-      <div><div className="muted">{zh ? '当前平均' : 'Current average'}</div><div className="v">{average === undefined ? '—' : `${average.toFixed(1)}%`}</div></div>
-      <div><div className="muted">{zh ? '已出分占比' : 'Graded weight'}</div><div className="v">{weight ? `${weight.toFixed(2).replace(/\.00$/, '')}%` : '—'}</div></div>
+      <div><div className="muted">{zh ? '当前平均' : 'Current average'}</div><div className="v">{averageShown}</div></div>
+      <div><div className="muted">{zh ? '已出分占比' : 'Graded weight'}</div><div className="v">{weightShown}</div></div>
       <div><label className="inline muted">{zh ? '期末需要 · 目标' : 'Final needed · target'} <select value={target} onChange={event => setTarget(event.target.value)}>{['H1', 'H2A', 'H2B', 'H3', 'P'].map(band => <option key={band}>{band}</option>)}</select></label><div className="v small">—</div></div>
     </div><div className="key"><span><i className="earned" />{zh ? '已得' : 'Earned'}</span><span><i className="not-earned" />{zh ? '未得' : 'Not earned'}</span></div></div>
   </section>;
@@ -93,7 +106,7 @@ function WeightBreakdown({ assessments, parents, zh }: { assessments: Assessment
   const total = rows.reduce((sum, item) => sum + item.weight, 0);
   let used = 0;
   return <section className="weight-breakdown"><h2>{zh ? '分数占比' : 'Assessment weights'}</h2><div className="weight-bar-row"><div className="weight-bar" role="img" aria-label={`${zh ? '已识别课程占比' : 'Identified weight'} ${total}/100`}>
-    {rows.map((item, index) => { const width = Math.max(0, Math.min(item.weight, 100 - used)); used += item.weight; return <span key={item.key} className={`weight-segment weight-color-${index % 6}`} style={{ width: `${width}%` }} title={`${item.name}: ${item.weight}%`} />; })}
+    {rows.map((item, index) => { const width = Math.max(0, Math.min(item.weight, 100 - used)); used += item.weight; return <span key={item.key} className={`weight-segment weight-color-${index % 6}`} style={{ width: `${width}%`, '--i': index } as CSSProperties} title={`${item.name}: ${item.weight}%`} />; })}
     </div><strong>{Number(total.toFixed(2))}/100</strong></div><div className="weight-legend">{rows.map((item, index) => <span key={item.key}><i className={`weight-color-${index % 6}`} />{item.name} {item.weight}%</span>)}</div></section>;
 }
 
@@ -201,6 +214,29 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     if (!/^\d{4}-\d{2}-\d{2}$/.test(due) || !Number.isFinite(minutes) || minutes <= 0 || minutes > 100000) return;
     if (saveWork([...work.filter(item => item.key !== chosen.key), { key: chosen.key, courseId: selected.course.id, courseCode: selected.course.subjectCode, title: chosen.name, due, minutes }])) setChosen(undefined);
   }
+  // Assessment rows rise in with a short stagger when a course (or its list tab) opens, not on later edits.
+  const assessmentList = useRef<HTMLDivElement>(null);
+  const tabList = useRef<HTMLDivElement>(null);
+  const tabIndicator = useRef<HTMLSpanElement>(null);
+  const listKey = selected && courseTab === 'assessments' ? `${selected.course.id}` : '';
+  useLayoutEffect(() => {
+    if (!listKey || reducedMotion()) return;
+    assessmentList.current?.querySelectorAll(':scope > .kind-block > *, :scope > .no-marks').forEach((row, index) => {
+      row.animate([{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }], { duration: durations.medium, delay: Math.min(index * 25, 300), easing: easeOut, fill: 'backwards' });
+    });
+  }, [listKey]);
+  useSlidingIndicator(tabList, tabIndicator, '[aria-selected="true"]', 'x', [courseTab, courseId, !!selected]);
+  // The drawer slides out before it unmounts.
+  const [drawerClosing, setDrawerClosing] = useState(false);
+  const drawerTimer = useRef<number | undefined>(undefined);
+  const cancelDrawerClose = () => { window.clearTimeout(drawerTimer.current); drawerTimer.current = undefined; };
+  useEffect(() => cancelDrawerClose, []);
+  const openDrawer = (item: Assessment, siblings: string[] | undefined) => { cancelDrawerClose(); setDrawerClosing(false); setChosen(item); setChosenSiblings(siblings); };
+  const closeDrawer = () => {
+    if (drawerTimer.current !== undefined) return;
+    const finish = () => { drawerTimer.current = undefined; setChosen(undefined); setChosenSiblings(undefined); setDrawerClosing(false); };
+    if (reducedMotion()) finish(); else { setDrawerClosing(true); drawerTimer.current = window.setTimeout(finish, durations.short + 30); }
+  };
   if (courseId) return <div className="course-page">
     <button className="crumb" onClick={onBack}>← {zh ? '计划' : 'Plan'}</button>
     {error && <p className="needs">{error}</p>}
@@ -210,11 +246,11 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       {!selected.available && <p className="needs">{zh ? '这门课尚无可用的同步结果。' : 'No sync result is available for this course yet.'}</p>}
       {syncIssues.filter(item => item.id === selected.course.id && item.status === 'failed').map(item => <p className="needs" key={item.id}>{zh ? '最近一次同步未完成，正在显示已保存的课程信息。' : 'The latest sync failed. Showing saved course information.'}</p>)}
       {selected.available && <div className="course-summary card">
-        <ScoreOverview {...gradingInputs(primaryItems, parents)} zh={zh} />
+        <ScoreOverview {...gradingInputs(primaryItems, parents)} zh={zh} animateKey={selected.course.id} />
         <WeightBreakdown assessments={primaryItems} parents={parents} zh={zh} />
       </div>}
-      <div className="tabs" role="tablist"><button role="tab" aria-selected={courseTab === 'assessments'} onClick={() => setCourseTab('assessments')}>{zh ? '考核' : 'Assessments'}</button><button role="tab" aria-selected={courseTab === 'revision'} onClick={() => setCourseTab('revision')}>{zh ? '复习' : 'Revision'}</button></div>
-      {courseTab === 'assessments' ? <div className="assessment-list">
+      <div className="tabs" role="tablist" ref={tabList}><span className="tab-indicator" ref={tabIndicator} aria-hidden="true" /><button role="tab" aria-selected={courseTab === 'assessments'} onClick={() => setCourseTab('assessments')}>{zh ? '考核' : 'Assessments'}</button><button role="tab" aria-selected={courseTab === 'revision'} onClick={() => setCourseTab('revision')}>{zh ? '复习' : 'Revision'}</button></div>
+      {courseTab === 'assessments' ? <div className="assessment-list" ref={assessmentList}>
         <div className="list-tools"><button className="small" onClick={() => setAdding(value => !value)}>{adding ? (zh ? '取消' : 'Cancel') : (zh ? '新增考核' : 'Add assessment')}</button></div>
         {adding && <form className="local-confirm" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); const name = String(data.get('name') ?? '').trim(); if (!name) return;
           const kind = String(data.get('kind') ?? 'unknown') as Kind; const weightText = String(data.get('weight') ?? '').trim(); const weight = weightText ? Number(weightText) : undefined;
@@ -230,7 +266,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
           const visible = primaryItems;
           const childKeys = new Set(parents.flatMap(parent => [...parent.children.map(item => item.key), ...(parent.sourceKey ? [parent.sourceKey] : [])]));
           // One row per assessment, as in the 10-15 prototype: name and type, weight, score (or due date), status. Details open in the drawer.
-          const row = (item: Assessment, siblings: string[]) => <button key={item.key} className="arow" onClick={() => { setChosen(item); setChosenSiblings(siblings); }}>
+          const row = (item: Assessment, siblings: string[]) => <button key={item.key} className="arow" onClick={() => openDrawer(item, siblings)}>
             <span className="aname">{item.name}{item.kind !== 'unknown' && item.kind !== 'ungraded' && <span className={`kind ${item.kind}`}>{kindName[item.kind]}</span>}{item.bonus && <span className="kind">{zh ? '加分' : 'Bonus'}</span>}{work.some(entry => entry.key === item.key) && <span className="planned">{zh ? '已排期' : 'Planned'}</span>}</span>
             <span className="num">{item.bonus ? (item.outOf !== undefined ? `≤ ${item.outOf} ${zh ? '分' : 'pts'}` : '—') : item.sourceZero ? '0%' : item.weight || '—'}</span>
             <span className="num muted">{item.score !== undefined ? scoreText(item.score, item.outOf) : shortDue(item.due)}</span>
@@ -256,7 +292,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
               <div className="assessment-children">
                 {children.map(item => row(item, childOrder))}
                 <div className="parent-actions">
-                  <button className="small ghost" onClick={() => { setChosenSiblings(undefined); setChosen({ key: entry.key, name: parent.displayName || parent.name, due: parent.due || '', weight: parent.weight === undefined ? '' : `${parent.weight}%`, sourceZero: false, kind: 'assignment', group: parent.name, status: parent.status || '', link: '', sources: [], parent: '', caution: false, hurdle: false }); }}>{zh ? '安排整个作业' : 'Plan assignment'}</button>
+                  <button className="small ghost" onClick={() => { openDrawer({ key: entry.key, name: parent.displayName || parent.name, due: parent.due || '', weight: parent.weight === undefined ? '' : `${parent.weight}%`, sourceZero: false, kind: 'assignment', group: parent.name, status: parent.status || '', link: '', sources: [], parent: '', caution: false, hurdle: false }, undefined); }}>{zh ? '安排整个作业' : 'Plan assignment'}</button>
                   <button className="small ghost" type="button" disabled={siblingKeys.indexOf(entry.key) <= 0} onClick={() => move(entry.key, siblingKeys, -1)}>{zh ? '上移' : 'Move up'}</button>
                   <button className="small ghost" type="button" disabled={siblingKeys.indexOf(entry.key) >= siblingKeys.length - 1} onClick={() => move(entry.key, siblingKeys, 1)}>{zh ? '下移' : 'Move down'}</button>
                   <button className="small ghost" onClick={() => saveCorrections({ ...corrections, [parent.sourceKey!]: { ...corrections[parent.sourceKey!], hidden: true } })}>{zh ? '移除' : 'Remove'}</button>
@@ -285,8 +321,8 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         // Show the live values: the drawer stays open while the owner edits this assessment.
         const item = primaryItems.find(candidate => candidate.key === chosen.key) ?? chosen;
         const all = selected.assessments, visible = primaryItems, siblings = chosenSiblings;
-        const close = () => { setChosen(undefined); setChosenSiblings(undefined); };
-        return <div className="local-drawer-overlay" role="presentation" onClick={event => { if (event.target === event.currentTarget) close(); }}><section className="local-drawer" role="dialog" aria-modal="true" aria-label={item.name}>
+        const close = closeDrawer;
+        return <div className={`local-drawer-overlay${drawerClosing ? ' closing' : ''}`} role="presentation" onClick={event => { if (event.target === event.currentTarget) close(); }}><section className="local-drawer" role="dialog" aria-modal="true" aria-label={item.name}>
         <div className="dialog-heading"><div><small>{selected.course.subjectCode}</small><h2>{item.name}</h2></div><button className="ghost" onClick={close}>{zh ? '关闭' : 'Close'}</button></div>
         <div className="field"><span className="k">{zh ? '截止' : 'Due'}</span><span>{longDue(item.due)}</span></div>
         <div className="field"><span className="k">{zh ? '权重' : 'Weight'}</span><span>{item.sourceZero ? '0%' : item.weight || '—'}</span></div>
@@ -343,7 +379,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         <div className="week-actions"><span className="muted">{zh ? '学期' : 'Term'}: {courses[0]?.course.term || '—'}</span><div className="seg" role="group" aria-label={zh ? '视图' : 'View'}><button aria-pressed={mode === 'plan'} onClick={() => { setWeek(addDays(week, -((new Date(`${week}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{zh ? '周视图' : 'Week'}</button><button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>{zh ? '月历' : 'Month'}</button></div><button disabled title={zh ? '手动任务尚未接入' : 'Manual tasks are not connected yet'}>{zh ? '添加任务' : 'Add task'}</button></div></div>
       {mode === 'plan' ? <div className="local-week-grid">{Array.from({ length: 7 }, (_, index) => {
         const day = addDays(week, index); const entries = plan.days.get(day) ?? []; const due = work.filter(item => item.due === day && courses.some(course => course.course.id === item.courseId));
-        return <section key={day} className={`local-week-day${day === today ? ' today' : ''}${day < today ? ' past' : ''}`}>
+        return <section key={day} style={{ '--i': index } as CSSProperties} className={`local-week-day${day === today ? ' today' : ''}${day < today ? ' past' : ''}`}>
           <div className="local-week-heading"><b>{dayName(day)}</b></div>
           <div className="local-week-body"><div className="day-deadlines">{due.map(item => <span className="due" key={item.key}>{zh ? '截止' : 'Due'} · {item.courseCode} · {item.title}</span>)}</div>
           <div className="day-items">{entries.length ? entries.map(entry => <button className="blk" key={entry.work.key} onClick={() => onCourse(entry.work.courseId)}><span className="tm">{entry.minutes} min</span><span className="tt">{entry.work.title}</span><span className="cr">{entry.work.courseCode}</span></button>) : <span className="muted empty-day">{zh ? '无计划' : 'No plan'}</span>}</div>
