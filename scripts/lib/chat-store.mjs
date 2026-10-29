@@ -10,7 +10,7 @@ const TITLE_LIMIT = 40;
 
 const count = z.number().int().nonnegative();
 const UsageSchema = z.object({ input: count, cached: count.nullable(), output: count, reasoning: count.nullable() });
-export const ChatMessageSchema = z.object({
+const ChatMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string().max(200000),
   at: z.string(),

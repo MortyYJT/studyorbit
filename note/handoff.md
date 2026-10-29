@@ -1,11 +1,11 @@
 # 交接
 
-> 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。决定看 `note/decisions.md`（#1–#238）。
+> 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。决定看 `note/decisions.md`（#1–#239）。
 
 - **最后更新：** 2026-10-29，Claude。
-- **主线：** `main` 含 PR #245（期末需要、复习页、添加任务，`c2e6b97`）。PR #246（每周计划）在分支 `claude/weekly-plan`，合并后本文件随之进入 `main`。
+- **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）；全局清理在分支 `claude/cleanup`（文档、死 CSS、品牌名、README、About，#239）。
 - **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，旧地址自动跳转），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
-- **OpenSpec：** `finish-course-page-and-weekly-plan`（PR #246 合并时归档，规格进 `openspec/specs/`：`grade-target`、`revision`、`weekly-plan`）。
+- **OpenSpec：** 没有进行中的 change；现行规格在 `openspec/specs/`（`grade-target`、`revision`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
 
 ## 已完成
 
@@ -13,6 +13,7 @@
 - **复习页（#236）：** 考试信息；三个预设提示词按钮（点击才发送，用模型额度）；单课程对话里完成的回复可「存到复习」，存 `.local/revision/notes.json`（0600），接口 `/api/local/revision-notes`。读不了文件时拒绝写入，避免覆盖。测试 `test/revision-store.test.ts`、`test/agent-request.test.ts`。
 - **添加任务：** 校外任务（不选课程）也可以；存在原来的 `coursework.local-planning.work.v1`。
 - **每周计划（#237，PR #246）：** `shared/planning.ts` 截止最早先排，从今天往后、按每天可用时间拆分到多天，按整分钟、最多排一年；排不下和已过截止列进「需要你处理」；周视图和月历显示同步来的截止日期（含你的修正）；任务可记已用时间和完成。测试 `test/planning.test.ts`。
+- **清理（#239）：** 删了 6 份过时文档和 131 条死 CSS 规则（同一页面状态下新旧样式逐元素对比，13 个状态 0 差异）；README、overview、scripts/README、OpenSpec 项目背景按代码重写；品牌名改为 StudyOrbit。
 - **验证：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
 
 ## 未验证
@@ -25,7 +26,7 @@
 
 1. 你：打开 `localhost:5173`，在复习页点一个预设按钮，确认对话正常，把一条回复「存到复习」。
 2. L0/L1/L2（#238 先不做）：以后做时先定方案；Claude 的立场是执行器只在合成演示课程上跑。
-3. 小问题（未排期）：侧边栏品牌名仍是 `coursework`；`RichText` 遇到「标题 + 列表」混在一段时列表符号原样显示；`openspec/config.yaml` 的项目背景还是 v1 内容；`note/product/roadmap.md`、`prd.md` 还是 v1；issue #181、#114 指向已删的 v1 代码，可以关。
+3. 小问题（未排期）：`RichText` 遇到「标题 + 列表」混在一段时列表符号原样显示。
 4. 本地 `origin` 仍指向旧地址（改地址的命令被权限拦了，等你决定）。
 
 ## 等用户决定

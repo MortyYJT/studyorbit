@@ -7,10 +7,10 @@ import { join } from 'node:path';
 import { CourseDocumentSchema } from '../../shared/course-data.ts';
 import { filterSubjects } from './course-list.mjs';
 
-export function courseListFile(projectDir) { return join(projectDir, '.local', 'lms', 'courses.json'); }
+function courseListFile(projectDir) { return join(projectDir, '.local', 'lms', 'courses.json'); }
 
 /** Desktop folder label for a Canvas term, e.g. "2026 S2". */
-export function termLabel(term) {
+function termLabel(term) {
   const value = typeof term === 'string' ? term : '';
   const match = /(20\d{2}).*?(?:semester|sem)\s*([12])/i.exec(value);
   return match ? `${match[1]} S${match[2]}` : value.replace(/[^\w\u4e00-\u9fff -]/g, '').trim().slice(0, 50) || '未知学期';

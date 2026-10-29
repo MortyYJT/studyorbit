@@ -6,9 +6,9 @@ import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path';
 import { z } from 'zod';
 
-export const PROVIDERS = /** @type {const} */ (['deepseek', 'openai-compatible', 'anthropic', 'codex']);
+const PROVIDERS = /** @type {const} */ (['deepseek', 'openai-compatible', 'anthropic', 'codex']);
 /** Default model per provider; openai-compatible has none and needs an explicit model. */
-export const DEFAULT_MODELS = { deepseek: 'deepseek-flash', 'openai-compatible': null, anthropic: 'claude-sonnet-5-5', codex: 'gpt-6-luna' };
+const DEFAULT_MODELS = { deepseek: 'deepseek-flash', 'openai-compatible': null, anthropic: 'claude-sonnet-5-5', codex: 'gpt-6-luna' };
 /** Vendor-specific key variables that always apply to their own provider. */
 const VENDOR_KEYS = { deepseek: 'DEEPSEEK_API_KEY', anthropic: 'ANTHROPIC_API_KEY' };
 
@@ -17,7 +17,7 @@ export class LlmConfigValidationError extends Error {
   constructor(fieldErrors) { super('INVALID_LLM_CONFIG'); this.name = 'LlmConfigValidationError'; this.fieldErrors = fieldErrors; }
 }
 
-export function configPath(projectDir) { return join(projectDir, '.local', 'config', 'llm.json'); }
+function configPath(projectDir) { return join(projectDir, '.local', 'config', 'llm.json'); }
 
 /** True for https URLs and plain-http loopback URLs; other schemes would expose the key in transit. */
 export function isAllowedEndpoint(value) {

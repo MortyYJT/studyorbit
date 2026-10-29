@@ -1,29 +1,19 @@
 schema: spec-driven
 
 context: |
-  Product: StudyOrbit (`study-orbit`), a local-first action center for a University of Melbourne student.
-  Coursework from Canvas and Ed is ingested automatically (iCal dropped, decision #77); other
-  modules (internship, gaming, ...) hold manual and recurring tasks. Value: automatic,
-  trustworthy (every derived step cites verbatim source text), schedulable, and time-saving
-  (revision material and graded autonomy). See note/product/vision.md and
-  docs/engineering/v1-technical-design.md (the standing v1 reference).
-  Architecture: a deterministic TypeScript core plus an agent protocol: one command registry
-  generates the CLI, MCP (stdio) and HTTP (127.0.0.1) transports. External agents (Hermes,
-  Claude Code) do all reasoning; our code never calls a model. Agent writes pass a validation
-  gate (zod + verbatim citation check) before storage.
-  Stack: Node 24 LTS, TypeScript (strict), node:sqlite behind a repository interface, zod,
-  commander, Playwright, Vitest, unpdf, @modelcontextprotocol/sdk, React + Vite for
-  `coursework ui`. npm.
-  Red lines: no self-issued Canvas tokens; models never see or type passwords; strip
-  classmates' personal data before parsed data is stored or reaches a model (configurable, on
-  by default; raw page captures stay unparsed in `.local/`; exception #112: the agent may read
-  quiz and workshop pages unredacted, never discussion threads); course data, browser profiles,
-  and tokens live only in `.local/` and never in the repo or fixtures; test fixtures are
-  synthetic; metrics must be real.
-  Autonomy (decision #56): L0 read, L1 assist, L2 draft, L3 fill for review, L4 submit.
-  L2-L4 need a recorded course AI policy and a per-assessment grant within the course cap;
-  prohibited courses cap at L1; exams are never automated above L1; every grant, fill and
-  submit is audited; L4 confirms with the owner by default.
+  Product: StudyOrbit (`study-orbit`), a local-first coursework assistant for one University of Melbourne
+  student. Scripts collect Canvas (through the owner's signed-in Edge), Ed (the `edstem` CLI) and Handbook;
+  a model the owner picks (DeepSeek, OpenAI-compatible, Anthropic, Codex CLI) turns them into one course
+  JSON per course, validated by `shared/course-data.ts`. The React app shows grades, the final-needed
+  target, a deterministic weekly plan, revision, and an Agent chat over the synced data.
+  Architecture: Vite dev server only; the loopback, same-origin `/api/local/*` routes live in
+  `vite.config.ts`; pure, tested logic lives in `shared/` (grades, planning); local stores live in
+  `scripts/lib/` and write to the ignored `.local/`. Owner corrections, tasks and preferences live in
+  browser localStorage. Decisions are in `note/decisions.md` (v2 starts at #223).
+  Stack: Node 24, strict TypeScript, React 19, Vite 8, zod, vitest. No other runtime dependencies.
+  Red lines: no self-issued Canvas tokens; models never see or type passwords; real course data, grades,
+  cookies and keys never enter the repo or fixtures (tests use synthetic data); the chat explains and
+  plans only and never completes or submits assessments; autonomy levels L1/L2 are not built (#238).
 
 # Project context (optional)
 # This is shown to AI when creating artifacts.
