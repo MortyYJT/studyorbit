@@ -17,13 +17,13 @@
 
 ## 4. Weekly plan (PR 2)
 
-- [ ] 4.1 Tests then `shared/planning.ts`: deadline order, splitting, spent time, overflow, overdue, determinism, zero-capacity days
-- [ ] 4.2 Availability editor (per weekday) stored in browser storage with defaults
-- [ ] 4.3 Week view uses the schedule; week and month views show assessment and task deadlines once
-- [ ] 4.4 Task list records spent minutes and done; done tasks show estimate against actual
-- [ ] 4.5 Needs-you strip: overflow, overdue, failed syncs, unplanned graded deadlines within 7 days
+- [x] 4.1 Tests then `shared/planning.ts`: deadline order, splitting, spent time, overflow, overdue, determinism, zero-capacity days
+- [x] 4.2 Availability editor (per weekday) stored in browser storage with defaults
+- [x] 4.3 Week view uses the schedule; week and month views show assessment and task deadlines once
+- [x] 4.4 Task list records spent minutes and done; done tasks show estimate against actual
+- [x] 4.5 Needs-you strip: overflow, overdue, failed syncs, unplanned graded deadlines within 7 days
 
 ## 5. Verification and close
 
-- [ ] 5.1 `bash .claude/check.sh` passes; real-browser screenshots of course page, Revision tab, week view and strip
-- [ ] 5.2 Fresh-context review of each PR; update `note/handoff.md`; archive the change after PR 2 merges
+- [x] 5.1 `bash .claude/check.sh` passes; real-browser screenshots of course page, Revision tab, week view and strip
+- [x] 5.2 Fresh-context review of each PR; update `note/handoff.md`; archive the change after PR 2 merges

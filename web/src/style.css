@@ -872,3 +872,24 @@ small.block { display:block; line-height:1.4; }
 .revision-note > summary > span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .revision-note-body { padding:0 4px 16px 18px; font-size:14px; line-height:1.6; }
 .revision-note-body .link-button { margin-top:8px; font-size:12px; }
+/* Weekly plan (decision #237): availability form, task list with time, needs-you lines. */
+.hours-form { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)) auto; gap:8px 12px; align-items:end; }
+.hours-form small { grid-column:1 / -2; }
+.needs { display:grid; gap:0; padding-bottom:8px; }
+.needs .needs-line { display:flex; align-items:center; border:0; border-top:1px solid var(--rule); border-radius:0; margin:0; padding:0 4px; text-align:left; }
+.needs .needs-line span:not(.needs-line-go) { flex:1; min-width:0; }
+.task-list { margin-top:20px; }
+.task-list > summary { display:flex; align-items:center; list-style:none; cursor:pointer; padding:10px 8px; color:var(--muted); font-size:13px; border-bottom:1px solid var(--border); }
+.task-list > summary::-webkit-details-marker { display:none; }
+.task-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 12px; align-items:center; padding:10px 8px; border-bottom:1px solid var(--rule); font-size:14px; }
+.task-controls { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.task-row input[type=checkbox] { width:16px; height:16px; min-height:0; margin:0; padding:0; flex:none; }
+.needs div.needs-line { display:flex; align-items:center; border-top:1px solid var(--rule); padding:0 4px; }
+.task-row.done .task-name { color:var(--muted); }
+.task-row input[type=number] { width:80px; margin-left:6px; }
+.task-row label.inline { display:flex; align-items:center; gap:4px; font-size:13px; }
+@media (max-width:600px) {
+  .hours-form { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .hours-form small { grid-column:1 / -1; }
+  .task-row { grid-template-columns:minmax(0,1fr); }
+}
