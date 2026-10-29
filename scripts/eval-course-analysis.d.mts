@@ -4,12 +4,12 @@ import type { CourseSummary, OverallSummary, RunUsage } from './lib/eval-score.m
 import type { CourseDocument } from '../shared/course-data.ts';
 
 export type EvalOptions = {
-  run?: string; courses: string; gold?: string; n: number; model?: string; provider?: string;
+  run?: string; courses?: string; gold?: string; n: number; model?: string; provider?: string;
   fake?: string; fixture?: string; out?: string; live: boolean;
 };
 export type EvalCourse = { course: AnalysisCourse & { name?: string; term?: string | null }; canvas: unknown; ed: unknown; handbook: unknown; gold: CourseDocument };
 export type EvalRunRecord = {
-  index: number; accepted: boolean; status: string; reason: string; document: CourseDocument | null;
+  index: number; accepted: boolean; failed: boolean; status: string; reason: string; document: CourseDocument | null;
   attempts: Attempt[]; durationMs: number; usage: RunUsage;
 };
 export type CourseEvaluation = { id: string; code: string; runs: EvalRunRecord[]; summary: CourseSummary };
@@ -20,7 +20,9 @@ export type EvalSummary = {
 };
 export type ModelRun = (prompt: string, context: { course: EvalCourse['course']; run: number }) => Promise<ModelResult>;
 
+export const PROJECT_DIR: string;
 export function parseArgs(argv: string[]): EvalOptions;
+export function isInside(path: string, dir: string): Promise<boolean>;
 export function loadFixture(dir: string): Promise<EvalCourse>;
 export function loadRun(options: { runDir: string; coursesPath: string; goldDir: string }): Promise<{ courses: EvalCourse[]; skipped: Skipped[] }>;
 export function createFakeRunner(dir: string): ModelRun;

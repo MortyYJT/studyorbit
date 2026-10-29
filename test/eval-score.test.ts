@@ -155,9 +155,20 @@ describe('interceptionCounts', () => {
       ] },
     ]);
     expect(counts).toEqual({
-      runs: 3, repairTriggered: 2, rejected: 1,
+      runs: 3, repairTriggered: 2, rejected: 1, failed: 0,
       issues: { 'Ed 已得 24/30，请使用同一来源的得分和满分': 1, 'score: score exceeds maximum': 2, 'assessment ids must be unique': 1 },
     });
+  });
+});
+
+describe('interceptionCounts with model failures', () => {
+  it('counts failed runs apart from rejected ones and ignores issues of failed attempts', () => {
+    const counts = interceptionCounts([
+      { accepted: false, failed: true, attempts: [{ exitCode: 1, issues: [': Invalid input: expected object, received undefined'] }] },
+      { accepted: false, failed: true, attempts: [] },
+      { accepted: false, attempts: [{ exitCode: 0, issues: ['assessment ids must be unique'] }, { exitCode: null, issues: ['ignored'] }] },
+    ]);
+    expect(counts).toEqual({ runs: 3, repairTriggered: 1, rejected: 1, failed: 2, issues: { 'assessment ids must be unique': 1 } });
   });
 });
 
@@ -176,7 +187,7 @@ describe('summaries', () => {
     expect(summary.documentRuns).toBe(2);
     expect(summary.fieldAccuracy).toBe((2 * cells - 1) / (2 * cells));
     expect(summary.perField.weight).toBe(7 / 8);
-    expect(summary.interception).toMatchObject({ repairTriggered: 1, rejected: 1, issues: { x: 2 } });
+    expect(summary.interception).toMatchObject({ repairTriggered: 1, rejected: 1, failed: 0, issues: { x: 2 } });
     expect(summary.tokens).toEqual({ input: 20, output: 10, runsWithUsage: 2 });
     expect(summary.durationMs).toEqual({ total: 300, mean: 100 });
   });
@@ -188,7 +199,7 @@ describe('summaries', () => {
     expect(overall.courses).toBe(2);
     expect(overall.runs).toBe(3);
     expect(overall.fieldAccuracy).toBe((2 * cells - 1) / (2 * cells));
-    expect(overall.interception).toMatchObject({ runs: 3, repairTriggered: 1, rejected: 1, issues: { x: 2 } });
+    expect(overall.interception).toMatchObject({ runs: 3, repairTriggered: 1, rejected: 1, failed: 0, issues: { x: 2 } });
     expect(overall.cellAgreement).toBe(1);
   });
 });

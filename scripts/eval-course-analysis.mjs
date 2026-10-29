@@ -3,10 +3,10 @@
 // Reads already-collected data only: it never runs a collector and never writes into the desktop course folders.
 // Usage: node scripts/eval-course-analysis.mjs --fixture test/fixtures/synthetic-course
 //        node scripts/eval-course-analysis.mjs --run .local/lms/runs/<runId> --gold <goldDir> [--n 5]
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, relative, resolve, isAbsolute } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CourseDocumentSchema } from '../shared/course-data.ts';
 import { buildAnalysisPrompt, courseOutputSchema } from './lib/course-analysis.mjs';
 import { filterSubjects } from './lib/course-list.mjs';
@@ -17,10 +17,13 @@ import { summariseCourse, summariseOverall } from './lib/eval-score.mjs';
 
 const VALUE_OPTIONS = new Set(['run', 'courses', 'gold', 'n', 'model', 'provider', 'fake', 'fixture', 'out']);
 const GENERIC_ENV = ['COURSE_ANALYSIS_MODEL', 'COURSE_ANALYSIS_URL', 'COURSE_ANALYSIS_API_KEY'];
+const PATH_OPTIONS = ['run', 'courses', 'gold', 'fake', 'fixture', 'out'];
+/** Repository root: defaults (.local/...) and the model settings resolve here, whatever the working directory. */
+export const PROJECT_DIR = fileURLToPath(new URL('..', import.meta.url));
 
 /** Parse CLI arguments. Needs either --fixture, or --run together with --gold. */
 export function parseArgs(argv) {
-  const options = { courses: '.local/lms/courses.json', n: 5, live: false };
+  const options = { n: 5, live: false };
   for (let i = 0; i < argv.length; i++) {
     const name = argv[i].replace(/^--/, '');
     if (argv[i] === '--live') { options.live = true; continue; }
@@ -64,9 +67,16 @@ export async function loadRun({ runDir, coursesPath, goldDir }) {
   for (const entry of (await readdir(runDir, { withFileTypes: true })).filter(entry => entry.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
     const course = candidates.find(item => item.id === entry.name);
     if (!course) { skipped.push({ id: entry.name, reason: '课程列表里没有这门课或没有课程代码' }); continue; }
+    const goldName = `${course.subjectCode}.json`;
+    let goldText;
+    try { goldText = await readFile(join(goldDir, goldName), 'utf8'); }
+    catch (error) {
+      if (error?.code !== 'ENOENT') throw new Error(`标准答案读取失败：${goldName}（${error?.code ?? error?.message ?? error}）`);
+      skipped.push({ id: course.id, code: course.subjectCode, reason: '没有标准答案文件' }); continue;
+    }
     let gold;
-    try { gold = await readJson(join(goldDir, `${course.subjectCode}.json`)); }
-    catch { skipped.push({ id: course.id, code: course.subjectCode, reason: '没有标准答案文件' }); continue; }
+    try { gold = JSON.parse(goldText); }
+    catch (error) { throw new Error(`标准答案不是有效 JSON：${goldName}（${error.message}）`); }
     let data;
     try { data = await Promise.all(['canvas', 'ed', 'handbook'].map(name => readJson(join(runDir, entry.name, `${name}.json`)))); }
     catch { skipped.push({ id: course.id, code: course.subjectCode, reason: '采集数据缺失或不可读' }); continue; }
@@ -121,10 +131,12 @@ export async function evaluateCourses({ courses, n, run, isCancelled = () => fal
           isCancelled,
         });
         const settled = settleCourse({ result, validation, collection: collectionFlags(canvas, ed, handbook) });
-        runs.push({ index, accepted: settled.accepted, status: settled.status, reason: settled.reason, document: settled.document,
+        // A model/process failure or a cancelled run is "failed"; only a completed but invalid answer is "rejected".
+        const failed = !settled.accepted && (result.exitCode !== 0 || isCancelled());
+        runs.push({ index, accepted: settled.accepted, failed, status: settled.status, reason: settled.reason, document: settled.document,
           attempts, durationMs: Date.now() - started, usage: result.usage ?? null });
       } catch (error) {
-        runs.push({ index, accepted: false, status: 'failed', reason: String(error?.message ?? error).slice(0, 300), document: null,
+        runs.push({ index, accepted: false, failed: true, status: 'failed', reason: String(error?.message ?? error).slice(0, 300), document: null,
           attempts: [], durationMs: Date.now() - started, usage: null });
       }
     }
@@ -153,10 +165,10 @@ export function formatSummary(summary) {
   const lines = [
     `# 课程分析评测 ${summary.startedAt}`, '',
     `模式：${summary.mode === 'fake' ? '固定输出' : `模型 ${summary.provider} / ${summary.model ?? '默认'}`}；每门课 ${summary.n} 次。`, '',
-    '| 课程 | 运行 | 有结果 | 触发修复 | 最终拒绝 | 字段准确率 | 召回 | 精确 | 单元格一致 | 与首次相同 | 输入/输出 token | 平均耗时 |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| 课程 | 运行 | 有结果 | 触发修复 | 最终拒绝 | 调用失败 | 字段准确率 | 召回 | 精确 | 单元格一致 | 与首次相同 | 输入/输出 token | 平均耗时 |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
-  const row = (label, s) => `| ${label} | ${s.runs} | ${s.documentRuns} | ${s.interception.repairTriggered} | ${s.interception.rejected} | ${pct(s.fieldAccuracy)} | ${pct(s.recall)} | ${pct(s.precision)} | ${pct(s.cellAgreement)} | ${pct(s.identicalToFirst)} | ${s.tokens.runsWithUsage ? `${s.tokens.input}/${s.tokens.output}` : '—'} | ${s.durationMs.mean === null ? '—' : `${(s.durationMs.mean / 1000).toFixed(1)}s`} |`;
+  const row = (label, s) => `| ${label} | ${s.runs} | ${s.documentRuns} | ${s.interception.repairTriggered} | ${s.interception.rejected} | ${s.interception.failed} | ${pct(s.fieldAccuracy)} | ${pct(s.recall)} | ${pct(s.precision)} | ${pct(s.cellAgreement)} | ${pct(s.identicalToFirst)} | ${s.tokens.runsWithUsage ? `${s.tokens.input}/${s.tokens.output}` : '—'} | ${s.durationMs.mean === null ? '—' : `${(s.durationMs.mean / 1000).toFixed(1)}s`} |`;
   for (const course of summary.courses) lines.push(row(course.code, course.summary));
   if (summary.courses.length > 1) lines.push(row('合计', summary.overall));
   lines.push('', `各字段准确率：${Object.entries(summary.overall.perField).map(([field, value]) => `${field} ${pct(value)}`).join('，')}`);
@@ -166,8 +178,26 @@ export function formatSummary(summary) {
   return `${lines.join('\n')}\n`;
 }
 
-function insideDesktop(path) {
-  const rel = relative(join(homedir(), 'Desktop'), path);
+// Real path of `path`: resolve symlinks on the nearest existing ancestor and keep the rest as written.
+async function canonicalPath(path) {
+  const rest = [];
+  let current = resolve(path);
+  for (;;) {
+    try { return join(await realpath(current), ...rest.reverse()); }
+    catch (error) {
+      if (error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR') throw error;
+      const parent = dirname(current);
+      if (parent === current) return resolve(path);
+      rest.push(basename(current));
+      current = parent;
+    }
+  }
+}
+
+/** True when `path` is `dir` or inside it, after resolving symlinks; case-insensitive on macOS and Windows. */
+export async function isInside(path, dir) {
+  const fold = ['darwin', 'win32'].includes(process.platform) ? value => value.toLowerCase() : value => value;
+  const rel = relative(fold(await canonicalPath(dir)), fold(await canonicalPath(path)));
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
@@ -175,11 +205,11 @@ function insideDesktop(path) {
 export async function runEvaluation(options, { projectDir, env = process.env, log = console.log, isCancelled } = {}) {
   const startedAt = new Date().toISOString();
   const outDir = resolve(projectDir, options.out ?? join('.local', 'eval', 'results', startedAt.replace(/[:.]/g, '-')));
-  if (insideDesktop(outDir)) throw new Error('OUT_DIR_NOT_ALLOWED：结果不能写到桌面，避免和课程文件夹混在一起');
+  if (await isInside(outDir, join(homedir(), 'Desktop'))) throw new Error('OUT_DIR_NOT_ALLOWED：结果不能写到桌面，避免和课程文件夹混在一起');
   const fakeDir = options.fake ?? (options.fixture && !options.live ? join(options.fixture, 'outputs') : null);
   const { courses, skipped } = options.fixture
     ? { courses: [await loadFixture(resolve(projectDir, options.fixture))], skipped: [] }
-    : await loadRun({ runDir: resolve(projectDir, options.run), coursesPath: resolve(projectDir, options.courses), goldDir: resolve(projectDir, options.gold) });
+    : await loadRun({ runDir: resolve(projectDir, options.run), coursesPath: resolve(projectDir, options.courses ?? join('.local', 'lms', 'courses.json')), goldDir: resolve(projectDir, options.gold) });
   if (!courses.length) throw new Error('没有可评测的课程（需要采集数据、课程列表和标准答案三者齐全）');
 
   await mkdir(outDir, { recursive: true, mode: 0o700 });
@@ -219,7 +249,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   let cancelled = false;
   process.on('SIGINT', () => { if (cancelled) process.exit(130); cancelled = true; console.error('正在停止：当前调用结束后不再开始新的运行。再按一次立即退出。'); });
   try {
-    await runEvaluation(parseArgs(process.argv.slice(2)), { projectDir: process.cwd(), isCancelled: () => cancelled });
+    // Paths given on the command line are relative to the working directory; defaults are relative to the repository.
+    const options = parseArgs(process.argv.slice(2));
+    for (const key of PATH_OPTIONS) if (options[key]) options[key] = resolve(process.cwd(), options[key]);
+    await runEvaluation(options, { projectDir: PROJECT_DIR, isCancelled: () => cancelled });
   } catch (error) {
     console.error(error?.message ?? error);
     process.exitCode = 1;

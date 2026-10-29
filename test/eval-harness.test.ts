@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createFakeRunner, evaluateCourses, loadFixture, parseArgs, resolveEvalConfig, runEvaluation } from '../scripts/eval-course-analysis.mjs';
+import { createFakeRunner, evaluateCourses, isInside, loadFixture, loadRun, parseArgs, resolveEvalConfig, runEvaluation } from '../scripts/eval-course-analysis.mjs';
 
 // The synthetic fixture uses an invented course (SYNT10001) and example.* URLs only.
 const fixture = join(import.meta.dirname, 'fixtures', 'synthetic-course');
@@ -33,7 +33,7 @@ describe('evaluateCourses on the synthetic fixture', () => {
     expect(result.runs.every(run => run.accepted)).toBe(true);
 
     const summary = result.summary;
-    expect(summary.interception).toEqual({ runs: 3, repairTriggered: 1, rejected: 0, issues: { [edIssue]: 1 } });
+    expect(summary.interception).toEqual({ runs: 3, repairTriggered: 1, rejected: 0, failed: 0, issues: { [edIssue]: 1 } });
     expect(summary.documentRuns).toBe(3);
     // Run 2 misses the lab hurdle (9 cells), has the wrong Quiz 2 status (1 cell) and one extra practice item.
     expect(summary.fieldAccuracy).toBeCloseTo((3 * cells - 10) / (3 * cells), 10);
@@ -51,8 +51,76 @@ describe('evaluateCourses on the synthetic fixture', () => {
     const wrong = await readFile(join(fixture, 'outputs', '1.json'), 'utf8');
     const evaluation = await evaluateCourses({ courses: [course], n: 1, run: async () => ({ exitCode: 0, lastMessage: wrong, usage: null }) });
     expect(evaluation.courses[0].runs[0]).toMatchObject({ accepted: false, document: null });
-    expect(evaluation.courses[0].summary.interception).toEqual({ runs: 1, repairTriggered: 1, rejected: 1, issues: { [edIssue]: 2 } });
+    expect(evaluation.courses[0].summary.interception).toEqual({ runs: 1, repairTriggered: 1, rejected: 1, failed: 0, issues: { [edIssue]: 2 } });
     expect(evaluation.courses[0].summary.fieldAccuracy).toBeNull();
+  });
+});
+
+describe('model failures', () => {
+  it('counts a failing model call as failed, not rejected, and tallies no issues', async () => {
+    const course = await loadFixture(fixture);
+    const evaluation = await evaluateCourses({ courses: [course], n: 2, run: async () => ({ exitCode: 1, lastMessage: '', usage: null, error: 'boom' }) });
+    expect(evaluation.courses[0].runs.map(run => [run.accepted, run.failed])).toEqual([[false, true], [false, true]]);
+    expect(evaluation.courses[0].summary.interception).toEqual({ runs: 2, repairTriggered: 0, rejected: 0, failed: 2, issues: {} });
+    expect(evaluation.overall.interception.failed).toBe(2);
+  });
+
+  it('counts a thrown error as failed', async () => {
+    const course = await loadFixture(fixture);
+    const evaluation = await evaluateCourses({ courses: [course], n: 1, run: async () => { throw new Error('network down'); } });
+    expect(evaluation.courses[0].runs[0]).toMatchObject({ accepted: false, failed: true, reason: 'network down' });
+    expect(evaluation.courses[0].summary.interception).toMatchObject({ rejected: 0, failed: 1, issues: {} });
+  });
+
+  it('counts a run cut short by cancellation as failed', async () => {
+    const course = await loadFixture(fixture);
+    const wrong = await readFile(join(fixture, 'outputs', '1.json'), 'utf8');
+    let cancelled = false;
+    const evaluation = await evaluateCourses({ courses: [course], n: 1, isCancelled: () => cancelled,
+      run: async () => { cancelled = true; return { exitCode: 0, lastMessage: wrong, usage: null }; } });
+    expect(evaluation.courses[0].summary.interception).toMatchObject({ rejected: 0, failed: 1 });
+  });
+});
+
+describe('loadRun', () => {
+  async function runLayout(goldText?: string) {
+    const root = await mkdtemp(join(tmpdir(), 'studyorbit-eval-run-'));
+    temps.push(root);
+    const course = JSON.parse(await readFile(join(fixture, 'course.json'), 'utf8'));
+    await writeFile(join(root, 'courses.json'), JSON.stringify({ courses: [course] }));
+    await mkdir(join(root, 'run', course.id), { recursive: true });
+    for (const name of ['canvas', 'ed', 'handbook']) await cp(join(fixture, `${name}.json`), join(root, 'run', course.id, `${name}.json`));
+    await mkdir(join(root, 'gold'));
+    if (goldText !== undefined) await writeFile(join(root, 'gold', 'SYNT10001.json'), goldText);
+    return { runDir: join(root, 'run'), coursesPath: join(root, 'courses.json'), goldDir: join(root, 'gold') };
+  }
+
+  it('loads a course with gold and skips one without a gold file', async () => {
+    expect((await loadRun(await runLayout(await readFile(join(fixture, 'gold.json'), 'utf8')))).courses).toHaveLength(1);
+    expect((await loadRun(await runLayout())).skipped).toEqual([{ id: '900001', code: 'SYNT10001', reason: '没有标准答案文件' }]);
+  });
+
+  it('fails loudly on a gold file that is not valid JSON', async () => {
+    await expect(loadRun(await runLayout('{ not json'))).rejects.toThrow(/SYNT10001\.json/);
+  });
+});
+
+describe('isInside', () => {
+  it('sees through symlinks and paths that do not exist yet', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'studyorbit-eval-guard-'));
+    temps.push(root);
+    await mkdir(join(root, 'Desk'));
+    await symlink(join(root, 'Desk'), join(root, 'link'));
+    expect(await isInside(join(root, 'link', 'new', 'deeper'), join(root, 'Desk'))).toBe(true);
+    expect(await isInside(join(root, 'Desk'), join(root, 'Desk'))).toBe(true);
+    expect(await isInside(join(root, 'Desktop2'), join(root, 'Desk'))).toBe(false);
+  });
+
+  it.runIf(process.platform === 'darwin')('ignores case on macOS', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'studyorbit-eval-case-'));
+    temps.push(root);
+    await mkdir(join(root, 'Desk'));
+    expect(await isInside(join(root, 'desk', 'eval'), join(root, 'Desk'))).toBe(true);
   });
 });
 

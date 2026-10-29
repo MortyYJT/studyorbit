@@ -10,9 +10,9 @@ export type DocumentScore = {
 export type Consistency = {
   documentRuns: number; cells: number; agreeingCells: number; cellAgreement: number | null; identicalRuns: number; identicalToFirst: number | null;
 };
-export type Interception = { runs: number; repairTriggered: number; rejected: number; issues: Record<string, number> };
+export type Interception = { runs: number; repairTriggered: number; rejected: number; failed: number; issues: Record<string, number> };
 export type RunUsage = { input: number | null; output: number | null; [key: string]: unknown } | null;
-export type EvalRun = { accepted: boolean; document: DocumentLike | null; attempts: Array<{ issues?: string[] }>; durationMs?: number; usage?: RunUsage };
+export type EvalRun = { accepted: boolean; failed?: boolean; document: DocumentLike | null; attempts: Array<{ exitCode?: number | null; issues?: string[] }>; durationMs?: number; usage?: RunUsage };
 export type CourseSummary = {
   runs: number; documentRuns: number; fieldAccuracy: number | null; perField: Record<ScoredField, number | null>;
   recall: number | null; precision: number | null; cellAgreement: number | null; identicalToFirst: number | null;
@@ -29,6 +29,6 @@ export function matchAssessments<G extends { id: string; name: string }, P exten
 export function scoreDocument(gold: DocumentLike, predicted: DocumentLike): DocumentScore;
 export function normaliseDocument(document: DocumentLike): Array<Record<string, unknown>>;
 export function consistency(gold: DocumentLike, documents: Array<DocumentLike | null>): Consistency;
-export function interceptionCounts(runs: Array<Pick<EvalRun, 'accepted' | 'attempts'>>): Interception;
+export function interceptionCounts(runs: Array<Pick<EvalRun, 'accepted' | 'failed' | 'attempts'>>): Interception;
 export function summariseCourse(gold: DocumentLike, runs: EvalRun[]): CourseSummary;
 export function summariseOverall(summaries: CourseSummary[]): OverallSummary;

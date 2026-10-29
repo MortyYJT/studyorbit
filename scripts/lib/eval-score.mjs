@@ -122,17 +122,25 @@ export function consistency(gold, documents) {
   };
 }
 
-/** Runs that needed a repair attempt, runs rejected after it, and issue messages tallied across all attempts. */
+/**
+ * Validation interception over runs. `failed` = the model call or process failed, threw or was cancelled
+ * (`run.failed`); `rejected` = the model answered but the output was still invalid after the repair.
+ * Issues are tallied only from attempts whose model call succeeded (an attempt without `exitCode` counts as succeeded).
+ */
 export function interceptionCounts(runs) {
   const issues = {};
-  for (const run of runs) for (const attempt of run.attempts) for (const issue of attempt.issues ?? []) {
-    const key = normaliseIssue(issue);
-    issues[key] = (issues[key] ?? 0) + 1;
+  for (const run of runs) for (const attempt of run.attempts) {
+    if ('exitCode' in attempt && attempt.exitCode !== 0) continue;
+    for (const issue of attempt.issues ?? []) {
+      const key = normaliseIssue(issue);
+      issues[key] = (issues[key] ?? 0) + 1;
+    }
   }
   return {
     runs: runs.length,
     repairTriggered: runs.filter(run => run.attempts.length > 1).length,
-    rejected: runs.filter(run => !run.accepted).length,
+    rejected: runs.filter(run => !run.accepted && !run.failed).length,
+    failed: runs.filter(run => !run.accepted && run.failed).length,
     issues,
   };
 }
@@ -140,7 +148,7 @@ export function interceptionCounts(runs) {
 const ratio = (a, b) => (b ? a / b : null);
 
 /**
- * Summary for one course over its runs. Each run: `{ accepted, document, attempts, durationMs, usage }`.
+ * Summary for one course over its runs. Each run: `{ accepted, failed?, document, attempts, durationMs, usage }`.
  * Accuracy, recall and precision are pooled over runs that produced a document.
  */
 export function summariseCourse(gold, runs) {
@@ -190,7 +198,7 @@ export function summariseOverall(summaries) {
     precision: ratio(sum(s => s.counts.matched), sum(s => s.counts.predicted)),
     cellAgreement: ratio(sum(s => s.counts.agreeingCells), sum(s => s.counts.consistencyCells)),
     identicalToFirst: ratio(sum(s => s.counts.identicalRuns), runs),
-    interception: { runs, repairTriggered: sum(s => s.interception.repairTriggered), rejected: sum(s => s.interception.rejected), issues },
+    interception: { runs, repairTriggered: sum(s => s.interception.repairTriggered), rejected: sum(s => s.interception.rejected), failed: sum(s => s.interception.failed), issues },
     tokens: { input: sum(s => s.tokens.input), output: sum(s => s.tokens.output), runsWithUsage: sum(s => s.tokens.runsWithUsage) },
     durationMs: { total: sum(s => s.durationMs.total), mean: runs ? sum(s => s.durationMs.total) / runs : null },
   };
