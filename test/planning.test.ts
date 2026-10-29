@@ -17,6 +17,7 @@ describe('schedulePlan', () => {
   it('splits a task across days up to and including its deadline', () => {
     const plan = schedulePlan([task('A', '2026-03-04', 150)], flat(60), monday);
     expect([plan.days[monday], plan.days['2026-03-03'], plan.days['2026-03-04']]).toEqual([[{ key: 'A', minutes: 60 }], [{ key: 'A', minutes: 60 }], [{ key: 'A', minutes: 30 }]]);
+    expect(plan.overflow).toEqual([]);
   });
 
   it('schedules only the minutes not yet spent, and nothing for done tasks', () => {
@@ -34,6 +35,24 @@ describe('schedulePlan', () => {
     const plan = schedulePlan([task('A', '2026-03-01', 60, { spent: 20 })], flat(120), monday);
     expect(plan.days).toEqual({});
     expect(plan.overflow).toEqual([{ key: 'A', minutes: 40, overdue: true }]);
+  });
+
+  it('still lists an overdue task as unfinished when its estimate is used up but it is not marked done', () => {
+    const plan = schedulePlan([task('A', '2026-03-01', 60, { spent: 60 })], flat(120), monday);
+    expect(plan.overflow).toEqual([{ key: 'A', minutes: 0, overdue: true }]);
+  });
+
+  it('works in whole minutes when estimates, spent time or availability are fractional', () => {
+    const plan = schedulePlan([task('A', '2026-03-03', 60, { spent: 59.9 }), task('B', '2026-03-03', 100)], flat(72.7), monday);
+    expect(plan.days[monday]).toEqual([{ key: 'A', minutes: 1 }, { key: 'B', minutes: 71 }]);
+    expect(plan.days['2026-03-03']).toEqual([{ key: 'B', minutes: 29 }]);
+  });
+
+  it('plans at most a year ahead and does not call a far deadline overflow', () => {
+    const started = Date.now();
+    const plan = schedulePlan([task('A', '9026-03-02', 600)], flat(0), monday);
+    expect(Date.now() - started).toBeLessThan(200);
+    expect(plan).toEqual({ days: {}, overflow: [] });
   });
 
   it('places nothing on days with zero availability', () => {

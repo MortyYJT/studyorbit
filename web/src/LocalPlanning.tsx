@@ -264,7 +264,9 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     event.preventDefault(); if (!selected || !chosen) return;
     const data = new FormData(event.currentTarget); const due = String(data.get('due') ?? ''); const minutes = Number(data.get('minutes'));
     if (!/^\d{4}-\d{2}-\d{2}$/.test(due) || !Number.isFinite(minutes) || minutes <= 0 || minutes > 100000) return;
-    if (saveWork([...work.filter(item => item.key !== chosen.key), { key: chosen.key, courseId: selected.course.id, courseCode: selected.course.subjectCode, title: chosen.name, due, minutes }])) setChosen(undefined);
+    // Re-planning changes the deadline and estimate only; recorded time and the done state carry over.
+    const existing = work.find(item => item.key === chosen.key);
+    if (saveWork([...work.filter(item => item.key !== chosen.key), { key: chosen.key, courseId: selected.course.id, courseCode: selected.course.subjectCode, title: chosen.name, due, minutes, spent: existing?.spent, done: existing?.done }])) setChosen(undefined);
   }
   // Assessment rows rise in with a short stagger when a course (or its list tab) opens, not on later edits.
   const assessmentList = useRef<HTMLDivElement>(null);
@@ -448,16 +450,28 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   // Deadlines on the calendar: synced and manual assessments with the owner's corrections, then tasks not already shown.
   const dueDay = (due: string): string | undefined => { if (/^\d{4}-\d{2}-\d{2}$/.test(due)) return due; const date = dueDate(due); return date ? localDay(date) : undefined; };
   const covers = (task: Work, courseId: string, key: string) => task.courseId === courseId && (task.key === key || task.key === `${courseId}:group:${key}`);
+  // A parent's own date, status and weight edits are stored under its group key, so they are laid over its source item.
+  // `graded` mirrors the grading inputs: weighted, and not under a bonus, alternative, ungraded or 0% parent.
+  const notCounted = (item: Assessment) => item.bonus || item.caution || item.ungraded || item.kind === 'ungraded' || item.sourceZero;
   const assessmentDeadlines = courses.flatMap(original => {
     if (!original.available) return [];
-    const course = withCorrections(original);
-    return visibleItems(course).flatMap(item => { const day = dueDay(item.due); return day ? [{ item, day, courseId: course.course.id, code: course.course.subjectCode }] : []; });
+    const course = withCorrections(original), items = visibleItems(course), groups = groupParents(course, items);
+    return items.flatMap(raw => {
+      const group = groups.find(entry => entry.sourceKey === raw.key);
+      const item = group ? { ...raw, due: group.due ?? '', status: group.status ?? raw.status, weightValue: group.weight } : raw;
+      const parent = item.parent ? items.find(entry => entry.key === item.parent) : undefined;
+      const parentWeight = parent ? groups.find(entry => entry.sourceKey === parent.key)?.weight ?? parent.weightValue : undefined;
+      const graded = !item.caution && !item.ungraded && item.kind !== 'ungraded' && !(parent && notCounted(parent))
+        && ((item.weightValue ?? 0) > 0 || item.bonus === true || (parentWeight ?? 0) > 0);
+      const day = dueDay(item.due);
+      return day ? [{ item, day, graded, courseId: course.course.id, code: course.course.subjectCode }] : [];
+    });
   });
   const tasks = work.filter(inScope);
   const workByKey = new Map(tasks.map(item => [item.key, item]));
   type Deadline = { key: string; day: string; courseId: string; label: string; done: boolean };
   const deadlines: Deadline[] = [
-    ...assessmentDeadlines.map(({ item, day, courseId, code }) => ({ key: item.key, day, courseId, label: `${code} · ${item.name}`, done: ['submitted', 'graded'].includes(corrections[item.key]?.status || item.status) || item.score !== undefined })),
+    ...assessmentDeadlines.map(({ item, day, courseId, code }) => ({ key: item.key, day, courseId, label: `${code} · ${item.name}`, done: ['submitted', 'graded'].includes(item.status) || item.score !== undefined })),
     ...tasks.filter(task => !assessmentDeadlines.some(entry => covers(task, entry.courseId, entry.item.key))).map(task => ({ key: task.key, day: task.due, courseId: task.courseId, label: `${codeOfWork(task)} · ${task.title}`, done: task.done === true })),
   ];
   const deadlinesOn = (day: string) => deadlines.filter(entry => entry.day === day);
@@ -470,11 +484,12 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const needs = [
     ...plan.overflow.flatMap(entry => { const task = workByKey.get(entry.key); if (!task) return [];
       return [{ key: `plan:${entry.key}`, courseId: task.courseId, text: entry.overdue
-        ? (zh ? `已过截止 · ${codeOfWork(task)} · ${task.title}：还剩 ${entry.minutes} 分钟` : `Overdue · ${codeOfWork(task)} · ${task.title}: ${entry.minutes} min left`)
+        ? (entry.minutes > 0 ? (zh ? `已过截止 · ${codeOfWork(task)} · ${task.title}：还剩 ${entry.minutes} 分钟` : `Overdue · ${codeOfWork(task)} · ${task.title}: ${entry.minutes} min left`)
+          : (zh ? `已过截止 · ${codeOfWork(task)} · ${task.title}：预计时间已用完，还没标完成` : `Overdue · ${codeOfWork(task)} · ${task.title}: estimate used up, not marked done`))
         : (zh ? `排不下 · ${codeOfWork(task)} · ${task.title}：${shortDate(task.due)} 截止前还差 ${entry.minutes} 分钟` : `Does not fit · ${codeOfWork(task)} · ${task.title}: ${entry.minutes} min short before ${shortDate(task.due)}`) }]; }),
     ...syncIssues.filter(item => item.status === 'failed').map(item => ({ key: `sync:${item.id}`, courseId: item.id, text: zh ? `${codeOf(item.id)} 最近一次同步未完成` : `${codeOf(item.id)}: the latest sync failed` })),
-    ...assessmentDeadlines.filter(({ item, day, courseId }) => day >= today && day <= weekEnd && item.score === undefined && !item.caution && !item.ungraded && item.kind !== 'ungraded' && !(item.sourceZero && !item.bonus)
-      && !['submitted', 'graded'].includes(corrections[item.key]?.status || item.status)
+    ...assessmentDeadlines.filter(({ item, day, courseId, graded }) => graded && day >= today && day <= weekEnd && item.score === undefined
+      && !['submitted', 'graded'].includes(item.status)
       && !tasks.some(task => covers(task, courseId, item.key) || (item.parent !== '' && covers(task, courseId, item.parent))))
       .sort((a, b) => a.day.localeCompare(b.day))
       .map(({ item, day, courseId, code }) => ({ key: `soon:${item.key}`, courseId, text: zh ? `${shortDate(day)} 截止 · ${code} · ${item.name}：还没有安排` : `Due ${shortDate(day)} · ${code} · ${item.name}: not planned` })),
@@ -525,7 +540,9 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
           return <div className={`task-row${item.done ? ' done' : ''}`} key={item.key}>
             <span className="task-name">{codeOfWork(item)} · {item.title}<small className="muted block">{zh ? `截止 ${shortDate(item.due)} · 预计 ${item.minutes} 分钟` : `Due ${shortDate(item.due)} · estimate ${item.minutes} min`}{item.done && ` · ${zh ? '实际' : 'actual'} ${spent} ${zh ? '分钟' : 'min'} (${diff > 0 ? '+' : ''}${diff}%)`}</small></span>
             <span className="task-controls"><label className="inline">{zh ? '已用' : 'Spent'}<input key={`${item.key}:${spent}`} type="number" min="0" max="100000" step="5" defaultValue={item.spent ?? ''} aria-label={zh ? `${item.title} 已用分钟` : `${item.title} minutes spent`}
-              onBlur={event => { const raw = event.currentTarget.value.trim(); const value = raw === '' ? undefined : Number(raw); if (value === undefined || (Number.isFinite(value) && value >= 0 && value <= 100000)) { if (value !== item.spent) updateTask(item.key, { spent: value }); } else event.currentTarget.value = String(item.spent ?? ''); }} /></label>
+              onBlur={event => { const input = event.currentTarget; const raw = input.value.trim(); const value = raw === '' ? undefined : Math.round(Number(raw));
+                // A number input reports '' for text it cannot read, so badInput keeps the stored value instead of clearing it.
+                if (!input.validity.badInput && (value === undefined || (Number.isFinite(value) && value >= 0 && value <= 100000))) { if (value !== item.spent) updateTask(item.key, { spent: value }); } else input.value = String(item.spent ?? ''); }} /></label>
             <label className="inline"><input type="checkbox" checked={item.done === true} onChange={event => updateTask(item.key, { done: event.currentTarget.checked })} />{zh ? '完成' : 'Done'}</label>
             <button className="small ghost" onClick={() => saveWork(work.filter(row => row.key !== item.key))}>{zh ? '移除' : 'Remove'}</button></span></div>; })}</details>}
       {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}
