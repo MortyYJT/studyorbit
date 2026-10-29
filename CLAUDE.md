@@ -1,7 +1,24 @@
-@AGENTS.md
+# StudyOrbit rules (single source of truth)
 
-## Claude Code specifics
+## Workflow
+- All development is done by Claude. Claude opens and merges every PR.
+- Large changes (contract, architecture, new subsystem): write an OpenSpec change first. Small features start straight from the task list.
+- TDD for logic: write a failing test first, then make it pass. Docs and styling skip TDD.
+- Before saying "done", run `bash .claude/check.sh` (= `npm run check`, same as CI) and show the output.
+- Before merging, a fresh-context subagent reviews the diff and reports only correctness bugs.
+- Work on a `claude/<topic>` branch; never push to `main`. Merge only after CI passes.
+- Commit format: `type(scope): summary`, body as English `- ` bullets.
 
-- Hooks in `.claude/settings.json` enforce two rules: `guard.sh` blocks writes to secret files and unsafe git commands; `verify.sh` runs `.claude/check.sh` before a turn can finish. If a hook blocks you, fix the cause; do not look for a way around it.
-- Use plan mode when the approach is uncertain, the change touches several files, or it is an OpenSpec change. If the diff can be described in one sentence, skip the plan and just do it.
-- When compacting, always preserve the list of modified files, the current OpenSpec change id, and the check command. Before a long session ends or context gets heavy, update `note/handoff.md`.
+## Ask the user first
+- Design choices (architecture, tech selection): offer options; the user picks and gives a reason. Record it in `note/decisions.md`.
+
+## Records
+- Keep `note/handoff.md` current: what is done, what is next, open questions.
+- Task list: tick an item when it is done and add the PR number.
+
+## Red line
+- Never commit secrets, grades or real course data, the owner's real name, or local paths. Tests use synthetic data.
+
+## Project facts
+- StudyOrbit: Node 24, TypeScript, React 19, Vite 8, zod, vitest. `npm ci`, `npm run dev`, `npm run check`.
+- Local data in `.local/` (git-ignored); course JSON on the owner's Desktop; corrections in browser localStorage.

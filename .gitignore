@@ -3,7 +3,7 @@ node_modules/
 dist/
 coverage/
 
-# Secrets: never commit (see AGENTS.md red lines)
+# Secrets: never commit (see CLAUDE.md red line)
 .env
 .env.*
 !.env.example

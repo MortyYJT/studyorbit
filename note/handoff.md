@@ -2,8 +2,8 @@
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。决定看 `note/decisions.md`（#1–#240）。
 
-- **最后更新：** 2026-10-29，Claude。
-- **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）、#247（全局清理，#239）；规则去冲突在分支 `claude/rules-sync`（#240）。
+- **最后更新：** 2026-10-30，Claude。
+- **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）、#247（全局清理，#239）；规则精简为单一文件 `CLAUDE.md`（#241）。
 - **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，本地 `origin` 已指向新地址），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
 - **OpenSpec：** 没有进行中的 change；现行规格在 `openspec/specs/`（`grade-target`、`revision`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
 
@@ -45,4 +45,5 @@
 - 本机 shell 设了 `NODE_DEBUG=http,...`，跑测试和服务器时用 `NODE_DEBUG=`。
 - `sync-usage` 靠 `.local/lms/runs/*` 目录创建时间：移动数据用 `mv`，不要 `cp`。
 - 5174 端口被本机别的进程占用，第二个开发服务器用别的端口。
-- 规则（#240）：谁实现、谁审查按任务决定；不再有无人值守调度；Learning 输出风格已关闭。
+- 规则以 `CLAUDE.md` 为准（#241）：Claude 开发并合并；大改动先写 OpenSpec；逻辑用 TDD；合并前新上下文审查；只有设计选择先问用户。
+- 下一阶段任务清单在用户桌面「StudyOrbit待办」，做完一条勾一条。

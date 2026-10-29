@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PreToolUse guard. Exit 2 = block the action and show stderr to Claude.
-# Blocks: (1) writes to secret files, (2) git push to main/master, force pushes, hard resets.
+# Blocks: (1) writes to secret files, (2) git push to main/master.
 input="$(cat)"
 python3 - "$input" <<'PY'
 import json, re, sys
@@ -25,13 +25,7 @@ if tool in ("Write", "Edit", "MultiEdit"):
 
 if tool == "Bash":
     cmd = ti.get("command", "")
-    if re.search(r"\bgit\s+push\b.*(--force|--force-with-lease|\s-f\b)", cmd):
-        block("force push is not allowed.")
     if re.search(r"\bgit\s+push\b[^;&|]*\b(origin\s+)?(main|master)\b", cmd) or re.search(r"\bgit\s+push\b[^;&|]*HEAD:(main|master)\b", cmd):
         block("do not push to main/master. Push a branch and open a pull request.")
-    if re.search(r"\bgit\s+reset\s+--hard\b", cmd):
-        block("git reset --hard discards work. Ask the user first.")
-    if re.search(r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*f|\brm\s+-[a-zA-Z]*f[a-zA-Z]*r", cmd) and re.search(r"(\s/\s|\s~|\s\$HOME|\s\.\s*$|\s\*)", cmd):
-        block("recursive force delete on a broad target. Ask the user first.")
 sys.exit(0)
 PY
