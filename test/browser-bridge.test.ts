@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { APPLESCRIPT_APPS, appleScripts, createAppleScriptBridge } from '../scripts/browser/applescript.mjs';
+import { APPLESCRIPT_APPS, appleEventsHint, appleScripts, createAppleScriptBridge, runningScript } from '../scripts/browser/applescript.mjs';
 import {
   assertAllowedUrl, LOAD_LIMIT_MS, POLL_MS, READ_EXPRESSIONS, READ_RETRY_MS, TabUnrecognisedError, withPage, type BrowserBridge, type ReadKind,
 } from '../scripts/browser/bridge.mjs';
@@ -112,12 +112,13 @@ describe('withPage', () => {
   });
 });
 
-describe('AppleScript bridge (Edge)', () => {
+describe('AppleScript bridges (Edge and Chrome)', () => {
   const goldenScripts = async (name: string) => JSON.parse(await readFile(join(import.meta.dirname, 'golden', name), 'utf8')).scripts as string[];
   const recorder = (answers: Record<string, string> = {}) => {
     const calls: { script: string; args: string[] }[] = [];
     const runner = async (script: string, args: string[]) => {
       calls.push({ script, args });
+      if (script.includes('is running')) return answers.running ?? 'true';
       if (script.includes('make new tab')) return answers.create ?? '7:tab-1';
       return answers.other ?? 'ready';
     };
@@ -131,7 +132,40 @@ describe('AppleScript bridge (Edge)', () => {
     expect(await goldenScripts('handbook-calls.json')).toEqual([scripts.create, scripts.status, scripts['body-text'], scripts.close]);
     expect(scripts['navigation-status']).toContain(`execute t javascript ${JSON.stringify(READ_EXPRESSIONS['navigation-status'])}`);
     expect(Object.values(scripts).every(script => script.includes('tell application "Microsoft Edge"'))).toBe(true);
-    expect(APPLESCRIPT_APPS).toEqual({ 'edge-applescript': 'Microsoft Edge' });
+    expect(APPLESCRIPT_APPS).toEqual({ 'edge-applescript': 'Microsoft Edge', 'chrome-applescript': 'Google Chrome' });
+  });
+
+  it('addresses only Google Chrome when Chrome is chosen, with the same scripts otherwise', () => {
+    const chrome = appleScripts('Google Chrome'), edge = appleScripts('Microsoft Edge');
+    for (const [name, script] of Object.entries(chrome)) {
+      expect(script, name).toContain('tell application "Google Chrome"');
+      expect(script, name).not.toMatch(/Edge|Microsoft/);
+      expect(script.replace('CHROME_WINDOW_MISSING', 'EDGE_WINDOW_MISSING').replace('Google Chrome', 'Microsoft Edge'), name).toBe(edge[name as keyof typeof edge]);
+    }
+    // The running check never uses `tell application`, which would start the browser.
+    expect(runningScript('Google Chrome')).toBe('on run argv\n return application "Google Chrome" is running\nend run');
+    expect(runningScript('Google Chrome')).not.toContain('tell');
+  });
+
+  it('checks that the browser is running before opening a tab, and never starts it', async () => {
+    for (const [id, name] of [['chrome-applescript', 'Google Chrome'], ['edge-applescript', 'Microsoft Edge']] as const) {
+      const closed = recorder({ running: 'false' });
+      const bridge = createAppleScriptBridge({ id, allowedOrigins: origins, runner: closed.runner, platform: 'darwin' });
+      await expect(bridge.open('https://canvas.example.edu/a', 'x')).rejects.toThrow(`请先打开 ${name} 并登录`);
+      expect(closed.calls.map(call => call.script)).toEqual([runningScript(name)]);
+      const open = recorder();
+      const running = createAppleScriptBridge({ id, allowedOrigins: origins, runner: open.runner, platform: 'darwin' });
+      await running.open('https://canvas.example.edu/a', 'x');
+      expect(open.calls.map(call => call.script)).toEqual([runningScript(name), appleScripts(name).create]);
+    }
+  });
+
+  it('names the chosen browser and its menu path for JavaScript from Apple Events', () => {
+    // Edge keeps the text the Canvas collector printed before (golden canvas-failures.json).
+    expect(appleEventsHint('edge-applescript')).toBe('如提示 JavaScript from Apple Events，请在 Edge 开发者菜单允许后重试。');
+    expect(appleEventsHint('chrome-applescript')).toContain('Chrome');
+    expect(appleEventsHint('chrome-applescript')).toContain('View → Developer → Allow JavaScript from Apple Events');
+    expect(appleEventsHint('chrome-applescript')).not.toContain('Edge');
   });
 
   it('opens a marked background tab, and maps each read kind to its constant expression only', async () => {
@@ -139,6 +173,7 @@ describe('AppleScript bridge (Edge)', () => {
     const bridge = createAppleScriptBridge({ id: 'edge-applescript', allowedOrigins: origins, runner, platform: 'darwin' });
     const tab = await bridge.open('https://canvas.example.edu/api/v1/courses?x=1', 'https://canvas.example.edu/api/v1/courses');
     expect(tab).toEqual(['7', 'tab-1']);
+    expect(calls.shift()!.script).toBe(runningScript('Microsoft Edge'));
     expect(calls[0]!.args[0]).toMatch(/^https:\/\/canvas\.example\.edu\/api\/v1\/courses\?x=1#coursework-[0-9a-f-]{36}$/);
     await bridge.read(tab, 'P', 'same-origin-json');
     await bridge.read(tab, 'P', 'body-text');
@@ -165,5 +200,6 @@ describe('AppleScript bridge (Edge)', () => {
     await expect(bridge.open('https://canvas.example.edu/a', 'x')).rejects.toBeInstanceOf(TabUnrecognisedError);
     expect(() => createAppleScriptBridge({ id: 'safari-applescript', allowedOrigins: origins, runner, platform: 'darwin' })).toThrow('未知的浏览器桥');
     expect(() => createAppleScriptBridge({ id: 'edge-applescript', allowedOrigins: origins, runner, platform: 'linux' })).toThrow('只能在 macOS 上使用');
+    expect(() => createAppleScriptBridge({ id: 'chrome-applescript', allowedOrigins: origins, runner, platform: 'win32' })).toThrow('Google Chrome 的 AppleScript 采集只能在 macOS 上使用');
   });
 });

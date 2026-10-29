@@ -4,6 +4,7 @@
 // assignment groups and assignments with the owner's submission. Every URL is the configured Canvas origin plus a
 // fixed Canvas REST path; pages are read through the browser bridge with the same-origin JSON read, following
 // `rel="next"` only within the same origin and path (at most 100 pages). No cookie or token is read.
+import { appleEventsHint } from '../../browser/applescript.mjs';
 import { withPage } from '../../browser/bridge.mjs';
 import { collectorExitCode, httpFailure } from '../../lib/collector-exit.mjs';
 import { normalizeCourses, parseCoursePage } from '../../lib/course-list.mjs';
@@ -69,7 +70,7 @@ try {
   console.log(JSON.stringify({ courses: captured.courses?.length, groups: captured.groups?.length, assignments: captured.assignments?.length, durationMs: captured.durationMs }));
 } catch (error) {
   const message = String(error.stderr || error.message).trim().slice(0, 500);
-  console.error(`Canvas 后台采集失败：${message}。如提示 JavaScript from Apple Events，请在 Edge 开发者菜单允许后重试。`);
+  console.error(`Canvas 后台采集失败：${message}。${appleEventsHint(config.browser)}`);
   process.exitCode = collectorExitCode(error);
 } finally {
   // Reported after the failure itself, as before the move.

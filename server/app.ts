@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSyncPipeline, type PipelineDeps, type SyncPipeline } from '../scripts/lib/sync-pipeline.mjs';
+import { defaultSourceConfig } from '../scripts/sources/config.mjs';
 import { canvasSource, resolveSourceSetup } from '../scripts/sources/registry.mjs';
 import type { OpenResult } from '../scripts/lib/sync-store.mjs';
 import type { Env, RouteContext, RouteHandler } from './context.ts';
@@ -58,8 +59,9 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
     desktopDir: options.desktopDir ?? join(homedir(), 'Desktop'),
     env: options.env ?? process.env,
   };
-  // Today's setup (UniMelb, Edge through Apple Events) until the source settings file arrives (generic-adapters PR 3).
-  const setup = resolveSourceSetup();
+  // Today's setup (UniMelb, Edge through Apple Events, or Chrome with STUDYORBIT_BROWSER=chrome-applescript) until the
+  // source settings file arrives (generic-adapters PR 3).
+  const setup = resolveSourceSetup(defaultSourceConfig(context.env));
   const pipeline: SyncPipeline | null = options.store?.ok
     ? createSyncPipeline({ setup, ...options.pipelineDeps, hooks: undefined, store: options.store.store, projectDir: context.projectDir, desktopDir: context.desktopDir, env: context.env })
     : null;

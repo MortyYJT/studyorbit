@@ -9,7 +9,7 @@ import { parseHandbookComponents as fromRefs } from '../scripts/lib/course-refs.
 import { courseFolder, limiterKey, spawnCollector, type CollectorRequest } from '../scripts/lib/sync-stages.mjs';
 import { unimelb } from '../scripts/institutions/unimelb/index.mjs';
 import { handbookSource } from '../scripts/institutions/unimelb/handbook-source.mjs';
-import { canvasOrigin, DEFAULT_SOURCE_CONFIG, MISSING_CONFIG_OFF_MACOS, readSourceConfig, SOURCE_CONFIG_ENV, sourceConfigEnv } from '../scripts/sources/config.mjs';
+import { canvasOrigin, DEFAULT_SOURCE_CONFIG, defaultSourceConfig, MISSING_CONFIG_OFF_MACOS, readSourceConfig, SOURCE_CONFIG_ENV, sourceConfigEnv } from '../scripts/sources/config.mjs';
 import { canvasSource, edSource, LEGACY_SOURCE_IDS, resolveSourceSetup, resolveSources } from '../scripts/sources/registry.mjs';
 import type { CourseSource } from '../scripts/sources/types.d.mts';
 import { runCollectorScript } from './collector-harness.ts';
@@ -36,6 +36,17 @@ describe('collector configuration (STUDYORBIT_SOURCE_CONFIG)', () => {
     for (const change of [{ version: 2 }, { institution: 'elsewhere' }, { browser: 'safari' }, { canvasOrigin: 'http://canvas.example.edu' }, { edRegion: 'us' }, { token: 'x' }]) {
       expect(bad({ ...DEFAULT_SOURCE_CONFIG, ...change })).toThrow(`${SOURCE_CONFIG_ENV} 无效`);
     }
+  });
+
+  it('takes Chrome from the temporary STUDYORBIT_BROWSER override until the settings file exists', () => {
+    expect(defaultSourceConfig({})).toEqual(DEFAULT_SOURCE_CONFIG);
+    expect(defaultSourceConfig({ STUDYORBIT_BROWSER: 'chrome-applescript' }).browser).toBe('chrome-applescript');
+    expect(() => defaultSourceConfig({ STUDYORBIT_BROWSER: 'safari' })).toThrow('STUDYORBIT_BROWSER');
+    expect(readSourceConfig({ env: { STUDYORBIT_BROWSER: 'chrome-applescript' }, platform: 'darwin', needsBrowser: true }).browser).toBe('chrome-applescript');
+    // The variable from StudyOrbit wins over the override.
+    expect(readSourceConfig({ env: { ...sourceConfigEnv(DEFAULT_SOURCE_CONFIG), STUDYORBIT_BROWSER: 'chrome-applescript' }, platform: 'darwin' }).browser).toBe('edge-applescript');
+    const chrome = resolveSourceSetup(defaultSourceConfig({ STUDYORBIT_BROWSER: 'chrome-applescript' }));
+    expect(JSON.parse(chrome.context.env[SOURCE_CONFIG_ENV]!).browser).toBe('chrome-applescript');
   });
 
   it('accepts only https origins without user, path, query, fragment or IP address', () => {
@@ -150,6 +161,33 @@ describe('collectors through the new entry points and the configuration', () => 
       ...discover, closeError: 'tab gone', state: { [Object.keys(discover.pages)[0]!]: 'redirect' },
     });
     expect(redirect.stderr).toBe('Canvas 后台采集失败：Canvas 登录可能已失效或页面跳转。如提示 JavaScript from Apple Events，请在 Edge 开发者菜单允许后重试。\n无法关闭本次后台采集标签页，请手动关闭。\n');
+  });
+
+  it('drives only Google Chrome when Chrome is chosen, and fails without starting it when it is not open', async () => {
+    const chrome = { ...DEFAULT_SOURCE_CONFIG, browser: 'chrome-applescript' as const };
+    const run = await runCollectorScript('scripts/sources/canvas/collect.mjs', ['discover', '<out>'], discover, sourceConfigEnv(chrome));
+    expect(run.code, run.stderr).toBe(0);
+    const scripts = run.calls.map(call => String(call.script));
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const script of scripts) {
+      expect(script).toMatch(/application "Google Chrome"/);
+      expect(script).not.toMatch(/Edge|Microsoft/);
+    }
+    // The same courses as through Edge.
+    const edge = await runCollectorScript('scripts/sources/canvas/collect.mjs', ['discover', '<out>'], discover);
+    expect(run.output).toBe(edge.output);
+    // By hand, the temporary STUDYORBIT_BROWSER override chooses Chrome too.
+    const byHand = await runCollectorScript('scripts/canvas-background.mjs', ['discover', '<out>'], discover, { STUDYORBIT_BROWSER: 'chrome-applescript' });
+    expect(byHand.calls.map(call => String(call.script))).toEqual(scripts);
+
+    const closed = await runCollectorScript('scripts/sources/canvas/collect.mjs', ['discover', '<out>'], { ...discover, running: false }, sourceConfigEnv(chrome));
+    expect([closed.code, closed.output]).toEqual([1, null]);
+    expect(closed.calls.map(call => String(call.script))).toEqual(['on run argv\n return application "Google Chrome" is running\nend run']);
+    expect(closed.stderr).toContain('请先打开 Google Chrome 并登录');
+    expect(closed.stderr).toContain('View → Developer → Allow JavaScript from Apple Events');
+    const handbook = await runCollectorScript('scripts/collect-handbook.mjs', ['SYNT10001', '2026', '<out>'], { running: false }, sourceConfigEnv(chrome));
+    expect([handbook.code, handbook.calls.length]).toEqual([1, 1]);
+    expect(handbook.stderr).toBe('Handbook 采集不可用：请先打开 Google Chrome 并登录\n');
   });
 
   it('runs Ed off macOS without the configuration (Ed never needs the browser)', async () => {

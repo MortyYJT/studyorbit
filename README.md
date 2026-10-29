@@ -29,7 +29,8 @@ npm run dev
 
 打开 `http://localhost:5173/`。`npm run dev` 会先启动本地接口服务（`127.0.0.1:5190`），再启动页面（`localhost:5173`）；两个端口可用 `STUDYORBIT_API_PORT`、`STUDYORBIT_WEB_PORT` 修改，端口被占时直接报错，不会换端口。只看已同步的数据不需要额外准备；要同步课程还需要：
 
-1. 在 **macOS Microsoft Edge** 中登录墨大 Canvas，并保留一个浏览器窗口。Canvas 和 Handbook 采集依赖 Edge 的 Apple Events JavaScript 和系统自动化权限。
+1. 在 **macOS Microsoft Edge** 中登录墨大 Canvas，并保留一个浏览器窗口。Canvas 和 Handbook 采集依赖 Edge 的 Apple Events JavaScript 和系统自动化权限。采集前浏览器必须已经打开；没打开时会报「请先打开 Microsoft Edge 并登录」，不会替你启动。
+   - **改用 macOS Google Chrome（未实测）：** 启动前设 `STUDYORBIT_BROWSER=chrome-applescript`（如 `STUDYORBIT_BROWSER=chrome-applescript npm run dev`；手动跑采集脚本时同样适用），这是设置页加上「数据来源」之前的临时开关。Chrome 需要在菜单 View → Developer → Allow JavaScript from Apple Events（中文界面在「显示 → 开发者」里）勾选，第一次采集时 macOS 会另外询问是否允许终端控制「Google Chrome」。Chrome 和 Edge 的脚本字典相同，但还没有用真实 Chrome 跑过。
 2. 安装并登录澳区 `edstem` CLI（Ed 使用它自己的登录，不复用 Edge）。
 3. 在「设置 → 分析模型」选择模型并填写密钥，点「测试连接」确认可用。也可以沿用环境变量（`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`，或 `COURSE_ANALYSIS_PROVIDER` / `_MODEL` / `_URL` / `_API_KEY`）；优先级是设置 > 环境变量 > 默认（DeepSeek `deepseek-flash`）。
 
