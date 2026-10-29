@@ -52,13 +52,14 @@ describe('context mode is pinned', () => {
 
       ## SYN10001 Synthetic Systems（2026 Semester 2）
       已出分权重 50%，已得 36 分（总分 100），已出分部分平均 72%。
+      标「权重无出处」「规则无出处」的项目：同步时没有在采集数据里找到依据，值已留空，不要当作已确认的信息。
       - Assignment 1｜作业｜权重 20%｜得分 15/20｜截止 2026-08-20 23:59｜已出分
       - Weekly quizzes｜测验｜权重 30%｜计分：按子项原始分合计
         - Quiz 1｜测验｜得分 8/10｜已出分
         - Quiz 2｜测验｜得分 6/10｜已提交
       - Bonus challenge｜作业｜满分 2｜加分项
       - Alternative exam｜考试｜权重 50%｜替代方案（不计入总分）
-      - Participation｜参与
+      - Participation｜参与｜权重无出处
       - Final exam｜考试｜权重 50%｜满分 100｜截止 2026-11-10｜未开始｜规则：Hurdle: at least 40% on the exam
       - Lab attendance｜Hurdle｜进行中｜不计分｜Hurdle 要求
 
