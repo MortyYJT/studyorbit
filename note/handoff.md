@@ -24,9 +24,12 @@
 - **独立本地服务（`local-server-sync-pipeline` 第 1 部分，分支 `claude/local-server`，PR #275 已合并，决定 #415–#424；#278 修了信号处理装得太晚导致的偶发测试失败）：** 所有 `/api/local/*` 从 `vite.config.ts` 搬到 `server/`（`app.ts` 路由表、`routes/` 每个路由一个文件、`guard.ts` 回环 → 令牌 → Host → Origin、`proxy.ts`、`main.ts` 接上单实例锁和数据库，不可用时同步接口 503）；`scripts/dev.mjs` 每次启动生成令牌，先起服务再起 Vite；顺手修了课程发现「取消」从来没生效的问题（#420）。测试：`server-guard`、`local-server`（每个路由）、`server-main`（子进程：令牌、锁、端口被占、坏数据库、信号）、`local-proxy`（真 Vite：令牌替换、Host、SSE 不缓冲、中断传到上游）、`dev-launcher`、`vite-config`。真实数据只读浏览器检查（5181/5191 端口）通过。
 - **分阶段同步（`local-server-sync-pipeline` 第 3 部分，分支 `claude/staged-sync`，PR #277 已合并，决定 #425–#434）：** `scripts/lib/sync-stages.mjs`（采集 → 分析 → 校验 → 合并，输入哈希、检查点、按来源复用、先记录再写的合并、按续跑链去重的变更记录）、`scripts/lib/sync-pipeline.mjs`（任务存数据库、续跑、取消与中断、模拟崩溃、用量记录照旧）、`scripts/lib/rate-limit.mjs`（采集一次一个、每家模型 4 个、最多 3 次、`Retry-After`、2 分钟上限）；模型结果带 `httpStatus`，采集器临时失败退出码 75；新接口 `GET /api/local/sync-jobs`、`POST /api/local/sync-jobs/<jobId>/resume`；页面「已中断」「继续上次同步」「沿用上次结果」；`scripts/course-sync-runner.mjs` 已删。每个阶段边界一个故障注入测试（`test/sync-faults.test.ts`），续跑与重来的假模型 token 用 `npx vitest run test/sync-faults.test.ts --silent=false` 打印。
 - **续跑与重来的测量（第 4 部分，分支 `claude/pipeline-measurements`，PR #279 待审查合并，决定 #435–#437）：** 没写单独脚本，`test/sync-faults.test.ts` 打印每个边界的假 token、调用次数和耗时；`docs/sync-optimization.md` 新增「续跑和重来（假模型、合成数据，不是真实运行）」一节：每个边界「失败 + 续跑」都等于不中断（13,885 假 token、12 次采集 / 5 次模型），「失败 + 重来」多花 2,949（采集 → 分析）或 5,898（之后三个边界）；按 2026-10-28 真实数字估算的节省单独标为估算。`docs/overview.md` 补了阶段、数据库、续跑、工具对话和 MCP；两个 change 已归档。
+- **通用化第 1 部分（`generic-adapters`，分支 `claude/generic-adapters-1`，PR #280 待合并，决定 #450–#456）：** 先录墨大金标准（`test/golden/`，四个采集器用测试预加载模块在子进程里对假响应真跑），再把采集器搬到接口后面：`scripts/sources/`（Canvas、Ed、注册表、`STUDYORBIT_SOURCE_CONFIG`）、`scripts/institutions/unimelb/`（课程代码、学期、文件夹、措辞、Handbook 来源）、`scripts/browser/`（`withPage`、Edge 的 AppleScript 桥，只能开允许的 origin、只有固定读取表达式）；旧脚本路径保留为转发；分阶段同步不再写死三个来源，任务的来源列表存进数据库（第 2 步迁移）。金标准逐字节不变。
 - **验证（较早）：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
 
 ## 未验证
+
+- 通用化第 1 部分：没有跑过真实采集器（Edge、Canvas、Ed、Handbook 都没碰），采集器只在假 osascript / 假 edstem / 假 fetch 上跑过；数据库第 2 步迁移只在测试库上跑过，第一次启动服务时会先备份 `.local/studyorbit.db.v1.bak` 再迁移。
 
 - 续跑与重来：只用假模型和合成数据测过，没有真实测量；按真实数字的节省只是估算。
 - 分阶段同步：没有跑过真实同步、真实采集器或真实模型；采集器退出码 75 只测了判断函数（Handbook 的 `responseStatus` 读取和 Ed 命令的报错格式都是推断）；Codex 子代理用量在续跑时没验证；浏览器只用假接口验证了续跑按钮。
@@ -53,7 +56,7 @@
 4. L0/L1/L2（#238 先不做）：以后做时先定方案；Claude 的立场是执行器只在合成演示课程上跑。
 5. 小问题（未排期）：`RichText` 遇到「标题 + 列表」混在一段时列表符号原样显示。
 6. 工具调用对话 + MCP：OpenSpec 变更 `chat-tools-mcp`（决定 #320–#339、#360–#369、#395–#404，待你复核）。第 1、2 个 PR 已合并（#264、#267）；第 3 个 PR #273（问答评测）已合并：32 道合成题 × 5 次 × 2 种模式，`deepseek-flash` 上下文模式 → 工具模式的准确率见 `docs/eval-results.md`「对话问答：改造前后」，上下文模式的错是缺计划数据或剩余权重口径不同，不是算术错；同一 PR 修了 DeepSeek 并行工具调用的回传顺序（#396，#267 的实测没覆盖到，第二步会 400）。MCP（第 4 个，PR #270，决定 #400–#404）已合并，整个 change 已归档（从 Claude Code 实际连接仍未验证）：`scripts/mcp-server.mjs` + `scripts/lib/course-mcp.mjs`，SDK 1.32.2，README 有 Claude Code / Claude Desktop 接法；#330 需要你定是否改用 SDK v2。
-7. 通用化：OpenSpec 变更 `generic-adapters`（决定 #440–#449，待你复核；规格 PR 待审查）。4 个 PR：接口和搬家（等 `local-server-sync-pipeline` 第 3 部分合并后开始）、macOS Chrome、设置 + 通用学校 + 通用 Canvas、Windows/Linux 的 CDP 桥（实验性）。第 2 个 PR 合并后需要你用 Chrome 跑一次课程发现。
+7. 通用化：OpenSpec 变更 `generic-adapters`（决定 #440–#456，待你复核）。第 1 个 PR #280（接口和搬家）待 CI 通过后合并；之后是 macOS Chrome、设置 + 通用学校 + 通用 Canvas、Windows/Linux 的 CDP 桥（实验性）。第 1 个 PR 合并后建议你跑一次「获取课程」确认 Edge 采集照旧；第 2 个 PR 合并后需要你用 Chrome 跑一次课程发现。
 
 ## 等用户决定
 
