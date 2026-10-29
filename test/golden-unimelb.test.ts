@@ -64,7 +64,11 @@ describe('UniMelb golden: reasons, folders and hashes', () => {
       const data = { canvas, ed, handbook: variant === 'parsable' ? handbook : { ...handbook, text: 'Assessment\nNo table here' } };
       const validation = validateAnalysis(text, { course, ...data });
       for (let mask = 0; mask < 1 << flags.length; mask++) {
-        const collection = Object.fromEntries(flags.map((flag, index) => [flag, Boolean(mask & (1 << index))]));
+        // The named flags of the recording, in the per-source form settleCourse takes since generic-adapters PR 3.
+        const on = (flag: (typeof flags)[number]) => Boolean(mask & (1 << flags.indexOf(flag)));
+        const collection = {
+          canvas: { failed: on('canvasFailed'), unpaginated: on('canvasUnpaginated') }, ed: { failed: on('edFailed'), partial: on('edPartial') }, handbook: { failed: on('handbookFailed') },
+        };
         const settled = settleCourse({ result: { exitCode: 0, lastMessage: text, usage: null }, validation, collection, data, previous: null });
         rows.push({ handbook: variant, flags: flags.filter((_, index) => mask & (1 << index)), status: settled.status, reason: settled.reason });
       }
@@ -84,8 +88,10 @@ describe('UniMelb golden: reasons, folders and hashes', () => {
 
   it('collect and validate input hashes', async () => {
     const sources = { canvas: { file: '/r/canvas.json', sha256: 'c', exitCode: 0 }, ed: { file: '/r/ed.json', sha256: 'e', exitCode: 1 }, handbook: { file: '/r/handbook.json', sha256: 'h', exitCode: 0 } };
+    // The collect hash is the one recorded value that changed on purpose: generic-adapters PR 3 added the setup to the
+    // collect inputs and bumped COLLECT_VERSION (design §1, decision #464). The validate hash is unchanged.
     await expect(json({
-      collect: collectInputHash({ courseId: '900001', code: 'SYNT10001', term: '2026 Semester 2' }),
+      collect: collectInputHash({ courseId: '900001', code: 'SYNT10001', term: '2026 Semester 2', institution: 'unimelb', canvasOrigin: CANVAS, edRegion: 'auto', sources: ['canvas', 'ed', 'handbook'] }),
       validate: validateInputHash({ analyseArtifact: 'a', sources, previous: null }),
     })).toMatchFileSnapshot(golden('input-hashes.json'));
   });
@@ -180,9 +186,11 @@ describe('UniMelb golden: collectors on synthetic responses', () => {
   it('Canvas discovery: AppleScript calls and written course list', async () => {
     const run = await runCollectorScript(COLLECTOR_SCRIPTS.canvas, ['discover', '<out>'], discoverScenario);
     expect(run.code, run.stderr).toBe(0);
-    const written = JSON.parse(run.output!);
+    const { canvasOrigin, institution, ...written } = JSON.parse(run.output!);
     expect(written.courses).toEqual(normalizeCourses(JSON.parse(discoverScenario.pages![coursesUrl].body.slice('while(1);'.length)).concat(JSON.parse(discoverScenario.pages![coursesPage2].body))));
-    await expect(run.output).toMatchFileSnapshot(golden('canvas-discover.json'));
+    // The two fields generic-adapters PR 3 added are left out of the recording and asserted here (design §4).
+    expect({ canvasOrigin, institution }).toEqual({ canvasOrigin: CANVAS, institution: 'unimelb' });
+    await expect(json(written)).toMatchFileSnapshot(golden('canvas-discover.json'));
     await expect(json({ stdout: run.stdout, stderr: run.stderr, ...callTranscript(run.calls) })).toMatchFileSnapshot(golden('canvas-discover-calls.json'));
   });
 

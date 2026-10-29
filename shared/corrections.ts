@@ -131,15 +131,15 @@ export function assessmentFields(document: CourseDocument | DisplayDocument, cou
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 // Only a date-time with an explicit zone denotes an instant; a bare local time is compared as text.
 const ZONED = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/i;
-const melbourneDay = (ms: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+const dayIn = (ms: number, timeZone: string) => new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
 const isEmpty = (value: unknown) => value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
 
 /**
  * Whether two values of `field` are the same for the merge: empty values (undefined, null, blank) are equal; numbers
  * agree to two decimal places; due date-times with a zone are equal at the same instant, and a date-only due equals a
- * date-time on that calendar day in Australia/Melbourne; other strings compare trimmed.
+ * date-time on that calendar day in `timeZone` (the institution's); other strings compare trimmed.
  */
-export function sameValue(field: string, a: unknown, b: unknown): boolean {
+export function sameValue(field: string, a: unknown, b: unknown, timeZone: string): boolean {
   if (isEmpty(a) || isEmpty(b)) return isEmpty(a) && isEmpty(b);
   if (typeof a === 'number' && typeof b === 'number') return Math.round(a * 100) === Math.round(b * 100);
   if (typeof a === 'string' && typeof b === 'string') {
@@ -148,8 +148,8 @@ export function sameValue(field: string, a: unknown, b: unknown): boolean {
       const instant = (value: string) => (ZONED.test(value) ? Date.parse(value) : NaN);
       const ix = instant(x), iy = instant(y);
       if (Number.isFinite(ix) && Number.isFinite(iy)) return ix === iy;
-      if (DATE_ONLY.test(x) && Number.isFinite(iy)) return melbourneDay(iy) === x;
-      if (DATE_ONLY.test(y) && Number.isFinite(ix)) return melbourneDay(ix) === y;
+      if (DATE_ONLY.test(x) && Number.isFinite(iy)) return dayIn(iy, timeZone) === x;
+      if (DATE_ONLY.test(y) && Number.isFinite(ix)) return dayIn(ix, timeZone) === y;
     }
     return x === y;
   }
@@ -165,8 +165,8 @@ const definedFields = (correction: Correction) => Object.keys(correction).filter
  * stripped only when equal. Manual-item corrections and keys of neither form are kept as they are. Pins of removed fields
  * are dropped. Never modifies the input.
  */
-export function normaliseCorrections(store: { courseId: string; base: CorrectionStore['base']; corrections: Record<string, Correction>; pins: Record<string, readonly string[]> }): { corrections: Record<string, Correction>; pins: Record<string, string[]> } {
-  const { courseId, base } = store;
+export function normaliseCorrections(store: { courseId: string; base: CorrectionStore['base']; corrections: Record<string, Correction>; pins: Record<string, readonly string[]>; timeZone: string }): { corrections: Record<string, Correction>; pins: Record<string, string[]> } {
+  const { courseId, base, timeZone } = store;
   const corrections: Record<string, Correction> = {};
   const pins: Record<string, string[]> = {};
   for (const [key, correction] of Object.entries(store.corrections)) {
@@ -183,7 +183,7 @@ export function normaliseCorrections(store: { courseId: string; base: Correction
         let reference: unknown = baseFields[field as OverridableField];
         const itemValue = itemCorrection ? (itemCorrection as Record<string, unknown>)[field] : undefined;
         if (itemValue !== undefined && !(field === 'status' && isEmpty(itemValue))) reference = itemValue;
-        if (sameValue(field, value, reference)) continue;
+        if (sameValue(field, value, reference, timeZone)) continue;
       }
       next[field] = value;
     }
@@ -250,7 +250,7 @@ export function pruneConflicts(conflicts: Conflict[], corrections: Record<string
  * and conflict; a changed field takes the sent value, loses its pin and closes its conflict (the owner chose by editing).
  * A correction missing from `sent` is deleted with its pins and conflicts. The result is not yet normalised.
  */
-export function applyOwnerEdit(store: { corrections: Record<string, Correction>; pins: Record<string, readonly string[]>; conflicts: Conflict[] }, sent: Record<string, Correction>): { corrections: Record<string, Correction>; pins: Record<string, string[]>; conflicts: Conflict[] } {
+export function applyOwnerEdit(store: { corrections: Record<string, Correction>; pins: Record<string, readonly string[]>; conflicts: Conflict[] }, sent: Record<string, Correction>, timeZone: string): { corrections: Record<string, Correction>; pins: Record<string, string[]>; conflicts: Conflict[] } {
   const corrections: Record<string, Correction> = {};
   const pins: Record<string, string[]> = {};
   const changed = new Set<string>();
@@ -261,7 +261,7 @@ export function applyOwnerEdit(store: { corrections: Record<string, Correction>;
     const names = new Set([...definedFields(stored), ...definedFields(next)]);
     for (const field of allFields.filter(name => names.has(name))) {
       const before = (stored as Record<string, unknown>)[field], after = (next as Record<string, unknown>)[field];
-      if (sameValue(field, before, after)) { if (before !== undefined) merged[field] = before; continue; }
+      if (sameValue(field, before, after, timeZone)) { if (before !== undefined) merged[field] = before; continue; }
       changed.add(`${key}\u0000${field}`);
       if (after !== undefined) merged[field] = after;
     }
@@ -293,7 +293,7 @@ type MergeState = { corrections: Record<string, Correction>; pins: Record<string
  * assessment is back. A new conflict replaces the open one with the same ID; conflicts on dropped fields close. The
  * result is normalised against `incoming`, which becomes the new base. Never modifies the input.
  */
-export function mergeCorrections(base: Record<string, Fields>, incoming: Record<string, Fields>, store: MergeState & { courseId: string }, detectedAt: string): { corrections: Record<string, Correction>; pins: Record<string, string[]>; conflicts: Conflict[] } {
+export function mergeCorrections(base: Record<string, Fields>, incoming: Record<string, Fields>, store: MergeState & { courseId: string }, detectedAt: string, timeZone: string): { corrections: Record<string, Correction>; pins: Record<string, string[]>; conflicts: Conflict[] } {
   const { courseId } = store;
   const corrections: Record<string, Correction> = {};
   const pins: Record<string, string[]> = {};
@@ -335,17 +335,17 @@ export function mergeCorrections(base: Record<string, Fields>, incoming: Record<
       const before = baseFields[name], after = incomingFields[name];
       const isPinned = pinned.includes(name);
       const conflict = (): Conflict => ({ id: conflictId('field', key, name), type: 'field', key, assessmentId: id, field: name, base: before, incoming: after, user, detectedAt });
-      if (name === 'link') { if (isPinned || !sameValue(name, user, after)) next[name] = user; continue; }
-      if (sameValue(name, user, before)) {
+      if (name === 'link') { if (isPinned || !sameValue(name, user, after, timeZone)) next[name] = user; continue; }
+      if (sameValue(name, user, before, timeZone)) {
         if (!isPinned) continue;
         next[name] = user;
         // A move that still agrees with the owner (e.g. a date-only due and a new time on that day) is no disagreement.
-        if (!sameValue(name, after, before) && !sameValue(name, after, user)) raised.push(conflict());
+        if (!sameValue(name, after, before, timeZone) && !sameValue(name, after, user, timeZone)) raised.push(conflict());
         continue;
       }
       next[name] = user;
-      if (sameValue(name, after, before)) continue;
-      if (sameValue(name, after, user)) {
+      if (sameValue(name, after, before, timeZone)) continue;
+      if (sameValue(name, after, user, timeZone)) {
         if (!isPinned) pinned.push(name);
         closed.add(conflictId('field', key, name));
         continue;
@@ -360,7 +360,7 @@ export function mergeCorrections(base: Record<string, Fields>, incoming: Record<
   const kept = store.conflicts.filter(conflict => !closed.has(conflict.id) || replaced.has(conflict.id)).map(conflict => replaced.get(conflict.id) ?? conflict);
   const known = new Set(kept.map(conflict => conflict.id));
   const conflicts = [...kept, ...[...replaced.values()].filter(conflict => !known.has(conflict.id))];
-  const normalised = normaliseCorrections({ courseId, base: { digest: null, assessments: incoming }, corrections, pins });
+  const normalised = normaliseCorrections({ courseId, base: { digest: null, assessments: incoming }, corrections, pins, timeZone });
   return { ...normalised, conflicts: pruneConflicts(conflicts, normalised.corrections) };
 }
 

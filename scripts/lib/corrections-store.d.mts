@@ -15,5 +15,5 @@ export type CorrectionsStore = {
   resolve(courseId: string, conflictId: string, body: unknown): Promise<CorrectionsView>;
 };
 export function moveStoreKeys<S extends CorrectionStore>(store: S, legacyIds: Record<string, string>): S;
-export function createCorrectionsStore(options: { projectDir: string; loadDocument: (courseId: string) => Promise<CourseDocument | null>; now?: () => Date }): CorrectionsStore;
+export function createCorrectionsStore(options: { projectDir: string; loadDocument: (courseId: string) => Promise<CourseDocument | null>; now?: () => Date; timeZone?: () => string | Promise<string> }): CorrectionsStore;
 export function createCorrectionsHandler(store: CorrectionsStore): (req: IncomingMessage, res: ServerResponse) => Promise<void>;

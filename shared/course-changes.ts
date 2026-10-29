@@ -16,9 +16,10 @@ export type CourseChangeEntry =
  * that assessment exists; a current assessment is paired at most once (same-ID pairs first). Values are compared with
  * the merge's `sameValue` (due instants, weights to two decimals, a value becoming or ceasing to be null is a change).
  * Unpaired assessments are not reported. Output follows current document order, `due` before `weight`, with the
- * current name. Pure; never modifies the inputs.
+ * current name. A date-only due compares with a date-time by day in `timeZone` (the institution's). Pure; never
+ * modifies the inputs.
  */
-export function diffSnapshots(previous: CourseDocument | DisplayDocument, current: CourseDocument | DisplayDocument): CourseChangeEntry[] {
+export function diffSnapshots(previous: CourseDocument | DisplayDocument, current: CourseDocument | DisplayDocument, timeZone: string): CourseChangeEntry[] {
   const before = toDisplayDocument(previous).assessments, after = toDisplayDocument(current);
   const currentIds = new Set(after.assessments.map(item => item.id));
   // Maps, not objects, so an ID such as `__proto__` stays an ordinary key.
@@ -34,8 +35,8 @@ export function diffSnapshots(previous: CourseDocument | DisplayDocument, curren
     const old = pairs.get(item.id);
     if (!old) return [];
     const changes: CourseChangeEntry[] = [];
-    if (!sameValue('due', old.due, item.due)) changes.push({ assessmentId: item.id, name: item.name, field: 'due', before: old.due, after: item.due });
-    if (!sameValue('weight', old.weight, item.weight)) changes.push({ assessmentId: item.id, name: item.name, field: 'weight', before: old.weight, after: item.weight });
+    if (!sameValue('due', old.due, item.due, timeZone)) changes.push({ assessmentId: item.id, name: item.name, field: 'due', before: old.due, after: item.due });
+    if (!sameValue('weight', old.weight, item.weight, timeZone)) changes.push({ assessmentId: item.id, name: item.name, field: 'weight', before: old.weight, after: item.weight });
     return changes;
   });
 }

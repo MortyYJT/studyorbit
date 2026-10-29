@@ -1,8 +1,12 @@
 schema: spec-driven
 
 context: |
-  Product: StudyOrbit (`study-orbit`), a local-first coursework assistant for one University of Melbourne
-  student. Scripts collect Canvas (through the owner's signed-in Edge), Ed (the `edstem` CLI) and Handbook;
+  Product: StudyOrbit (`study-orbit`), a local-first coursework assistant, built for one University of Melbourne
+  student and generalised behind institution plugins (`scripts/institutions/`: `unimelb` holds every UniMelb
+  specific and is the default; `generic` works with any Canvas, unverified) and source settings
+  (`.local/config/sources.json`, page section 「数据来源」). Scripts collect Canvas (through the owner's signed-in
+  Edge or Chrome on macOS; only macOS Edge with UniMelb is verified), Ed (the `edstem` CLI) and the
+  institution's framework source (the UniMelb Handbook);
   a model the owner picks (DeepSeek, OpenAI-compatible, Anthropic, Codex CLI) turns them into one course
   JSON per course, validated by `shared/course-data.ts`. The React app shows grades, the final-needed
   target, a deterministic weekly plan, revision, and an Agent chat over the synced data.

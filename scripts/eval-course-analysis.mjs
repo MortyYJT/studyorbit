@@ -13,6 +13,8 @@ import { buildAnalysisPrompt, courseOutputSchema } from './lib/course-analysis.m
 import { filterSubjects } from './lib/course-list.mjs';
 import { analyseWithRepair, settleCourse, validateAnalysis } from './lib/course-validation.mjs';
 import { configProblem, readLlmConfig, resolveFromStored } from './lib/llm-config.mjs';
+import { DEFAULT_INSTITUTION } from './institutions/registry.mjs';
+import { resolveSources } from './sources/registry.mjs';
 import { analyse } from './lib/llm-providers.mjs';
 import { summariseCourse, summariseOverall } from './lib/eval-score.mjs';
 
@@ -143,11 +145,12 @@ export function createFakeRunner(dir) {
   };
 }
 
-function collectionFlags(canvas, ed, handbook) {
-  return {
-    canvasFailed: canvas?.status === 'unavailable', canvasUnpaginated: canvas?.paginationVerified === false,
-    edFailed: ed?.status === 'unavailable', edPartial: ed?.status === 'partial', handbookFailed: handbook?.status === 'unavailable',
-  };
+/** The evaluation runs on recorded data of the default institution: its sources and their collection flags. */
+const EVAL_SOURCES = resolveSources(null, DEFAULT_INSTITUTION);
+function collectionFlags(data) {
+  return Object.fromEntries(EVAL_SOURCES.map(({ id }) => [id, {
+    failed: data[id]?.status === 'unavailable', partial: data[id]?.status === 'partial', unpaginated: data[id]?.paginationVerified === false,
+  }]));
 }
 
 /**
@@ -169,7 +172,8 @@ export async function evaluateCourses({ courses, n, run, isCancelled = () => fal
           isCancelled,
         });
         // Same path as the sync: the accepted output becomes a stored v2 document; no earlier document, so no legacy IDs.
-        const settled = settleCourse({ result, validation, collection: collectionFlags(canvas, ed, handbook), data: { canvas, ed, handbook }, previous: null });
+        const data = { canvas, ed, handbook };
+        const settled = settleCourse({ result, validation, collection: collectionFlags(data), sources: EVAL_SOURCES, data, previous: null });
         // A model/process failure or a cancelled run is "failed"; only a completed but invalid answer is "rejected".
         const failed = !settled.accepted && (result.exitCode !== 0 || isCancelled());
         runs.push({ index, accepted: settled.accepted, failed, status: settled.status, reason: settled.reason, document: settled.document,

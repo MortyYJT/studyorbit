@@ -3,7 +3,8 @@
 // generic-adapters, design §2). `discover <out>` lists the active courses; `<courseId> <out>` reads one course's
 // assignment groups and assignments with the owner's submission. Every URL is the configured Canvas origin plus a
 // fixed Canvas REST path; pages are read through the browser bridge with the same-origin JSON read, following
-// `rel="next"` only within the same origin and path (at most 100 pages). No cookie or token is read.
+// `rel="next"` only within the same origin and path (at most 100 pages). No cookie or token is read. Discovery also
+// records the Canvas origin and the institution in the course list.
 import { appleEventsHint } from '../../browser/applescript.mjs';
 import { withPage } from '../../browser/bridge.mjs';
 import { collectorExitCode, httpFailure } from '../../lib/collector-exit.mjs';
@@ -13,8 +14,9 @@ import { readSourceConfig } from '../config.mjs';
 
 const [course, dest] = process.argv.slice(2);
 if (!(course === 'discover' || /^\d+$/.test(course ?? '')) || !dest) throw new Error('用法：node scripts/canvas-background.mjs <课程ID> <输出路径>');
-const config = readSourceConfig({ needsBrowser: true });
-const bridge = bridgeFor(config);
+let config, bridge;
+try { config = readSourceConfig({ needsBrowser: true }); bridge = bridgeFor(config); }
+catch (error) { console.error(`Canvas 后台采集失败：${error.message}`); process.exit(1); }
 const isStopped = stopFlag();
 const origin = config.canvasOrigin;
 const prefix = `${origin}/api/v1/courses/${course}/`;
@@ -58,7 +60,9 @@ try {
       } else url = null;
     }
     captured.pagination[kind] = { pages, count: allRows.length };
-    if (kind === 'courses') { captured.version = 1; captured.source = initialUrl; captured.fetchedAt = new Date().toISOString(); captured.courses = normalizeCourses(allRows, origin); captured.count = captured.courses.length; }
+    if (kind === 'courses') { captured.version = 1; captured.source = initialUrl; captured.fetchedAt = new Date().toISOString(); captured.courses = normalizeCourses(allRows, origin); captured.count = captured.courses.length;
+      // The course list records where it came from: sync refuses a list from another Canvas (design §2).
+      captured.canvasOrigin = origin; captured.institution = config.institution; }
     else if (kind === 'groups') captured.groups = allRows.map(({ id, name, group_weight, rules }) => ({ id, name, group_weight: group_weight ?? null, rules: rules ?? null }));
     else captured.assignments = allRows.map(a => ({ id: a.id, name: a.name ?? null, group_id: a.assignment_group_id ?? null, points_possible: a.points_possible ?? null, due_at: a.due_at ?? null, unlock_at: a.unlock_at ?? null, html_url: a.html_url ?? null, submission: a.submission ? { score: a.submission.score ?? null, workflow_state: a.submission.workflow_state ?? null, submitted_at: a.submission.submitted_at ?? null } : null }));
     captured[`${kind}Ms`] = Date.now() - begin;

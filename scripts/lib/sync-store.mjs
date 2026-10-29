@@ -85,7 +85,7 @@ export const MIGRATIONS = Object.freeze([
      UNIQUE (job_id, course_id)
    );`,
   // The job's resolved course source ids as a JSON array (openspec change generic-adapters, design §1), so a resume
-  // runs the same sources. NULL for jobs created before: they ran the three UniMelb sources.
+  // runs the same sources. NULL for jobs created before: they ran the default institution's three sources.
   'ALTER TABLE jobs ADD COLUMN sources TEXT;',
 ]);
 

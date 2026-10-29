@@ -11,6 +11,7 @@ import {
 } from '../../shared/corrections.ts';
 import { migrateKey, migrateLocalKeys } from '../../shared/local-keys.ts';
 import { foreignOrigin } from './local-origin.mjs';
+import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
 
 /** A store error carrying an API error code; `current` is the current view for `REVISION_MISMATCH`. */
 export class CorrectionsError extends Error {
@@ -109,11 +110,12 @@ export function moveStoreKeys(store, legacyIds) {
 }
 
 /**
- * @param {{ projectDir: string, loadDocument: (courseId: string) => Promise<import('../../shared/course-data.ts').CourseDocument | null>, now?: () => Date }} options
+ * @param {{ projectDir: string, loadDocument: (courseId: string) => Promise<import('../../shared/course-data.ts').CourseDocument | null>, now?: () => Date, timeZone?: () => string | Promise<string> }} options
  * `loadDocument` returns the newest valid course file of a course (null when there is none); it is read when a store is
- * created, to become the merge base.
+ * created, to become the merge base. `timeZone` gives the institution's time zone, in which a date-only due equals a
+ * date-time on that day (default the default institution's).
  */
-export function createCorrectionsStore({ projectDir, loadDocument, now = () => new Date() }) {
+export function createCorrectionsStore({ projectDir, loadDocument, now = () => new Date(), timeZone = () => DEFAULT_INSTITUTION.defaults.timeZone }) {
   const fileOf = courseId => join(directory(projectDir), `${courseId}.json`);
   const checkCourse = courseId => { if (!isCourseId(courseId)) throw new CorrectionsError('INVALID_COURSE_ID'); };
   const parse = (courseId, body, options) => {
@@ -133,7 +135,7 @@ export function createCorrectionsStore({ projectDir, loadDocument, now = () => n
     const legacyIds = document?.version === 2 ? document.legacyIds : {};
     const moved = migrateLocalKeys({ corrections: input.corrections, manual: { [courseId]: input.manual }, order: { [courseId]: input.order }, work: [] }, courseId, legacyIds).stores;
     const corrections = importing ? dropImportNoise(moved.corrections, courseId) : moved.corrections;
-    const kept = normaliseCorrections({ courseId, base, corrections, pins: {} });
+    const kept = normaliseCorrections({ courseId, base, corrections, pins: {}, timeZone: await timeZone() });
     const at = now().toISOString();
     const store = {
       version: 1, courseId, revision: 1, base, corrections: kept.corrections, manual: moved.manual[courseId] ?? [], order: moved.order[courseId] ?? [],
@@ -161,7 +163,7 @@ export function createCorrectionsStore({ projectDir, loadDocument, now = () => n
     const at = now().toISOString();
     const moved = document.version === 2 && document.legacyIds ? moveStoreKeys(current, document.legacyIds) : current;
     const incoming = assessmentFields(document, courseId);
-    const merged = mergeCorrections(moved.base.assessments, incoming, moved, at);
+    const merged = mergeCorrections(moved.base.assessments, incoming, moved, at, await timeZone());
     const next = { ...moved, revision: current.revision + 1, base: { digest, assessments: incoming }, ...merged, updatedAt: at };
     if (!StoreSchema.safeParse(next).success) throw new CorrectionsError('CORRECTIONS_UNAVAILABLE');
     await replaceFile(projectDir, file, next);
@@ -212,8 +214,9 @@ export function createCorrectionsStore({ projectDir, loadDocument, now = () => n
           const existing = await readStoreFile(file, courseId);
           throw new CorrectionsError('REVISION_MISMATCH', existing ? viewOf(existing) : emptyView());
         }
-        const edit = applyOwnerEdit(current, body.corrections);
-        const kept = normaliseCorrections({ courseId, base: current.base, corrections: edit.corrections, pins: edit.pins });
+        const zone = await timeZone();
+        const edit = applyOwnerEdit(current, body.corrections, zone);
+        const kept = normaliseCorrections({ courseId, base: current.base, corrections: edit.corrections, pins: edit.pins, timeZone: zone });
         const next = {
           ...current, revision: current.revision + 1, corrections: kept.corrections, manual: body.manual, order: body.order,
           pins: kept.pins, conflicts: pruneConflicts(edit.conflicts, kept.corrections), updatedAt: now().toISOString(),
@@ -255,7 +258,7 @@ export function createCorrectionsStore({ projectDir, loadDocument, now = () => n
         if (body.revision !== (current?.revision ?? 0)) throw new CorrectionsError('REVISION_MISMATCH', current ? viewOf(current) : emptyView());
         const resolved = current && typeof id === 'string' && CONFLICT_ID.test(id) ? resolveConflict(current, id, body.choice) : null;
         if (!resolved) throw new CorrectionsError('CONFLICT_NOT_FOUND');
-        const kept = normaliseCorrections({ courseId, base: current.base, corrections: resolved.corrections, pins: resolved.pins });
+        const kept = normaliseCorrections({ courseId, base: current.base, corrections: resolved.corrections, pins: resolved.pins, timeZone: await timeZone() });
         const next = {
           ...current, revision: current.revision + 1, corrections: kept.corrections, pins: kept.pins,
           conflicts: pruneConflicts(resolved.conflicts, kept.corrections), updatedAt: now().toISOString(),

@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { courseContextLoader, createCourseMcpServer } from './lib/course-mcp.mjs';
+import { loadSourceSetup } from './lib/source-settings.mjs';
 
 /** Repository containing this script: the default project directory. */
 const REPOSITORY = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -48,8 +49,12 @@ async function main() {
   }
   const { version } = JSON.parse(readFileSync(resolve(REPOSITORY, 'package.json'), 'utf8'));
   const loadContext = courseContextLoader(options);
+  // Tool descriptions name the institution's time zone; read once at startup (restart after changing the institution).
+  let timeLabel;
+  try { timeLabel = (await loadSourceSetup(options.projectDir)).institution.wording.timeLabel.en; }
+  catch (error) { log(`Could not read the source settings: ${error instanceof Error ? error.message : error}`); }
   const server = createCourseMcpServer({
-    loadContext, version,
+    loadContext, version, timeLabel,
     onLoadError: error => log(`Could not read the course list: ${error instanceof Error ? error.message : error}`),
   });
   // One startup read for the diagnostics only; tools read the files again on every call.

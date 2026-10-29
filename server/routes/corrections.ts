@@ -5,13 +5,16 @@ import { createCorrectionsHandler, createCorrectionsStore } from '../../scripts/
 import { loadCourseReports } from '../../scripts/lib/course-reports.mjs';
 import type { RouteContext, RouteHandler } from '../context.ts';
 
-export function correctionsRoute({ projectDir, desktopDir }: RouteContext): RouteHandler {
+export function correctionsRoute({ projectDir, desktopDir, sourceSetup }: RouteContext): RouteHandler {
   const handle = createCorrectionsHandler(createCorrectionsStore({
     projectDir,
     loadDocument: async courseId => {
-      try { return (await loadCourseReports(projectDir, { desktop: desktopDir })).reports.find(item => item.id === courseId)?.report ?? null; }
+      const { institution } = await sourceSetup();
+      try { return (await loadCourseReports(projectDir, { desktop: desktopDir, institution })).reports.find(item => item.id === courseId)?.report ?? null; }
       catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
     },
+    // Due dates compare by calendar day in the institution's time zone.
+    timeZone: async () => (await sourceSetup()).timeZone,
   }));
   return (req, res) => { void handle(req, res); };
 }

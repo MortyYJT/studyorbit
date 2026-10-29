@@ -26,8 +26,8 @@ export type PipelineDeps = {
   runCollector?: CollectorRunner; callModel?: ModelCaller; resolveModel?: () => Promise<AnalysisConfig>;
   childUsage?: (threadId: string | null | undefined, start: Date) => Promise<TokenCounts | null>;
   clock?: Clock; random?: () => number; limiters?: SyncLimiters; hooks?: PipelineHooks; newId?: () => string;
-  /** Settings, institution, sources and source context; default today's UniMelb setup. */
-  setup?: SourceSetup;
+  /** Settings, institution, sources and source context, or a function giving them once per start and resume; default today's setup. */
+  setup?: SourceSetup | (() => SourceSetup | Promise<SourceSetup>);
   /** Replaces the setup's sources (tests pass fake sources). */
   sources?: CourseSource[];
 };

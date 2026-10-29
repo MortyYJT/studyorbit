@@ -3,13 +3,15 @@ import { conflictId, mergeCorrections, resolveConflict, type Conflict, type Corr
 
 // Three-way merge scenarios from openspec/changes/archive/2026-10-29-local-corrections-merge (PR 2, tasks 2.1, 2.2 and 2.4). Synthetic data only.
 const at = '2026-10-30T02:00:00.000Z';
+/** The default institution's zone in these synthetic cases. */
+const ZONE = 'Australia/Melbourne';
 const fields = (patch: Partial<Fields> = {}): Fields => ({
   name: 'Synthetic', kind: 'assignment', nature: 'regular', weight: 20, score: null, outOf: null, due: '2026-11-03T12:59:00Z',
   status: 'not_started', rule: null, scoring: 'none', parent: null, link: null, ...patch,
 });
 type State = { corrections: Record<string, Correction>; pins: Record<string, string[]>; conflicts: Conflict[] };
 const state = (corrections: Record<string, Correction>, patch: Partial<State> = {}): State & { courseId: string } => ({ courseId: '100', corrections, pins: {}, conflicts: [], ...patch });
-const merge = (base: Record<string, Fields>, incoming: Record<string, Fields>, current: State) => mergeCorrections(base, incoming, { courseId: '100', ...current }, at);
+const merge = (base: Record<string, Fields>, incoming: Record<string, Fields>, current: State) => mergeCorrections(base, incoming, { courseId: '100', ...current }, at, ZONE);
 const summary = (conflicts: Conflict[]) => conflicts.map(conflict => [conflict.type, conflict.key, conflict.field]);
 
 describe('mergeCorrections', () => {
@@ -194,14 +196,14 @@ describe('after re-sync all owner corrections are preserved', () => {
       ...base, a1: fields({ name: 'Assignment 1', weight: 25 }), a2: fields({ name: 'Assignment 2', weight: 15, due: '2026-11-10T12:59:00Z' }),
       a3: fields({ name: 'Quiz 1', weight: 5, parent: '100:g1' }),
     };
-    const once = mergeCorrections(base, first, { courseId: '100', corrections, pins: {}, conflicts: [] }, at);
+    const once = mergeCorrections(base, first, { courseId: '100', corrections, pins: {}, conflicts: [] }, at, ZONE);
     expectOwnerValues(once, first);
     expect(once.pins).toEqual({ '100:a1': ['weight'], '100:a3': ['parent'] });
     expect(summary(once.conflicts)).toEqual([['field', '100:a2', 'due']]);
 
     // Second sync changes the weight that converged (a1 to 30) and the parent (a3 leaves g1); everything else stays.
     const second = { ...first, a1: fields({ name: 'Assignment 1', weight: 30 }), a3: fields({ name: 'Quiz 1', weight: 5, parent: null }) };
-    const twice = mergeCorrections(first, second, { courseId: '100', ...once }, at);
+    const twice = mergeCorrections(first, second, { courseId: '100', ...once }, at, ZONE);
     expectOwnerValues(twice, second);
     expect(summary(twice.conflicts)).toEqual([['field', '100:a2', 'due'], ['field', '100:a1', 'weight'], ['field', '100:a3', 'parent']]);
     expect(twice.conflicts.find(conflict => conflict.key === '100:a1')).toMatchObject({ base: 25, incoming: 30, user: 25 });
@@ -254,9 +256,9 @@ describe('resolveConflict', () => {
   });
 
   it('mine is not raised again by a later merge while the sync keeps its value', () => {
-    const merged = mergeCorrections({ a1: fields() }, { a1: fields({ weight: 25 }) }, { courseId: '100', corrections: { '100:a1': { weight: 30 } }, pins: {}, conflicts: [] }, at);
+    const merged = mergeCorrections({ a1: fields() }, { a1: fields({ weight: 25 }) }, { courseId: '100', corrections: { '100:a1': { weight: 30 } }, pins: {}, conflicts: [] }, at, ZONE);
     const kept = choose(merged, merged.conflicts[0]!.id, 'mine');
-    const later = mergeCorrections({ a1: fields({ weight: 25 }) }, { a1: fields({ weight: 25, name: 'Renamed' }) }, { courseId: '100', ...kept }, at);
+    const later = mergeCorrections({ a1: fields({ weight: 25 }) }, { a1: fields({ weight: 25, name: 'Renamed' }) }, { courseId: '100', ...kept }, at, ZONE);
     expect(later.corrections).toEqual({ '100:a1': { weight: 30 } });
     expect(later.conflicts).toEqual([]);
   });

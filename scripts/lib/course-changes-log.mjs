@@ -6,6 +6,7 @@ import { appendFile, mkdir, open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CourseChangeSchema, diffSnapshots } from '../../shared/course-changes.ts';
 import { foreignOrigin } from './local-origin.mjs';
+import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
 
 const LOOPBACK = ['127.0.0.1', '::1', '::ffff:127.0.0.1'];
 export const CHANGE_LOG_LIMIT = 200;
@@ -15,11 +16,12 @@ const logFile = projectDir => join(logDirectory(projectDir), 'changes.jsonl');
 /**
  * Appends one line `{ at, runId, courseId, assessmentId, name, field, before, after }` per change from `previous` to
  * `current` and returns the number of lines. Nothing is written when `previous` is null (first sync) or nothing changed.
- * All lines of one call are written in a single append. Throws when the log cannot be written.
+ * All lines of one call are written in a single append. Throws when the log cannot be written. `timeZone` is the
+ * institution's (default the default institution's), in which a date-only due equals a date-time on that day.
  */
-export async function appendCourseChanges(projectDir, { at, runId, courseId, previous, current }, { beforeWrite } = {}) {
+export async function appendCourseChanges(projectDir, { at, runId, courseId, previous, current, timeZone = DEFAULT_INSTITUTION.defaults.timeZone }, { beforeWrite } = {}) {
   if (!previous) return 0;
-  const changes = diffSnapshots(previous, current);
+  const changes = diffSnapshots(previous, current, timeZone);
   if (!changes.length) return 0;
   const text = changes.map(change => JSON.stringify({ at, runId, courseId, ...change })).join('\n');
   // `beforeWrite` may throw to stop the write (the sync pipeline after a simulated crash).

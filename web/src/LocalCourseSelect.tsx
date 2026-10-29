@@ -22,7 +22,7 @@ export function LocalCourseSelect({ language, refreshVersion, onSaved }: { langu
     setError('');
     try {
       const response = await fetch('/api/local/course-candidates', { cache: 'no-store' });
-      if (!response.ok) throw new Error(response.status === 404 ? 'missing' : 'unavailable');
+      if (!response.ok) throw new Error(response.status === 404 ? 'missing' : response.status === 409 ? 'stale' : 'unavailable');
       const data: unknown = await response.json();
       if (!data || typeof data !== 'object' || !('courses' in data) || !Array.isArray(data.courses)
         || !data.courses.every((course: unknown) => course && typeof course === 'object'
@@ -31,7 +31,7 @@ export function LocalCourseSelect({ language, refreshVersion, onSaved }: { langu
       setCourses(data.courses as Course[]);
     } catch (err) {
       setCourses(undefined);
-      setError(err instanceof Error && err.message === 'missing' ? 'missing' : 'unavailable');
+      setError(err instanceof Error && (err.message === 'missing' || err.message === 'stale') ? err.message : 'unavailable');
     }
   }
   useEffect(() => { void load(); }, [refreshVersion]);
@@ -49,6 +49,7 @@ export function LocalCourseSelect({ language, refreshVersion, onSaved }: { langu
     <p className="muted">{zh ? '勾选你要排期的课程，选择保存在当前浏览器中，可再次修改。' : 'Select courses to plan. Your choices are saved in this browser and can be changed later.'}</p>
     {error && <p role="status">{error === 'missing'
       ? (zh ? '尚未获取课程，请点击“立即同步”。' : 'No course list yet. Click “Sync now”.')
+      : error === 'stale' ? (zh ? 'Canvas 地址已更改，请点击“立即同步”重新获取课程。' : 'The Canvas address changed. Click “Sync now” to fetch the courses again.')
       : error === 'save' ? (zh ? '保存失败，请检查浏览器存储是否可用。' : 'Could not save your selection in this browser.')
       : (zh ? '无法读取课程列表，请确认开发服务器正在运行并刷新列表。' : 'Could not load the course list. Check the development server and refresh.')}</p>}
     {courses && (courses.length ? <>

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { bandTargets, calculateGrades, finalNeeded, gradeBreakdown, type Band, type ExclusionReason, type GradingGroup, type GradingItem } from './course-calculations.ts';
 import type { DisplayAssessment, DisplayDocument } from './course-data.ts';
 import { defaultAvailability, parseAvailability, schedulePlan, type PlanTask } from './planning.ts';
+import { DEFAULT_INSTITUTION } from '../scripts/institutions/registry.mjs';
 
 /** Planning inputs the page keeps in localStorage, sent with a chat message (decision #322). */
 export type PlanningSnapshot = {
@@ -22,9 +23,11 @@ export type ToolContext = {
   courses: { id: string; code?: string; name?: string }[];
   /** Course IDs the tools may read. */
   scope: string[];
-  /** YYYY-MM-DD in Australia/Melbourne. */
+  /** YYYY-MM-DD in the institution's time zone. */
   today: string;
   planning: PlanningSnapshot | null;
+  /** The institution's IANA time zone, for due dates; default the default institution's (generic-adapters §4). */
+  timeZone?: string;
 };
 export type ToolErrorCode = 'UNKNOWN_TOOL' | 'INVALID_ARGUMENTS' | 'COURSE_NOT_IN_SCOPE' | 'COURSE_NOT_SYNCED' | 'UNKNOWN_ASSESSMENT' | 'RESULT_TOO_LARGE' | 'TOOL_FAILED';
 export type ToolResult = { ok: boolean; text: string; value: object };
@@ -67,13 +70,16 @@ export function gradingInputs(doc: DisplayDocument): { assessments: GradingInput
   return { assessments, parents };
 }
 
-/** Due date as `YYYY-MM-DD HH:mm` in Melbourne time, a plain date unchanged, or the stored text when unparseable. */
-function melbourneDue(due: string | null): string | null {
+const DEFAULT_TIME_ZONE = DEFAULT_INSTITUTION.defaults.timeZone!;
+const zoneOf = (ctx: ToolContext) => ctx.timeZone ?? DEFAULT_TIME_ZONE;
+
+/** Due date as `YYYY-MM-DD HH:mm` in `timeZone`, a plain date unchanged, or the stored text when unparseable. */
+export function formatDue(due: string | null, timeZone: string): string | null {
   if (!due) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(due)) return due;
   const date = new Date(due);
   if (Number.isNaN(date.getTime())) return due;
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
     .formatToParts(date).map(part => [part.type, part.value]));
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
@@ -174,9 +180,11 @@ function grade(original: DisplayDocument, entries: WhatIf): Graded | Failure {
   return { doc: original, totals, counted, excluded, whatIfApplied };
 }
 
-const listCourses: CourseTool = {
+// Tool descriptions name the institution's time zone with its English time label (`label`); for the default institution
+// they are the descriptions the chat Q&A evaluation was run with.
+const listCourses = (label: string): CourseTool => ({
   name: 'list_courses', title: 'List courses',
-  description: 'List the courses you may read, with today\'s date (Melbourne), whether synced data exists, the number of assessments and the identified weight (sum of top-level weights that count). Call this first to get course IDs.',
+  description: `List the courses you may read, with today's date (${label}), whether synced data exists, the number of assessments and the identified weight (sum of top-level weights that count). Call this first to get course IDs.`,
   input: z.object({}),
   run: (_input: Record<string, never>, ctx) => ({ value: {
     today: ctx.today,
@@ -187,12 +195,12 @@ const listCourses: CourseTool = {
       return { id, code: known?.code ?? null, name: known?.name ?? null, term: null, synced: false, version: null, assessmentCount: null, identifiedWeight: null };
     }),
   } }),
-};
+});
 
 const kinds = ['quiz', 'assignment', 'test', 'presentation', 'participation', 'hurdle', 'other'] as const;
-const getAssessments: CourseTool = {
+const getAssessments = (label: string): CourseTool => ({
   name: 'get_assessments', title: 'Get assessments',
-  description: 'Return a course\'s assessments as stored: ID, parent ID, name, kind, nature (regular, ungraded, bonus, alternative), weight (% of the course total), score and maximum score (raw points), due date in Melbourne time, status, scoring rule of a parent and rule text. A weight or rule with no source is null and flagged weightUnsourced or ruleUnsourced: say there is no source instead of guessing.',
+  description: `Return a course's assessments as stored: ID, parent ID, name, kind, nature (regular, ungraded, bonus, alternative), weight (% of the course total), score and maximum score (raw points), due date in ${label} time, status, scoring rule of a parent and rule text. A weight or rule with no source is null and flagged weightUnsourced or ruleUnsourced: say there is no source instead of guessing.`,
   input: z.object({
     courseId,
     ids: z.array(z.string().min(1)).min(1).max(50).optional().describe('Only these assessment IDs'),
@@ -206,12 +214,12 @@ const getAssessments: CourseTool = {
     const assessments = doc.assessments.filter(item => (!input.ids || input.ids.includes(item.id)) && (!input.kind || item.kind === input.kind)).map(item => ({
       id: item.id, parentId: item.parentId, name: item.name, kind: item.kind, nature: item.nature,
       weight: item.weight, ...(item.unsourced.includes('weight') ? { weightUnsourced: true } : {}),
-      score: item.score, maxScore: item.maxScore, due: melbourneDue(item.due), status: item.status, scoring: item.scoring,
+      score: item.score, maxScore: item.maxScore, due: formatDue(item.due, zoneOf(ctx)), status: item.status, scoring: item.scoring,
       rule: item.rule === null ? null : item.rule.replace(/\s+/g, ' ').trim(), ...(item.unsourced.includes('rule') ? { ruleUnsourced: true } : {}),
     }));
     return { value: { courseId: doc.course.id, code: doc.course.code, assessments }, hint: 'Pass ids or kind to get the rest.' };
   },
-};
+});
 
 const calculateGradesTool: CourseTool = {
   name: 'calculate_grades', title: 'Calculate grades',
@@ -255,10 +263,9 @@ const finalNeededTool: CourseTool = {
   },
 };
 
-const melbourneDay = (due: string) => melbourneDue(due)!.slice(0, 10);
-const upcomingDeadlines: CourseTool = {
+const upcomingDeadlines = (label: string): CourseTool => ({
   name: 'upcoming_deadlines', title: 'Upcoming deadlines',
-  description: 'Assessments due from today through today + days - 1 (Melbourne dates) across the courses you may read, or the given courseIds, sorted by due date. Submitted and graded items are left out unless includeDone is true. At most 50 items.',
+  description: `Assessments due from today through today + days - 1 (${label} dates) across the courses you may read, or the given courseIds, sorted by due date. Submitted and graded items are left out unless includeDone is true. At most 50 items.`,
   input: z.object({
     days: z.number().int().min(1).max(120).default(14).describe('Window length in days, starting today'),
     courseIds: z.array(z.string().min(1)).min(1).max(50).optional().describe('Only these course IDs'),
@@ -273,10 +280,10 @@ const upcomingDeadlines: CourseTool = {
       const doc = ctx.documents.find(entry => entry.course.id === id);
       return (doc?.assessments ?? []).flatMap(item => {
         if (!item.due) return [];
-        const day = melbourneDay(item.due);
+        const day = formatDue(item.due, zoneOf(ctx))!.slice(0, 10);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < ctx.today || day > to) return [];
         if (!input.includeDone && (item.status === 'submitted' || item.status === 'graded')) return [];
-        return [{ courseId: id, code: doc!.course.code, id: item.id, name: item.name, due: melbourneDue(item.due), weight: item.weight, status: item.status }];
+        return [{ courseId: id, code: doc!.course.code, id: item.id, name: item.name, due: formatDue(item.due, zoneOf(ctx)), weight: item.weight, status: item.status }];
       });
     }).sort((a, b) => a.due!.localeCompare(b.due!) || a.courseId.localeCompare(b.courseId) || a.id.localeCompare(b.id));
     const hint = 'Pass fewer days or courseIds to see the rest.';
@@ -286,7 +293,7 @@ const upcomingDeadlines: CourseTool = {
       notSynced: ids.filter(id => !ctx.documents.some(entry => entry.course.id === id)),
     }, hint };
   },
-};
+});
 
 const taskInput = z.object({
   key: z.string().min(1).max(500).optional().describe('Stable task key; numbered arg:1... when missing'),
@@ -341,12 +348,20 @@ const planSchedule: CourseTool = {
   },
 };
 
-export const courseTools: readonly CourseTool[] = [listCourses, getAssessments, calculateGradesTool, finalNeededTool, upcomingDeadlines, planSchedule];
+/**
+ * The tool registry whose descriptions name the time zone with `timeLabel` (the institution's English time label,
+ * generic-adapters design §4). The tools behave the same for every label; due dates use `ToolContext.timeZone`.
+ */
+export function courseToolsFor(timeLabel: string): readonly CourseTool[] {
+  return [listCourses(timeLabel), getAssessments(timeLabel), calculateGradesTool, finalNeededTool, upcomingDeadlines(timeLabel), planSchedule];
+}
+/** The registry of the default institution. */
+export const courseTools: readonly CourseTool[] = courseToolsFor(DEFAULT_INSTITUTION.wording.timeLabel.en);
 
 /** Provider- and MCP-ready definitions; JSON Schemas are generated from the zod inputs without `$schema`. */
 export type ToolParameters = { type: 'object'; properties: Record<string, unknown>; required?: string[] } & Record<string, unknown>;
-export function toolDefinitions(): { name: string; title: string; description: string; parameters: ToolParameters }[] {
-  return courseTools.map(tool => {
+export function toolDefinitions(tools: readonly CourseTool[] = courseTools): { name: string; title: string; description: string; parameters: ToolParameters }[] {
+  return tools.map(tool => {
     const { $schema: _schema, ...parameters } = z.toJSONSchema(tool.input, { io: 'input' }) as { $schema?: string } & ToolParameters;
     return { name: tool.name, title: tool.title, description: tool.description, parameters };
   });

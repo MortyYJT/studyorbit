@@ -51,7 +51,7 @@ const realSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
  * - `onUnread(tab, error)`: called while the tab is still open when both reads failed (it may throw a better error);
  * - `onCloseError()`: called when the tab could not be closed (the collector reports it after its own result);
  * - `closeFailureFails`: after a successful read, a failed close fails the page (closing is tried once more, as the
- *   Canvas collector did); otherwise it is only reported and the value is returned (as the Handbook collector did);
+ *   Canvas collector did); otherwise it is only reported and the value is returned (as the framework-source collector did);
  * - `sleep`, `now`: test seams.
  */
 export async function withPage(bridge, url, expectedPrefix, kind, options) {

@@ -5,8 +5,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSyncPipeline, type PipelineDeps, type SyncPipeline } from '../scripts/lib/sync-pipeline.mjs';
-import { defaultSourceConfig } from '../scripts/sources/config.mjs';
-import { canvasSource, resolveSourceSetup } from '../scripts/sources/registry.mjs';
+import { loadSourceSetup } from '../scripts/lib/source-settings.mjs';
+import { canvasSource } from '../scripts/sources/registry.mjs';
 import type { OpenResult } from '../scripts/lib/sync-store.mjs';
 import type { Env, RouteContext, RouteHandler } from './context.ts';
 import { checkRequest } from './guard.ts';
@@ -18,6 +18,7 @@ import { courseReportsRoute } from './routes/course-reports.ts';
 import { courseSyncRoute } from './routes/course-sync.ts';
 import { llmConfigRoute } from './routes/llm-config.ts';
 import { revisionNotesRoute } from './routes/revision-notes.ts';
+import { sourceSettingsRoute } from './routes/source-settings.ts';
 import { syncCoursesRoute } from './routes/sync-courses.ts';
 import { syncJobsRoute } from './routes/sync-jobs.ts';
 import { syncUsageRoute } from './routes/sync-usage.ts';
@@ -37,6 +38,10 @@ export type LocalApiOptions = {
   store?: OpenResult;
   /** Defaults to `process.env`. */
   env?: Env;
+  /** Defaults to `process.platform`; tests choose one so the default browser does not depend on the machine. */
+  platform?: string;
+  /** Test seam for the browser-path check of the source settings. */
+  isFile?: (path: string) => Promise<boolean>;
   /**
    * Test seams: fake collectors, model, clock and IDs for the sync pipeline, and a stub discovery script. Real ones by
    * default. Hooks cannot be passed here: the server never creates the pipeline with hooks (design §10).
@@ -54,21 +59,24 @@ export type LocalApi = {
 };
 
 export function createLocalApi(options: LocalApiOptions): LocalApi {
+  const platform = options.platform ?? process.platform;
   const context: RouteContext = {
     projectDir: options.projectDir,
     desktopDir: options.desktopDir ?? join(homedir(), 'Desktop'),
     env: options.env ?? process.env,
+    platform,
+    // The source settings (generic-adapters design §8) are read once per sync, per discovery and per request.
+    sourceSetup: () => loadSourceSetup(options.projectDir, { platform }),
   };
-  // Today's setup (UniMelb, Edge through Apple Events, or Chrome with STUDYORBIT_BROWSER=chrome-applescript) until the
-  // source settings file arrives (generic-adapters PR 3).
-  const setup = resolveSourceSetup(defaultSourceConfig(context.env));
   const pipeline: SyncPipeline | null = options.store?.ok
-    ? createSyncPipeline({ setup, ...options.pipelineDeps, hooks: undefined, store: options.store.store, projectDir: context.projectDir, desktopDir: context.desktopDir, env: context.env })
+    ? createSyncPipeline({ setup: context.sourceSetup, ...options.pipelineDeps, hooks: undefined, store: options.store.store, projectDir: context.projectDir, desktopDir: context.desktopDir, env: context.env })
     : null;
-  const discovery = syncCoursesRoute(context, out => {
+  const discovery = syncCoursesRoute(context, async out => {
+    const setup = await context.sourceSetup();
     const command = canvasSource.discover(setup.context, out);
     return { ...command, script: options.discoveryScript ?? join(SCRIPTS_DIR, command.script) };
   });
+  const busy = () => (pipeline?.running() ?? false) || discovery.running();
   const routes: [string, RouteHandler][] = [
     ['sync-usage', syncUsageRoute(context)],
     ['llm-config', llmConfigRoute(context)],
@@ -81,6 +89,7 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
     ['sync-jobs', syncJobsRoute(pipeline)],
     ['sync-courses', discovery.route],
     ['course-candidates', courseCandidatesRoute(context)],
+    ['source-settings', sourceSettingsRoute(context, busy, options.isFile)],
   ];
   const mounts = routes.map(([name, handler]) => [`${API_PREFIX}/${name}`, handler] as const);
 

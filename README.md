@@ -4,7 +4,19 @@
 
 本地优先的墨大课业助手。它从你已登录的 Canvas、Ed 和 Handbook 读取课程信息，由你选择的模型整理成结构化的课程 JSON，经代码校验后在网页里展示成绩、算出期末还需要多少分、自动排出每周计划、帮你复习，并能就你的课程回答问题。存储只在本机；分析和对话时，课程数据会发给你选择的模型服务商。
 
-> 仍是原型：采集器以 macOS + Microsoft Edge 为主，Windows 和其他浏览器尚未支持。一次同步的结果需要人工核对，不要当作必然正确。
+> 仍是原型：只在 macOS + Microsoft Edge + 墨大 Canvas 上实际跑过，其他组合见下面的「支持的环境」。一次同步的结果需要人工核对，不要当作必然正确。
+
+## 支持的环境
+
+在「设置 → 数据来源」里选择学校、Canvas 地址、浏览器和 Ed 区域；不改设置就是下表第一行（和以前完全一样）。
+
+| 组合 | 状态 |
+| --- | --- |
+| macOS + Microsoft Edge + 墨尔本大学（Canvas、Ed 澳区、Handbook） | 已实测 |
+| macOS + Google Chrome（同一套 Apple 事件脚本） | 未实测：只核对过脚本字典，没有用真实 Chrome 跑过 |
+| 其他学校的 Canvas（学校选「其他学校（通用 Canvas）」） | 未实测：只用另一个 Canvas 地址的合成接口响应测过；没有 Handbook 这类官方考核框架，分析只用 Canvas 和 Ed |
+| Ed 美区、欧区（`us`、`eu`） | 未实测：接口地址照抄 `edstem` CLI 的区域表，课程链接格式只在澳区确认过 |
+| Windows、Linux（专用浏览器，CDP） | 未实现：设置里能选（标「实验性，未在 Windows 上验证」），但采集器还不支持，选它同步会失败 |
 
 ## 功能
 
@@ -29,12 +41,13 @@ npm run dev
 
 打开 `http://localhost:5173/`。`npm run dev` 会先启动本地接口服务（`127.0.0.1:5190`），再启动页面（`localhost:5173`）；两个端口可用 `STUDYORBIT_API_PORT`、`STUDYORBIT_WEB_PORT` 修改，端口被占时直接报错，不会换端口。只看已同步的数据不需要额外准备；要同步课程还需要：
 
-1. 在 **macOS Microsoft Edge** 中登录墨大 Canvas，并保留一个浏览器窗口。Canvas 和 Handbook 采集依赖 Edge 的 Apple Events JavaScript 和系统自动化权限。采集前浏览器必须已经打开；没打开时会报「请先打开 Microsoft Edge 并登录」，不会替你启动。
-   - **改用 macOS Google Chrome（未实测）：** 启动前设 `STUDYORBIT_BROWSER=chrome-applescript`（如 `STUDYORBIT_BROWSER=chrome-applescript npm run dev`；手动跑采集脚本时同样适用），这是设置页加上「数据来源」之前的临时开关。Chrome 需要在菜单 View → Developer → Allow JavaScript from Apple Events（中文界面在「显示 → 开发者」里）勾选，第一次采集时 macOS 会另外询问是否允许终端控制「Google Chrome」。Chrome 和 Edge 的脚本字典相同，但还没有用真实 Chrome 跑过。
-2. 安装并登录澳区 `edstem` CLI（Ed 使用它自己的登录，不复用 Edge）。
+1. 在 **macOS Microsoft Edge** 中登录 Canvas（默认是墨大 Canvas），并保留一个浏览器窗口。Canvas 和 Handbook 采集依赖 Edge 的 Apple Events JavaScript 和系统自动化权限。采集前浏览器必须已经打开；没打开时会报「请先打开 Microsoft Edge 并登录」，不会替你启动。
+   - **改用 macOS Google Chrome（未实测）：** 在「设置 → 数据来源」把浏览器改成 Google Chrome 并保存（第 2 部分的临时环境变量 `STUDYORBIT_BROWSER` 已去掉）。Chrome 需要在菜单 View → Developer → Allow JavaScript from Apple Events（中文界面在「显示 → 开发者」里）勾选，第一次采集时 macOS 会另外询问是否允许终端控制「Google Chrome」。Chrome 和 Edge 的脚本字典相同，但还没有用真实 Chrome 跑过。
+   - **其他学校（未实测）：** 学校选「其他学校（通用 Canvas）」，填你学校的 Canvas 地址（只要 `https://` 加域名）和时区，按需填一个只带一个括号的课程代码正则（例如 `^([A-Z]+\d+)_`，括号里的部分就是课程代码）。改了学校或 Canvas 地址后要重新「立即同步」获取课程；旧课程列表来自另一个 Canvas 时，同步和课程页会提示「Canvas 地址已更改，请重新获取课程」。
+2. 安装并登录 `edstem` CLI（Ed 使用它自己的登录，不复用浏览器；墨大在澳区）。Ed 区域默认「自动」，跟随 CLI 的登录区域读取成绩，课程链接按澳区生成；在美区或欧区请在设置里直接选 `us` 或 `eu`，设置和 CLI 登录的区域不一致时这门课的 Ed 数据记为未读取。
 3. 在「设置 → 分析模型」选择模型并填写密钥，点「测试连接」确认可用。也可以沿用环境变量（`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`，或 `COURSE_ANALYSIS_PROVIDER` / `_MODEL` / `_URL` / `_API_KEY`）；优先级是设置 > 环境变量 > 默认（DeepSeek `deepseek-flash`）。
 
-然后在页面点「立即同步」，勾选课程并保存。**保存选课会立刻开始同步**，会用到 Edge、Ed 和模型额度；复习页的预设按钮和对话也会用模型额度。只采集课程列表可以运行 `npm run sync:courses`。
+然后在页面点「立即同步」，勾选课程并保存。**保存选课会立刻开始同步**，会用到浏览器（Edge 或 Chrome）、Ed 和模型额度；复习页的预设按钮和对话也会用模型额度。只采集课程列表可以运行 `npm run sync:courses`。
 
 ## 不用墨大账号试跑
 
@@ -94,8 +107,8 @@ claude mcp add studyorbit -- node <仓库绝对路径>/scripts/mcp-server.mjs
 
 | 内容 | 位置 |
 | --- | --- |
-| 采集快照、同步记录与用量、截止和权重变更记录、修正、模型设置、对话、复习笔记 | 项目内 `.local/`（被 Git 忽略；设置文件权限 600，密钥只写不回显） |
-| 每门课的课程 JSON | `~/Desktop/墨尔本大学 <年份> S<学期>/<课程代码>/` |
+| 采集快照、同步记录与用量、截止和权重变更记录、修正、模型设置、数据来源设置（`.local/config/sources.json`）、对话、复习笔记 | 项目内 `.local/`（被 Git 忽略；设置文件权限 600，密钥只写不回显） |
+| 每门课的课程 JSON | 墨大：`~/Desktop/墨尔本大学 <年份> S<学期>/<课程代码>/`；其他学校：`~/Desktop/StudyOrbit <学期>/<课程代码>/`（只保留字母、数字、空格、点、下划线和连字符） |
 | 选课、任务与用时、每天可用时间、外观设置、变更已读标记、背景图片（迁移前的修正留作备份） | 浏览器 localStorage / IndexedDB（背景图片不会上传） |
 
 - 存储只在本机；分析和对话时，课程数据（含成绩）会发给你选择的模型服务商，按该服务商的条款处理，模型调用可能产生费用。接口地址指向本机模型（例如 Ollama）时，数据不出本机。

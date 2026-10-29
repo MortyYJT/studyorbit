@@ -1,5 +1,5 @@
 // AppleScript browser bridges for Edge and Chrome on macOS (openspec change generic-adapters, design §6, decision
-// #445). The scripts are the ones the Canvas and Handbook collectors ran before the move, with the application name
+// #445). The scripts are the ones the Canvas and framework-source collectors ran before the move, with the application name
 // taken from a fixed map (never from settings text). Chrome and Edge share Chromium's scripting dictionary. Before
 // each tab the bridge checks that the browser is running, without `tell application`, so it never starts it.
 // `runOsascript` is injectable so tests never drive a real browser.

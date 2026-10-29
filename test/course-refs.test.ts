@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CourseDocumentV2Schema } from '../shared/course-data.js';
-import { backfillFacts, buildLegacyIds, buildSources, buildStoredDocument, canonicalRefs, compareIds, generateIds, indexCollected, normaliseText, parseHandbookComponents, slug } from '../scripts/lib/course-refs.mjs';
+import { backfillFacts, buildLegacyIds, buildSources, buildStoredDocument, canonicalRefs, compareIds, generateIds, indexCollected, normaliseText, slug } from '../scripts/lib/course-refs.mjs';
+import { parseHandbookComponents } from '../scripts/institutions/unimelb/handbook-parse.mjs';
 
 // Synthetic Handbook text only; no real course content.
 

@@ -28,7 +28,7 @@ export const REASONS: Readonly<Record<'collectUnexpected' | 'stageUnexpected' | 
 export function canonicalJson(value: unknown): string;
 export function sha256Hex(data: string | Uint8Array): string;
 export function hashOf(value: unknown): string;
-export function collectInputHash(input: { courseId: string; code: string; term: string }): string;
+export function collectInputHash(input: { courseId: string; code: string; term: string; institution: string; canvasOrigin: string; edRegion: string; sources: readonly string[] }): string;
 export function analyseInputHash(input: { prompt: string; config: Pick<AnalysisConfig, 'provider' | 'model' | 'baseUrl'> & Partial<AnalysisConfig> }): string;
 export function validateInputHash(input: { analyseArtifact: string; sources: Sources; previous: string | null }): string;
 export function mergeInputHash(input: { validateArtifact: string; courseDir: string }): string;
@@ -44,7 +44,6 @@ export function reusableCheckpoint(store: SyncStore, jobId: string, courseId: st
 export function readCollected(sources: Sources): Promise<Record<Source, any>>;
 export type SourceFlags = { failed: boolean; partial: boolean; unpaginated: boolean };
 export function sourceFlags(sources: Sources, data: Record<Source, any>): Record<Source, SourceFlags>;
-export function collectionFlags(sources: Partial<Sources>, data: Record<Source, any>): Record<'canvasFailed' | 'canvasUnpaginated' | 'edFailed' | 'edPartial' | 'handbookFailed', boolean>;
 export function planMerge(rows: StageRow[], inputHash: string): Promise<MergePlan>;
 export function chooseCoursePath(courseDir: string, jobId: string): Promise<string>;
 export function limiterKey(source: Pick<CourseSource, 'usesBrowser' | 'limiter'>): string;

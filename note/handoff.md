@@ -26,9 +26,12 @@
 - **续跑与重来的测量（第 4 部分，分支 `claude/pipeline-measurements`，PR #279 待审查合并，决定 #435–#437）：** 没写单独脚本，`test/sync-faults.test.ts` 打印每个边界的假 token、调用次数和耗时；`docs/sync-optimization.md` 新增「续跑和重来（假模型、合成数据，不是真实运行）」一节：每个边界「失败 + 续跑」都等于不中断（13,885 假 token、12 次采集 / 5 次模型），「失败 + 重来」多花 2,949（采集 → 分析）或 5,898（之后三个边界）；按 2026-10-28 真实数字估算的节省单独标为估算。`docs/overview.md` 补了阶段、数据库、续跑、工具对话和 MCP；两个 change 已归档。
 - **通用化第 1 部分（`generic-adapters`，分支 `claude/generic-adapters-1`，PR #280 待合并，决定 #450–#456）：** 先录墨大金标准（`test/golden/`，四个采集器用测试预加载模块在子进程里对假响应真跑），再把采集器搬到接口后面：`scripts/sources/`（Canvas、Ed、注册表、`STUDYORBIT_SOURCE_CONFIG`）、`scripts/institutions/unimelb/`（课程代码、学期、文件夹、措辞、Handbook 来源）、`scripts/browser/`（`withPage`、Edge 的 AppleScript 桥，只能开允许的 origin、只有固定读取表达式）；旧脚本路径保留为转发；分阶段同步不再写死三个来源，任务的来源列表存进数据库（第 2 步迁移）。金标准逐字节不变。
 - **通用化第 2 部分（macOS Chrome，分支 `claude/generic-adapters-2`，PR #281 依赖 #280，决定 #457–#459）：** `chrome-applescript` 用和 Edge 相同的脚本；两个桥开标签页前都先查浏览器是否已打开（不替你启动，Edge 也一样，这是有意改动）；临时开关 `STUDYORBIT_BROWSER=chrome-applescript`（第 3 部分加设置后删）；Apple Events 提示按浏览器给；README 写了 Chrome 准备步骤并标「未实测」。
+- **通用化第 3 部分（设置 + 通用学校 + 通用 Canvas，分支 `claude/generic-adapters-3`，PR #282 待审查合并，决定 #460–#469）：** `.local/config/sources.json`（0600）和 `GET`/`PUT /api/local/source-settings`，设置页「数据来源」（学校、Canvas 地址、浏览器、Ed 区域，通用学校另有时区和课程代码正则）；同步或获取课程进行中拒绝保存；`generic` 学校插件（`StudyOrbit <学期>/<代码>` 文件夹、中性措辞、没有框架来源）；Canvas 地址可配，课程列表记下 `canvasOrigin`，地址变了要重新获取课程（`COURSE_LIST_STALE`）；Ed 区域 `auto`/`au`/`us`/`eu`；提示词、原因、对话、工具说明、MCP 和页面的「今天」都按学校取措辞和时区；collect 哈希加入学校、地址、区域和来源（金标准里只有这一个哈希值重录）；`test/no-institution-literals.test.ts` 守住通用代码；第 2 部分的 `STUDYORBIT_BROWSER` 已去掉，改在设置里选 Chrome。墨大提示词、原因、文件夹、采集器调用和对话提示逐字节不变（金标准）。
 - **验证（较早）：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
 
 ## 未验证
+
+- 通用化第 3 部分：其他学校的 Canvas、Ed `us`/`eu`、macOS Chrome 都只用合成响应测过；`auto` 区域下美区和欧区的 Ed 课程链接会按 `au` 生成（#463）；Windows/Linux 专用浏览器能选但没实现，选了同步会失败（#461）；设置页只在临时项目副本、合成数据、无头 Chrome 里点过（拦截了同步、获取课程和对话的写请求，实际没有发生），没碰真实 `.local/`。升级后第一次「继续上次同步」会重新采集（collect 哈希变了）。
 
 - 通用化第 2 部分：没有用真实 Chrome 跑过（只核对过 `sdef` 和用假 osascript 测脚本）；「是否已打开」检查也没在真实 Edge 上跑过；Chrome 中文菜单名「显示 → 开发者」没在界面上核对。
 - 通用化第 1 部分：没有跑过真实采集器（Edge、Canvas、Ed、Handbook 都没碰），采集器只在假 osascript / 假 edstem / 假 fetch 上跑过；数据库第 2 步迁移只在测试库上跑过，第一次启动服务时会先备份 `.local/studyorbit.db.v1.bak` 再迁移。
@@ -60,7 +63,8 @@
 6. 工具调用对话 + MCP：OpenSpec 变更 `chat-tools-mcp`（决定 #320–#339、#360–#369、#395–#404，待你复核）。第 1、2 个 PR 已合并（#264、#267）；第 3 个 PR #273（问答评测）已合并：32 道合成题 × 5 次 × 2 种模式，`deepseek-flash` 上下文模式 → 工具模式的准确率见 `docs/eval-results.md`「对话问答：改造前后」，上下文模式的错是缺计划数据或剩余权重口径不同，不是算术错；同一 PR 修了 DeepSeek 并行工具调用的回传顺序（#396，#267 的实测没覆盖到，第二步会 400）。MCP（第 4 个，PR #270，决定 #400–#404）已合并，整个 change 已归档（从 Claude Code 实际连接仍未验证）：`scripts/mcp-server.mjs` + `scripts/lib/course-mcp.mjs`，SDK 1.32.2，README 有 Claude Code / Claude Desktop 接法；#330 需要你定是否改用 SDK v2。
 7. 通用化：OpenSpec 变更 `generic-adapters`（决定 #440–#456，待你复核）。第 1 个 PR #280（接口和搬家）和第 2 个 PR #281（macOS Chrome，基于第 1 个，#280 合并后把 #281 的目标分支改回 `main`）待 CI 通过后依次合并；之后是设置 + 通用学校 + 通用 Canvas、Windows/Linux 的 CDP 桥（实验性）。
    - 你：#280 合并后跑一次「获取课程」，确认 Edge 采集照旧（#281 合并后 Edge 没打开时会直接报「请先打开 Microsoft Edge 并登录」）。
-   - 你：#281 合并后在 Chrome 里打开「显示 → 开发者 → 允许 Apple 事件中的 JavaScript」，用 `STUDYORBIT_BROWSER=chrome-applescript npm run dev` 启动，跑一次「获取课程」；第一次会弹出允许控制「Google Chrome」的系统询问。
+   - 你：在 Chrome 里打开「显示 → 开发者 → 允许 Apple 事件中的 JavaScript」，第 3 部分合并后在「设置 → 数据来源」把浏览器改成 Google Chrome 保存，跑一次「获取课程」；第一次会弹出允许控制「Google Chrome」的系统询问（`STUDYORBIT_BROWSER` 已去掉）。
+   - 你：审查第 3 部分 PR #282（决定 #460–#469）；合并后不改设置即为原来的墨大 + Edge，设置页「数据来源」看一眼即可。下一步是第 4 部分（Windows/Linux 的 CDP 专用浏览器，实验性）。
 
 ## 等用户决定
 

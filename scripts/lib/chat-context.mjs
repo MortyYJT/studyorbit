@@ -3,7 +3,8 @@
 // (owner corrections made in the browser are not visible here).
 import { calculateGrades } from '../../shared/course-calculations.ts';
 import { toDisplayDocument } from '../../shared/course-data.ts';
-import { gradingInputs } from '../../shared/course-tools.ts';
+import { formatDue, gradingInputs } from '../../shared/course-tools.ts';
+import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
 import { toolSystemPrompt } from './chat-tools-prompt.mjs';
 
 export const CONTEXT_LIMIT = 24000;
@@ -15,22 +16,12 @@ const SCORING = { points: '按子项原始分合计', weighted: '按子项权重
 
 const round = value => Number(value.toFixed(2));
 
-function formatDue(due) {
-  if (!due) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(due)) return due;
-  const date = new Date(due);
-  if (Number.isNaN(date.getTime())) return due;
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
-    .formatToParts(date).map(part => [part.type, part.value]));
-  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
-}
-
-function describe(item) {
+function describe(item, timeZone) {
   const fields = [item.name, KIND[item.kind] ?? item.kind];
   if (item.weight !== null) fields.push(`权重 ${round(item.weight)}%`);
   else if (item.unsourced.includes('weight')) fields.push('权重无出处');
   if (item.score !== null || item.maxScore !== null) fields.push(item.score !== null ? `得分 ${round(item.score)}/${item.maxScore === null ? '?' : round(item.maxScore)}` : `满分 ${round(item.maxScore)}`);
-  const due = formatDue(item.due);
+  const due = formatDue(item.due, timeZone);
   if (due) fields.push(`截止 ${due}`);
   if (STATUS[item.status]) fields.push(STATUS[item.status]);
   if (item.nature === 'bonus') fields.push('加分项');
@@ -49,7 +40,7 @@ function totals(doc) {
   return calculateGrades(assessments, parents);
 }
 
-function courseBlock(doc) {
+function courseBlock(doc, timeZone) {
   const { course } = doc;
   const lines = [`## ${course.code} ${course.name}${course.term ? `（${course.term}）` : ''}`];
   const { weight, earned, average } = totals(doc);
@@ -59,8 +50,8 @@ function courseBlock(doc) {
   if (doc.assessments.some(item => item.unsourced.length)) lines.push('标「权重无出处」「规则无出处」的项目：同步时没有在采集数据里找到依据，值已留空，不要当作已确认的信息。');
   if (!doc.assessments.length) lines.push('（没有记录到评估项目。）');
   for (const item of doc.assessments.filter(entry => entry.parentId === null)) {
-    lines.push(`- ${describe(item)}`);
-    for (const child of doc.assessments.filter(entry => entry.parentId === item.id)) lines.push(`  - ${describe(child)}`);
+    lines.push(`- ${describe(item, timeZone)}`);
+    for (const child of doc.assessments.filter(entry => entry.parentId === item.id)) lines.push(`  - ${describe(child, timeZone)}`);
   }
   return lines;
 }
@@ -69,17 +60,19 @@ function courseBlock(doc) {
  * Compact Chinese description of the selected courses for the chat system prompt, capped at CONTEXT_LIMIT characters.
  * @param {(import('../../shared/course-data.ts').CourseDocument | import('../../shared/course-data.ts').DisplayDocument)[]} documents
  *   synced course documents of either version; each is read through `toDisplayDocument`
- * @param {{ today: string, courseIds?: string[], courses?: { id: string, code?: string, name?: string }[] }} options
- *   courseIds limits the scope (undefined = every document); courses names selected courses that have no document.
+ * @param {{ today: string, courseIds?: string[], courses?: { id: string, code?: string, name?: string }[],
+ *   institution?: import('../institutions/types.d.mts').Institution, timeZone?: string }} options
+ *   courseIds limits the scope (undefined = every document); courses names selected courses that have no document;
+ *   institution names the time zone (default the default institution) and timeZone formats due dates (default its zone).
  */
-export function buildChatContext(stored, { today, courseIds, courses = [] }) {
+export function buildChatContext(stored, { today, courseIds, courses = [], institution = DEFAULT_INSTITUTION, timeZone = institution.defaults.timeZone }) {
   const documents = stored.map(toDisplayDocument);
   const scope = courseIds ?? documents.map(doc => doc.course.id);
-  const lines = [`今天：${today}（墨尔本时间）。`, '以下是同步得到的课程数据，不包含用户在页面上做的修改。分数是原始得分/满分，权重是占课程总分的百分比。', ''];
+  const lines = [`今天：${today}（${institution.wording.timeLabel.zh}）。`, '以下是同步得到的课程数据，不包含用户在页面上做的修改。分数是原始得分/满分，权重是占课程总分的百分比。', ''];
   if (!scope.length) lines.push('当前没有选择任何课程。');
   for (const id of scope) {
     const doc = documents.find(item => item.course.id === id);
-    if (doc) { lines.push(...courseBlock(doc), ''); continue; }
+    if (doc) { lines.push(...courseBlock(doc, timeZone), ''); continue; }
     const known = courses.find(item => item.id === id);
     lines.push(`## ${known?.code ?? id}${known?.name ? ` ${known.name}` : ''}`, `课程 ${id} 还没有可用的同步数据。`, '');
   }
@@ -90,18 +83,21 @@ export function buildChatContext(stored, { today, courseIds, courses = [] }) {
   return `${lastBreak > 0 ? text.slice(0, lastBreak) : text}${TRUNCATION_NOTE}`;
 }
 
-/** System prompt for the study assistant. Context mode appends the course context; tool mode the course index. */
-export function chatSystemPrompt(language = 'zh', mode = 'context') {
-  if (mode === 'tools') return toolSystemPrompt(language);
+/**
+ * System prompt for the study assistant. Context mode appends the course context; tool mode the course index. The first
+ * line comes from the institution (default the default institution).
+ */
+export function chatSystemPrompt(language = 'zh', mode = 'context', institution = DEFAULT_INSTITUTION) {
+  if (mode === 'tools') return toolSystemPrompt(language, institution);
   if (language === 'en') return [
-    'You are a study assistant for one University of Melbourne student, inside their personal coursework tool.',
+    institution.wording.assistantIntro.en,
     'You help with: explaining grades and weights, working out what score is needed on the remaining items, weekly study plans, revision questions and explaining concepts.',
     'You never write or complete graded work (assignments, essays, quiz or exam answers, code to be submitted) and never submit anything. If asked, say so in one sentence and offer to explain the concept or help plan instead.',
     'Answer from the course data below. If the data is missing or unclear, say you are not sure. Do not invent scores, weights or dates; show the arithmetic when you calculate.',
     "Reply in the user's language. Be concise; use short paragraphs and simple lists.",
   ].join('\n');
   return [
-    '你是一名墨尔本大学学生的学习助手，运行在他自己的课程管理工具里。',
+    institution.wording.assistantIntro.zh,
     '你可以：解释成绩和权重，计算剩余项目需要拿多少分，制定每周学习计划，出复习题，讲解概念。',
     '你不代写也不完成任何计分作业（作业、论文、测验或考试答案、要提交的代码），也不提交任何东西。被要求时用一句话说明，然后提出可以讲解概念或帮忙规划。',
     '只根据下面的课程数据回答。数据缺失或不清楚时直接说不确定，不要编造分数、权重或日期；计算时写出算式。',

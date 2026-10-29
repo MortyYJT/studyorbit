@@ -11,8 +11,9 @@ import { HANDBOOK_ORIGIN } from './handbook-source.mjs';
 
 const [course, year, dest] = process.argv.slice(2);
 if (!unimelb.isSubjectCode(course) || !/^20\d{2}$/.test(year ?? '') || !dest) throw new Error('用法：node scripts/collect-handbook.mjs <课程代码> <学年> <输出路径>');
-const config = readSourceConfig({ needsBrowser: true });
-const bridge = bridgeFor(config);
+let config, bridge;
+try { config = readSourceConfig({ needsBrowser: true }); bridge = bridgeFor(config); }
+catch (error) { console.error(`Handbook 采集不可用：${error.message}`); process.exit(1); }
 const isStopped = stopFlag();
 const url = `${HANDBOOK_ORIGIN}/${year}/subjects/${course.toLowerCase()}/assessment`;
 const start = Date.now();

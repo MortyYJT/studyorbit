@@ -27,7 +27,8 @@ export function courseSyncRoute(pipeline: SyncPipeline | null): RouteHandler {
       res.writeHead(202).end(JSON.stringify(state));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'INVALID_SELECTION';
-      res.writeHead(reason === 'SYNC_RUNNING' ? 409 : 400).end(JSON.stringify({ error: reason }));
+      // COURSE_LIST_STALE: the course list came from another Canvas than the source settings' (generic-adapters §2).
+      res.writeHead(reason === 'SYNC_RUNNING' || reason === 'COURSE_LIST_STALE' ? 409 : 400).end(JSON.stringify({ error: reason }));
     }
   };
 }

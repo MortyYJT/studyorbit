@@ -16,7 +16,8 @@ import { isTemporaryFailure } from './llm-providers.mjs';
 import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
 
 /** Bump a stage's version whenever its code changes meaning: older checkpoints then stop matching. */
-export const COLLECT_VERSION = 1;
+/** 2: the collect inputs gained the institution, Canvas origin, Ed region and source ids (generic-adapters PR 3). */
+export const COLLECT_VERSION = 2;
 export const ANALYSE_VERSION = 1;
 export const VALIDATE_VERSION = 1;
 export const MERGE_VERSION = 1;
@@ -41,7 +42,13 @@ export function canonicalJson(value) {
 export const sha256Hex = data => createHash('sha256').update(data).digest('hex');
 export const hashOf = value => sha256Hex(canonicalJson(value));
 
-export const collectInputHash = ({ courseId, code, term }) => hashOf({ stage: 'collect', version: COLLECT_VERSION, courseId, code, term });
+/**
+ * Collect inputs: the course and the setup that decides what is collected — institution, Canvas origin, Ed region and
+ * the job's source ids in order. The browser is left out: it does not change the data (design §1).
+ */
+export const collectInputHash = ({ courseId, code, term, institution, canvasOrigin, edRegion, sources }) => hashOf({
+  stage: 'collect', version: COLLECT_VERSION, courseId, code, term, institution, canvasOrigin, edRegion, sources,
+});
 /** Covers the prompt (collected data and schema included), provider, model and base URL — never the key. */
 export const analyseInputHash = ({ prompt, config }) => hashOf({
   stage: 'analyse', version: ANALYSE_VERSION, prompt, provider: config.provider, model: config.model ?? null, baseUrl: config.baseUrl ?? null,
@@ -53,7 +60,7 @@ export const validateInputHash = ({ analyseArtifact, sources, previous }) => has
 });
 export const mergeInputHash = ({ validateArtifact, courseDir }) => hashOf({ stage: 'merge', version: MERGE_VERSION, validate: validateArtifact, courseDir });
 
-/** Desktop folder label for a Canvas term under the institution, e.g. "2026 S2" for UniMelb. */
+/** Desktop folder label for a Canvas term under the institution (default the default institution). */
 export const termLabel = (term, institution = DEFAULT_INSTITUTION) => institution.termLabel(term);
 export const courseTerm = course => (typeof course.term === 'string' ? course.term : '');
 /** The course's Desktop folder: the institution's path segments under `desktopDir`. */
@@ -116,23 +123,14 @@ export async function readCollected(sources) {
   return Object.fromEntries(entries);
 }
 
-/** Per-source collection flags: the collector failed, its data is partial, or its pagination was not verified. */
+/**
+ * Per-source collection flags for `settleCourse`: the collector failed or wrote an `unavailable` result itself (as the
+ * Ed collector does on a region mismatch), its data is partial, or its pagination was not verified.
+ */
 export function sourceFlags(sources, data) {
   return Object.fromEntries(Object.entries(sources).map(([id, entry]) => [id, {
-    failed: entry.exitCode !== 0, partial: data[id]?.status === 'partial', unpaginated: data[id]?.paginationVerified === false,
+    failed: entry.exitCode !== 0 || data[id]?.status === 'unavailable', partial: data[id]?.status === 'partial', unpaginated: data[id]?.paginationVerified === false,
   }]));
-}
-
-/**
- * Collection flags for `settleCourse`, derived from the per-source flags; a source missing from the job counts as not
- * failed. `settleCourse` switches to the per-source form in PR 3 of generic-adapters.
- */
-export function collectionFlags(sources, data) {
-  const flags = sourceFlags(sources, data);
-  return {
-    canvasFailed: flags.canvas?.failed ?? false, canvasUnpaginated: flags.canvas?.unpaginated ?? false,
-    edFailed: flags.ed?.failed ?? false, edPartial: flags.ed?.partial ?? false, handbookFailed: flags.handbook?.failed ?? false,
-  };
 }
 
 /**
@@ -258,9 +256,11 @@ export const limiterKey = source => (source.usesBrowser ? 'browser' : source.lim
  * fails the stage so the source is collected again on resume.
  */
 export async function collectStage(ctx, course) {
-  const inputHash = collectInputHash({ courseId: course.id, code: course.subjectCode, term: courseTerm(course) });
-  const runDir = join(ctx.projectDir, '.local', 'lms', 'runs', ctx.jobId, course.id);
   const ids = ctx.sources.map(source => source.id);
+  const { settings } = ctx.sourceContext;
+  const inputHash = collectInputHash({ courseId: course.id, code: course.subjectCode, term: courseTerm(course),
+    institution: settings.institution, canvasOrigin: settings.canvasOrigin, edRegion: settings.edRegion, sources: ids });
+  const runDir = join(ctx.projectDir, '.local', 'lms', 'runs', ctx.jobId, course.id);
   let found = {};
   return runStage(ctx, course.id, 'collect', inputHash, {
     async reuse() {
@@ -320,7 +320,7 @@ const addUsage = (a, b) => {
  */
 export async function analyseStage(ctx, course, collected) {
   const data = await readCollected(collected.sources);
-  const prompt = buildAnalysisPrompt({ course, term: courseTerm(course), ...data });
+  const prompt = buildAnalysisPrompt({ course, term: courseTerm(course), ...data, institution: ctx.institution });
   const inputHash = analyseInputHash({ prompt, config: ctx.config });
   return runStage(ctx, course.id, 'analyse', inputHash, {
     reuse() {
@@ -353,7 +353,7 @@ export async function analyseStage(ctx, course, collected) {
       };
       let analysis;
       try {
-        analysis = await analyseWithRepair({ instructions: prompt, run, validate: raw => validateAnalysis(raw, { course, ...data }), isCancelled: () => Boolean(ctx.stopStatus()) });
+        analysis = await analyseWithRepair({ instructions: prompt, run, validate: raw => validateAnalysis(raw, { course, ...data, framework: ctx.institution.framework }), isCancelled: () => Boolean(ctx.stopStatus()) });
       } catch (error) {
         // Stopped while waiting for a slot or a retry: count every call that already returned.
         const spent = every.reduce((sum, item) => addUsage(sum, item.usage), null);
@@ -397,9 +397,10 @@ export async function validateStage(ctx, course, collected, analysed, previousHa
       const data = await readCollected(collected.sources);
       const previous = capturedDocument(ctx.store, previousHash);
       const { final, usage } = analysed.artifact;
-      const validation = validateAnalysis(final.lastMessage, { course, ...data });
+      const { framework } = ctx.institution;
+      const validation = validateAnalysis(final.lastMessage, { course, ...data, framework });
       const result = { exitCode: final.exitCode, lastMessage: final.lastMessage, usage, error: final.error ?? undefined, threadId: final.threadId, issues: validation.issues };
-      const settled = settleCourse({ result, validation, collection: collectionFlags(collected.sources, data), data, previous });
+      const settled = settleCourse({ result, validation, collection: sourceFlags(collected.sources, data), sources: ctx.sources, data, previous, framework });
       if (settled.diagnostic) await ctx.writeDiagnostic(`${ctx.jobId}-${course.id}.json`, settled.diagnostic);
       const artifact = { accepted: settled.accepted, status: settled.status, reason: settled.reason, document: settled.document, diagnostic: settled.diagnostic, previous: previousHash ?? null };
       const hash = ctx.store.putArtifact(JSON.stringify(artifact));
@@ -460,7 +461,7 @@ export async function mergeStage(ctx, course, validated, previousHash) {
         let logged;
         try { logged = await changeLogHasRun(ctx.projectDir, course.id, ctx.lineageIds); } catch { logged = null; }
         if (logged === null) holder.reason = [holder.reason, '变更记录写入失败。'].filter(Boolean).join(' ');
-        else if (!logged) await ctx.io.recordCourseChanges({ at: ctx.isoNow(), runId: ctx.jobId, courseId: course.id, previous, current: final.document }, holder);
+        else if (!logged) await ctx.io.recordCourseChanges({ at: ctx.isoNow(), runId: ctx.jobId, courseId: course.id, previous, current: final.document, timeZone: ctx.timeZone }, holder);
       }
       return { checkpoint: { plannedPath: path, contentHash: final.contentHash, validateArtifact: final.validateArtifact, changeLog: true,
         status: final.status, reason: holder.reason, ...(plan.kind === 'complete' ? { completedFrom: plan.row.jobId } : {}) },
