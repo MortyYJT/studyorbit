@@ -134,14 +134,14 @@ export async function openStore(projectDir: string, clock: () => number): Promis
 export const START = Date.UTC(2026, 9, 30, 0, 0, 0);
 /** A pipeline over the project with fakes and a virtual clock whose sleeps complete at once. */
 export function pipelineFor(project: Project, store: SyncStore, fakes: { runCollector: PipelineDeps['runCollector']; callModel: PipelineDeps['callModel'] },
-  options: { clock?: ReturnType<typeof manualClock>; hooks?: PipelineHooks; config?: AnalysisConfig; ids?: string[] } = {}) {
+  options: { clock?: ReturnType<typeof manualClock>; hooks?: PipelineHooks; config?: AnalysisConfig; ids?: string[]; sources?: PipelineDeps['sources'] } = {}) {
   const clock = options.clock ?? manualClock(START, { instant: true });
   const ids = [...(options.ids ?? [])];
   let next = 0;
   return createSyncPipeline({
     store, projectDir: project.projectDir, desktopDir: project.desktopDir, runCollector: fakes.runCollector, callModel: fakes.callModel,
     resolveModel: async () => options.config ?? fakeConfig, childUsage: async () => null, clock, random: () => 0.5,
-    limiters: createSyncLimiters({ clock, random: () => 0.5 }), hooks: options.hooks, newId: () => ids.shift() ?? `job-${++next}`,
+    limiters: createSyncLimiters({ clock, random: () => 0.5 }), hooks: options.hooks, newId: () => ids.shift() ?? `job-${++next}`, sources: options.sources,
   });
 }
 

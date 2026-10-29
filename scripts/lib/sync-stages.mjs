@@ -13,6 +13,7 @@ import { newestCourseDocument } from './course-reports.mjs';
 import { analyseWithRepair, settleCourse, validateAnalysis } from './course-validation.mjs';
 import { EX_TEMPFAIL } from './collector-exit.mjs';
 import { isTemporaryFailure } from './llm-providers.mjs';
+import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
 
 /** Bump a stage's version whenever its code changes meaning: older checkpoints then stop matching. */
 export const COLLECT_VERSION = 1;
@@ -20,15 +21,8 @@ export const ANALYSE_VERSION = 1;
 export const VALIDATE_VERSION = 1;
 export const MERGE_VERSION = 1;
 export const STAGES = Object.freeze(['collect', 'analyse', 'validate', 'merge']);
-export const SOURCES = Object.freeze(['canvas', 'ed', 'handbook']);
-
-const SOURCE_LABELS = { canvas: 'Canvas', ed: 'Ed', handbook: 'Handbook' };
-// The placeholders written when a collector fails, byte for byte as before the staged pipeline.
-const PLACEHOLDERS = {
-  canvas: JSON.stringify({ status: 'unavailable', reason: 'Canvas 采集不可用' }),
-  ed: JSON.stringify({ status: 'unavailable', lessons: [], scores: [], reason: 'Ed 采集不可用' }),
-  handbook: JSON.stringify({ status: 'unavailable', reason: 'Handbook 采集不可用' }),
-};
+// The job's sources (openspec change generic-adapters, design §1) come in `ctx.sources`: source objects in collection
+// order whose ids are the checkpoint keys and run-directory file names. No fixed source list remains here.
 export const REASONS = Object.freeze({
   collectUnexpected: '无法启动或记录课程任务，请检查本地环境。',
   stageUnexpected: '课程分析或保存失败，请检查本地环境。',
@@ -52,20 +46,19 @@ export const collectInputHash = ({ courseId, code, term }) => hashOf({ stage: 'c
 export const analyseInputHash = ({ prompt, config }) => hashOf({
   stage: 'analyse', version: ANALYSE_VERSION, prompt, provider: config.provider, model: config.model ?? null, baseUrl: config.baseUrl ?? null,
 });
+/** `sources` holds exactly the job's sources; the canonical JSON sorts their ids, so the order does not matter. */
 export const validateInputHash = ({ analyseArtifact, sources, previous }) => hashOf({
   stage: 'validate', version: VALIDATE_VERSION, analyse: analyseArtifact, previous: previous ?? 'none',
-  sources: Object.fromEntries(SOURCES.map(source => [source, { sha256: sources[source].sha256, exitCode: sources[source].exitCode }])),
+  sources: Object.fromEntries(Object.entries(sources).map(([id, entry]) => [id, { sha256: entry.sha256, exitCode: entry.exitCode }])),
 });
 export const mergeInputHash = ({ validateArtifact, courseDir }) => hashOf({ stage: 'merge', version: MERGE_VERSION, validate: validateArtifact, courseDir });
 
-/** Desktop folder label for a Canvas term, e.g. "2026 S2" (same rule as course-reports). */
-export function termLabel(term) {
-  const value = typeof term === 'string' ? term : '';
-  const match = /(20\d{2}).*?(?:semester|sem)\s*([12])/i.exec(value);
-  return match ? `${match[1]} S${match[2]}` : value.replace(/[^\w\u4e00-\u9fff -]/g, '').trim().slice(0, 50) || '未知学期';
-}
+/** Desktop folder label for a Canvas term under the institution, e.g. "2026 S2" for UniMelb. */
+export const termLabel = (term, institution = DEFAULT_INSTITUTION) => institution.termLabel(term);
 export const courseTerm = course => (typeof course.term === 'string' ? course.term : '');
-export const courseFolder = (desktopDir, course) => join(desktopDir, `墨尔本大学 ${termLabel(courseTerm(course))}`, course.subjectCode);
+/** The course's Desktop folder: the institution's path segments under `desktopDir`. */
+export const courseFolder = (desktopDir, course, institution = DEFAULT_INSTITUTION) =>
+  join(desktopDir, ...institution.courseFolder({ term: courseTerm(course), subjectCode: course.subjectCode }));
 
 /** sha256 of a file's bytes, or null when it does not exist. */
 export async function fileHash(path) {
@@ -76,8 +69,8 @@ export async function fileHash(path) {
  * Captures the course's newest valid earlier Desktop document as an artifact and returns its hash (null when there is
  * none). Called once per course per lineage, when the root job is created (decision #354); resumed jobs copy the hash.
  */
-export async function captureEarlierDocument(store, desktopDir, course) {
-  const document = await newestCourseDocument(courseFolder(desktopDir, course), course.id);
+export async function captureEarlierDocument(store, desktopDir, course, institution = DEFAULT_INSTITUTION) {
+  const document = await newestCourseDocument(courseFolder(desktopDir, course, institution), course.id);
   return document ? store.putArtifact(JSON.stringify(document)) : null;
 }
 export function capturedDocument(store, hash) {
@@ -94,13 +87,13 @@ export async function verifySource(entry) {
 }
 
 /**
- * Verified sources from collect rows of the lineage with this input hash, whatever their status (a stopped collect
- * keeps the sources it finished), nearest job first: `{ canvas?: { entry, jobId }, ... }`.
+ * Verified sources among `ids` from collect rows of the lineage with this input hash, whatever their status (a stopped
+ * collect keeps the sources it finished), nearest job first: `{ canvas?: { entry, jobId }, ... }`.
  */
-export async function reusableSources(store, jobId, courseId, inputHash) {
+export async function reusableSources(store, jobId, courseId, inputHash, ids) {
   const found = {};
   const rows = store.lineageStages(jobId, courseId, 'collect').filter(row => row.jobId !== jobId && row.inputHash === inputHash);
-  for (const source of SOURCES) {
+  for (const source of ids) {
     for (const row of rows) {
       const entry = row.checkpoint?.sources?.[source];
       if (await verifySource(entry)) { found[source] = { entry: { file: entry.file, sha256: entry.sha256, exitCode: entry.exitCode }, jobId: row.jobId }; break; }
@@ -117,16 +110,28 @@ export function reusableCheckpoint(store, jobId, courseId, stage, inputHash) {
   return content === null ? null : { row, artifact: JSON.parse(content) };
 }
 
+/** The collected data of every source in the checkpoint entries `{ [id]: { file } }`, by source id. */
 export async function readCollected(sources) {
-  const entries = await Promise.all(SOURCES.map(async source => [source, JSON.parse(await readFile(sources[source].file, 'utf8'))]));
+  const entries = await Promise.all(Object.entries(sources).map(async ([id, entry]) => [id, JSON.parse(await readFile(entry.file, 'utf8'))]));
   return Object.fromEntries(entries);
 }
 
-/** Collection flags for `settleCourse`, derived from the collect checkpoint and the collected data. */
+/** Per-source collection flags: the collector failed, its data is partial, or its pagination was not verified. */
+export function sourceFlags(sources, data) {
+  return Object.fromEntries(Object.entries(sources).map(([id, entry]) => [id, {
+    failed: entry.exitCode !== 0, partial: data[id]?.status === 'partial', unpaginated: data[id]?.paginationVerified === false,
+  }]));
+}
+
+/**
+ * Collection flags for `settleCourse`, derived from the per-source flags; a source missing from the job counts as not
+ * failed. `settleCourse` switches to the per-source form in PR 3 of generic-adapters.
+ */
 export function collectionFlags(sources, data) {
+  const flags = sourceFlags(sources, data);
   return {
-    canvasFailed: sources.canvas.exitCode !== 0, canvasUnpaginated: data.canvas?.paginationVerified === false,
-    edFailed: sources.ed.exitCode !== 0, edPartial: data.ed?.status === 'partial', handbookFailed: sources.handbook.exitCode !== 0,
+    canvasFailed: flags.canvas?.failed ?? false, canvasUnpaginated: flags.canvas?.unpaginated ?? false,
+    edFailed: flags.ed?.failed ?? false, edPartial: flags.ed?.partial ?? false, handbookFailed: flags.handbook?.failed ?? false,
   };
 }
 
@@ -222,19 +227,13 @@ function toFailure(ctx, stage, error) {
   return new StageFailure({ stage, status: 'failed', code: 'UNEXPECTED', reason: stage === 'collect' ? REASONS.collectUnexpected : REASONS.stageUnexpected, ...extra });
 }
 
-/** Collector script and arguments for a source (unchanged from the sequential runner); null when it cannot run. */
-export function collectorCommand(course, source, file) {
-  const term = courseTerm(course);
-  if (source === 'canvas') return { script: 'canvas-background.mjs', args: [course.id, file] };
-  if (source === 'ed') return { script: 'collect-ed-course.mjs', args: [course.subjectCode, term, file] };
-  const year = /\b(20\d{2})\b/.exec(term)?.[1];
-  return year ? { script: 'collect-handbook.mjs', args: [course.subjectCode, year, file] } : null;
-}
-
-/** Real collector: a detached child process, stopped through `registerStop` (SIGTERM, SIGKILL after 5 s) or after 120 s. */
-export function spawnCollector({ script, args, cwd, registerStop }) {
+/**
+ * Real collector: a detached child process of `scripts/<script>` with the command's `env` added to this process's
+ * environment, stopped through `registerStop` (SIGTERM, SIGKILL after 5 s) or after 120 s.
+ */
+export function spawnCollector({ script, args, env = {}, cwd, registerStop }) {
   return new Promise(resolveTask => {
-    const proc = spawn(process.execPath, [join(cwd, 'scripts', script), ...args], { cwd, stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' });
+    const proc = spawn(process.execPath, [join(cwd, 'scripts', script), ...args], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' });
     let stderr = '', done = false, escalation;
     proc.stderr.on('data', chunk => { if (stderr.length < 4000) stderr += chunk.toString().slice(0, 4000 - stderr.length); });
     const stop = () => {
@@ -249,56 +248,61 @@ export function spawnCollector({ script, args, cwd, registerStop }) {
   });
 }
 
+/** The limiter key of a source: every source that uses the browser shares the browser limiter. */
+export const limiterKey = source => (source.usesBrowser ? 'browser' : source.limiter);
+
 /**
- * Collect: the three collectors in order into the job's run directory, through the platform limiters. Verified
- * sources of the lineage are reused one by one; the checkpoint is updated after each source. A failed collector gives
- * the `unavailable` placeholder as before; a temporary failure left after retries (exit 75) fails the stage so the
- * source is collected again on resume.
+ * Collect: the job's sources (`ctx.sources`) in order into the job's run directory, through the platform limiters.
+ * Verified sources of the lineage are reused one by one; the checkpoint is updated after each source. A failed
+ * collector gives the source's `unavailable` placeholder as before; a temporary failure left after retries (exit 75)
+ * fails the stage so the source is collected again on resume.
  */
 export async function collectStage(ctx, course) {
   const inputHash = collectInputHash({ courseId: course.id, code: course.subjectCode, term: courseTerm(course) });
   const runDir = join(ctx.projectDir, '.local', 'lms', 'runs', ctx.jobId, course.id);
+  const ids = ctx.sources.map(source => source.id);
   let found = {};
   return runStage(ctx, course.id, 'collect', inputHash, {
     async reuse() {
-      found = await reusableSources(ctx.store, ctx.jobId, course.id, inputHash);
-      if (!SOURCES.every(source => found[source])) return null;
-      const from = ctx.lineageIds.find(id => SOURCES.some(source => found[source].jobId === id));
-      const sources = Object.fromEntries(SOURCES.map(source => [source, { ...found[source].entry, reusedFrom: found[source].jobId }]));
-      return { from, checkpoint: { sources }, result: { sources, phases: {}, reusedSources: [...SOURCES] } };
+      found = await reusableSources(ctx.store, ctx.jobId, course.id, inputHash, ids);
+      if (!ids.every(id => found[id])) return null;
+      const from = ctx.lineageIds.find(jobId => ids.some(id => found[id].jobId === jobId));
+      const sources = Object.fromEntries(ids.map(id => [id, { ...found[id].entry, reusedFrom: found[id].jobId }]));
+      return { from, checkpoint: { sources }, result: { sources, phases: {}, reusedSources: [...ids] } };
     },
     async work() {
       const sources = {}, phases = {}, budget = { waitedMs: 0 };
       let attempts = 0;
-      for (const source of SOURCES) {
-        if (found[source]) { sources[source] = { ...found[source].entry, reusedFrom: found[source].jobId }; continue; }
-        ctx.setCourse(course.id, { phase: source });
+      for (const source of ctx.sources) {
+        const id = source.id;
+        if (found[id]) { sources[id] = { ...found[id].entry, reusedFrom: found[id].jobId }; continue; }
+        ctx.setCourse(course.id, { phase: id });
         const started = ctx.now();
-        const file = join(runDir, `${source}.json`);
+        const file = join(runDir, `${id}.json`);
         await ctx.io.mkdir(runDir, { recursive: true, mode: 0o700 });
-        const command = collectorCommand(course, source, file);
+        const command = source.collect(course, ctx.sourceContext, file);
         let code = null;
         if (command) {
-          const outcome = await ctx.limiters.collect(source).run(async () => {
+          const outcome = await ctx.limiters.collect(limiterKey(source)).run(async () => {
             ctx.assertAlive();
             attempts++;
-            const result = await ctx.runCollector({ source, ...command, cwd: ctx.projectDir, registerStop: ctx.registerStop, signal: ctx.signal });
+            const result = await ctx.runCollector({ source: id, script: command.script, args: command.args, env: command.env, cwd: ctx.projectDir, registerStop: ctx.registerStop, signal: ctx.signal });
             if (result.code === 0) return { ok: true, value: result };
             return { ok: false, retryable: result.code === EX_TEMPFAIL && !ctx.stopStatus(), error: result.error, code: result.code };
           }, { signal: ctx.signal, budget });
-          phases[`${source}Ms`] = ctx.now() - started;
+          phases[`${id}Ms`] = ctx.now() - started;
           if (ctx.stopStatus()) throw Object.assign(new Error('stopped'), { phases, attempts });
           code = outcome.ok ? 0 : outcome.code;
           if (code === EX_TEMPFAIL) {
-            throw new StageError('COLLECT_TEMPORARY', `${SOURCE_LABELS[source]} 暂时无法访问（限流或服务器错误，已重试 ${outcome.attempts} 次），可以继续上次同步。`, { phases, attempts });
+            throw new StageError('COLLECT_TEMPORARY', `${source.label} 暂时无法访问（限流或服务器错误，已重试 ${outcome.attempts} 次），可以继续上次同步。`, { phases, attempts });
           }
-        } else phases[`${source}Ms`] = ctx.now() - started;
-        if (code !== 0) await ctx.io.writeFile(file, PLACEHOLDERS[source], { mode: 0o600 });
-        sources[source] = { file, sha256: await fileHash(file), exitCode: code };
-        if (sources[source].sha256 === null) throw new Error('COLLECTED_FILE_MISSING');
+        } else phases[`${id}Ms`] = ctx.now() - started;
+        if (code !== 0) await ctx.io.writeFile(file, JSON.stringify(source.placeholder()), { mode: 0o600 });
+        sources[id] = { file, sha256: await fileHash(file), exitCode: code };
+        if (sources[id].sha256 === null) throw new Error('COLLECTED_FILE_MISSING');
         ctx.store.updateStage(ctx.jobId, course.id, 'collect', { checkpoint: { sources } });
       }
-      return { checkpoint: { sources }, attempts, result: { sources, phases, reusedSources: SOURCES.filter(source => found[source]) } };
+      return { checkpoint: { sources }, attempts, result: { sources, phases, reusedSources: ids.filter(id => found[id]) } };
     },
   });
 }
@@ -411,7 +415,7 @@ export async function validateStage(ctx, course, collected, analysed, previousHa
  * (skipped when a line of this course from any lineage job exists). A result without a document only records it.
  */
 export async function mergeStage(ctx, course, validated, previousHash) {
-  const courseDir = courseFolder(ctx.desktopDir, course);
+  const courseDir = courseFolder(ctx.desktopDir, course, ctx.institution);
   const inputHash = mergeInputHash({ validateArtifact: validated.artifactHash, courseDir });
   return runStage(ctx, course.id, 'merge', inputHash, {
     async work() {

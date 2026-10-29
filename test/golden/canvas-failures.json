@@ -1,0 +1,23 @@
+[
+  {
+    "name": "foreign",
+    "code": 1,
+    "stderr": "Canvas 后台采集失败：Canvas 下一页链接不属于当前接口。如提示 JavaScript from Apple Events，请在 Edge 开发者菜单允许后重试。\n",
+    "written": false,
+    "closes": 2
+  },
+  {
+    "name": "redirect",
+    "code": 1,
+    "stderr": "Canvas 后台采集失败：Canvas 登录可能已失效或页面跳转。如提示 JavaScript from Apple Events，请在 Edge 开发者菜单允许后重试。\n",
+    "written": false,
+    "closes": 1
+  },
+  {
+    "name": "busy",
+    "code": 75,
+    "stderr": "Canvas 后台采集失败：Canvas HTTP 503。如提示 JavaScript from Apple Events，请在 Edge 开发者菜单允许后重试。\n",
+    "written": false,
+    "closes": 1
+  }
+]

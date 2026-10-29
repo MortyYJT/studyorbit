@@ -1,0 +1,618 @@
+[
+  {
+    "handbook": "parsable",
+    "flags": [],
+    "status": "completed",
+    "reason": ""
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasUnpaginated"
+    ],
+    "status": "partial",
+    "reason": "Canvas 分页未验证；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "edFailed"
+    ],
+    "status": "partial",
+    "reason": "Ed 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "edFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasUnpaginated",
+      "edFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 分页未验证；Ed 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "edFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "edPartial"
+    ],
+    "status": "partial",
+    "reason": "部分 Ed 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "edPartial"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；部分 Ed 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasUnpaginated",
+      "edPartial"
+    ],
+    "status": "partial",
+    "reason": "Canvas 分页未验证；部分 Ed 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "edPartial"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；部分 Ed 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "edFailed",
+      "edPartial"
+    ],
+    "status": "partial",
+    "reason": "Ed 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "edFailed",
+      "edPartial"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasUnpaginated",
+      "edFailed",
+      "edPartial"
+    ],
+    "status": "partial",
+    "reason": "Canvas 分页未验证；Ed 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "edFailed",
+      "edPartial"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasUnpaginated",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 分页未验证；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "edFailed",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Ed 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "edFailed",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasUnpaginated",
+      "edFailed",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 分页未验证；Ed 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "edFailed",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "部分 Ed 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；部分 Ed 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasUnpaginated",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 分页未验证；部分 Ed 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；部分 Ed 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "edFailed",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Ed 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "edFailed",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasUnpaginated",
+      "edFailed",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 分页未验证；Ed 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "parsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "edFailed",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "partial",
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；Handbook 数据未能读取；"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasUnpaginated"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "edFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "edFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasUnpaginated",
+      "edFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "edFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "edPartial"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "edPartial"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasUnpaginated",
+      "edPartial"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "edPartial"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "edFailed",
+      "edPartial"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "edFailed",
+      "edPartial"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasUnpaginated",
+      "edFailed",
+      "edPartial"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "edFailed",
+      "edPartial"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasUnpaginated",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "edFailed",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "edFailed",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasUnpaginated",
+      "edFailed",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "edFailed",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasUnpaginated",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "edFailed",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "edFailed",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasUnpaginated",
+      "edFailed",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "handbook": "unparsable",
+    "flags": [
+      "canvasFailed",
+      "canvasUnpaginated",
+      "edFailed",
+      "edPartial",
+      "handbookFailed"
+    ],
+    "status": "failed",
+    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+  },
+  {
+    "case": "model exit 1",
+    "status": "failed",
+    "reason": "模型任务未正常完成，请检查模型配置及连接。"
+  },
+  {
+    "case": "invalid reply",
+    "status": "failed",
+    "reason": "课程数据校验失败：: Invalid input: expected object, received undefined"
+  }
+]

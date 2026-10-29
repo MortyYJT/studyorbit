@@ -12,7 +12,7 @@ export type JobCourse = {
 };
 export type Job = {
   id: string; kind: 'course-sync'; status: JobStatus; provider: string | null; model: string | null;
-  resumedFrom: string | null; createdAt: string; startedAt: string | null; finishedAt: string | null; error: string | null;
+  resumedFrom: string | null; sources: string[] | null; createdAt: string; startedAt: string | null; finishedAt: string | null; error: string | null;
   courses: JobCourse[];
 };
 export type StageRow = {
@@ -35,7 +35,7 @@ export type SyncStore = {
   readonly version: number;
   transaction<T>(fn: () => T): T;
   createJob(input: {
-    id: string; provider?: string | null; model?: string | null; resumedFrom?: string | null;
+    id: string; provider?: string | null; model?: string | null; resumedFrom?: string | null; sources?: string[] | null;
     courses: { courseId: string; code?: string | null; term?: string | null; previous?: string | null }[];
   }): Job;
   updateJob(id: string, patch: JobPatch): void;

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { manualClock } from '../scripts/lib/rate-limit.mjs';
 import { createSyncLimiters, type PipelineDeps } from '../scripts/lib/sync-pipeline.mjs';
 import { openSyncStore, type OpenResult } from '../scripts/lib/sync-store.mjs';
+import { DEFAULT_SOURCE_CONFIG } from '../scripts/sources/config.mjs';
 import { createLocalApi, type LocalApiOptions } from '../server/app.ts';
 import { TOKEN_HEADER } from '../server/guard.ts';
 import { call, closeServer, eventReader, fakeModel, listen, open, syntheticCourse, syntheticToken, writeSyntheticCourses } from './local-api-helpers.ts';
@@ -345,13 +346,13 @@ describe('sync-courses (course discovery)', () => {
   it('requires Origin on every method and runs the discovery script with the course file', async () => {
     const script = join(root, 'discover-stub.mjs');
     // Stub: records its arguments and warns on stderr; never opens a browser.
-    await writeFile(script, `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(join(root, 'args.json'))}, JSON.stringify(process.argv.slice(2)));\nconsole.error('synthetic warning');\n`);
+    await writeFile(script, `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(join(root, 'args.json'))}, JSON.stringify([...process.argv.slice(2), process.env.STUDYORBIT_SOURCE_CONFIG]));\nconsole.error('synthetic warning');\n`);
     await start({ discoveryScript: script });
     expect((await get('/api/local/sync-courses')).status).toBe(403);
     expect((await get('/api/local/sync-courses', { origin: page })).status).toBe(405);
     const reply = await write('POST', '/api/local/sync-courses', {});
     expect([reply.status, reply.json()]).toEqual([200, { ok: true, warning: 'synthetic warning' }]);
-    expect(JSON.parse(await readFile(join(root, 'args.json'), 'utf8'))).toEqual(['discover', join(projectDir, '.local', 'lms', 'courses.json')]);
+    expect(JSON.parse(await readFile(join(root, 'args.json'), 'utf8'))).toEqual(['discover', join(projectDir, '.local', 'lms', 'courses.json'), JSON.stringify(DEFAULT_SOURCE_CONFIG)]);
     expect((await write('DELETE', '/api/local/sync-courses', {})).json()).toEqual({ ok: true });
   });
 

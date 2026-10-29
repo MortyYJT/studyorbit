@@ -3,8 +3,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   analyseInputHash, ANALYSE_VERSION, canonicalJson, captureEarlierDocument, capturedDocument, chooseCoursePath, collectInputHash,
-  collectorCommand, courseFolder, mergeInputHash, planMerge, sha256Hex, validateInputHash, verifySource,
+  courseFolder, mergeInputHash, planMerge, sha256Hex, validateInputHash, verifySource,
 } from '../scripts/lib/sync-stages.mjs';
+import { resolveSourceSetup } from '../scripts/sources/registry.mjs';
 import type { StageRow, SyncStore } from '../scripts/lib/sync-store.mjs';
 import { courseDir, createProject, openStore, START, syntheticCourse, writeEarlierDocument, type Project } from './sync-fakes.ts';
 
@@ -63,11 +64,13 @@ describe('earlier document and checkpoints', () => {
     expect(await verifySource(null)).toBe(false);
   });
 
-  it('builds the collector commands as the sequential runner did', () => {
-    expect(collectorCommand(course, 'canvas', '/r/canvas.json')).toEqual({ script: 'canvas-background.mjs', args: ['900001', '/r/canvas.json'] });
-    expect(collectorCommand(course, 'ed', '/r/ed.json')).toEqual({ script: 'collect-ed-course.mjs', args: ['SYNT10001', '2026 Semester 2', '/r/ed.json'] });
-    expect(collectorCommand(course, 'handbook', '/r/h.json')).toEqual({ script: 'collect-handbook.mjs', args: ['SYNT10001', '2026', '/r/h.json'] });
-    expect(collectorCommand({ ...course, term: 'Summer' }, 'handbook', '/r/h.json')).toBeNull();
+  it('builds the collector commands as the sequential runner did, now from the sources, each with the configuration', () => {
+    const { sources: [canvas, ed, handbook], context } = resolveSourceSetup();
+    const env = { STUDYORBIT_SOURCE_CONFIG: expect.any(String) };
+    expect(canvas.collect(course, context, '/r/canvas.json')).toEqual({ script: 'sources/canvas/collect.mjs', args: ['900001', '/r/canvas.json'], env });
+    expect(ed.collect(course, context, '/r/ed.json')).toEqual({ script: 'sources/ed/collect.mjs', args: ['SYNT10001', '2026 Semester 2', '/r/ed.json'], env });
+    expect(handbook.collect(course, context, '/r/h.json')).toEqual({ script: 'institutions/unimelb/handbook-collect.mjs', args: ['SYNT10001', '2026', '/r/h.json'], env });
+    expect(handbook.collect({ ...course, term: 'Summer' }, context, '/r/h.json')).toBeNull();
   });
 });
 

@@ -1,0 +1,49 @@
+{
+  "stdout": "{\"status\":\"available\",\"durationMs\":0}\n",
+  "scripts": [
+    "on run argv\n tell application \"Microsoft Edge\"\n  if (count of windows) is 0 then error \"EDGE_WINDOW_MISSING\"\n  set w to front window\n  set previousTab to active tab of w\n  set previousIndex to active tab index of w\n  set previousId to id of previousTab\n  set targetTab to make new tab at end of tabs of w with properties {URL:item 1 of argv}\n  set targetId to id of targetTab\n  if id of active tab of w is targetId then set active tab index of w to previousIndex\n  return (id of w as text) & \":\" & targetId\n end tell\nend run",
+    "on run argv\n tell application \"Microsoft Edge\"\n  set w to first window whose id is (item 1 of argv as integer)\n  set t to first tab of w whose id is (item 2 of argv)\n  if URL of t does not start with (item 3 of argv) then return \"redirect\"\n  if loading of t then return \"loading\"\n  return \"ready\"\n end tell\nend run",
+    "on run argv\n tell application \"Microsoft Edge\"\n  set w to first window whose id is (item 1 of argv as integer)\n  set t to first tab of w whose id is (item 2 of argv)\n  if URL of t does not start with (item 3 of argv) then error \"UNEXPECTED_URL\"\n  if loading of t then error \"PAGE_STILL_LOADING\"\n  return execute t javascript \"document.body ? document.body.innerText : ''\"\n end tell\nend run",
+    "on run argv\n tell application \"Microsoft Edge\"\n  set w to first window whose id is (item 1 of argv as integer)\n  set t to first tab of w whose id is (item 2 of argv)\n  close t\n end tell\nend run"
+  ],
+  "steps": [
+    {
+      "kind": "osascript",
+      "script": 0,
+      "argv": [
+        "https://handbook.unimelb.edu.au/2026/subjects/synt10001/assessment#coursework-<uuid>"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 1,
+      "argv": [
+        "7",
+        "tab-1",
+        "https://handbook.unimelb.edu.au/2026/subjects/synt10001/assessment"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 2,
+      "argv": [
+        "7",
+        "tab-1",
+        "https://handbook.unimelb.edu.au/2026/subjects/synt10001/assessment"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 3,
+      "argv": [
+        "7",
+        "tab-1"
+      ]
+    }
+  ],
+  "busy": {
+    "code": 75,
+    "stderr": "Handbook 采集不可用：Handbook HTTP 503\n",
+    "written": false
+  }
+}

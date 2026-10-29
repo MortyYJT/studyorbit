@@ -1,0 +1,32 @@
+[
+  {
+    "name": "list_courses",
+    "title": "List courses",
+    "description": "List the courses you may read, with today's date (Melbourne), whether synced data exists, the number of assessments and the identified weight (sum of top-level weights that count). Call this first to get course IDs."
+  },
+  {
+    "name": "get_assessments",
+    "title": "Get assessments",
+    "description": "Return a course's assessments as stored: ID, parent ID, name, kind, nature (regular, ungraded, bonus, alternative), weight (% of the course total), score and maximum score (raw points), due date in Melbourne time, status, scoring rule of a parent and rule text. A weight or rule with no source is null and flagged weightUnsourced or ruleUnsourced: say there is no source instead of guessing."
+  },
+  {
+    "name": "calculate_grades",
+    "title": "Calculate grades",
+    "description": "Compute a course's graded weight, earned points (out of 100), average on the graded part and remaining weight with the same rules as the course page. Lists each counted item with its earned points and each excluded item with a reason (bonus, ungraded, alternative, zero-weight, no-weight, no-mark, incomplete-group). Optional whatIf applies hypothetical marks to a copy only; every entry is reported in whatIfApplied, and an entry with effect none cannot change the total (mention it and its reason)."
+  },
+  {
+    "name": "final_needed",
+    "title": "Final needed",
+    "description": "Average still needed across all weight without a mark (100 minus graded weight, so unidentified weight counts as remaining) to reach a target. Target is a band (H1 80, H2A 75, H2B 70, H3 65, P 50) or a percentage; without one, the band saved on the course page is used, else H1. Status is secured, reachable (with neededAverage) or unreachable. Accepts the same whatIf list as calculate_grades."
+  },
+  {
+    "name": "upcoming_deadlines",
+    "title": "Upcoming deadlines",
+    "description": "Assessments due from today through today + days - 1 (Melbourne dates) across the courses you may read, or the given courseIds, sorted by due date. Submitted and graded items are left out unless includeDone is true. At most 50 items."
+  },
+  {
+    "name": "plan_schedule",
+    "title": "Plan schedule",
+    "description": "Weekly-page study plan: earliest deadline first, filling each day's available minutes from today. Uses the tasks argument, else the planning data the page sent; availability from the argument, else the page, else 120 minutes a day. Returns the days from `from` (default today) for `days` days and the overflow (minutes that do not fit before the deadline, or overdue). courseIds only filters what is shown, never what is planned. Returns available: false when there are no tasks."
+  }
+]

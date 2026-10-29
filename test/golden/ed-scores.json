@@ -1,0 +1,46 @@
+{
+  "stdout": {
+    "source": "edstem",
+    "results": [
+      {
+        "lessonId": "3001",
+        "status": "graded",
+        "score": 24,
+        "maxScore": 30,
+        "submittedAt": "2026-08-27T09:00:00Z",
+        "durationMs": 0
+      },
+      {
+        "lessonId": "3002",
+        "status": "unavailable",
+        "reason": "HTTP 403",
+        "durationMs": 0
+      }
+    ]
+  },
+  "calls": [
+    {
+      "kind": "edstem",
+      "args": [
+        "auth",
+        "status",
+        "--json"
+      ]
+    },
+    {
+      "kind": "fetch",
+      "url": "https://edstem.org/api/lessons/3001/attempts/501",
+      "authorization": "<redacted>"
+    },
+    {
+      "kind": "fetch",
+      "url": "https://edstem.org/api/lessons/3001/marking_status?attempt=9",
+      "authorization": "<redacted>"
+    },
+    {
+      "kind": "fetch",
+      "url": "https://edstem.org/api/lessons/3002/attempts/501",
+      "authorization": "<redacted>"
+    }
+  ]
+}
