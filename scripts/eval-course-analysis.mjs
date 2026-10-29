@@ -7,7 +7,7 @@ import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/pro
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { CourseDocumentSchema } from '../shared/course-data.ts';
+import { CourseDocumentV1Schema } from '../shared/course-data.ts';
 import { buildAnalysisPrompt, courseOutputSchema } from './lib/course-analysis.mjs';
 import { filterSubjects } from './lib/course-list.mjs';
 import { analyseWithRepair, settleCourse, validateAnalysis } from './lib/course-validation.mjs';
@@ -42,7 +42,7 @@ export function parseArgs(argv) {
 async function readJson(path) { return JSON.parse(await readFile(path, 'utf8')); }
 
 function parseGold(data, subjectCode, label) {
-  const parsed = CourseDocumentSchema.safeParse(data);
+  const parsed = CourseDocumentV1Schema.safeParse(data);
   if (!parsed.success) throw new Error(`标准答案不符合课程 JSON v1：${label}（${parsed.error.issues.slice(0, 3).map(issue => `${issue.path.join('.')}: ${issue.message}`).join('；')}）`);
   if (parsed.data.course.code !== subjectCode) throw new Error(`标准答案的课程代码与 ${subjectCode} 不一致：${label}`);
   return parsed.data;

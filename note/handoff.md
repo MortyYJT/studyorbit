@@ -5,7 +5,8 @@
 - **最后更新：** 2026-10-30，Claude。
 - **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）、#247（全局清理，#239）；规则精简为单一文件 `CLAUDE.md`（#241）。
 - **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，本地 `origin` 已指向新地址），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
-- **OpenSpec：** 没有进行中的 change；现行规格在 `openspec/specs/`（`grade-target`、`revision`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
+- **OpenSpec：** 进行中的 change：`course-contract-v2`（课程 JSON v2）。第 1 部分（v2 存盘 Schema、模型输出 Schema、v1/v2 兼容读取，`claude/contract-v2-schemas`）已开 PR 待合并；同步仍写 v1，第 2、3 部分见其 `tasks.md`。
+- **现行规格：** 在 `openspec/specs/`（`grade-target`、`revision`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
 
 ## 已完成
 

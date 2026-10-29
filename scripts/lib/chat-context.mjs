@@ -2,6 +2,7 @@
 // Totals reuse the same grade calculation as the course page, applied to the synced document only
 // (owner corrections made in the browser are not visible here).
 import { calculateGrades } from '../../shared/course-calculations.ts';
+import { toDisplayDocument } from '../../shared/course-data.ts';
 
 export const CONTEXT_LIMIT = 24000;
 const TRUNCATION_NOTE = '\n（课程数据过长，已截断，后面的内容没有提供给你。）';
@@ -74,11 +75,13 @@ function courseBlock(doc) {
 
 /**
  * Compact Chinese description of the selected courses for the chat system prompt, capped at CONTEXT_LIMIT characters.
- * @param {import('../../shared/course-data.ts').CourseDocument[]} documents synced course documents
+ * @param {(import('../../shared/course-data.ts').CourseDocument | import('../../shared/course-data.ts').DisplayDocument)[]} documents
+ *   synced course documents of either version; each is read through `toDisplayDocument`
  * @param {{ today: string, courseIds?: string[], courses?: { id: string, code?: string, name?: string }[] }} options
  *   courseIds limits the scope (undefined = every document); courses names selected courses that have no document.
  */
-export function buildChatContext(documents, { today, courseIds, courses = [] }) {
+export function buildChatContext(stored, { today, courseIds, courses = [] }) {
+  const documents = stored.map(toDisplayDocument);
   const scope = courseIds ?? documents.map(doc => doc.course.id);
   const lines = [`今天：${today}（墨尔本时间）。`, '以下是同步得到的课程数据，不包含用户在页面上做的修改。分数是原始得分/满分，权重是占课程总分的百分比。', ''];
   if (!scope.length) lines.push('当前没有选择任何课程。');
