@@ -10,6 +10,8 @@
 | `collect-handbook.mjs` | 在 Edge 后台读取对应年份的 Handbook 考核页 |
 | `course-sync-runner.mjs` | 串行采集、并行模型整理、本地校验、取消、保存和用量 |
 | `eval-course-analysis.mjs` | 用已采集的数据或合成课程跑 N 次分析，与标准答案对比，统计准确率、一致性和校验拦截；不采集、不写桌面（[说明](../docs/eval-format.md)） |
+| `mcp-server.mjs` | 本机 stdio MCP 服务（`node scripts/mcp-server.mjs`），把对话用的只读课程工具开放给 MCP 客户端；参数 `--project`、`--desktop`、`--courses`（或 `STUDYORBIT_COURSES`），不写文件、不调用模型、不联网（[接法](../README.md#在-mcp-客户端里使用)） |
+| `lib/course-mcp.mjs` | MCP 服务本体：每个注册表工具一个 MCP 工具（只读标注），每次调用重新读取课程文件；所有 MCP SDK 用法都在这里 |
 | `lib/eval-score.mjs` | 评测的配对与打分纯函数 |
 | `lib/course-list.mjs` | Canvas JSON 解析与课程代码筛选 |
 | `lib/course-analysis.mjs` | 统一提示词及模型输出 Schema |
