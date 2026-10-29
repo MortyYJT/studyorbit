@@ -1,0 +1,73 @@
+{
+  "status": "complete",
+  "code": "SYNT10001",
+  "term": "2026 Semester 2",
+  "unitId": "42",
+  "lessons": [
+    {
+      "id": "3001",
+      "title": "Assignment 1 submission",
+      "module": "Assignments",
+      "due": "2026-08-28T13:59:00Z",
+      "status": "completed",
+      "url": "https://edstem.org/au/courses/42/lessons/3001"
+    },
+    {
+      "id": "3005",
+      "title": "Subject overview",
+      "module": "Welcome",
+      "due": null,
+      "status": null,
+      "url": "https://edstem.org/au/courses/42/lessons/3005"
+    },
+    {
+      "id": "3006",
+      "title": "Week 1 Workshop",
+      "module": "Workshops",
+      "due": null,
+      "status": null,
+      "url": "https://edstem.org/au/courses/42/lessons/3006"
+    }
+  ],
+  "scores": [
+    {
+      "lessonId": "3001",
+      "status": "graded",
+      "score": 24,
+      "maxScore": 30,
+      "submittedAt": "2026-08-27T09:00:00Z",
+      "durationMs": 0
+    }
+  ],
+  "scoresError": null,
+  "context": [
+    {
+      "lessonId": "3005",
+      "lessonTitle": "Subject overview",
+      "slideId": "11",
+      "slideTitle": "Subject overview",
+      "text": "Assessment: Project 30%",
+      "url": "https://edstem.org/au/courses/42/lessons/3005/slides/11"
+    },
+    {
+      "lessonId": "3006",
+      "lessonTitle": "Week 1 Workshop",
+      "slideId": "13",
+      "slideTitle": "Welcome to the workshop",
+      "text": "Workshop rules",
+      "url": "https://edstem.org/au/courses/42/lessons/3006/slides/13"
+    }
+  ],
+  "contextError": false,
+  "coverage": {
+    "lessons": 3,
+    "scoreCandidates": 1,
+    "scoresRequested": 1,
+    "unavailableScores": 0,
+    "candidatesTruncated": false,
+    "contextTargets": 2,
+    "contextsCollected": 2
+  },
+  "capturedAt": "2026-10-30T01:02:03.000Z",
+  "scope": "lesson_inventory_selected_scores_and_intro"
+}

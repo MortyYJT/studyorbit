@@ -1,0 +1,48 @@
+{
+  "courseId": "discover",
+  "capturedAt": "2026-10-30T01:02:03.000Z",
+  "scope": "paginated",
+  "paginationVerified": true,
+  "pagination": {
+    "courses": {
+      "pages": 2,
+      "count": 5
+    }
+  },
+  "version": 1,
+  "source": "https://canvas.lms.unimelb.edu.au/api/v1/courses?enrollment_state=active&include[]=term&per_page=100",
+  "fetchedAt": "2026-10-30T01:02:03.000Z",
+  "courses": [
+    {
+      "id": "900001",
+      "name": "Synthetic Course (again)",
+      "code": "SYNT10001_2026_SM2",
+      "term": "2026 Semester 2",
+      "url": "https://canvas.lms.unimelb.edu.au/courses/900001"
+    },
+    {
+      "id": "900002",
+      "name": "Synthetic Community",
+      "code": null,
+      "term": "Default Term",
+      "url": "https://canvas.lms.unimelb.edu.au/courses/900002"
+    },
+    {
+      "id": "900003",
+      "name": "SYNT30003_2026_SM1",
+      "code": "SYNT30003_2026_SM1",
+      "term": "2026 Semester 1",
+      "url": "https://canvas.lms.unimelb.edu.au/courses/900003"
+    },
+    {
+      "id": "900004",
+      "name": "synt40004",
+      "code": "synt40004",
+      "term": null,
+      "url": "https://canvas.lms.unimelb.edu.au/courses/900004"
+    }
+  ],
+  "count": 4,
+  "coursesMs": 0,
+  "durationMs": 0
+}

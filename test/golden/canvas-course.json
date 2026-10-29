@@ -1,0 +1,59 @@
+{
+  "courseId": "900001",
+  "capturedAt": "2026-10-30T01:02:03.000Z",
+  "scope": "paginated",
+  "paginationVerified": true,
+  "pagination": {
+    "groups": {
+      "pages": 1,
+      "count": 2
+    },
+    "assignments": {
+      "pages": 2,
+      "count": 2
+    }
+  },
+  "groups": [
+    {
+      "id": 501,
+      "name": "Weekly Quizzes",
+      "group_weight": 20,
+      "rules": {}
+    },
+    {
+      "id": 502,
+      "name": "Assignments",
+      "group_weight": 30,
+      "rules": null
+    }
+  ],
+  "groupsMs": 0,
+  "assignments": [
+    {
+      "id": 7101,
+      "name": "Quiz 1",
+      "group_id": 501,
+      "points_possible": 10,
+      "due_at": "2026-08-07T13:59:00Z",
+      "unlock_at": null,
+      "html_url": "https://canvas.lms.unimelb.edu.au/courses/900001/assignments/7101",
+      "submission": {
+        "score": 8,
+        "workflow_state": "graded",
+        "submitted_at": "2026-08-06T00:00:00Z"
+      }
+    },
+    {
+      "id": 7201,
+      "name": "Assignment 1",
+      "group_id": 502,
+      "points_possible": 30,
+      "due_at": null,
+      "unlock_at": null,
+      "html_url": null,
+      "submission": null
+    }
+  ],
+  "assignmentsMs": 0,
+  "durationMs": 0
+}

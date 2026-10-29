@@ -1,0 +1,114 @@
+{
+  "stdout": "{\"groups\":2,\"assignments\":2,\"durationMs\":0}\n",
+  "stderr": "",
+  "scripts": [
+    "on run argv\n tell application \"Microsoft Edge\"\n  if (count of windows) is 0 then error \"EDGE_WINDOW_MISSING\"\n  set w to front window\n  set previousTab to active tab of w\n  set previousIndex to active tab index of w\n  set previousId to id of previousTab\n  set targetTab to make new tab at end of tabs of w with properties {URL:item 1 of argv}\n  set targetId to id of targetTab\n  if id of active tab of w is targetId then set active tab index of w to previousIndex\n  return (id of w as text) & \":\" & targetId\n end tell\nend run",
+    "on run argv\n tell application \"Microsoft Edge\"\n  set w to first window whose id is (item 1 of argv as integer)\n  set t to first tab of w whose id is (item 2 of argv)\n  if URL of t does not start with (item 3 of argv) then return \"redirect\"\n  if loading of t then return \"loading\"\n  return \"ready\"\n end tell\nend run",
+    "on run argv\n tell application \"Microsoft Edge\"\n  set w to first window whose id is (item 1 of argv as integer)\n  set t to first tab of w whose id is (item 2 of argv)\n  if URL of t does not start with (item 3 of argv) then error \"UNEXPECTED_URL\"\n  if loading of t then error \"PAGE_STILL_LOADING\"\n  return execute t javascript (item 4 of argv)\n end tell\nend run",
+    "on run argv\n tell application \"Microsoft Edge\"\n  set w to first window whose id is (item 1 of argv as integer)\n  set t to first tab of w whose id is (item 2 of argv)\n  close t\n end tell\nend run"
+  ],
+  "steps": [
+    {
+      "kind": "osascript",
+      "script": 0,
+      "argv": [
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignment_groups?per_page=100#coursework-<uuid>"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 1,
+      "argv": [
+        "7",
+        "tab-1",
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignment_groups"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 2,
+      "argv": [
+        "7",
+        "tab-1",
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignment_groups",
+        "(() => { const xhr = new XMLHttpRequest(); xhr.open('GET', location.href.split('#')[0], false); xhr.send(); return JSON.stringify({ status: xhr.status, body: xhr.responseText, link: xhr.getResponseHeader('Link') }); })()"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 3,
+      "argv": [
+        "7",
+        "tab-1"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 0,
+      "argv": [
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignments?include%5B%5D=submission&per_page=100#coursework-<uuid>"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 1,
+      "argv": [
+        "7",
+        "tab-2",
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignments"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 2,
+      "argv": [
+        "7",
+        "tab-2",
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignments",
+        "(() => { const xhr = new XMLHttpRequest(); xhr.open('GET', location.href.split('#')[0], false); xhr.send(); return JSON.stringify({ status: xhr.status, body: xhr.responseText, link: xhr.getResponseHeader('Link') }); })()"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 3,
+      "argv": [
+        "7",
+        "tab-2"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 0,
+      "argv": [
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignments?include%5B%5D=submission&page=2&per_page=100#coursework-<uuid>"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 1,
+      "argv": [
+        "7",
+        "tab-3",
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignments"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 2,
+      "argv": [
+        "7",
+        "tab-3",
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignments",
+        "(() => { const xhr = new XMLHttpRequest(); xhr.open('GET', location.href.split('#')[0], false); xhr.send(); return JSON.stringify({ status: xhr.status, body: xhr.responseText, link: xhr.getResponseHeader('Link') }); })()"
+      ]
+    },
+    {
+      "kind": "osascript",
+      "script": 3,
+      "argv": [
+        "7",
+        "tab-3"
+      ]
+    }
+  ]
+}

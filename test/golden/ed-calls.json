@@ -1,0 +1,90 @@
+{
+  "stdout": "{\"status\":\"complete\",\"lessons\":3,\"scores\":1}\n",
+  "calls": [
+    {
+      "kind": "edstem",
+      "args": [
+        "units",
+        "list",
+        "--json"
+      ]
+    },
+    {
+      "kind": "edstem",
+      "args": [
+        "lessons",
+        "list",
+        "42",
+        "--json",
+        "--module",
+        "all",
+        "--state",
+        "all",
+        "--status",
+        "all"
+      ]
+    },
+    {
+      "kind": "scores",
+      "ids": [
+        "3001"
+      ]
+    },
+    {
+      "kind": "edstem",
+      "args": [
+        "lessons",
+        "show",
+        "3005",
+        "--json"
+      ]
+    },
+    {
+      "kind": "edstem",
+      "args": [
+        "slides",
+        "show",
+        "11",
+        "--json"
+      ]
+    },
+    {
+      "kind": "edstem",
+      "args": [
+        "lessons",
+        "show",
+        "3006",
+        "--json"
+      ]
+    },
+    {
+      "kind": "edstem",
+      "args": [
+        "slides",
+        "show",
+        "13",
+        "--json"
+      ]
+    }
+  ],
+  "ambiguous": {
+    "code": 1,
+    "stderr": "Ed 采集失败：Ed 存在多个相同学期课程，无法自动确定\n"
+  },
+  "noSemester": {
+    "code": 1,
+    "stderr": "Error: 无法确定 Ed 的年份与学期"
+  },
+  "notFound": {
+    "code": 0,
+    "output": {
+      "status": "not_found",
+      "code": "SYNT20002",
+      "term": "2026 Semester 2",
+      "lessons": [],
+      "scores": [],
+      "capturedAt": "2026-10-30T01:02:03.000Z",
+      "scope": "lesson_inventory_selected_scores_and_intro"
+    }
+  }
+}
