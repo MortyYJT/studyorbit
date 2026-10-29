@@ -34,9 +34,9 @@
 
 ## 4. MCP server (PR 4)
 
-- [ ] 4.1 Add `@modelcontextprotocol/sdk` (1.32.x) to dependencies; `npm audit` result in the PR
-- [ ] 4.2 Tests then `createCourseMcpServer` in `scripts/lib/course-mcp.mjs` (+ `.d.mts`) with `InMemoryTransport` and `Client`: tool names, annotations, and same property names and required lists as the registry (not byte-identical schemas); same text as `runTool` for valid arguments; registry errors with `isError: true`; schema-invalid arguments give `isError: true` (SDK text, not asserted); filter
-- [ ] 4.3 `scripts/mcp-server.mjs` and `npm run mcp`: options, env filter, load on every call, stderr diagnostics; stdio test with `StdioClientTransport` against a temporary project and Desktop with synthetic files, checking no file is written
-- [ ] 4.4 README section: Claude Code and Claude Desktop configuration with placeholders, Node 24, filter, data-flow note
-- [ ] 4.5 Manual check: connect from Claude Code to the local server with synthetic data; record "not verified" if not done
+- [x] 4.1 Add `@modelcontextprotocol/sdk` (1.32.x) to dependencies; `npm audit` result in the PR (1.32.2 pinned exactly; `npm audit`: 0 vulnerabilities; decision #400)
+- [x] 4.2 Tests then `createCourseMcpServer` in `scripts/lib/course-mcp.mjs` (+ `.d.mts`) with `InMemoryTransport` and `Client`: tool names, annotations, and same property names and required lists as the registry (not byte-identical schemas); same text as `runTool` for valid arguments; registry errors with `isError: true`; schema-invalid arguments give `isError: true` (SDK text, not asserted); filter
+- [x] 4.3 `scripts/mcp-server.mjs` and `npm run mcp`: options, env filter, load on every call, stderr diagnostics; stdio test with `StdioClientTransport` against a temporary project and Desktop with synthetic files, checking no file is written
+- [x] 4.4 README section: Claude Code and Claude Desktop configuration with placeholders, Node 24, filter, data-flow note
+- [ ] 4.5 Manual check: connect from Claude Code to the local server with synthetic data; record "not verified" if not done (not verified: not connected from Claude Code; SDK-client stdio smoke test against the real local files instead, counts only, decision #404)
 - [ ] 4.6 `bash .claude/check.sh`; fresh-context review; update `note/handoff.md`; archive the change after the last PR merges

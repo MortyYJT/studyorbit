@@ -10,12 +10,14 @@
   "scripts": {
     "dev": "vite",
     "sync:courses": "node scripts/canvas-background.mjs discover .local/lms/courses.json",
+    "mcp": "node scripts/mcp-server.mjs",
     "build": "tsc -p web/tsconfig.json && vite build",
     "typecheck": "tsc -p web/tsconfig.json",
     "check": "tsc -p web/tsconfig.json && vitest run",
     "test": "vitest run"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "zod": "^4.6.5"
   },
   "devDependencies": {
