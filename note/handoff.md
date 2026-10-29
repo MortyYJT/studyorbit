@@ -1,10 +1,10 @@
 # 交接
 
-> 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。决定看 `note/decisions.md`（#1–#239）。
+> 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。决定看 `note/decisions.md`（#1–#240）。
 
 - **最后更新：** 2026-10-29，Claude。
-- **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）；全局清理在分支 `claude/cleanup`（文档、死 CSS、品牌名、README、About，#239）。
-- **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，旧地址自动跳转），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
+- **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）、#247（全局清理，#239）；规则去冲突在分支 `claude/rules-sync`（#240）。
+- **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，本地 `origin` 已指向新地址），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
 - **OpenSpec：** 没有进行中的 change；现行规格在 `openspec/specs/`（`grade-target`、`revision`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
 
 ## 已完成
@@ -27,7 +27,6 @@
 1. 你：打开 `localhost:5173`，在复习页点一个预设按钮，确认对话正常，把一条回复「存到复习」。
 2. L0/L1/L2（#238 先不做）：以后做时先定方案；Claude 的立场是执行器只在合成演示课程上跑。
 3. 小问题（未排期）：`RichText` 遇到「标题 + 列表」混在一段时列表符号原样显示。
-4. 本地 `origin` 仍指向旧地址（改地址的命令被权限拦了，等你决定）。
 
 ## 等用户决定
 
@@ -46,3 +45,4 @@
 - 本机 shell 设了 `NODE_DEBUG=http,...`，跑测试和服务器时用 `NODE_DEBUG=`。
 - `sync-usage` 靠 `.local/lms/runs/*` 目录创建时间：移动数据用 `mv`，不要 `cp`。
 - 5174 端口被本机别的进程占用，第二个开发服务器用别的端口。
+- 规则（#240）：谁实现、谁审查按任务决定；不再有无人值守调度；Learning 输出风格已关闭。
