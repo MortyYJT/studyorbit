@@ -393,15 +393,18 @@ function transcript(turns) {
 /**
  * Convert stored text history ({ role, content, reasoning? }, oldest first) into the provider's conversation.
  * Earlier tool calls are never replayed. Stored reasoning is replayed for DeepSeek (a `reasoning` item before the
- * assistant message) and chat completions (`reasoning_content`). For DeepSeek every turn up to and including the last
+ * assistant message) and chat completions (`reasoning_content`). For both, every turn up to and including the last
  * assistant turn without reasoning is folded into a transcript at the top of the next user message, because DeepSeek
- * rejects requests with tools when an earlier assistant turn has no reasoning.
+ * (natively or behind a chat-completions endpoint) rejects requests with tools when an earlier assistant turn has no
+ * reasoning (decision #369).
  */
 export function toolConversation(provider, history) {
   const start = history.findIndex(turn => turn.role === 'user');
   const turns = start < 0 ? [] : history.slice(start);
-  if (provider === 'openai-compatible') return turns.map(turn => turn.role === 'assistant' && turn.reasoning ? { role: 'assistant', content: turn.content, reasoning_content: turn.reasoning } : { role: turn.role, content: turn.content });
-  if (provider !== 'deepseek') return turns.map(turn => ({ role: turn.role, content: turn.content }));
+  if (provider !== 'deepseek' && provider !== 'openai-compatible') return turns.map(turn => ({ role: turn.role, content: turn.content }));
+  const assistant = turn => provider === 'deepseek'
+    ? [{ type: 'reasoning', content: [{ type: 'reasoning_text', text: turn.reasoning }] }, { role: 'assistant', content: turn.content }]
+    : [{ role: 'assistant', content: turn.content, reasoning_content: turn.reasoning }];
   let lastBare = -1;
   turns.forEach((turn, index) => { if (turn.role === 'assistant' && !turn.reasoning) lastBare = index; });
   const input = [];
@@ -410,7 +413,7 @@ export function toolConversation(provider, history) {
     if (turn.role === 'user') {
       input.push({ role: 'user', content: folded ? `${folded}\n\n---\n\n${turn.content}` : turn.content });
       folded = null;
-    } else input.push({ type: 'reasoning', content: [{ type: 'reasoning_text', text: turn.reasoning }] }, { role: 'assistant', content: turn.content });
+    } else input.push(...assistant(turn));
   }
   // History that ends on a reasoning-less assistant turn has no later user message to carry the transcript.
   if (folded) input.push({ role: 'user', content: folded });

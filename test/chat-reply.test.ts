@@ -146,6 +146,19 @@ describe('openai-compatible fallback', () => {
     expect(reply.message!.steps).toBeUndefined();
   });
 
+  it('continues an old chat with stored reasoning without sending a reasoning-less assistant turn', async () => {
+    const bodies = script([stream([{ choices: [{ delta: { reasoning_content: 'r2', content: 'Fine.' }, finish_reason: null }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }])]);
+    const reply = await runChatReply({ config: compatible, messages: [
+      user('Q0'), { role: 'assistant', content: 'A0 from context mode', at },
+      user('Q1'), { role: 'assistant', content: 'A1', at, mode: 'tools', reasoning: 'stored thought' },
+      user('Q2'),
+    ], ...base }, {});
+    const messages = bodies[0]!.messages as { role: string; content: string; reasoning_content?: string }[];
+    expect(messages.filter(message => message.role === 'assistant')).toEqual([{ role: 'assistant', content: 'A1', reasoning_content: 'stored thought' }]);
+    expect(messages[1]!.content).toMatch(/之前的对话[\s\S]*A0 from context mode[\s\S]*Q1$/);
+    expect(reply.message).toMatchObject({ content: 'Fine.', reasoning: 'r2' });
+  });
+
   it('shows a 400 about reasoning as an error without falling back', async () => {
     const bodies = script([new Response(JSON.stringify({ error: { message: 'Missing reasoning_content field in the assistant message at index 1' } }), { status: 400 })]);
     const reply = await runChatReply({ config: compatible, messages: [user('hi')], ...base }, {});

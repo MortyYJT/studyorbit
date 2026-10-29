@@ -89,11 +89,33 @@ describe('toolConversation (earlier turns)', () => {
     expect((input[0] as { content: string }).content).toMatch(/之前的对话[\s\S]*Q1[\s\S]*A1[\s\S]*Q2$/);
   });
 
-  it('adds reasoning_content for chat completions and plain text for Anthropic', () => {
-    const history = [{ role: 'assistant' as const, content: 'lead' }, { role: 'user' as const, content: 'Q1' }, { role: 'assistant' as const, content: 'A1', reasoning: 'r1' }, { role: 'assistant' as const, content: 'A1b' }, { role: 'user' as const, content: 'Q2' }];
+  it('adds reasoning_content for chat completions', () => {
+    const history = [{ role: 'user' as const, content: 'Q1' }, { role: 'assistant' as const, content: 'A1', reasoning: 'r1' }, { role: 'user' as const, content: 'Q2' }];
     expect(toolConversation('openai-compatible', history)).toEqual([
-      { role: 'user', content: 'Q1' }, { role: 'assistant', content: 'A1', reasoning_content: 'r1' }, { role: 'assistant', content: 'A1b' }, { role: 'user', content: 'Q2' },
+      { role: 'user', content: 'Q1' }, { role: 'assistant', content: 'A1', reasoning_content: 'r1' }, { role: 'user', content: 'Q2' },
     ]);
+  });
+
+  it('folds chat-completions turns up to the last reasoning-less assistant turn, so an old chat can continue on a thinking endpoint', () => {
+    const input = toolConversation('openai-compatible', [
+      { role: 'user', content: 'Q0' }, { role: 'assistant', content: 'A0 from context mode' },
+      { role: 'user', content: 'Q1' }, { role: 'assistant', content: 'A1', reasoning: 'r1' },
+      { role: 'user', content: 'Q2' }, { role: 'assistant', content: 'A2 fallback reply' },
+      { role: 'user', content: 'Q3' },
+    ]) as { role: string; content: string; reasoning_content?: string }[];
+    expect(input.filter(entry => entry.role === 'assistant')).toEqual([]);
+    expect(input).toHaveLength(1);
+    expect(input[0]!.content).toMatch(/之前的对话[\s\S]*Q0[\s\S]*A0 from context mode[\s\S]*A1[\s\S]*A2 fallback reply[\s\S]*Q3$/);
+    const kept = toolConversation('openai-compatible', [
+      { role: 'user', content: 'Q0' }, { role: 'assistant', content: 'A0' },
+      { role: 'user', content: 'Q1' }, { role: 'assistant', content: 'A1', reasoning: 'r1' }, { role: 'user', content: 'Q2' },
+    ]) as { role: string; content: string; reasoning_content?: string }[];
+    expect(kept.slice(1)).toEqual([{ role: 'assistant', content: 'A1', reasoning_content: 'r1' }, { role: 'user', content: 'Q2' }]);
+    expect(kept[0]!.content).toMatch(/之前的对话[\s\S]*A0[\s\S]*Q1$/);
+  });
+
+  it('sends plain text turns to Anthropic', () => {
+    const history = [{ role: 'assistant' as const, content: 'lead' }, { role: 'user' as const, content: 'Q1' }, { role: 'assistant' as const, content: 'A1', reasoning: 'r1' }, { role: 'assistant' as const, content: 'A1b' }, { role: 'user' as const, content: 'Q2' }];
     expect(toolConversation('anthropic', history)).toEqual([
       { role: 'user', content: 'Q1' }, { role: 'assistant', content: 'A1' }, { role: 'assistant', content: 'A1b' }, { role: 'user', content: 'Q2' },
     ]);
