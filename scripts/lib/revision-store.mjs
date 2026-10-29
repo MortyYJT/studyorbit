@@ -15,7 +15,7 @@ const NoteSchema = z.object({
   content: z.string().max(NOTE_LIMITS.content), chatId: z.string().regex(UUID).nullable(), savedAt: z.string(),
 });
 
-export function isCourseId(value) { return typeof value === 'string' && COURSE_ID.test(value); }
+function isCourseId(value) { return typeof value === 'string' && COURSE_ID.test(value); }
 const notesFile = projectDir => join(projectDir, '.local', 'revision', 'notes.json');
 
 /** First non-empty line without Markdown heading or bullet marks, cut to 60 characters. */

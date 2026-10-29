@@ -22,7 +22,7 @@ export const counts = usage => {
 };
 
 /** Anthropic usage reports cache reads/writes separately from input_tokens; fold them in so input means total input. */
-export function anthropicUsage(usage) {
+function anthropicUsage(usage) {
   if (!usage || !Number.isSafeInteger(usage.input_tokens) || !Number.isSafeInteger(usage.output_tokens)) return null;
   const read = Number.isSafeInteger(usage.cache_read_input_tokens) ? usage.cache_read_input_tokens : 0;
   const written = Number.isSafeInteger(usage.cache_creation_input_tokens) ? usage.cache_creation_input_tokens : 0;

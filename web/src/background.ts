@@ -16,9 +16,9 @@ export const defaultBackground: BackgroundSettings = { mode: 'gradient', visibil
 export const backgroundLimits = { visibility: [0, 100], blur: [0, 24], cardOpacity: [70, 100] } as const;
 /** Raw upload limit before the image is downscaled and re-encoded in the browser. */
 export const maxBackgroundBytes = 15 * 1024 * 1024;
-export const backgroundTypes = ['image/jpeg', 'image/png', 'image/webp'] as const;
+const backgroundTypes = ['image/jpeg', 'image/png', 'image/webp'] as const;
 /** Longest edge kept after downscaling. */
-export const maxBackgroundEdge = 2560;
+const maxBackgroundEdge = 2560;
 
 function clamp(value: unknown, [min, max]: readonly [number, number], fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback;

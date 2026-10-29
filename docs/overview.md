@@ -1,42 +1,51 @@
 # 项目结构与数据流
 
-更新：2026-10-29。当前项目是本地原型，开发服务同时提供 React 页面和本地 API。
+更新：2026-10-29。StudyOrbit 是本地原型：Vite 开发服务器同时提供 React 页面和只接受本机同源请求的本地接口（`vite.config.ts`）。静态构建不含这些接口。
 
 ## 主流程
 
-1. `web/src/App.tsx` 调用 `POST /api/local/sync-courses`；`vite.config.ts` 启动 `scripts/canvas-background.mjs discover` 获取课程，`scripts/lib/course-list.mjs` 按 Canvas 课程代码筛选候选。
-2. `web/src/LocalCourseSelect.tsx` 将选择保存在浏览器 localStorage，调用 `POST /api/local/course-sync`；取消使用 DELETE，GET 读取当前进度。
-3. `scripts/course-sync-runner.mjs` 对课程依次启动 Canvas、Ed、Handbook 采集。浏览器采集串行；已采集课程的模型分析可以与后续课程采集并行。来源缺失时保留状态，并不自动视为零分。
-4. `scripts/lib/course-analysis.mjs` 根据统一提示词和 `shared/course-data.ts` 输出 Schema 生成模型输入。默认 DeepSeek Responses API 原生 JSON Schema；支持 `codex` 和 `openai-compatible` 适配。代码进行关系、计分与部分 Ed 分数一致性检查；校验失败最多修复一次，保存诊断。
-5. 合格的课程 JSON 保存到桌面课程文件夹，`GET /api/local/course-reports` 读取对应课程最新有效文件；`web/src/LocalPlanning.tsx` 展示、允许用户编辑/新增，并使用 `shared/course-calculations.ts` 计算成绩。用户覆盖与学习任务保存在浏览器 localStorage。
+1. **发现课程：** `POST /api/local/sync-courses` 启动 `scripts/canvas-background.mjs discover`，在已登录的 Edge 里读取全部 Canvas 课程，存 `.local/lms/courses.json`；读取时（`/api/local/course-candidates`、`scripts/lib/course-reports.mjs`）再由 `scripts/lib/course-list.mjs` 按课程代码筛出候选。
+2. **选课并同步：** `web/src/LocalCourseSelect.tsx` 把选择存进浏览器，调用 `POST /api/local/course-sync`（GET 查进度，DELETE 取消）。`scripts/course-sync-runner.mjs` 对每门课依次采集 Canvas、Ed、Handbook；采集串行，已采集课程的模型分析可与后续采集并行。
+3. **模型整理：** `scripts/lib/course-analysis.mjs` 生成统一提示词和输出 Schema，`scripts/lib/llm-providers.mjs` 调用设置里选的模型（DeepSeek、OpenAI 兼容、Anthropic、Codex CLI）。结果经 `shared/course-data.ts` 校验，不合格时修复一次，合格的 JSON 存到桌面课程文件夹。
+4. **展示与修正：** `GET /api/local/course-reports` 读每门课最新的有效 JSON；`web/src/LocalPlanning.tsx` 展示课程页和周视图。你的修正、新增、排序和隐藏只存在浏览器里，不改同步原件。
+5. **计算：** 成绩与「期末需要」在 `shared/course-calculations.ts`，每周排期在 `shared/planning.ts`，都是纯函数，有单元测试。
+6. **对话与复习：** `web/src/Agent.tsx` 通过 `/api/local/chats*` 流式对话，上下文是已选课程的同步数据（`scripts/lib/chat-context.mjs`，不含页面修正）。复习页可发预设提示词；单门课对话里已完成的回复可以「存到复习」（`/api/local/revision-notes`）。
 
 ## 采集范围
 
-- **Canvas**：`scripts/canvas-background.mjs` 使用已登录 Edge 同源请求读取活动课程、作业分组、作业及本人 submission，按 Link 分页。没有单独读取大纲、测验、公告或作业正文。
-- **Ed**：`scripts/collect-ed-course.mjs` 使用独立的 `edstem` CLI 认证读取课程目录，筛选最多 50 个成绩候选，并有限读取课程 / workshop 介绍；`scripts/edstem-scores.mjs` 读取本人最终提交成绩。接口可能返回 403，不能解释成零分。
-- **Handbook**：`scripts/collect-handbook.mjs` 读取对应年份考核页面文本；模型判断对应学期和考核框架。
+- **Canvas：** `scripts/canvas-background.mjs` 用已登录 Edge 的同源请求读取活动课程、作业分组、作业和本人提交，按 Link 分页。不读大纲、测验、公告或作业正文。
+- **Ed：** `scripts/collect-ed-course.mjs` 用独立的 `edstem` CLI 读取课程目录、最多 50 个成绩候选和有限的介绍；`scripts/edstem-scores.mjs` 读取本人最终提交成绩。接口可能返回 403，不能当作零分。
+- **Handbook：** `scripts/collect-handbook.mjs` 在 Edge 后台读取对应年份的考核页面。
 
-不下载课程文件，不提交作业，也不读取作业正文、附件、代码或图片。无 Ed 课程不必然是同步失败。采集范围不保证完整；站点页面或接口变化需要重新核对。
+不下载课程文件，不提交作业。采集范围不保证完整；站点改版需要重新核对。
 
 ## 代码入口
 
 | 位置 | 作用 |
 | --- | --- |
-| `web/src/main.tsx`、`App.tsx` | 页面入口、同步弹窗、设置、头像和用量 |
-| `web/src/LocalPlanning.tsx` | 本地课程页、用户编辑和日历；文件较大，是后续拆分候选 |
-| `vite.config.ts` | Vite 与 `/api/local/*` 接口；同步不是独立生产服务 |
-| `scripts/course-sync-runner.mjs` | 编排、模型调用、验证、取消、保存和用量 |
-| `scripts/lib/course-analysis.mjs` | 模型无关的提示词与原生输出 Schema |
-| `shared/course-data.ts`、`course-calculations.ts` | 课程契约与确定性分数计算 |
+| `web/src/App.tsx` | 外壳、侧边栏、同步弹窗、设置（模型、外观、背景） |
+| `web/src/LocalPlanning.tsx` | 课程页（成绩、考核、复习）和周视图 / 月历（排期、需要你处理、任务用时） |
+| `web/src/Agent.tsx`、`agent-request.ts` | 对话页；其他页面带课程和预设提示词打开新对话 |
+| `web/src/palette.ts`、`background.ts`、`BackgroundLayer.tsx`、`motion.ts` | 配色、背景、动画 |
+| `vite.config.ts` | 本地接口；所有 `/api/local/*` 拒绝其他来源（`scripts/lib/local-origin.mjs`） |
+| `scripts/course-sync-runner.mjs` | 编排、模型调用、校验、取消、保存和用量 |
+| `scripts/lib/` | 模型设置与适配器、对话存储与上下文、复习笔记存储、课程读取 |
+| `shared/` | 课程 JSON 契约、成绩计算、排期 |
 | `test/` | vitest 单元测试（只用合成数据） |
 
 ## 数据位置
 
-- `.local/lms/courses.json`：本机课程候选；`.local/lms/runs/<批次>/<课程ID>/`：采集快照；`.local/lms/sync-errors/`：校验失败输出；`.local/lms/course-sync-usage.jsonl`：用量。
-- `~/Desktop/墨尔本大学 <年份> S<学期>/<课程代码>/分数结构*.json`：模型输出。新文件不覆盖旧文件；页面按修改时间选最新有效 JSON。
-- 浏览器 localStorage：课程选择、考核修正和手动项、学习任务、头像及界面偏好。按浏览器和端口隔离；首次迁移备份行为见 [迁移说明](migration.md)。
-- `.local/` 与 `.local-backups/` 均忽略于 Git，但可能含个人数据；桌面课程文件和浏览器数据也不在 Git 中。交接前应由用户自行决定备份和传递方式。
+| 内容 | 位置 |
+| --- | --- |
+| 课程候选、采集快照、同步记录与用量 | `.local/lms/` |
+| 模型设置（权限 600，密钥只写） | `.local/config/llm.json` |
+| 对话、复习笔记 | `.local/chat/`、`.local/revision/notes.json` |
+| 每门课的课程 JSON | `~/Desktop/墨尔本大学 <年份> S<学期>/<课程代码>/分数结构*.json`（新文件不覆盖旧文件，读最新的有效文件） |
+| 选课、修正、任务、可用时间、目标档、外观 | 浏览器 localStorage（按浏览器和端口隔离，键名沿用 `coursework.` 前缀以保留已有数据） |
+| 背景图片 | 浏览器 IndexedDB `coursework` |
+
+`.local/` 和 `.local-backups/` 被 Git 忽略，但含个人数据。
 
 ## 当前边界
 
-Node.js 24+；macOS + Edge 已实际试跑，其他平台 / 浏览器未完成。`edstem` 和模型密钥属于外部依赖，不随仓库提供。Vite 重启会丢失内存中的运行状态，运行中不要修改服务端文件。同步批次耗时从保存选课后开始；旧批次只在可用目录元数据唯一匹配时还原，总耗时为估算。
+Node.js 24+；只在 macOS + Edge 上实际跑过，其他平台和浏览器未完成。`edstem` 和模型密钥属于外部依赖。Vite 重启会丢失内存中的同步状态。四家模型的真实调用和真实同步在 v2 并入后还没有重新验证。

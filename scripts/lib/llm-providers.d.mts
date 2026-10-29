@@ -3,7 +3,6 @@ export type TokenCounts = { input: number; cached: number | null; output: number
 export type AnalysisResult = { exitCode: number | null; lastMessage: string; usage: TokenCounts | null; threadId?: string | null; error?: string };
 export type ConnectionTest = { ok: boolean; latencyMs: number; model: string | null; error?: string };
 export function counts(usage: unknown): TokenCounts | null;
-export function anthropicUsage(usage: unknown): TokenCounts | null;
 export function anthropicSchema(schema: unknown): unknown;
 export function buildAnthropicRequest(input: { model: string; apiKey: string; prompt: string; schema?: unknown; maxTokens?: number }): { url: string; headers: Record<string, string>; body: string };
 export function analyse(config: AnalysisConfig, prompt: string, options: { schema: unknown; schemaPath: string; cwd: string; registerStop: (stop: () => void) => () => void; onPhase?: (phase: string) => void }): Promise<AnalysisResult>;

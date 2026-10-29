@@ -191,13 +191,13 @@ export function App() {
     <Backdrop settings={background} image={backgroundImage} />
     <aside className={`sidebar${navOpen ? ' open' : ''}`}>
       <div className="sidebar-top">
-        <span className="brand"><Mark />coursework</span>
+        <span className="brand"><Mark />StudyOrbit</span>
         <span className="sidebar-page">{view.page === 'course' ? sidebarCourses.find(course => course.id === view.courseId)?.code ?? '' : title}</span>
         <button className="nav-toggle ghost" aria-expanded={navOpen} aria-controls="sidebar-body" onClick={() => setNavOpen(!navOpen)}>{navOpen ? t.close : (isZh ? '菜单' : 'Menu')}</button>
       </div>
       <div className="sidebar-body" id="sidebar-body" ref={sidebarBody}>
         <span className="nav-indicator" ref={navIndicator} aria-hidden="true" />
-        <nav className="nav" aria-label="coursework">
+        <nav className="nav" aria-label="StudyOrbit">
           <button className="nav-item" aria-current={view.page === 'week' ? 'page' : undefined} onClick={() => go({ page: 'week' })}>{isZh ? '本周' : 'This week'}</button>
           <button className="nav-item" aria-current={view.page === 'agent' ? 'page' : undefined} onClick={() => { setAgentRequest(undefined); go({ page: 'agent' }); }}>{t.agent}</button>
         </nav>

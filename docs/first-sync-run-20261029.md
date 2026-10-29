@@ -1,6 +1,6 @@
 # 第一版四门课数据试跑
 
-> 历史记录：描述当时的实验或草案，部分命令及结论已过时。当前运行方式见 [README](../README.md)，当前交接见 [handoff](handoff.md)。
+> 历史记录：描述当时的实验或草案，部分命令及结论已过时。当前运行方式见 [README](../README.md)，当前交接见 [handoff](../note/handoff.md)。
 
 2026-10-29，DeepSeek Flash 使用 Responses API 原生 Schema；从前端选择四门课，Canvas、Ed、Handbook 采集串行，模型分析并行。未下载课程文件。个人课程、成绩、模型原始数据均保存在本机忽略目录或桌面课程目录，不提交 Git。
 
