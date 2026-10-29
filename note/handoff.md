@@ -48,10 +48,12 @@
 4. L0/L1/L2（#238 先不做）：以后做时先定方案；Claude 的立场是执行器只在合成演示课程上跑。
 5. 小问题（未排期）：`RichText` 遇到「标题 + 列表」混在一段时列表符号原样显示。
 6. 工具调用对话 + MCP：OpenSpec 变更 `chat-tools-mcp`（决定 #320–#339、#360–#369、#395–#404，待你复核）。第 1、2 个 PR 已合并（#264、#267）；第 3 个 PR #273（问答评测）已合并：32 道合成题 × 5 次 × 2 种模式，`deepseek-flash` 上下文模式 → 工具模式的准确率见 `docs/eval-results.md`「对话问答：改造前后」，上下文模式的错是缺计划数据或剩余权重口径不同，不是算术错；同一 PR 修了 DeepSeek 并行工具调用的回传顺序（#396，#267 的实测没覆盖到，第二步会 400）。MCP（第 4 个，分支 `claude/mcp-server`，决定 #400–#404）已开 PR 待审查合并：`scripts/mcp-server.mjs` + `scripts/lib/course-mcp.mjs`，SDK 1.32.2，README 有 Claude Code / Claude Desktop 接法；#330 需要你定是否改用 SDK v2。
+7. 通用化：OpenSpec 变更 `generic-adapters`（决定 #440–#449，待你复核；规格 PR 待审查）。4 个 PR：接口和搬家（等 `local-server-sync-pipeline` 第 3 部分合并后开始）、macOS Chrome、设置 + 通用学校 + 通用 Canvas、Windows/Linux 的 CDP 桥（实验性）。第 2 个 PR 合并后需要你用 Chrome 跑一次课程发现。
 
 ## 等用户决定
 
 - 对话是否要包含页面上的修正（现在只用同步原件）。
+- 通用化：Windows 用 CDP 专用配置（#446）还是改回 #219–#221 的浏览器扩展；成绩等级是否也按学校区分。
 
 ## 运行与验证
 
