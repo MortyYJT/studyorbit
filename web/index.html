@@ -14,6 +14,17 @@
         document.documentElement.dataset.theme = theme === 'system' || theme === 'dark' ? theme : 'light';
         document.documentElement.dataset.palette = ['mono', 'mist', 'pine', 'stone', 'morty'].indexOf(palette) >= 0 ? palette : 'mono';
       } catch (error) { /* Storage may be blocked; the app falls back to its defaults. */ }
+      // Background mode and card opacity (web/src/background.ts parses the same JSON; the image itself loads after mount).
+      document.documentElement.dataset.bg = 'gradient';
+      try {
+        var background = JSON.parse(localStorage.getItem('coursework.background') || '{}') || {};
+        if (['gradient', 'solid', 'image'].indexOf(background.mode) >= 0) document.documentElement.dataset.bg = background.mode;
+        var card = typeof background.cardOpacity === 'number' ? Math.min(100, Math.max(70, Math.round(background.cardOpacity))) : 94;
+        if (background.mode === 'image') {
+          document.documentElement.style.setProperty('--surface-alpha', card + '%');
+          if (card < 100) document.documentElement.dataset.glass = '';
+        }
+      } catch (error) { /* Malformed settings fall back to the gradient. */ }
     </script>
   </head>
   <body>

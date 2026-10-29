@@ -2,6 +2,8 @@
    greys and give --accent a hue; the accent marks only the primary action, the current place and progress. */
 :root { color-scheme:light;
   --radius:8px; --radius-control:6px; --gap:16px;
+  /* Motion: transform and opacity only; durations short / medium / long. */
+  --ease-out:cubic-bezier(.2,.8,.2,1); --ease-in-out:cubic-bezier(.65,0,.35,1); --dur-1:150ms; --dur-2:250ms; --dur-3:420ms;
   --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Segoe UI","Microsoft YaHei",sans-serif; }
 :root[data-theme="dark"] { color-scheme:dark; }
 @media(prefers-color-scheme:dark) { :root:not([data-theme="light"]):not([data-theme="dark"]) { color-scheme:dark; } }
@@ -110,7 +112,8 @@ small { font-size:12px; }
 
 /* Controls: one height, one radius; near-black primary, white secondary, text tertiary. */
 button { cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:32px; padding:0 12px;
-  border:1px solid var(--control); border-radius:var(--radius-control); background:var(--surface); white-space:nowrap; transition:background-color .12s, opacity .12s; }
+  border:1px solid var(--control); border-radius:var(--radius-control); background:var(--surface); white-space:nowrap;
+  transition:background-color var(--dur-1), border-color var(--dur-1), color var(--dur-1), box-shadow var(--dur-1), opacity var(--dur-1), transform var(--dur-1) var(--ease-out); }
 button:hover:enabled { background:var(--raised); }
 button:active:enabled { background:var(--active); }
 button:disabled { opacity:.45; cursor:default; }
@@ -141,13 +144,18 @@ legend { padding:0; margin-bottom:8px; font-size:13px; font-weight:500; }
 .mark { width:18px; height:18px; transform:rotate(-90deg); }
 .mark circle { fill:none; stroke:var(--text); stroke-width:3; }
 .sidebar-page,.nav-toggle { display:none; }
-.sidebar-body { flex:1; min-height:0; display:flex; flex-direction:column; padding:0 10px 14px; overflow:auto; }
+.sidebar-body { position:relative; flex:1; min-height:0; display:flex; flex-direction:column; padding:0 10px 14px; overflow:auto; }
 .nav { display:grid; gap:2px; }
 .nav-item { justify-content:flex-start; width:100%; min-height:32px; padding:0 10px; border:0; border-radius:var(--radius-control); background:none; color:var(--muted); font-size:14px; text-align:left; }
 .nav-item:hover:enabled { background:var(--active); color:var(--text); }
-.nav-item[aria-current="page"] { background:var(--active); color:var(--text); font-weight:500; }
-/* Tinted palettes mark the current page with an accent edge; mono keeps its plain grey fill. */
-:root[data-palette]:not([data-palette="mono"]) .nav-item[aria-current="page"] { box-shadow:inset 2px 0 0 var(--accent); }
+.nav-item[aria-current="page"] { color:var(--text); font-weight:500; }
+.nav-item[aria-current="page"]:hover:enabled { background:none; }
+/* One indicator slides under the current nav or course item (motion.ts useSlidingIndicator). Tinted palettes add an
+   accent edge; mono keeps its plain grey fill. */
+.nav-item { position:relative; z-index:1; }
+.nav-indicator { position:absolute; top:0; left:0; width:0; height:0; border-radius:var(--radius-control); background:var(--active); opacity:0; pointer-events:none;
+  transition:transform var(--dur-2) var(--ease-out), width var(--dur-2) var(--ease-out), height var(--dur-2) var(--ease-out), opacity var(--dur-1); }
+:root[data-palette]:not([data-palette="mono"]) .nav-indicator { box-shadow:inset 2px 0 0 var(--accent); }
 .nav-item .count { margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text); font-variant-numeric:tabular-nums; }
 .nav-group { margin-top:28px; display:grid; gap:2px; }
 .nav-label { font-size:12px; font-weight:400; color:var(--muted); margin:0 10px 6px; }
@@ -371,10 +379,12 @@ button.due { width:100%; }
 .pill.lock { border-style:dashed; color:var(--muted); }
 .pill.updated { border-color:var(--text); color:var(--text); font-weight:500; }
 .unknown { color:var(--muted); font-style:normal; }
-.tabs { display:flex; gap:20px; border-bottom:1px solid var(--border); margin:0 0 4px; }
+.tabs { position:relative; display:flex; gap:20px; border-bottom:1px solid var(--border); margin:0 0 4px; }
+.tab-indicator { position:absolute; left:0; bottom:-1px; width:0; height:2px; background:var(--text); opacity:0; pointer-events:none;
+  transition:transform var(--dur-2) var(--ease-out), width var(--dur-2) var(--ease-out), opacity var(--dur-1); }
 .tabs button { border:0; border-radius:0; background:none; min-height:40px; padding:0 2px; color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-1px; }
 .tabs button:hover:enabled { background:none; color:var(--text); }
-.tabs button[aria-selected="true"] { color:var(--text); border-color:var(--text); font-weight:500; }
+.tabs button[aria-selected="true"] { color:var(--text); font-weight:500; }
 .arow { display:grid; grid-template-columns:minmax(0,2.2fr) minmax(0,1.4fr) 136px 120px minmax(0,.9fr) 96px; gap:12px; align-items:center; justify-items:stretch; width:100%; min-height:48px; padding:8px; border:0; border-bottom:1px solid var(--rule); border-radius:0; background:none; text-align:left; white-space:normal; font-size:14px; }
 button.arow:hover:enabled { background:var(--raised); }
 .arow.head { min-height:36px; font-size:12px; color:var(--muted); border-bottom-color:var(--border); }
@@ -719,3 +729,130 @@ button.sync-tr:hover:enabled { background:var(--raised); }
 .model-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }
 .model-status { display:inline-flex; align-items:center; gap:8px; font-size:12px; overflow-wrap:anywhere; }
 @media (max-width:560px) { .model-row { grid-template-columns:1fr; } .model-row > small { grid-column:1; } }
+
+/* ---- Backgrounds: one fixed layer behind the shell (BackgroundLayer.tsx). data-bg on <html> picks the ground:
+   gradient (default) tints the palette's own ground toward its accent by at most 8%, so muted text on it keeps
+   4.5:1; solid is the plain ground; image puts the picture and a ground-coloured scrim over the gradient. ---- */
+:root { --surface-alpha:100%; interpolate-size:allow-keywords;
+  --panel:color-mix(in srgb, var(--surface) var(--surface-alpha), transparent);
+  --panel-raised:color-mix(in srgb, var(--raised) var(--surface-alpha), transparent);
+  --panel-ground:color-mix(in srgb, var(--ground) var(--surface-alpha), transparent);
+  /* Sticky headings sit over scrolled text, so they keep half of the remaining transparency at most. */
+  --panel-strong:color-mix(in srgb, var(--surface) calc((100% + var(--surface-alpha)) / 2), transparent); }
+.backdrop { position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none; background:var(--ground); }
+:root:not([data-bg="solid"]) .backdrop {
+  background:
+    radial-gradient(1100px 640px at 88% -12%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%),
+    linear-gradient(160deg, var(--ground) 0%, var(--ground) 30%, color-mix(in srgb, var(--ground) 92%, var(--accent)) 100%); }
+.backdrop-image { position:absolute; inset:0; background-size:cover; background-position:center; animation:fade-in var(--dur-3) var(--ease-out); }
+.backdrop-scrim { position:absolute; inset:0; background:var(--ground); }
+@keyframes fade-in { from { opacity:0; } }
+/* Over a gradient the sidebar is clear, so one ground runs under both columns. */
+:root:not([data-bg="solid"]) .sidebar { background:transparent; }
+/* Over an image, every place text sits becomes a panel at the card opacity (never below 70%): the sidebar, the
+   canvas, cards, menus, the drawer and dialogs. Below 100% the fixed or small panels (sidebar, dialogs, drawer,
+   menus) also frost what is behind them; the page-sized canvas does not, so scrolling stays cheap. The sidebar and
+   canvas paint their panel on ::before, because a backdrop-filter on them would trap their position:fixed children
+   (the drawer, the toast, the phone menu sheet). */
+:root[data-bg="image"] .sidebar { background:transparent; }
+:root[data-bg="image"] .canvas { position:relative; margin:12px 12px 12px 0; padding:28px 32px 64px; min-height:calc(100dvh - 24px);
+  border:1px solid var(--border); border-radius:12px; }
+:root[data-bg="image"] :is(.sidebar,.canvas)::before { content:""; position:absolute; inset:0; z-index:-1; background:var(--panel-ground); pointer-events:none; }
+:root[data-bg="image"] .canvas::before { inset:-1px; border-radius:inherit; }
+:root[data-bg="image"] :is(.card,.local-week-grid,.needs,.revgo,.local-confirm,.local-drawer,.menu,dialog) { background:var(--panel); }
+:root[data-bg="image"] .dialog-heading { background:var(--panel-strong); }
+:root[data-bg="image"] :is(.course-summary .weight-breakdown,.policy,.day-deadlines) { background:var(--panel-raised); }
+/* Blur only fixed or small surfaces; the page-sized canvas keeps just its translucent fill so scrolling stays cheap. */
+:root[data-glass] .sidebar::before,:root[data-glass] :is(dialog,.local-drawer,.menu,.dialog-heading) { -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
+/* A sticky heading over translucent content spans the full width, so it reads as one toolbar band. */
+:root[data-bg="image"] :is(dialog,.local-drawer) .dialog-heading { margin-inline:-24px; padding-inline:24px; }
+
+/* Background settings. */
+.background-picker .seg { margin-bottom:12px; }
+.background-image { display:grid; grid-template-columns:148px minmax(0,1fr); gap:16px; align-items:start; }
+.background-preview { position:relative; height:96px; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; background:var(--ground); }
+.background-preview > i { position:absolute; inset:0; }
+.preview-image { background-size:cover; background-position:center; transform:scale(1.08); }
+.preview-scrim { background:var(--ground); }
+.background-preview .preview-card { inset:auto 12px 12px 12px; height:42px; display:grid; align-content:center; gap:5px; padding:0 10px; border:1px solid var(--border); border-radius:6px;
+  background:color-mix(in srgb, var(--surface) var(--preview-alpha, 100%), transparent); }
+.preview-card b { display:block; height:5px; width:70%; border-radius:3px; background:var(--text); }
+.preview-card b + b { width:44%; background:var(--muted); }
+.background-controls { display:grid; gap:8px; min-width:0; }
+.background-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.background-controls > small { font-size:12px; }
+.range-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px 12px; margin:0; font-size:13px; font-weight:400; }
+.range-row output { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+.range-row input[type="range"] { grid-column:1 / -1; min-height:20px; padding:0; border:0; background:none; accent-color:var(--accent); }
+@media(max-width:560px) { .background-image { grid-template-columns:1fr; } }
+@media(max-width:760px) {
+  :root:not([data-bg="solid"]) .sidebar { background:var(--ground); }
+  :root[data-bg="image"] .sidebar { background:transparent; }
+  :root[data-bg="image"] .sidebar.open .sidebar-body { background:var(--panel-ground); }
+  :root[data-bg="image"] dialog .dialog-heading { margin-inline:-18px; padding-inline:18px; }
+  :root[data-bg="image"] .canvas { margin:8px; padding:18px 14px 48px; min-height:0; }
+  :root[data-glass] .sidebar.open .sidebar-body { -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
+}
+
+/* ---- Motion. Purposeful, transform and opacity only, and off under prefers-reduced-motion (end of file). ---- */
+/* Press feedback; wide rows and tabs only change colour. */
+button:active:enabled:not(.arow,.sync-tr,.nav-item,.tabs button,.blk,.chat-entry,.due) { transform:scale(.97); }
+.palette-swatch .palette-chip { transition:transform var(--dur-1) var(--ease-out); }
+.palette-swatch[aria-pressed="true"] .palette-chip { transform:scale(1.06); }
+
+/* Theme, palette and background switches crossfade the window (View Transition, motion.ts); without it, the major
+   surfaces fade their colours. */
+:root[data-vt="theme"]::view-transition-old(root),:root[data-vt="theme"]::view-transition-new(root) { animation-duration:300ms; animation-timing-function:var(--ease-in-out); }
+:root[data-theming] :is(body,.sidebar,.canvas,.card,dialog,.local-week-grid,.nav-item,button,.nav-indicator) { transition:background-color 300ms, color 300ms, border-color 300ms !important; }
+
+/* Page change: only the canvas moves (crossfade with an 8px rise); the sidebar stays live so its indicator slides. */
+:root[data-vt="page"] .canvas { view-transition-name:page; }
+:root[data-vt="page"]::view-transition-old(root),:root[data-vt="page"]::view-transition-new(root) { animation:none; }
+:root[data-vt="page"]::view-transition-group(page) { animation-duration:var(--dur-2); animation-timing-function:var(--ease-out); }
+:root[data-vt="page"]::view-transition-old(page) { animation:page-out var(--dur-1) var(--ease-in-out) both; }
+:root[data-vt="page"]::view-transition-new(page) { animation:page-in var(--dur-2) var(--ease-out) both; }
+@keyframes page-out { to { opacity:0; } }
+@keyframes page-in { from { opacity:0; transform:translateY(8px); } }
+
+/* Dialogs: fade and scale in over a fading backdrop; motion.ts closeDialog adds .closing before close(). */
+dialog[open] { animation:dialog-in var(--dur-2) var(--ease-out); }
+dialog[open]::backdrop { animation:fade-in var(--dur-2) var(--ease-out); }
+dialog.closing { animation:dialog-out var(--dur-1) var(--ease-in-out) forwards; pointer-events:none; }
+dialog.closing::backdrop { animation:fade-out var(--dur-1) var(--ease-in-out) forwards; }
+@keyframes dialog-in { from { opacity:0; transform:scale(.97); } }
+@keyframes dialog-out { to { opacity:0; transform:scale(.97); } }
+@keyframes fade-out { to { opacity:0; } }
+.local-drawer-overlay.closing { animation:scrim-out var(--dur-1) var(--ease-in-out) forwards; }
+/* The overlay keeps blocking the page while the drawer leaves; the drawer itself takes no more input. */
+.local-drawer-overlay.closing .local-drawer { pointer-events:none; }
+.local-drawer-overlay.closing .local-drawer { animation:drawer-out var(--dur-1) var(--ease-in-out) forwards; }
+@keyframes scrim-out { to { background:rgba(0,0,0,0); } }
+@keyframes drawer-out { to { transform:translateX(104%); } }
+
+/* Course page: weight segments grow from the left in turn. */
+.weight-segment { transform-origin:left center; animation:grow-x var(--dur-3) var(--ease-out) backwards; animation-delay:calc(var(--i, 0) * 40ms); }
+@keyframes grow-x { from { transform:scaleX(0); } }
+
+/* Folding rows open and close smoothly where the browser can animate details content (progressive). */
+@supports selector(::details-content) {
+  :is(.assessment-parent,.no-marks,.assessment-edit)::details-content { block-size:0; overflow-y:clip;
+    transition:block-size var(--dur-2) var(--ease-out), content-visibility var(--dur-2) allow-discrete; }
+  :is(.assessment-parent,.no-marks,.assessment-edit)[open]::details-content { block-size:auto; }
+}
+
+/* Week: the seven days rise in on mount and when the week changes (they are keyed by date). */
+.local-week-day { animation:rise-in var(--dur-2) var(--ease-out) backwards; animation-delay:calc(var(--i, 0) * 30ms); }
+@keyframes rise-in { from { opacity:0; transform:translateY(8px); } }
+
+/* Agent chat: new messages rise in; a caret blinks at the end of a streaming reply. */
+.msg.enter { animation:rise-in var(--dur-2) var(--ease-out) backwards; }
+.msg.streaming > p:last-child::after,.msg.streaming > :is(ul,ol):last-child > li:last-child::after { content:""; display:inline-block; width:2px; height:1.05em; margin-left:2px; vertical-align:-.17em; background:currentColor; animation:caret 1s steps(1) infinite; }
+@keyframes caret { 50% { opacity:0; } }
+
+@media (prefers-reduced-motion:reduce) {
+  dialog[open],dialog[open]::backdrop,dialog.closing,dialog.closing::backdrop,.weight-segment,.local-week-day,.msg.enter,.msg.streaming *::after,.backdrop-image { animation:none !important; }
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*) { animation:none !important; }
+  :is(.assessment-parent,.no-marks,.assessment-edit)::details-content { transition:none !important; }
+  button:active:enabled { transform:none !important; }
+  .palette-swatch[aria-pressed="true"] .palette-chip { transform:none; }
+}

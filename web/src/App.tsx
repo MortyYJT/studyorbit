@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { applyBackground, Backdrop, BackgroundSettingsSection, useBackgroundImage } from './BackgroundLayer.js';
+import { backgroundStorageKey, parseBackground, type BackgroundMode, type BackgroundSettings } from './background.js';
 import { en, zh, type Language, type Theme } from './i18n.js';
 import { AgentChat, type AgentRequest } from './Agent.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning, type SidebarCourse } from './LocalPlanning.js';
+import { closeDialog, durations, easeOut, openDialog, reducedMotion, useSlidingIndicator, viewTransition } from './motion.js';
 import { palettes, parsePalette, type Palette } from './palette.js';
 import type { LlmProvider, PublicLlmConfig } from '../../scripts/lib/llm-config.mjs';
 
@@ -21,6 +24,8 @@ export function App() {
   const [language, setLanguage] = useState<Language>(() => preference('coursework.language') === 'en' ? 'en' : 'zh');
   const [theme, setTheme] = useState<Theme>(() => { const value = preference('coursework.theme'); return value === 'system' || value === 'dark' ? value : 'light'; });
   const [palette, setPalette] = useState<Palette>(() => parsePalette(preference('coursework.palette')));
+  const [background, setBackground] = useState<BackgroundSettings>(() => parseBackground(preference(backgroundStorageKey)));
+  const { url: backgroundImage, setUrl: setBackgroundImage, loadFailed: backgroundLoadFailed, dismissLoadFailure } = useBackgroundImage();
   const [avatarImage, setAvatarImage] = useState(() => preference('coursework.avatar') ?? '');
   const [avatarError, setAvatarError] = useState('');
   const [syncUsage, setSyncUsage] = useState<SyncUsage[]>();
@@ -52,17 +57,29 @@ export function App() {
   const running = localSyncing || courseRun?.running;
   useEffect(() => { document.documentElement.dataset.theme = theme; remember('coursework.theme', theme); }, [theme]);
   useEffect(() => { document.documentElement.dataset.palette = palette; remember('coursework.palette', palette); }, [palette]);
+  useEffect(() => { applyBackground(background); remember(backgroundStorageKey, JSON.stringify(background)); }, [background]);
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('coursework.language', language); }, [language]);
-  useEffect(() => { if (panel) dialog.current?.showModal(); }, [panel]);
-  // Page change fades the content in (design prototype motion) without remounting the page state.
+  useEffect(() => { if (panel) openDialog(dialog.current); }, [panel]);
+  // Page changes run as a View Transition (see go); other view changes, or browsers without it, fade the canvas in.
   const mainRef = useRef<HTMLElement>(null);
+  const viaTransition = useRef(false);
   const pageKey = view.page === 'course' ? `course:${view.courseId}` : view.page;
   useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    mainRef.current?.animate([{ opacity: 0, transform: 'translateY(5px)' }, { opacity: 1, transform: 'none' }], { duration: 350, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    if (viaTransition.current) { viaTransition.current = false; return; }
+    if (reducedMotion()) return;
+    mainRef.current?.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: durations.medium, easing: easeOut });
   }, [pageKey]);
-  useEffect(() => { const element = selectDialog.current; if (!element) return; if (coursePanelOpen && !element.open) element.showModal(); else if (!coursePanelOpen && element.open) element.close(); }, [coursePanelOpen]);
-  useEffect(() => { const element = syncDialog.current; if (!element) return; if (syncModal && !element.open) element.showModal(); else if (!syncModal && element.open) element.close(); }, [syncModal]);
+  // One indicator slides between the current nav and course items instead of each item painting its own fill.
+  const sidebarBody = useRef<HTMLDivElement>(null);
+  const navIndicator = useRef<HTMLSpanElement>(null);
+  useSlidingIndicator(sidebarBody, navIndicator, '.nav-item[aria-current="page"]', 'both', [pageKey, sidebarCourses, navOpen]);
+  // Dialog content stays as it was while the dialog animates out.
+  const [selectContent, setSelectContent] = useState(coursePanelOpen);
+  const shownSyncModal = useRef<SyncModal>(syncModal);
+  if (syncModal) shownSyncModal.current = syncModal;
+  const modal = syncModal ?? shownSyncModal.current;
+  useEffect(() => { const element = selectDialog.current; if (!element) return; if (coursePanelOpen) { setSelectContent(true); openDialog(element); } else closeDialog(element); }, [coursePanelOpen]);
+  useEffect(() => { const element = syncDialog.current; if (!element) return; if (syncModal) openDialog(element); else closeDialog(element); }, [syncModal]);
   useEffect(() => {
     if (!savedNotice) return;
     const timer = window.setTimeout(() => setSavedNotice(0), 3000);
@@ -104,7 +121,11 @@ export function App() {
     } catch { setUsageError(true); }
   }
   function open(next: Panel) { setMenu(false); setPanel(next); if (next === 'status') void loadSyncUsage(); }
-  function close() { dialog.current?.close(); setPanel(undefined); avatar.current?.focus(); }
+  // The dialog's close event clears the panel, so its content stays while it animates out.
+  function close() { closeDialog(dialog.current); }
+  const changeTheme = (next: Theme) => viewTransition('theme', () => { document.documentElement.dataset.theme = next; setTheme(next); });
+  const changePalette = (next: Palette) => viewTransition('theme', () => { document.documentElement.dataset.palette = next; setPalette(next); });
+  const changeBackgroundMode = (mode: BackgroundMode) => viewTransition('theme', () => { const next = { ...background, mode }; applyBackground(next); setBackground(next); });
   async function syncCourses() {
     if (running) return;
     cancelledDiscovery.current = false; setSyncModal('discovery'); setCourseRun(undefined); setLocalSyncing(true); setLocalSyncError(''); setLocalSyncWarning('');
@@ -156,19 +177,25 @@ export function App() {
       else { const run = await response.json() as CourseRun; setCourseRun(run); if (!run.running) setSyncModal('finished'); }
     } catch (error) { setCourseRunError(error instanceof Error ? error.message : t.error); setSyncModal(discovery ? 'discovery' : 'syncing'); }
   }
-  const go = (next: View) => { setView(next); setNavOpen(false); };
+  const go = (next: View) => {
+    const key = next.page === 'course' ? `course:${next.courseId}` : next.page;
+    if (key === pageKey) { setView(next); setNavOpen(false); return; }
+    viaTransition.current = viewTransition('page', () => { setView(next); setNavOpen(false); });
+  };
   const isZh = language === 'zh';
   const title = view.page === 'agent' ? t.agent : (isZh ? '本周' : 'This week');
   const syncButton = <button disabled={!!running} onClick={() => void syncCourses()} aria-busy={!!running}>{running ? t.syncing : t.sync}</button>;
   const syncBatches = groupSyncUsage(syncUsage ?? []);
   return <div className="shell">
+    <Backdrop settings={background} image={backgroundImage} />
     <aside className={`sidebar${navOpen ? ' open' : ''}`}>
       <div className="sidebar-top">
         <span className="brand"><Mark />coursework</span>
         <span className="sidebar-page">{view.page === 'course' ? sidebarCourses.find(course => course.id === view.courseId)?.code ?? '' : title}</span>
         <button className="nav-toggle ghost" aria-expanded={navOpen} aria-controls="sidebar-body" onClick={() => setNavOpen(!navOpen)}>{navOpen ? t.close : (isZh ? '菜单' : 'Menu')}</button>
       </div>
-      <div className="sidebar-body" id="sidebar-body">
+      <div className="sidebar-body" id="sidebar-body" ref={sidebarBody}>
+        <span className="nav-indicator" ref={navIndicator} aria-hidden="true" />
         <nav className="nav" aria-label="coursework">
           <button className="nav-item" aria-current={view.page === 'week' ? 'page' : undefined} onClick={() => go({ page: 'week' })}>{isZh ? '本周' : 'This week'}</button>
           <button className="nav-item" aria-current={view.page === 'agent' ? 'page' : undefined} onClick={() => { setAgentRequest(undefined); go({ page: 'agent' }); }}>{t.agent}</button>
@@ -195,6 +222,7 @@ export function App() {
     <main className="canvas" ref={mainRef}>
       {localSyncError && <p className="error-line" role="status" style={{ whiteSpace: 'pre-wrap' }}><i className="signal" aria-hidden="true" />{localSyncError}</p>}
       {localSyncWarning && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{localSyncWarning}</p>}
+      {backgroundLoadFailed && background.mode === 'image' && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{isZh ? '无法从浏览器存储读取背景图片，暂时显示渐变背景。可以在「设置 → 背景」重新选择图片。' : 'Could not read the background image from browser storage; showing the gradient for now. You can choose the image again in Settings → Background.'}<button className="small ghost" onClick={dismissLoadFailure}>{t.close}</button></p>}
       {courseRunError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{courseRunError}</p>}
       {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1>{view.page !== 'agent' && <button className="ghost" onClick={() => setCourseRefresh(value => value + 1)}>{t.refresh}</button>}</div>}
       {savedNotice > 0 && <div className="save-toast" role="status">{isZh ? '课程已经保存' : 'Courses saved'}</div>}
@@ -203,24 +231,24 @@ export function App() {
           syncIssues={courseRun?.courses ?? []} onCourse={courseId => go({ page: 'course', courseId })} onBack={() => go({ page: 'week' })}
           onAsk={courseId => { setAgentRequest(current => ({ nonce: (current?.nonce ?? 0) + 1, courseId })); go({ page: 'agent' }); }} />}
     </main>
-    <dialog ref={selectDialog} className="select-dialog" aria-labelledby="select-title" onCancel={event => { event.preventDefault(); setCoursePanelOpen(false); }}>
+    <dialog ref={selectDialog} className="select-dialog" aria-labelledby="select-title" onCancel={event => { event.preventDefault(); setCoursePanelOpen(false); }} onClose={() => setSelectContent(false)}>
       <div className="dialog-heading"><h2 id="select-title" tabIndex={-1} autoFocus>{isZh ? '修改选课' : 'Edit courses'}</h2><button className="ghost" onClick={() => setCoursePanelOpen(false)}>{t.close}</button></div>
       <p className="select-note"><i className="signal" aria-hidden="true" />{isZh ? '保存后会立即开始同步所选课程（会使用 Edge、Ed 和模型额度）。' : 'Saving starts a sync of the selected courses right away (uses Edge, Ed and model quota).'}</p>
-      {coursePanelOpen && <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setCoursePanelOpen(false); setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); void startSelectedCourses(ids); }} />}
+      {(coursePanelOpen || selectContent) && <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setCoursePanelOpen(false); setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); void startSelectedCourses(ids); }} />}
     </dialog>
     <dialog ref={syncDialog} className="sync-dialog" aria-labelledby="sync-title" onCancel={event => event.preventDefault()}>
-      <h2 id="sync-title">{language === 'zh' ? (syncModal === 'finished' ? '同步结果' : '正在同步课程') : (syncModal === 'finished' ? 'Sync results' : 'Syncing courses')}</h2>
-      {syncModal === 'select' ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); if (ids.length) void startSelectedCourses(ids); else setSyncModal('finished'); }} /> : <>
-        {syncModal !== 'finished' && <><p>{language === 'zh' ? '同步中，请保持 Edge 和 coursework 页面打开。' : 'Syncing. Please keep Edge and the coursework page open.'}</p><div className="sync-indeterminate" role="progressbar" aria-label={language === 'zh' ? '同步进行中' : 'Sync in progress'}><span /></div></>}
-        {syncModal === 'discovery' && <p>{language === 'zh' ? '正在获取课程列表…' : 'Fetching course list…'}</p>}
-        {syncModal === 'starting' && <p>{language === 'zh' ? '正在启动课程同步…' : 'Starting course sync…'}</p>}
-        {syncModal === 'stopping' && <p>{language === 'zh' ? '正在中止，请稍候…' : 'Stopping…'}</p>}
+      <h2 id="sync-title">{language === 'zh' ? (modal === 'finished' ? '同步结果' : '正在同步课程') : (modal === 'finished' ? 'Sync results' : 'Syncing courses')}</h2>
+      {modal === 'select' ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); if (ids.length) void startSelectedCourses(ids); else setSyncModal('finished'); }} /> : <>
+        {modal !== 'finished' && <><p>{language === 'zh' ? '同步中，请保持 Edge 和 coursework 页面打开。' : 'Syncing. Please keep Edge and the coursework page open.'}</p><div className="sync-indeterminate" role="progressbar" aria-label={language === 'zh' ? '同步进行中' : 'Sync in progress'}><span /></div></>}
+        {modal === 'discovery' && <p>{language === 'zh' ? '正在获取课程列表…' : 'Fetching course list…'}</p>}
+        {modal === 'starting' && <p>{language === 'zh' ? '正在启动课程同步…' : 'Starting course sync…'}</p>}
+        {modal === 'stopping' && <p>{language === 'zh' ? '正在中止，请稍候…' : 'Stopping…'}</p>}
         {courseRun && courseRun.courses.length > 0 && <><p>{language === 'zh' ? '已处理' : 'Processed'} {courseRun.courses.filter(course => ['completed', 'partial', 'failed'].includes(course.status)).length} / {courseRun.courses.length}</p>{courseRun.courses.map(course => <div className="sync-course" key={course.id}><b>{course.code}</b><span>{({ pending: language === 'zh' ? '等待' : 'Waiting', running: course.phase === 'canvas' ? (language === 'zh' ? '获取 LMS 信息中' : 'Fetching LMS data') : course.phase === 'ed' ? (language === 'zh' ? '获取 Ed 信息中' : 'Fetching Ed data') : course.phase === 'waiting_analysis' ? (language === 'zh' ? '等待 Agent 分析' : 'Waiting for agent') : course.phase === 'handbook' ? (language === 'zh' ? '获取 Handbook 信息中' : 'Fetching Handbook data') : course.phase === 'analysis' ? (language === 'zh' ? 'Agent 分析中' : 'Agent analysing') : course.phase === 'saving' ? (language === 'zh' ? '校验与保存中' : 'Validating and saving') : (language === 'zh' ? '准备中' : 'Starting'), completed: language === 'zh' ? '已完成' : 'Completed', partial: language === 'zh' ? '部分完成' : 'Partial', failed: language === 'zh' ? '未完成' : 'Failed', cancelled: language === 'zh' ? '已中止' : 'Stopped' } as Record<string,string>)[course.status] ?? course.status}</span>{course.status === 'failed' && course.reason && <small>{course.reason}</small>}</div>)}</>}
         {(localSyncError || courseRunError || courseRun?.error) && <p role="alert">{localSyncError || courseRunError || courseRun?.error}</p>}
       </>}
-      {syncModal === 'finished' ? <button onClick={() => setSyncModal(undefined)}>{language === 'zh' ? '关闭' : 'Close'}</button> : <button disabled={syncModal === 'stopping'} onClick={() => void stopSync()}>{language === 'zh' ? '中止同步' : 'Stop sync'}</button>}
+      {modal === 'finished' ? <button onClick={() => setSyncModal(undefined)}>{language === 'zh' ? '关闭' : 'Close'}</button> : <button disabled={modal === 'stopping'} onClick={() => void stopSync()}>{language === 'zh' ? '中止同步' : 'Stop sync'}</button>}
     </dialog>
-    <dialog ref={dialog} onCancel={close} onClose={() => { setPanel(undefined); avatar.current?.focus(); }} aria-labelledby="panel-title">
+    <dialog ref={dialog} onCancel={event => { event.preventDefault(); close(); }} onClose={() => { setPanel(undefined); avatar.current?.focus(); }} aria-labelledby="panel-title">
       <div className="dialog-heading"><h2 id="panel-title" tabIndex={-1} autoFocus>{panel === 'status' ? (language === 'zh' ? '同步数据' : 'Sync data') : panel ? t[panel] : ''}</h2><button className="ghost" onClick={close}>{t.close}</button></div>
       {panel === 'status' && <>
         {usageError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{language === 'zh' ? '无法读取同步记录。' : 'Could not read sync records.'}</p>}
@@ -240,12 +268,13 @@ export function App() {
           reader.readAsDataURL(file);
         }} /></label>{avatarImage && <button onClick={() => { try { localStorage.removeItem('coursework.avatar'); setAvatarImage(''); setAvatarError(''); } catch { setAvatarError(language === 'zh' ? '头像移除失败。' : 'Could not remove the photo.'); } }}>{language === 'zh' ? '移除' : 'Remove'}</button>}</div></div>
         {avatarError && <p role="alert">{avatarError}</p>}
-        <div className="preferences"><label>{t.theme}<select value={theme} onChange={event => setTheme(event.target.value as Theme)}>{(['system', 'light', 'dark'] as const).map(value => <option key={value} value={value}>{t[value]}</option>)}</select></label>
+        <div className="preferences"><label>{t.theme}<select value={theme} onChange={event => changeTheme(event.target.value as Theme)}>{(['system', 'light', 'dark'] as const).map(value => <option key={value} value={value}>{t[value]}</option>)}</select></label>
           <label>{t.language}<select value={language} onChange={event => setLanguage(event.target.value as Language)}><option value="en">English</option><option value="zh">中文</option></select></label></div>
         <fieldset className="palette-picker"><legend>{t.palette}</legend><div className="palette-options">
-          {palettes.map(value => <button key={value} type="button" className="palette-swatch" data-palette={value} aria-pressed={palette === value} onClick={() => setPalette(value)}>
+          {palettes.map(value => <button key={value} type="button" className="palette-swatch" data-palette={value} aria-pressed={palette === value} onClick={() => changePalette(value)}>
             <span className="palette-chip" aria-hidden="true"><i /><i /><i /></span>{t.palettes[value]}</button>)}
         </div></fieldset>
+        <BackgroundSettingsSection zh={isZh} settings={background} image={backgroundImage} onChange={setBackground} onMode={changeBackgroundMode} onImage={setBackgroundImage} />
       </>}
     </dialog>
   </div>;
