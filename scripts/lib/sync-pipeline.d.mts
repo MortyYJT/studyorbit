@@ -1,7 +1,9 @@
 import type { AnalysisConfig } from './llm-config.mjs';
 import type { TokenCounts } from './llm-providers.mjs';
 import type { Clock } from './rate-limit.mjs';
-import type { CollectorRunner, ModelCaller, Source, SyncLimiters } from './sync-stages.mjs';
+import type { CollectorRunner, ModelCaller, SyncLimiters } from './sync-stages.mjs';
+import type { SourceSetup } from '../sources/registry.mjs';
+import type { CourseSource } from '../sources/types.d.mts';
 import type { CourseStatus, JobStatus, StageName, SyncStore } from './sync-store.mjs';
 
 export type CourseSyncRow = {
@@ -24,6 +26,10 @@ export type PipelineDeps = {
   runCollector?: CollectorRunner; callModel?: ModelCaller; resolveModel?: () => Promise<AnalysisConfig>;
   childUsage?: (threadId: string | null | undefined, start: Date) => Promise<TokenCounts | null>;
   clock?: Clock; random?: () => number; limiters?: SyncLimiters; hooks?: PipelineHooks; newId?: () => string;
+  /** Settings, institution, sources and source context; default today's UniMelb setup. */
+  setup?: SourceSetup;
+  /** Replaces the setup's sources (tests pass fake sources). */
+  sources?: CourseSource[];
 };
 export type SyncPipeline = {
   start(ids: string[]): Promise<CourseSyncState>;
@@ -39,6 +45,6 @@ export const RESUME_WINDOW_MS: number;
 export const MODEL_CONCURRENCY: number;
 export const COLLECTOR_INTERVAL_MS: number;
 export class SimulatedCrash extends Error {}
-export function createSyncLimiters(options?: { clock?: Clock; random?: () => number }): SyncLimiters & { collect(source: Source): ReturnType<SyncLimiters['collect']> };
+export function createSyncLimiters(options?: { clock?: Clock; random?: () => number }): SyncLimiters;
 export function codexChildUsage(parentId: string | null | undefined, start: Date): Promise<TokenCounts | null>;
 export function createSyncPipeline(deps: PipelineDeps): SyncPipeline;

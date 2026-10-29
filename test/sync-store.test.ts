@@ -93,6 +93,16 @@ describe('migrations', () => {
     expect(existsSync(join(dir, '.local', 'studyorbit.db.v0.bak'))).toBe(false);
   });
 
+  it('migration 2 stores a job\'s source ids (generic-adapters); a job from before has none', async () => {
+    (await open({ migrations: MIGRATIONS.slice(0, 1) })).createJob({ id: 'job-old', courses: [{ courseId: 'SYN-1' }] });
+    opened.pop()!.close();
+    const store = await open();
+    expect(store.getJob('job-old')!.sources).toBeNull();
+    store.createJob({ id: 'job-new', sources: ['canvas', 'ed'], courses: [{ courseId: 'SYN-1' }] });
+    expect(store.getJob('job-new')!.sources).toEqual(['canvas', 'ed']);
+    expect(() => store.createJob({ id: 'job-bad', sources: [1 as unknown as string], courses: [] })).toThrow('INVALID_FIELD: sources');
+  });
+
   it('backs up a version 1 database to .local/studyorbit.db.v1.bak (0600) before migration 2 runs', async () => {
     (await open({ migrations: MIGRATIONS.slice(0, 1) })).createJob({ id: 'job-1', courses: [{ courseId: 'SYN-1' }] });
     opened.pop()!.close();

@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSyncPipeline, type PipelineDeps, type SyncPipeline } from '../scripts/lib/sync-pipeline.mjs';
+import { canvasSource, resolveSourceSetup } from '../scripts/sources/registry.mjs';
 import type { OpenResult } from '../scripts/lib/sync-store.mjs';
 import type { Env, RouteContext, RouteHandler } from './context.ts';
 import { checkRequest } from './guard.ts';
@@ -21,7 +22,7 @@ import { syncJobsRoute } from './routes/sync-jobs.ts';
 import { syncUsageRoute } from './routes/sync-usage.ts';
 
 export const API_PREFIX = '/api/local';
-const DISCOVERY_SCRIPT = fileURLToPath(new URL('../scripts/canvas-background.mjs', import.meta.url));
+const SCRIPTS_DIR = fileURLToPath(new URL('../scripts/', import.meta.url));
 
 export type LocalApiOptions = {
   projectDir: string;
@@ -57,10 +58,15 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
     desktopDir: options.desktopDir ?? join(homedir(), 'Desktop'),
     env: options.env ?? process.env,
   };
+  // Today's setup (UniMelb, Edge through Apple Events) until the source settings file arrives (generic-adapters PR 3).
+  const setup = resolveSourceSetup();
   const pipeline: SyncPipeline | null = options.store?.ok
-    ? createSyncPipeline({ ...options.pipelineDeps, hooks: undefined, store: options.store.store, projectDir: context.projectDir, desktopDir: context.desktopDir, env: context.env })
+    ? createSyncPipeline({ setup, ...options.pipelineDeps, hooks: undefined, store: options.store.store, projectDir: context.projectDir, desktopDir: context.desktopDir, env: context.env })
     : null;
-  const discovery = syncCoursesRoute(context, options.discoveryScript ?? DISCOVERY_SCRIPT);
+  const discovery = syncCoursesRoute(context, out => {
+    const command = canvasSource.discover(setup.context, out);
+    return { ...command, script: options.discoveryScript ?? join(SCRIPTS_DIR, command.script) };
+  });
   const routes: [string, RouteHandler][] = [
     ['sync-usage', syncUsageRoute(context)],
     ['llm-config', llmConfigRoute(context)],

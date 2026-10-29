@@ -1,5 +1,5 @@
 // Load the selected-course candidates and their newest valid course document from the owner's Desktop
-// course folders (`~/Desktop/墨尔本大学 <year> S<n>/<CODE>/分数结构*.json`). Shared by the course-reports
+// course folders (the institution's folder under the Desktop, `分数结构*.json`). Shared by the course-reports
 // route and Agent chat so both read exactly the same data. Version 1 and 2 files are both valid; the stored document
 // is returned unchanged, and consumers convert it with `toDisplayDocument` (shared/course-data.ts).
 import { readdir, readFile, stat } from 'node:fs/promises';
@@ -7,15 +7,9 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CourseDocumentSchema } from '../../shared/course-data.ts';
 import { filterSubjects } from './course-list.mjs';
+import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
 
 function courseListFile(projectDir) { return join(projectDir, '.local', 'lms', 'courses.json'); }
-
-/** Desktop folder label for a Canvas term, e.g. "2026 S2". */
-function termLabel(term) {
-  const value = typeof term === 'string' ? term : '';
-  const match = /(20\d{2}).*?(?:semester|sem)\s*([12])/i.exec(value);
-  return match ? `${match[1]} S${match[2]}` : value.replace(/[^\w\u4e00-\u9fff -]/g, '').trim().slice(0, 50) || '未知学期';
-}
 
 /**
  * Newest valid course document (version 1 or 2) of `courseId` among `分数结构*.json` in `dir`, by modification time, or null.
@@ -38,25 +32,25 @@ export async function newestCourseDocument(dir, courseId) {
   return null;
 }
 
-/** Desktop course folder of a course: `<desktop>/墨尔本大学 <term label>/<CODE>`. */
-function courseFolder(course, desktop) {
-  return join(desktop, `墨尔本大学 ${termLabel(course.term)}`, course.subjectCode);
+/** Desktop course folder of a course: the institution's path segments under `desktop`. */
+function courseFolder(course, desktop, institution) {
+  return join(desktop, ...institution.courseFolder({ term: course.term, subjectCode: course.subjectCode }));
 }
 
-async function newestReport(course, desktop) {
-  if (!/^[A-Z]{4}[1-9]\d{4}$/.test(course.subjectCode)) return null;
-  return { id: course.id, report: await newestCourseDocument(courseFolder(course, desktop), course.id) };
+async function newestReport(course, desktop, institution) {
+  if (!institution.isSubjectCode(course.subjectCode)) return null;
+  return { id: course.id, report: await newestCourseDocument(courseFolder(course, desktop, institution), course.id) };
 }
 
 /**
  * Course candidates from `.local/lms/courses.json` and the newest valid report for each.
  * Throws when the course list is missing (ENOENT) or invalid.
  */
-export async function loadCourseReports(projectDir, { desktop = join(homedir(), 'Desktop') } = {}) {
+export async function loadCourseReports(projectDir, { desktop = join(homedir(), 'Desktop'), institution = DEFAULT_INSTITUTION } = {}) {
   const input = JSON.parse(await readFile(courseListFile(projectDir), 'utf8'));
   if (!Array.isArray(input.courses)) throw new Error('Invalid course file');
   const candidates = input.courses.filter(item => !!item && typeof item === 'object' && typeof item.id === 'string' && typeof item.name === 'string');
-  const courses = filterSubjects(candidates);
-  const reports = await Promise.all(courses.map(course => newestReport(course, desktop)));
+  const courses = filterSubjects(candidates, institution);
+  const reports = await Promise.all(courses.map(course => newestReport(course, desktop, institution)));
   return { courses, reports: reports.filter(Boolean) };
 }

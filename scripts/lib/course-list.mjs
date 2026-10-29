@@ -1,3 +1,5 @@
+import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
+
 /** Parse browser-selected API text, allowing Canvas's JSON prefix and viewer footer. */
 export function parseCoursePage(text) {
   const source = text.replace(/^\uFEFF/, '').trim();
@@ -34,26 +36,26 @@ export function parseCoursePage(text) {
   return items;
 }
 
-/** Keep all candidates, including communities and entries without subject codes. */
-export function normalizeCourses(items) {
+/** Keep all candidates, including communities and entries without subject codes; course links on the Canvas `origin`. */
+export function normalizeCourses(items, origin = DEFAULT_INSTITUTION.defaults.canvasOrigin) {
   return [...new Map(items.map(item => [String(item.id), {
     id: String(item.id),
     name: item.name || item.course_code || `课程 ${item.id}（名称不可读）`,
     code: item.course_code ?? null,
     term: typeof item.term?.name === 'string' ? item.term.name : null,
-    url: `https://canvas.lms.unimelb.edu.au/courses/${item.id}`,
+    url: `${origin}/courses/${item.id}`,
   }])).values()];
 }
 
-/** Identify subject-code candidates in the Canvas course_code, without using the title as evidence. */
-export function subjectCode(code) {
-  if (typeof code !== 'string') return null;
-  return /^([A-Z]{4}[1-9]\d{4})(?:_|$)/i.exec(code.trim())?.[1].toUpperCase() ?? null;
+/** The institution's subject code of a Canvas course_code (default institution), without using the title as evidence. */
+export function subjectCode(code, institution = DEFAULT_INSTITUTION) {
+  return institution.subjectCode(code);
 }
 
-export function filterSubjects(courses) {
+/** Sync candidates: courses whose `code` yields a subject code under the institution's course filter. */
+export function filterSubjects(courses, institution = DEFAULT_INSTITUTION) {
   return courses.flatMap(course => {
-    const subject = subjectCode(course.code);
+    const subject = institution.subjectCode(course.code);
     return subject ? [{ ...course, subjectCode: subject }] : [];
   });
 }

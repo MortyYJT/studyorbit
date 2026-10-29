@@ -84,6 +84,9 @@ export const MIGRATIONS = Object.freeze([
      created_at TEXT NOT NULL,
      UNIQUE (job_id, course_id)
    );`,
+  // The job's resolved course source ids as a JSON array (openspec change generic-adapters, design §1), so a resume
+  // runs the same sources. NULL for jobs created before: they ran the three UniMelb sources.
+  'ALTER TABLE jobs ADD COLUMN sources TEXT;',
 ]);
 
 export const sha256 = text => createHash('sha256').update(text, 'utf8').digest('hex');
@@ -122,7 +125,7 @@ function assignments(fields, patch) {
 const parseJson = text => (text === null ? null : JSON.parse(text));
 const jobFrom = (row, courses) => ({
   id: row.id, kind: row.kind, status: row.status, provider: row.provider, model: row.model, resumedFrom: row.resumed_from,
-  createdAt: row.created_at, startedAt: row.started_at, finishedAt: row.finished_at, error: row.error, courses,
+  sources: parseJson(row.sources ?? null), createdAt: row.created_at, startedAt: row.started_at, finishedAt: row.finished_at, error: row.error, courses,
 });
 const courseFrom = row => ({
   courseId: row.course_id, position: row.position, previous: row.previous, code: row.code, term: row.term, status: row.status,
@@ -193,11 +196,19 @@ function createStore(db, path, clock, version) {
     version,
     transaction,
 
-    createJob({ id, provider = null, model = null, resumedFrom = null, courses }) {
+    createJob({ id, provider = null, model = null, resumedFrom = null, sources = null, courses }) {
+      if (sources !== null && (!Array.isArray(sources) || sources.some(source => typeof source !== 'string'))) throw new Error('INVALID_FIELD: sources');
       return transaction(() => {
         const at = now();
-        prepare(`INSERT INTO jobs (id, kind, status, provider, model, resumed_from, created_at, started_at)
-          VALUES ($id, 'course-sync', 'running', $provider, $model, $resumedFrom, $at, $at)`).run({ id, provider, model, resumedFrom, at });
+        // The column is named only when a list is given, so the statement also works on a schema before migration 2.
+        if (sources === null) {
+          prepare(`INSERT INTO jobs (id, kind, status, provider, model, resumed_from, created_at, started_at)
+            VALUES ($id, 'course-sync', 'running', $provider, $model, $resumedFrom, $at, $at)`).run({ id, provider, model, resumedFrom, at });
+        } else {
+          prepare(`INSERT INTO jobs (id, kind, status, provider, model, resumed_from, sources, created_at, started_at)
+            VALUES ($id, 'course-sync', 'running', $provider, $model, $resumedFrom, $sources, $at, $at)`)
+            .run({ id, provider, model, resumedFrom, sources: JSON.stringify(sources), at });
+        }
         const insert = prepare(`INSERT INTO job_courses (job_id, course_id, position, previous, code, term, status)
           VALUES ($jobId, $courseId, $position, $previous, $code, $term, 'pending')`);
         courses.forEach((course, position) => insert.run({

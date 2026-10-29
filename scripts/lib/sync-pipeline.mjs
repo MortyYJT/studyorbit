@@ -15,6 +15,7 @@ import { configProblem, resolveAnalysisConfig } from './llm-config.mjs';
 import { analyse, counts } from './llm-providers.mjs';
 import { createLimiter, systemClock } from './rate-limit.mjs';
 import { LINEAGE_ANCESTORS } from './sync-store.mjs';
+import { LEGACY_SOURCE_IDS, resolveSourceSetup } from '../sources/registry.mjs';
 import {
   analyseStage, captureEarlierDocument, collectStage, mergeStage, REASONS, spawnCollector, STAGES, StageFailure, validateStage,
 } from './sync-stages.mjs';
@@ -22,7 +23,6 @@ import {
 export const RESUME_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const MODEL_CONCURRENCY = 4;
 export const COLLECTOR_INTERVAL_MS = 500;
-const codePattern = /^[A-Z]{4}[1-9]\d{4}$/;
 const RESUMABLE = new Set(['failed', 'cancelled', 'interrupted']);
 const ZERO_USAGE = Object.freeze({ input: 0, cached: 0, output: 0, reasoning: 0 });
 
@@ -32,15 +32,18 @@ export class SimulatedCrash extends Error {
 }
 
 /**
- * Limiters (design §9): Canvas and the Handbook share one browser limiter, so they never overlap; Ed has its own; both
- * one at a time with 500 ms between starts. One limiter per model provider, four at a time.
+ * Limiters (design §9): one collector limiter per key, one at a time with 500 ms between starts. Every source that
+ * uses the browser (Canvas and the Handbook) has the key `browser`, so they never overlap; Ed has `ed`. One limiter
+ * per model provider, four at a time.
  */
 export function createSyncLimiters({ clock = systemClock, random = Math.random } = {}) {
-  const browser = createLimiter({ concurrency: 1, minIntervalMs: COLLECTOR_INTERVAL_MS, clock, random });
-  const ed = createLimiter({ concurrency: 1, minIntervalMs: COLLECTOR_INTERVAL_MS, clock, random });
+  const collectors = new Map();
   const models = new Map();
   return {
-    collect: source => (source === 'ed' ? ed : browser),
+    collect(key) {
+      if (!collectors.has(key)) collectors.set(key, createLimiter({ concurrency: 1, minIntervalMs: COLLECTOR_INTERVAL_MS, clock, random }));
+      return collectors.get(key);
+    },
     model(provider) {
       if (!models.has(provider)) models.set(provider, createLimiter({ concurrency: MODEL_CONCURRENCY, clock, random }));
       return models.get(provider);
@@ -84,15 +87,25 @@ export async function codexChildUsage(parentId, start) {
 const codeError = code => new Error(code);
 
 /**
- * `deps`: `store` (an open sync store), `projectDir`, `desktopDir`, and optionally `env`, `runCollector`, `callModel`,
- * `resolveModel`, `childUsage`, `clock` ({ now, sleep }), `random`, `limiters`, `hooks` ({ beforeStage, afterCheckpoint,
- * afterMergeWrite }) and `newId`.
+ * `deps`: `store` (an open sync store), `projectDir`, `desktopDir`, and optionally `env`, `setup` (settings,
+ * institution, sources and source context; default today's UniMelb setup), `sources` (replaces the setup's sources,
+ * for tests), `runCollector`, `callModel`, `resolveModel`, `childUsage`, `clock` ({ now, sleep }), `random`,
+ * `limiters`, `hooks` ({ beforeStage, afterCheckpoint, afterMergeWrite }) and `newId`.
  */
 export function createSyncPipeline(deps) {
   const {
     store: rawStore, projectDir, desktopDir, env = process.env, runCollector = spawnCollector, callModel = analyse,
     childUsage = codexChildUsage, clock = systemClock, random = Math.random, hooks = {}, newId = randomUUID,
   } = deps;
+  const baseSetup = deps.setup ?? resolveSourceSetup();
+  const setup = deps.sources ? { ...baseSetup, sources: deps.sources } : baseSetup;
+  const { institution } = setup;
+  /** The source objects of stored ids (a job created before ids were stored used the three UniMelb sources). */
+  const sourcesFor = ids => (ids ?? LEGACY_SOURCE_IDS).map(id => {
+    const source = setup.sources.find(item => item.id === id);
+    if (!source) throw codeError('SOURCES_CHANGED');
+    return source;
+  });
   const resolveModel = deps.resolveModel ?? (() => resolveAnalysisConfig(projectDir, env));
   const limiters = deps.limiters ?? createSyncLimiters({ clock, random });
   const usagePath = join(projectDir, '.local', 'lms', 'course-sync-usage.jsonl');
@@ -193,7 +206,7 @@ export function createSyncPipeline(deps) {
     try { input = JSON.parse(await readFile(join(projectDir, '.local', 'lms', 'courses.json'), 'utf8')); }
     catch { throw codeError('COURSES_UNAVAILABLE'); }
     if (!Array.isArray(input?.courses)) throw codeError('COURSES_UNAVAILABLE');
-    const candidates = filterSubjects(input.courses.filter(item => item && typeof item.id === 'string')).filter(item => codePattern.test(item.subjectCode));
+    const candidates = filterSubjects(input.courses.filter(item => item && typeof item.id === 'string'), institution).filter(item => institution.isSubjectCode(item.subjectCode));
     return { config, candidates };
   }
   async function begin(action) {
@@ -217,9 +230,9 @@ export function createSyncPipeline(deps) {
       const courses = [];
       for (const course of selected) {
         courses.push({ courseId: course.id, code: course.subjectCode, term: typeof course.term === 'string' ? course.term : null,
-          previous: await captureEarlierDocument(store, desktopDir, course) });
+          previous: await captureEarlierDocument(store, desktopDir, course, institution) });
       }
-      return launch({ jobId, config, selected, courses, resumedFrom: null });
+      return launch({ jobId, config, selected, courses, resumedFrom: null, sourceIds: setup.sources.map(source => source.id) });
     });
   }
 
@@ -229,20 +242,23 @@ export function createSyncPipeline(deps) {
       if (!parent) throw codeError('JOB_NOT_FOUND');
       const problem = resumeProblem(parent);
       if (problem) throw codeError(problem);
+      // A resume runs the parent's sources, so its checkpoints and hashes keep matching.
+      const sourceIds = (parent.sources ?? LEGACY_SOURCE_IDS).slice();
+      sourcesFor(sourceIds);
       const { config, candidates } = await prepare();
       const selected = parent.courses.map(course => candidates.find(item => item.id === course.courseId) ?? null);
       const courses = parent.courses.map((course, index) => ({
         courseId: course.courseId, code: selected[index]?.subjectCode ?? course.code, term: selected[index] ? (typeof selected[index].term === 'string' ? selected[index].term : null) : course.term,
         previous: course.previous,
       }));
-      return launch({ jobId: newId(), config, selected, courses, resumedFrom: parent.id });
+      return launch({ jobId: newId(), config, selected, courses, resumedFrom: parent.id, sourceIds });
     });
   }
 
-  async function launch({ jobId, config, selected, courses, resumedFrom }) {
+  async function launch({ jobId, config, selected, courses, resumedFrom, sourceIds }) {
     await io.mkdir(dirname(schemaPath), { recursive: true });
     await io.writeFile(schemaPath, JSON.stringify(courseOutputSchema(), null, 2), { mode: 0o600 });
-    store.createJob({ id: jobId, provider: config.provider, model: config.model, resumedFrom, courses });
+    store.createJob({ id: jobId, provider: config.provider, model: config.model, resumedFrom, sources: sourceIds, courses });
     const startedAt = clock.now();
     try {
       await appendUsage({ type: 'batch_start', runId: jobId, at: new Date(startedAt).toISOString(), courses: courses.map(course => course.code),
@@ -279,6 +295,7 @@ export function createSyncPipeline(deps) {
     const lineageIds = rawStore.lineage(jobId);
     const ctx = {
       store, io, projectDir, desktopDir, jobId, lineageIds, config, limiters, runCollector, callModel, childUsage,
+      institution, sources: sourcesFor(rawStore.getJob(jobId).sources), sourceContext: setup.context,
       schema: courseOutputSchema(), schemaPath, signal: job.controller.signal,
       registerStop(stop) {
         job.stops.add(stop);
