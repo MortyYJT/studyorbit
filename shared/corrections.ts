@@ -339,7 +339,8 @@ export function mergeCorrections(base: Record<string, Fields>, incoming: Record<
       if (sameValue(name, user, before)) {
         if (!isPinned) continue;
         next[name] = user;
-        if (!sameValue(name, after, before)) raised.push(conflict());
+        // A move that still agrees with the owner (e.g. a date-only due and a new time on that day) is no disagreement.
+        if (!sameValue(name, after, before) && !sameValue(name, after, user)) raised.push(conflict());
         continue;
       }
       next[name] = user;

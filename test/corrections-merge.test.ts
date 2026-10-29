@@ -55,6 +55,16 @@ describe('mergeCorrections', () => {
     expect([quiet.corrections, quiet.pins, quiet.conflicts]).toEqual([{ '100:a1': { weight: 30 } }, { '100:a1': ['weight'] }, []]);
   });
 
+  it('a pinned value the sync moves within the same Melbourne day raises no conflict', () => {
+    // A parent form saves date-only dues; the sync converged on that day, then moved the time within it.
+    const group = '100:group:100:g1';
+    const first = merge({ g1: fields({ due: '2026-11-03T12:59:00Z' }) }, { g1: fields({ due: '2026-11-05T12:59:00Z' }) }, state({ [group]: { due: '2026-11-05' } }));
+    expect(first.pins).toEqual({ [group]: ['due'] });
+    const second = merge({ g1: fields({ due: '2026-11-05T12:59:00Z' }) }, { g1: fields({ due: '2026-11-05T06:00:00Z' }) }, first);
+    expect(second.corrections).toEqual({ [group]: { due: '2026-11-05' } });
+    expect(second.conflicts).toEqual([]);
+  });
+
   it('a field the owner left at the base value is dropped so the sync value shows', () => {
     // The edit form resends unchanged fields; one equal to the base is not the owner's change.
     const result = merge({ a1: fields() }, { a1: fields({ weight: 25 }) }, state({ '100:a1': { weight: 20, name: 'Mine' } }));

@@ -73,16 +73,22 @@ const CONFLICT_ID = /^[0-9a-f]{16}$/;
  * Moves a store to a document's `legacyIds` before merging (design §4 step 1, decision #298): keys, references, manual
  * parents and the order list through `migrateLocalKeys`; base entries (an existing new ID wins) and their `parent` values;
  * pins and open conflicts with the corrections they belong to (new key, assessment ID and conflict ID). The pins and
- * conflicts of an old key whose new key already had its own correction are dropped, since that correction is unused.
+ * conflicts of an old key whose new key already had its own correction are dropped, since that correction is unused; its
+ * base entry keeps the old ID, so the merge raises one `orphaned` conflict for it.
  */
 export function moveStoreKeys(store, legacyIds) {
   const { courseId } = store;
   const migration = migrateLocalKeys({ corrections: store.corrections, manual: { [courseId]: store.manual }, order: { [courseId]: store.order }, work: [] }, courseId, legacyIds);
   const rename = key => migrateKey(key, courseId, legacyIds);
+  // A base entry whose correction was left in place (its new key has its own correction) keeps its old ID, so the merge
+  // sees that assessment leave the sync and flags the unused correction once (decision #393); the new key's correction
+  // was not made against it.
+  const keysOf = id => [`${courseId}:${id}`, `${courseId}:group:${courseId}:${id}`];
+  const stays = id => keysOf(id).some(key => Object.hasOwn(migration.superseded, key)) && !keysOf(id).some(key => Object.hasOwn(migration.moved, key));
   const assessments = {};
   for (const [id, fields] of Object.entries(store.base.assessments)) {
     const target = rename(`${courseId}:${id}`).slice(courseId.length + 1);
-    const next = Object.hasOwn(store.base.assessments, target) || Object.hasOwn(assessments, target) ? id : target;
+    const next = stays(id) || Object.hasOwn(store.base.assessments, target) || Object.hasOwn(assessments, target) ? id : target;
     assessments[next] = typeof fields.parent === 'string' ? { ...fields, parent: rename(fields.parent) } : fields;
   }
   const keyOf = key => migration.moved[key] ?? key;
@@ -152,9 +158,9 @@ export function createCorrectionsStore({ projectDir, loadDocument, now = () => n
     if (!document) return current;
     const digest = digestOf(document);
     if (digest === current.base.digest) return current;
+    const at = now().toISOString();
     const moved = document.version === 2 && document.legacyIds ? moveStoreKeys(current, document.legacyIds) : current;
     const incoming = assessmentFields(document, courseId);
-    const at = now().toISOString();
     const merged = mergeCorrections(moved.base.assessments, incoming, moved, at);
     const next = { ...moved, revision: current.revision + 1, base: { digest, assessments: incoming }, ...merged, updatedAt: at };
     if (!StoreSchema.safeParse(next).success) throw new CorrectionsError('CORRECTIONS_UNAVAILABLE');

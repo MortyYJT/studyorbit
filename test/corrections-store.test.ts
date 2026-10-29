@@ -347,6 +347,22 @@ describe('reconcile on read (PR 2)', () => {
     expect(view.conflicts.every(conflict => conflict.key !== '100:a1' || conflict.type === 'orphaned')).toBe(true);
   });
 
+  it('flags an old key left unused because its new key has its own correction, once', async () => {
+    const documents: Record<string, CourseDocument> = { 100: docOf([item('a1')]) };
+    const store = storeWith(documents);
+    await save(store, 0, { '100:a1': { weight: 30 }, '100:canvas:5551': { name: 'Own' } });
+    documents[100] = v2Of([item('canvas:5551')], { a1: 'canvas:5551' });
+    const view = await store.read('100');
+    expect(view.corrections).toEqual({ '100:a1': { weight: 30 }, '100:canvas:5551': { name: 'Own' } });
+    expect(view.conflicts.map(conflict => [conflict.type, conflict.key])).toEqual([['orphaned', '100:a1']]);
+    expect(view.conflicts[0]).toMatchObject({ assessmentId: 'a1', user: { weight: 30 }, base: { name: 'Synthetic a1' } });
+    // 「保留」, then another sync: not raised again.
+    const kept = await store.resolve('100', view.conflicts[0]!.id, { revision: view.revision, choice: 'mine' });
+    documents[100] = v2Of([item('canvas:5551', { weight: 25 })], { a1: 'canvas:5551' });
+    expect((await store.read('100')).conflicts).toEqual([]);
+    expect(kept.corrections['100:a1']).toEqual({ weight: 30 });
+  });
+
   it('keeps every owner correction in effect across several syncs, including pins and a legacyIds rename', async () => {
     const documents: Record<string, CourseDocument> = { 100: docOf([
       item('a1', { name: 'Essay' }), item('a2', { weight: 15 }), item('g1', { name: 'Quizzes', weight: 10 }), item('q1', { parentId: 'g1', weight: null }), item('a4', { weight: 0 }),

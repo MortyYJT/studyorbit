@@ -6,7 +6,7 @@ import type { RevisionNote } from '../../scripts/lib/revision-store.mjs';
 import { CourseDocumentSchema, toDisplayDocument } from '../../shared/course-data.js';
 import { bandTargets, calculateGrades, finalNeeded, parentGrade, type Band } from '../../shared/course-calculations.js';
 import { parseAvailability, schedulePlan } from '../../shared/planning.js';
-import { importCourse, migrateStoredKeys, migrationPlan, storageKeys, writeCourseSlice, type CorrectionsRequest, type CourseSlice } from './local-stores.js';
+import { applyChoiceToSlice, importCourse, migrateStoredKeys, migrationPlan, storageKeys, writeCourseSlice, type CorrectionsRequest, type CourseSlice } from './local-stores.js';
 import type { Conflict, CorrectionsView } from '../../shared/corrections.js';
 
 type RecordValue = Record<string, unknown>;
@@ -386,7 +386,13 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       try {
         const response = await fetch(`/api/local/corrections/${id}/conflicts/${conflict.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: revisions.current[id] ?? 0, choice }) });
         const body = await response.json().catch(() => null) as (CorrectionsView & { current?: CorrectionsView }) | null;
-        if (response.ok && body && typeof body.revision === 'number') { adopt(id, body, JSON.stringify(sliceOf(latest.current, id)) === before); setCorrectionsNotice(notice => notice === 'resolve' ? '' : notice); return; }
+        if (response.ok && body && typeof body.revision === 'number') {
+          const unchanged = JSON.stringify(sliceOf(latest.current, id)) === before;
+          adopt(id, body, unchanged);
+          // Newer edits are waiting to be sent: apply the choice to them too, so that save does not restore the old value.
+          if (!unchanged) commit(withSlice(latest.current, id, applyChoiceToSlice(sliceOf(latest.current, id), conflict, choice)));
+          setCorrectionsNotice(notice => notice === 'resolve' ? '' : notice); return;
+        }
         if (response.status === 409 && body?.current) { adopt(id, body.current, true); setCorrectionsNotice('refreshed'); return; }
         throw new Error('resolve failed');
       } catch { setCorrectionsNotice('resolve'); }
