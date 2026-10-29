@@ -51,7 +51,7 @@ npm run dev
 - `npm run check`：类型检查加 `test/` 下的 vitest 测试，与 CI 相同。成绩、「期末需要」和排期是 `shared/` 里的纯函数，测试只用合成数据。
 - `npm run build`：构建静态资源。**静态构建不包含同步、对话和复习笔记接口**，它们只在 Vite 开发服务器里。
 - 代码结构见 [项目结构和数据流](docs/overview.md)，脚本见 [scripts/README.md](scripts/README.md)；课程 JSON 契约见 [docs/course-json.md](docs/course-json.md)，分析提示词见 [docs/course-sync-prompt.md](docs/course-sync-prompt.md)；现行规格在 `openspec/specs/`。
-- 协作规则见 [AGENTS.md](AGENTS.md) 和 [CONTRIBUTING.md](CONTRIBUTING.md)；决定记录在 `note/decisions.md`，进度见 [路线图](note/product/roadmap.md)，当前交接在 [note/handoff.md](note/handoff.md)。
+- 开发规则见 [CLAUDE.md](CLAUDE.md)；决定记录在 `note/decisions.md`，进度见 [路线图](note/product/roadmap.md)，当前交接在 [note/handoff.md](note/handoff.md)。
 
 ## 实验记录
 
