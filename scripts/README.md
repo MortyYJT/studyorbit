@@ -9,6 +9,7 @@
 | `edstem-scores.mjs` | 只读获取本人最终提交成绩，供 Ed 采集器使用 |
 | `collect-handbook.mjs` | 在 Edge 后台读取对应年份的 Handbook 考核页 |
 | `course-sync-runner.mjs` | 串行采集、并行模型整理、本地校验、取消、保存和用量 |
+| `dsh-attach-session.mjs` | 协作工具：把 dsh 无界面会话归到 DeepSeek Harness 的项目下（见 dispatch 流程），与应用无关 |
 | `lib/course-list.mjs` | Canvas JSON 解析与课程代码筛选 |
 | `lib/course-analysis.mjs` | 统一提示词及模型输出 Schema |
 | `lib/course-reports.mjs` | 读取已选课程和桌面课程文件夹里最新的有效课程 JSON |
