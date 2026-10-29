@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CourseChangeSchema, courseDismissAt, diffSnapshots, unseenChanges, type CourseChange } from '../shared/course-changes.js';
 import type { CourseDocumentV1, CourseDocumentV2 } from '../shared/course-data.js';
 
-// Scenarios from openspec/changes/local-corrections-merge/specs/course-change-log/spec.md. Synthetic data only.
+// Scenarios from openspec/specs/course-change-log/spec.md. Synthetic data only.
 type V1Item = CourseDocumentV1['assessments'][number];
 const item = (id: string, patch: Partial<V1Item> = {}): V1Item => ({
   id, name: `Synthetic ${id}`, kind: 'assignment', nature: 'regular', parentId: null, weight: 20, score: null, maxScore: null,

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { appendCourseChanges, createCourseChangesHandler, readCourseChanges, recordCourseChanges } from '../scripts/lib/course-changes-log.mjs';
 import type { CourseDocumentV1, CourseDocumentV2 } from '../shared/course-data.js';
 
-// Scenarios from openspec/changes/local-corrections-merge/specs/course-change-log/spec.md (PR 3). Synthetic data only.
+// Scenarios from openspec/specs/course-change-log/spec.md (PR 3). Synthetic data only.
 let dir: string;
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'course-changes-')); });
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); });

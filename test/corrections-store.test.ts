@@ -10,7 +10,7 @@ import { conflictId, type CorrectionsView } from '../shared/corrections.js';
 type Imported = { imported: true; store: CorrectionsView };
 import type { CourseDocument, CourseDocumentV1, CourseDocumentV2 } from '../shared/course-data.js';
 
-// Scenarios from openspec/changes/local-corrections-merge/specs/local-corrections/spec.md (PR 1). Synthetic data only.
+// Scenarios from openspec/specs/local-corrections/spec.md (PR 1). Synthetic data only.
 let dir: string;
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'corrections-store-')); });
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); });

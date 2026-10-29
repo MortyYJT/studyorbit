@@ -6,7 +6,7 @@ import {
 } from '../shared/corrections.js';
 import type { CourseDocumentV1, CourseDocumentV2 } from '../shared/course-data.js';
 
-// Synthetic course IDs, names and dates only (openspec/changes/local-corrections-merge, PR 1).
+// Synthetic course IDs, names and dates only (openspec/changes/archive/2026-10-29-local-corrections-merge, PR 1).
 const source = (url: string | null) => ({ platform: 'canvas' as const, url, evidence: null });
 const v1Item = (id: string, patch: Partial<CourseDocumentV1['assessments'][number]> = {}): CourseDocumentV1['assessments'][number] => ({
   id, name: `Synthetic ${id}`, kind: 'assignment', nature: 'regular', parentId: null, weight: 20, score: null, maxScore: null,

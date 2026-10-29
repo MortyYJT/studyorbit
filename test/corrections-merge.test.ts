@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { conflictId, mergeCorrections, resolveConflict, type Conflict, type Correction, type Fields } from '../shared/corrections.js';
 
-// Three-way merge scenarios from openspec/changes/local-corrections-merge (PR 2, tasks 2.1, 2.2 and 2.4). Synthetic data only.
+// Three-way merge scenarios from openspec/changes/archive/2026-10-29-local-corrections-merge (PR 2, tasks 2.1, 2.2 and 2.4). Synthetic data only.
 const at = '2026-10-30T02:00:00.000Z';
 const fields = (patch: Partial<Fields> = {}): Fields => ({
   name: 'Synthetic', kind: 'assignment', nature: 'regular', weight: 20, score: null, outOf: null, due: '2026-11-03T12:59:00Z',

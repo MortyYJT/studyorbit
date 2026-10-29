@@ -6,7 +6,7 @@
 - **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）、#247（全局清理，#239）；规则精简为单一文件 `CLAUDE.md`（#241）。
 - **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，本地 `origin` 已指向新地址），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
 - **OpenSpec：** `course-contract-v2` 已全部合并并归档（PR #259、#262、#265、#266）。`local-corrections-merge`（#290–#298）：第 1 部分（`.local/corrections/` 存储、接口、localStorage 一次性迁移，决定 #375–#384）PR #269、第 2 部分（三方合并和冲突，决定 #385–#394）PR #271 已合并；第 3 部分（变更记录和提醒，分支 `claude/change-log`，决定 #410–#414）已开 PR 待审查合并，该 PR 里已把整个变更归档到 `openspec/changes/archive/`，规格并入 `openspec/specs/`（`local-corrections`、`course-change-log`）。另有 `local-server-sync-pipeline`、`chat-tools-mcp` 已立项。
-- **现行规格：** 在 `openspec/specs/`（`grade-target`、`revision`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
+- **现行规格：** 在 `openspec/specs/`（`course-analysis`、`course-contract`、`course-change-log`、`grade-target`、`local-corrections`、`revision`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
 
 ## 已完成
 

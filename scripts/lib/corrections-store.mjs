@@ -1,4 +1,4 @@
-// The owner's corrections store (openspec/changes/local-corrections-merge, decisions #290-#298): one file per course in
+// The owner's corrections store (openspec/changes/archive/2026-10-29-local-corrections-merge, decisions #290-#298): one file per course in
 // the ignored `.local/corrections/<courseId>.json` (0600 in a 0700 directory), written atomically, read-modify-write
 // serialised per file, and never overwritten when it cannot be read. Also the HTTP handler for `/api/local/corrections`,
 // kept here so the server that mounts it (Vite today, the standalone local server later) only wires it in.

@@ -24,9 +24,9 @@ Prerequisite: course-contract-v2 PR 2 (stable IDs, `legacyIds`, the newest valid
 
 ## 3. Change log and reminder (PR 3)
 
-- [x] 3.1 Tests then `diffSnapshots(previous, current)` in `shared/course-changes.ts`: due moved, same instant in another notation, weight changed, weight to and from `null`, pairing through `legacyIds` (v1 → v2), score/status/name changes ignored, added and removed assessments ignored, output order (PR #PR3)
-- [x] 3.2 Runner: after saving a course file, diff against the newest valid earlier document and append lines to `.local/lms/changes.jsonl` (0700/0600); nothing for a first sync; append failure adds 「变更记录写入失败。」 to the reason only; test with synthetic documents and a temp project dir (PR #PR3)
-- [x] 3.3 Tests then the change-log reader and `GET /api/local/course-changes`: newest 200 first, malformed and schema-failing lines skipped, missing file → empty list (PR #PR3)
-- [x] 3.4 Page: unseen changes (after `coursework.course-changes-seen.v1`) in 「需要你处理」 and at the top of the course page; 「知道了」 sets the marker to the newest `at` shown; empty values shown as 「未知」 (PR #PR3)
-- [x] 3.5 Update `docs/` (local data layout and the corrections/changes files) and `note/handoff.md` (PR #PR3)
-- [ ] 3.6 `bash .claude/check.sh`; real-browser check of a synthetic re-sync with a moved due date; fresh-context review; record the PR number here; archive the change after PR 3 merges
+- [x] 3.1 Tests then `diffSnapshots(previous, current)` in `shared/course-changes.ts`: due moved, same instant in another notation, weight changed, weight to and from `null`, pairing through `legacyIds` (v1 → v2), score/status/name changes ignored, added and removed assessments ignored, output order (PR #274)
+- [x] 3.2 Runner: after saving a course file, diff against the newest valid earlier document and append lines to `.local/lms/changes.jsonl` (0700/0600); nothing for a first sync; append failure adds 「变更记录写入失败。」 to the reason only; test with synthetic documents and a temp project dir (PR #274)
+- [x] 3.3 Tests then the change-log reader and `GET /api/local/course-changes`: newest 200 first, malformed and schema-failing lines skipped, missing file → empty list (PR #274)
+- [x] 3.4 Page: unseen changes (after `coursework.course-changes-seen.v1`) in 「需要你处理」 and at the top of the course page; 「知道了」 sets the marker to the newest `at` shown; empty values shown as 「未知」 (PR #274)
+- [x] 3.5 Update `docs/` (local data layout and the corrections/changes files) and `note/handoff.md` (PR #274)
+- [x] 3.6 `bash .claude/check.sh`; real-browser check of a synthetic re-sync with a moved due date; fresh-context review; record the PR number here; archive the change after PR 3 merges (PR #274; archived in the same PR at the coordinator's request, decision #414)
