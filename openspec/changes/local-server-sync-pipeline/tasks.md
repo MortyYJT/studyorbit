@@ -14,12 +14,12 @@ Prerequisites: PR 1 can start now. PR 3 needs `course-contract-v2` PR 2 (#262) m
 
 ## 2. SQLite store (PR 2)
 
-- [ ] 2.1 `package.json` `engines.node` → `>=24.15.0`
-- [ ] 2.2 Tests then `scripts/lib/sync-store.mjs` (+ `.d.mts`) open: `.local/` 0700, database pre-created 0600 and an existing 0644 file repaired, WAL, busy timeout; real files in a temporary directory
-- [ ] 2.3 Tests then migrations: fresh database to the latest `user_version`; a failing migration rolls back and keeps the old version; backup to `.local/studyorbit.db.v<n>.bak` (0600) before upgrading a non-empty database; newer `user_version`, non-database bytes and migration failure make the store unavailable without changing the file
-- [ ] 2.4 Tests then the data API: create job and courses, update course state, write and read stage checkpoints, `INSERT OR IGNORE` artifacts by sha256, snapshots unique per job and course, lineage lookup by (course, stage, input hash) limited to 20 ancestors, newest job, newest 20 jobs
-- [ ] 2.5 Tests then startup maintenance: running jobs, stages and courses → `interrupted`; retention prunes whole lineages (newest 50 kept, lineages with a running job kept, a parent with a kept child never deleted alone, no foreign key error) and unreferenced artifacts; run directories untouched
-- [ ] 2.6 Tests then the single-instance lock in `server/main.ts`: live PID refused with 「另一个 StudyOrbit 本地服务正在运行」, stale lock replaced, lock removed on exit; store unavailable → sync routes `503 SYNC_STORE_UNAVAILABLE`, other routes work
+- [x] 2.1 `package.json` `engines.node` → `>=24.15.0`
+- [x] 2.2 Tests then `scripts/lib/sync-store.mjs` (+ `.d.mts`) open: `.local/` 0700, database pre-created 0600 and an existing 0644 file repaired, WAL, busy timeout; real files in a temporary directory
+- [x] 2.3 Tests then migrations: fresh database to the latest `user_version`; a failing migration rolls back and keeps the old version; backup to `.local/studyorbit.db.v<n>.bak` (0600) before upgrading a non-empty database; newer `user_version`, non-database bytes and migration failure make the store unavailable without changing the file
+- [x] 2.4 Tests then the data API: create job and courses, update course state, write and read stage checkpoints, `INSERT OR IGNORE` artifacts by sha256, snapshots unique per job and course, lineage lookup by (course, stage, input hash) limited to 20 ancestors, newest job, newest 20 jobs
+- [x] 2.5 Tests then startup maintenance: running jobs, stages and courses → `interrupted`; retention prunes whole lineages (newest 50 kept, lineages with a running job kept, a parent with a kept child never deleted alone, no foreign key error) and unreferenced artifacts; run directories untouched
+- [ ] 2.6 Tests then the single-instance lock in `server/main.ts`: live PID refused with 「另一个 StudyOrbit 本地服务正在运行」, stale lock replaced, lock removed on exit; store unavailable → sync routes `503 SYNC_STORE_UNAVAILABLE`, other routes work. Lock helper and its tests done in `scripts/lib/server-lock.mjs` (decision #406); wiring into `server/main.ts` and the `503` route wait for PR 1
 - [ ] 2.7 `bash .claude/check.sh`; fresh-context review; record the PR number here
 
 ## 3. Staged pipeline (PR 3)
