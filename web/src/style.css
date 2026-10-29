@@ -186,7 +186,7 @@ legend { padding:0; margin-bottom:8px; font-size:13px; font-weight:500; }
 .needs-line { width:100%; justify-content:flex-start; gap:10px; min-height:40px; margin-bottom:16px; padding:0 14px; border-color:var(--border); border-radius:var(--radius); font-size:13px; }
 .needs-line-go { margin-left:auto; color:var(--muted); }
 .needs { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:0 16px; margin:0 0 20px; }
-.needs > h2 { padding-top:14px; font-size:14px; }
+.needs > h2, .needs-head > h2 { padding-top:14px; font-size:14px; }
 
 /* Dialogs float, so they alone carry a shadow. */
 dialog { color:var(--text); background:var(--surface); border:1px solid var(--border); border-radius:12px; width:min(620px,calc(100% - 24px)); max-height:calc(100dvh - 32px); padding:0 24px 24px; overflow:auto; overflow-wrap:anywhere; box-shadow:0 24px 64px rgba(0,0,0,.14); }
@@ -755,6 +755,8 @@ small.block { display:block; line-height:1.4; }
 .needs { display:grid; gap:0; padding-bottom:8px; }
 .needs .needs-line { display:flex; align-items:center; border:0; border-top:1px solid var(--rule); border-radius:0; margin:0; padding:0 4px; text-align:left; }
 .needs .needs-line span:not(.needs-line-go) { flex:1; min-width:0; }
+/* Long lines (course changes with two dates) wrap instead of widening the list on narrow screens. */
+.needs .needs-line { white-space:normal; overflow-wrap:anywhere; padding-top:8px; padding-bottom:8px; }
 .task-list { margin-top:20px; }
 .task-list > summary { display:flex; align-items:center; list-style:none; cursor:pointer; padding:10px 8px; color:var(--muted); font-size:13px; border-bottom:1px solid var(--border); }
 .task-list > summary::-webkit-details-marker { display:none; }
@@ -776,6 +778,11 @@ small.block { display:block; line-height:1.4; }
 .weight-legend .unsourced-row i { border:1px dashed var(--muted); background:transparent; }
 /* Sync conflicts on the course page and their mark in the drawer (local-corrections-merge, decision #293). */
 .sync-conflicts { padding:14px 18px 6px; margin-bottom:20px; border-color:var(--signal); }
+.course-changes { padding:14px 18px 6px; margin-bottom:20px; }
+.course-changes-head, .needs-head { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.course-changes-head h2 { font-size:14px; margin:0; }
+.course-changes > p { font-size:12px; margin:4px 0 6px; }
+.change-row { border-top:1px solid var(--rule); padding:10px 0; font-size:13px; overflow-wrap:anywhere; }
 .sync-conflicts > h2 { font-size:14px; margin:0 0 4px; }
 .sync-conflicts > p { font-size:12px; margin:0 0 6px; }
 .conflict-row { display:flex; justify-content:space-between; align-items:center; gap:12px; border-top:1px solid var(--rule); padding:10px 0; font-size:13px; overflow-wrap:anywhere; }

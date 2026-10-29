@@ -9,6 +9,7 @@ import { filterSubjects } from './lib/course-list.mjs';
 import { courseOutputSchema, buildAnalysisPrompt } from './lib/course-analysis.mjs';
 import { analyseWithRepair, settleCourse, validateAnalysis } from './lib/course-validation.mjs';
 import { newestCourseDocument } from './lib/course-reports.mjs';
+import { recordCourseChanges } from './lib/course-changes-log.mjs';
 import { configProblem, resolveAnalysisConfig } from './lib/llm-config.mjs';
 import { analyse, counts } from './lib/llm-providers.mjs';
 
@@ -193,6 +194,9 @@ export function createCourseSyncRunner(projectDir) {
         if (settled.document) {
           await writeFile(outputPath, `${JSON.stringify(settled.document, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
           row.file = outputPath;
+          // Due and weight changes against the earlier document go to `.local/lms/changes.jsonl` (decision #296); a
+          // failure only adds a note to the reason. The staged pipeline will move this call into its merge stage.
+          await recordCourseChanges(projectDir, { at: new Date().toISOString(), runId, courseId: course.id, previous, current: settled.document }, row);
         }
         try {
           await mkdir(dirname(usagePath), { recursive: true, mode: 0o700 });

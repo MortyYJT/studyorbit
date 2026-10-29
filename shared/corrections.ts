@@ -1,5 +1,5 @@
 /**
- * The owner's corrections store in `.local/corrections/<courseId>.json` (openspec/changes/local-corrections-merge,
+ * The owner's corrections store in `.local/corrections/<courseId>.json` (openspec/changes/archive/2026-10-29-local-corrections-merge,
  * decisions #290-#298): schemas, the correction vocabulary of a synced course document, value equality, and the
  * normalisation that keeps only the fields the owner actually changed.
  *
