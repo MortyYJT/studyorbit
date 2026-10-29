@@ -99,6 +99,8 @@ describe('server/main.ts', () => {
 
   it('stops on SIGINT too', async () => {
     const started = run(env());
+    // Signal right after the listening line: main() installs its handlers before printing it, so this cannot hit
+    // the default action (exit code null, killed by the signal).
     await started.listening;
     started.child.kill('SIGINT');
     expect(await started.exited).toBe(0);
