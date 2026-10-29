@@ -6,8 +6,8 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { filterSubjects } from './lib/course-list.mjs';
-import { CourseDocumentSchema } from '../shared/course-data.ts';
 import { courseOutputSchema, buildAnalysisPrompt } from './lib/course-analysis.mjs';
+import { analyseWithRepair, settleCourse, validateAnalysis } from './lib/course-validation.mjs';
 import { configProblem, resolveAnalysisConfig } from './lib/llm-config.mjs';
 import { analyse, counts } from './lib/llm-providers.mjs';
 
@@ -157,44 +157,16 @@ export function createCourseSyncRunner(projectDir) {
           handbook: JSON.parse(await readFile(handbookPath, 'utf8')),
         });
         if (cancelled) { row.status = 'cancelled'; return; }
-        let result, report, parsed;
-        const attempts = [];
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const repair = attempt ? `\n上次输出未通过校验，请只修复并完整返回符合 Schema 的 JSON。错误：${JSON.stringify(result.issues)}\n上次输出：${result.lastMessage}` : '';
-          result = await analyse(analysisConfig, instructions + repair, { schema, schemaPath, cwd: projectDir, registerStop: trackStop, onPhase: () => { row.phase = 'analysis'; } });
-          try { report = JSON.parse(result.lastMessage); } catch { report = null; }
-          parsed = CourseDocumentSchema.safeParse(report?.document);
-          result.issues = parsed.success ? [] : parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`);
-          if (parsed.success) {
-            const items = parsed.data.assessments;
-            for (const [index, item] of items.entries()) {
-              const children = items.filter(child => child.parentId === item.id && child.nature === 'regular');
-              if (item.scoring !== 'none' && (item.parentId !== null || children.length === 0)) result.issues.push(`assessments.${index}.scoring: 只有有计分子项的顶层父项可使用 points 或 weighted`);
-              if (item.scoring === 'weighted' && children.some(child => child.weight === null || child.weight <= 0)) result.issues.push(`assessments.${index}.scoring: weighted 要求每个计分子项有明确正权重`);
-              if (!children.length && item.score !== null && item.maxScore !== null) {
-                const lessons = Array.isArray(edData.lessons) ? edData.lessons : [];
-                const scores = Array.isArray(edData.scores) ? edData.scores : [];
-                const matched = lessons.filter(lesson => item.sources.some(source => source.platform === 'ed' && source.url === lesson.url))
-                  .flatMap(lesson => scores.filter(score => String(score.lessonId) === String(lesson.id) && score.status === 'graded'));
-                const canvasMatches = (Array.isArray(canvasData.assignments) ? canvasData.assignments : []).some(assignment =>
-                  item.sources.some(source => source.platform === 'canvas' && source.url === assignment.html_url)
-                  && assignment.submission?.score === item.score && assignment.points_possible === item.maxScore);
-                if (matched.length === 1 && matched[0].score === item.score && matched[0].maxScore !== item.maxScore && !canvasMatches)
-                  result.issues.push(`assessments.${index}: Ed 已得 ${matched[0].score}/${matched[0].maxScore}，请使用同一来源的得分和满分`);
-              }
-            }
-          }
-          const validReport = report && typeof report.reason === 'string' && ['completed', 'partial', 'failed'].includes(report.status) && (report.status === 'failed' ? report.document === null : parsed.success && result.issues.length === 0 && parsed.data.course.id === course.id && parsed.data.course.code === course.subjectCode);
-          if (!validReport && !result.issues.length) result.issues = ['结果格式或课程身份不匹配'];
-          attempts.push({ exitCode: result.exitCode, raw: result.lastMessage, issues: result.issues, usage: result.usage });
-          if (result.exitCode !== 0 || cancelled || validReport) break;
-        }
+        const { result, validation, attempts } = await analyseWithRepair({
+          instructions,
+          run: prompt => analyse(analysisConfig, prompt, { schema, schemaPath, cwd: projectDir, registerStop: trackStop, onPhase: () => { row.phase = 'analysis'; } }),
+          validate: raw => validateAnalysis(raw, { course, canvas: canvasData, ed: edData }),
+          isCancelled: () => cancelled,
+        });
         if (attempts.length > 1) {
           const diagnosticDir = join(projectDir, '.local', 'lms', 'sync-errors');
           await mkdir(diagnosticDir, { recursive: true, mode: 0o700 });
           await writeFile(join(diagnosticDir, `${runId}-${course.id}-attempts.json`), JSON.stringify(attempts, null, 2), { mode: 0o600 });
-          if (attempts.every(item => item.usage)) result.usage = Object.fromEntries(['input', 'cached', 'output', 'reasoning'].map(key => [key, attempts.every(item => Number.isSafeInteger(item.usage[key])) ? attempts.reduce((sum, item) => sum + item.usage[key], 0) : null]));
-          else result.usage = null;
         }
         phaseDurations.analysisMs = Date.now() - analysisStarted;
         if (cancelled) {
@@ -207,29 +179,20 @@ export function createCourseSyncRunner(projectDir) {
         row.phase = 'saving';
         const child = await childUsage(result.threadId, start);
         if (cancelled) { row.status = 'cancelled'; return; }
-        const allowed = ['completed', 'partial', 'failed'];
-        const validCourse = parsed.success && result.issues.length === 0 && parsed.data.course.id === course.id && parsed.data.course.code === course.subjectCode;
-        if (result.exitCode === 0 && report && typeof report.reason === 'string' && allowed.includes(report.status) && (report.status === 'failed' ? report.document === null : validCourse)) {
-          row.status = report.status;
-          row.reason = typeof report.reason === 'string' ? report.reason.slice(0, 500) : '';
-          if (canvas.code !== 0 || canvasData.paginationVerified === false || ed.code !== 0 || edData.status === 'partial' || handbook.code !== 0) { if (row.status === 'completed') row.status = 'partial'; row.reason = `${canvas.code !== 0 ? 'Canvas 数据未能读取；' : canvasData.paginationVerified === false ? 'Canvas 分页未验证；' : ''}${ed.code !== 0 ? 'Ed 数据未能读取；' : edData.status === 'partial' ? '部分 Ed 数据未能读取；' : ''}${handbook.code !== 0 ? 'Handbook 数据未能读取；' : ''}${row.reason}`; }
-          if (report.status === 'failed') {
-            const diagnosticDir = join(projectDir, '.local', 'lms', 'sync-errors');
-            await mkdir(diagnosticDir, { recursive: true, mode: 0o700 });
-            await writeFile(join(diagnosticDir, `${runId}-${course.id}.json`), JSON.stringify({ raw: result.lastMessage, issues: [] }, null, 2), { mode: 0o600 });
-          }
-          if (report.status !== 'failed' && parsed.success) {
-            await writeFile(outputPath, `${JSON.stringify(parsed.data, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
-            row.file = outputPath;
-          }
-        } else {
+        const settled = settleCourse({ result, validation, collection: {
+          canvasFailed: canvas.code !== 0, canvasUnpaginated: canvasData.paginationVerified === false,
+          edFailed: ed.code !== 0, edPartial: edData.status === 'partial', handbookFailed: handbook.code !== 0,
+        } });
+        row.status = settled.status;
+        row.reason = settled.reason;
+        if (settled.diagnostic) {
           const diagnosticDir = join(projectDir, '.local', 'lms', 'sync-errors');
           await mkdir(diagnosticDir, { recursive: true, mode: 0o700 });
-          const issues = result.issues;
-          await writeFile(join(diagnosticDir, `${runId}-${course.id}.json`), JSON.stringify({ raw: result.lastMessage, issues }, null, 2), { mode: 0o600 });
-          row.status = 'failed';
-          row.reason = result.exitCode !== 0 ? result.error || '模型任务未正常完成，请检查模型配置及连接。'
-            : issues.length ? `课程数据校验失败：${issues.slice(0, 3).join('；')}` : '课程结果缺失或课程身份不匹配。';
+          await writeFile(join(diagnosticDir, `${runId}-${course.id}.json`), JSON.stringify(settled.diagnostic, null, 2), { mode: 0o600 });
+        }
+        if (settled.document) {
+          await writeFile(outputPath, `${JSON.stringify(settled.document, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+          row.file = outputPath;
         }
         try {
           await mkdir(dirname(usagePath), { recursive: true, mode: 0o700 });
