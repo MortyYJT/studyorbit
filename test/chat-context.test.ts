@@ -62,6 +62,19 @@ describe('buildChatContext', () => {
     expect(buildChatContext([toDisplayDocument(synthetic)], { today: '2026-10-29' })).toBe(expected);
   });
 
+  it('marks weights and rules cleared as unsourced', () => {
+    const v2: CourseDocument = { ...synthetic, version: 2, legacyIds: {},
+      assessments: synthetic.assessments.map(entry => ({ ...entry, refs: [], weightQuote: null, ruleQuote: null, unsourced: [] as ('weight' | 'rule')[],
+        ...(entry.id === 'exam' ? { weight: null, rule: null, unsourced: ['weight', 'rule'] as ('weight' | 'rule')[] } : {}),
+        ...(entry.id === 'a1' ? { weightQuote: 'Assignment 1 Week 6 20%' } : {}) })) };
+    const text = buildChatContext([v2], { today: '2026-10-29' });
+    expect(text).toMatch(/Final exam｜考试｜权重无出处｜.*规则无出处/);
+    expect(text).not.toMatch(/Assignment 1.*无出处/);
+    expect(text).toMatch(/Assignment 1.*权重 20%/);
+    expect(text).toContain('无出处');
+    expect(buildChatContext([synthetic], { today: '2026-10-29' })).not.toContain('无出处');
+  });
+
   it('caps the text and appends a truncation note', () => {
     const many = doc('syn-big', 'SYN30003', Array.from({ length: 2000 }, (_, index) => item({ id: `t${index}`, name: `Synthetic task number ${index} with a long name`, weight: 0.01 })));
     const text = buildChatContext([many], { today: '2026-10-29', courseIds: ['syn-big'] });

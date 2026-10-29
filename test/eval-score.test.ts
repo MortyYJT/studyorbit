@@ -98,6 +98,38 @@ describe('scoreDocument', () => {
     expect(score.mismatches).toEqual([{ goldId: 'q2', field: 'parentId', expected: 'group', actual: 'a1' }]);
   });
 
+  it('matches a v1 gold item to a v2 item by the Canvas assignment in its source URL', () => {
+    const gold1 = doc([item('a1', { name: 'Assignment 1', sources: [{ platform: 'canvas', url: 'https://canvas.example.edu/courses/12/assignments/5551', evidence: null }] })]);
+    const run = doc([item('canvas:5551', { name: 'Project report', refs: [{ platform: 'canvas', id: '5551' }] })]);
+    expect(matchAssessments(gold1.assessments, run.assessments).map(pair => pair.predicted?.id)).toEqual(['canvas:5551']);
+  });
+
+  it('matches platform-shaped v1 IDs, trying a bare number as Canvas then Ed', () => {
+    const gold1 = doc([item('77', { name: 'Lesson quiz' }), item('canvas-9', { name: 'Essay' }), item('ed:12', { name: 'Lab' })]);
+    const run = doc([
+      item('ed:77', { name: 'Ed quiz', refs: [{ platform: 'ed', id: '77' }] }),
+      item('canvas:9', { name: 'Final essay', refs: [{ platform: 'canvas', id: '9' }] }),
+      item('ed:12', { name: 'Lab work', refs: [{ platform: 'ed', id: '12' }] }),
+    ]);
+    expect(matchAssessments(gold1.assessments, run.assessments).map(pair => pair.predicted?.id)).toEqual(['ed:77', 'canvas:9', 'ed:12']);
+    const both = doc([item('ed:77', { name: 'Ed', refs: [{ platform: 'ed', id: '77' }] }), item('canvas:77', { name: 'Canvas', refs: [{ platform: 'canvas', id: '77' }] })]);
+    expect(matchAssessments([gold1.assessments[0]], both.assessments)[0].predicted?.id).toBe('canvas:77');
+  });
+
+  it('prefers an equal id, then platform identity, then the name slug, one to one', () => {
+    const gold1 = doc([
+      item('canvas:1', { name: 'A' }),
+      item('b', { name: 'Shared name', sources: [{ platform: 'ed', url: 'https://edstem.example.org/courses/3/lessons/40', evidence: null }] }),
+      item('c', { name: 'Shared name' }),
+    ]);
+    const run = doc([
+      item('x', { name: 'Shared name', refs: [{ platform: 'canvas', id: '1' }] }),
+      item('canvas:1', { name: 'Renamed' }),
+      item('ed:40', { name: 'Other', refs: [{ platform: 'ed', id: '40' }] }),
+    ]);
+    expect(matchAssessments(gold1.assessments, run.assessments).map(pair => pair.predicted?.id)).toEqual(['canvas:1', 'ed:40', 'x']);
+  });
+
   it('matches each gold item at most once', () => {
     const predicted = doc([item('x', { name: 'Quiz 1' }), item('y', { name: 'Quiz 1' })]);
     const pairs = matchAssessments(gold.assessments, predicted.assessments);

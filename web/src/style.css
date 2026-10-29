@@ -761,3 +761,7 @@ small.block { display:block; line-height:1.4; }
   .hours-form small { grid-column:1 / -1; }
   .task-row { grid-template-columns:minmax(0,1fr); }
 }
+/* Contract v2: 「无出处」 marks a weight or rule the sync could not trace to collected data; a verified quote sits under its value. */
+.unsourced { display:inline-flex; align-items:center; font-size:11px; font-weight:400; padding:0 6px; border-radius:4px; border:1px dashed var(--signal); margin-left:6px; color:var(--signal); white-space:nowrap; vertical-align:1px; line-height:18px; }
+.source-quote { display:block; margin-top:4px; font-size:12px; color:var(--muted); font-style:normal; quotes:"“" "”"; overflow-wrap:anywhere; }
+.weight-legend .unsourced-row i { border:1px dashed var(--muted); background:transparent; }

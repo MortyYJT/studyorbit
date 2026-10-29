@@ -1,4 +1,5 @@
 import { CourseModelOutputSchema } from '../../shared/course-data.ts';
+import { verifyQuotes } from './course-quotes.mjs';
 import { buildStoredDocument, canonicalRefs, generateIds, indexCollected, resolveRef } from './course-refs.mjs';
 
 const REPORT_STATUSES = ['completed', 'partial', 'failed'];
@@ -115,8 +116,9 @@ export async function analyseWithRepair({ instructions, run, validate, isCancell
 // text and issues are returned as a diagnostic for `.local/lms/sync-errors/`.
 // `collection` flags: canvasFailed, canvasUnpaginated, edFailed, edPartial, handbookFailed.
 // `data` is the collected `{ canvas, ed, handbook }` and `previous` the newest valid earlier document (or null); an
-// accepted document is saved as the stored v2 document built from them. A Handbook that was collected but has no
-// parsable assessment table also makes the course at most partial.
+// accepted document is saved as the stored v2 document built from them, after quote verification (design §5): fields
+// without a verified source are cleared and counted in the reason as 「N 项权重或规则无出处」, without changing the status.
+// A Handbook that was collected but has no parsable assessment table also makes the course at most partial.
 export function settleCourse({ result, validation, collection, data, previous = null }) {
   const { report, parsed, issues } = validation;
   if (result.exitCode === 0 && validation.valid) {
@@ -128,9 +130,14 @@ export function settleCourse({ result, validation, collection, data, previous = 
       if (status === 'completed') status = 'partial';
       reason = `${canvasFailed ? 'Canvas 数据未能读取；' : canvasUnpaginated ? 'Canvas 分页未验证；' : ''}${edFailed ? 'Ed 数据未能读取；' : edPartial ? '部分 Ed 数据未能读取；' : ''}${handbookFailed ? 'Handbook 数据未能读取；' : handbookUnparsed ? 'Handbook 考核表未能解析；' : ''}${reason}`;
     }
+    let document = null;
+    if (report.status !== 'failed' && parsed.success) {
+      const verified = verifyQuotes(buildStoredDocument(parsed.data, data, previous), data);
+      document = verified.document;
+      if (verified.cleared) reason = `${reason}${reason && !/[；。]$/.test(reason) ? '；' : ''}${verified.cleared} 项权重或规则无出处`;
+    }
     return {
-      accepted: true, status, reason,
-      document: report.status !== 'failed' && parsed.success ? buildStoredDocument(parsed.data, data, previous) : null,
+      accepted: true, status, reason, document,
       diagnostic: report.status === 'failed' ? { raw: result.lastMessage, issues: [] } : null,
     };
   }
