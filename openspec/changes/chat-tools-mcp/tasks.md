@@ -39,4 +39,4 @@
 - [x] 4.3 `scripts/mcp-server.mjs` and `npm run mcp`: options, env filter, load on every call, stderr diagnostics; stdio test with `StdioClientTransport` against a temporary project and Desktop with synthetic files, checking no file is written
 - [x] 4.4 README section: Claude Code and Claude Desktop configuration with placeholders, Node 24, filter, data-flow note
 - [ ] 4.5 Manual check: connect from Claude Code to the local server with synthetic data; record "not verified" if not done (not verified: not connected from Claude Code; SDK-client stdio smoke test against the real local files instead, counts only, decision #404)
-- [ ] 4.6 `bash .claude/check.sh`; fresh-context review; update `note/handoff.md`; archive the change after the last PR merges
+- [ ] 4.6 `bash .claude/check.sh`; fresh-context review; update `note/handoff.md`; archive the change after the last PR merges (PR #270; check passes, handoff updated, review pending)
