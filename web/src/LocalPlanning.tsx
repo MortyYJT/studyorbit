@@ -6,7 +6,7 @@ import type { RevisionNote } from '../../scripts/lib/revision-store.mjs';
 import { CourseDocumentSchema, toDisplayDocument } from '../../shared/course-data.js';
 import { bandTargets, calculateGrades, finalNeeded, parentGrade, type Band } from '../../shared/course-calculations.js';
 import { parseAvailability, schedulePlan } from '../../shared/planning.js';
-import { markMigrated, migrateStoredKeys, migrationPlan, storageKeys, writeCourseSlice, type CourseSlice } from './local-stores.js';
+import { importCourse, migrateStoredKeys, migrationPlan, storageKeys, writeCourseSlice, type CorrectionsRequest, type CourseSlice } from './local-stores.js';
 import type { CorrectionsView } from '../../shared/corrections.js';
 
 type RecordValue = Record<string, unknown>;
@@ -270,13 +270,12 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   // One-time import of each course's browser data, then the `.local/` views; courses whose import has not succeeded keep
   // using localStorage. The browser copy is never deleted (decision #294).
   async function loadCorrections() {
-    for (const { courseId: id, slice } of migrationPlan(localStorage).imports) {
-      try {
-        const response = await fetch(`/api/local/corrections/${id}/import`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(slice) });
-        const body: unknown = response.ok ? await response.json() : null;
-        if (body && typeof (body as { imported?: unknown }).imported === 'boolean') markMigrated(localStorage, id);
-      } catch { /* Retried on the next load; the course keeps using localStorage. */ }
-    }
+    const request: CorrectionsRequest = async (method, path, body) => {
+      const response = await fetch(path, { method, cache: 'no-store', ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
+      return { ok: response.ok, status: response.status, body: await response.json().catch(() => null) };
+    };
+    // A failed import is retried on the next load; the course keeps using localStorage until then.
+    for (const { courseId: id, slice } of migrationPlan(localStorage).imports) await importCourse(localStorage, request, id, slice);
     const plan = migrationPlan(localStorage);
     localCourses.current = new Set(plan.local);
     let next: Stores = { corrections: {}, manual: {}, order: {} };

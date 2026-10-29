@@ -99,7 +99,10 @@ export function parseCorrectionsInput(courseId: string, input: unknown, options:
 
 const own = <T>(record: Record<string, T>, key: string): T | undefined => (Object.hasOwn(record, key) ? record[key] : undefined);
 
-/** An item key `<courseId>:<id>`, a group key `<courseId>:group:<courseId>:<id>`, a manual key, or none of these (null). */
+/**
+ * An item key `<courseId>:<id>`, a group key `<courseId>:group:<courseId>:<id>`, a manual key (`<courseId>:manual:...` or the
+ * group key of a manual parent), or none of these (null).
+ */
 export function parseKey(key: string, courseId: string): { type: 'item' | 'group'; id: string } | { type: 'manual' } | null {
   const prefix = `${courseId}:`;
   if (!key.startsWith(prefix)) return null;
@@ -107,7 +110,10 @@ export function parseKey(key: string, courseId: string): { type: 'item' | 'group
   if (rest.startsWith('manual:')) return { type: 'manual' };
   if (rest.startsWith('group:')) {
     const inner = rest.slice('group:'.length);
-    return inner.startsWith(prefix) && inner.length > prefix.length ? { type: 'group', id: inner.slice(prefix.length) } : null;
+    if (!inner.startsWith(prefix) || inner.length === prefix.length) return null;
+    const id = inner.slice(prefix.length);
+    // A manual item can be a parent: its group row edits belong to the manual item, never to a synced assessment.
+    return id.startsWith('manual:') ? { type: 'manual' } : { type: 'group', id };
   }
   return rest ? { type: 'item', id: rest } : null;
 }

@@ -128,3 +128,31 @@ export function writeCourseSlice(storage: StorageLike, courseId: string, slice: 
     return true;
   } catch { return false; }
 }
+
+/** A request to the corrections API; returns the HTTP status and the parsed JSON body (throws on a network failure). */
+export type CorrectionsRequest = (method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => Promise<{ ok: boolean; status: number; body: unknown }>;
+
+/**
+ * Imports one course's browser data and records it in the marker. When the server already has a store
+ * (`imported: false`), an earlier import may have succeeded without this browser recording it, and edits made here since
+ * then exist only in browser storage: if the browser data differs from the server copy it is saved at the current revision
+ * before the course switches to the server. Returns true once the course is marked; any failure leaves it on browser
+ * storage, and the next load retries.
+ */
+export async function importCourse(storage: StorageLike, request: CorrectionsRequest, courseId: string, slice: CourseSlice): Promise<boolean> {
+  try {
+    const result = await request('POST', `/api/local/corrections/${courseId}/import`, slice);
+    const imported = result.ok && result.body && typeof result.body === 'object' ? (result.body as { imported?: unknown }).imported : undefined;
+    if (typeof imported !== 'boolean') return false;
+    if (!imported) {
+      const current = await request('GET', `/api/local/corrections?courseId=${courseId}`);
+      const view = current.body as { exists?: unknown; revision?: unknown; corrections?: unknown; manual?: unknown; order?: unknown } | null;
+      if (!current.ok || !view || view.exists !== true || typeof view.revision !== 'number') return false;
+      if (JSON.stringify({ corrections: view.corrections, manual: view.manual, order: view.order }) !== JSON.stringify(slice)) {
+        const saved = await request('PUT', `/api/local/corrections/${courseId}`, { revision: view.revision, ...slice });
+        if (!saved.ok) return false;
+      }
+    }
+    return markMigrated(storage, courseId);
+  } catch { return false; }
+}

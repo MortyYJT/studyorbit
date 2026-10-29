@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { correctionSlices, markMigrated, migratedCourses, migratedKey, migrationPlan, writeCourseSlice, migrateStoredKeys, storageKeys } from '../web/src/local-stores.js';
+import { importCourse, correctionSlices, markMigrated, migratedCourses, migratedKey, migrationPlan, writeCourseSlice, migrateStoredKeys, storageKeys } from '../web/src/local-stores.js';
 
 // A synthetic in-memory stand-in for the browser's localStorage.
 function memoryStorage(initial: Record<string, unknown>, failOn: string[] = []) {
@@ -114,5 +114,54 @@ describe('corrections migration helpers', () => {
     expect(writeCourseSlice(storage, '100', { corrections: {}, manual: [], order: [] })).toBe(false);
     expect(storage.data.get(storageKeys.corrections)).toBe('{not json');
     expect(storage.writes).toEqual([]);
+  });
+});
+
+describe('importCourse', () => {
+  const slice = { corrections: { '100:a1': { weight: 30 } }, manual: [], order: ['100:a1'] };
+  const view = (patch: Record<string, unknown> = {}) => ({ exists: true, revision: 3, corrections: { '100:a1': { weight: 30 } }, manual: [], order: ['100:a1'], conflicts: [], ...patch });
+  // A scripted stand-in for the corrections API: answers in order and records every call.
+  function api(...answers: { ok: boolean; status: number; body: unknown }[]) {
+    const calls: [string, string, unknown][] = [];
+    return { calls, request: async (method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => { calls.push([method, path, body]); const next = answers.shift(); if (!next) throw new Error('network'); return next; } };
+  }
+
+  it('marks the course after a successful import', async () => {
+    const storage = memoryStorage({});
+    const server = api({ ok: true, status: 201, body: { imported: true, store: view({ revision: 1 }) } });
+    expect(await importCourse(storage, server.request, '100', slice)).toBe(true);
+    expect(server.calls).toEqual([['POST', '/api/local/corrections/100/import', slice]]);
+    expect(migratedCourses(storage)).toEqual(['100']);
+  });
+
+  it('sends browser edits made after an unrecorded earlier import before switching to the server copy', async () => {
+    const storage = memoryStorage({});
+    const edited = { ...slice, corrections: { '100:a1': { weight: 35 } } };
+    const server = api({ ok: true, status: 200, body: { imported: false } }, { ok: true, status: 200, body: view() }, { ok: true, status: 200, body: view({ revision: 4, corrections: { '100:a1': { weight: 35 } } }) });
+    expect(await importCourse(storage, server.request, '100', edited)).toBe(true);
+    expect(server.calls.slice(1)).toEqual([['GET', '/api/local/corrections?courseId=100', undefined], ['PUT', '/api/local/corrections/100', { revision: 3, ...edited }]]);
+    expect(migratedCourses(storage)).toEqual(['100']);
+  });
+
+  it('does not write when the server copy already matches', async () => {
+    const storage = memoryStorage({});
+    const server = api({ ok: true, status: 200, body: { imported: false } }, { ok: true, status: 200, body: view() });
+    expect(await importCourse(storage, server.request, '100', slice)).toBe(true);
+    expect(server.calls.map(call => call[0])).toEqual(['POST', 'GET']);
+  });
+
+  it('leaves the course on browser storage when any step fails, so the next load retries', async () => {
+    for (const server of [
+      api(),
+      api({ ok: false, status: 500, body: { error: 'CORRECTIONS_UNREADABLE' } }),
+      api({ ok: true, status: 200, body: { imported: false } }),
+      api({ ok: true, status: 200, body: { imported: false } }, { ok: true, status: 200, body: view({ corrections: {} }) }, { ok: false, status: 409, body: { error: 'REVISION_MISMATCH' } }),
+    ]) {
+      const storage = memoryStorage({});
+      expect(await importCourse(storage, server.request, '100', slice)).toBe(false);
+      expect(migratedCourses(storage)).toEqual([]);
+    }
+    const quota = memoryStorage({}, [migratedKey]);
+    expect(await importCourse(quota, api({ ok: true, status: 201, body: { imported: true } }).request, '100', slice)).toBe(false);
   });
 });

@@ -35,6 +35,8 @@ describe('course IDs and keys', () => {
     expect(parseKey('100:canvas:5551', '100')).toEqual({ type: 'item', id: 'canvas:5551' });
     expect(parseKey('100:group:100:canvas-group:300', '100')).toEqual({ type: 'group', id: 'canvas-group:300' });
     expect(parseKey('100:manual:m1', '100')).toEqual({ type: 'manual' });
+    // A manual item can be a parent; its group row edits are manual too.
+    expect(parseKey('100:group:100:manual:m1', '100')).toEqual({ type: 'manual' });
     expect(parseKey('100:group:200:a1', '100')).toBeNull();
     expect(parseKey('200:a1', '100')).toBeNull();
     expect(parseKey('100:', '100')).toBeNull();
@@ -230,6 +232,7 @@ describe('import noise and transition conflicts', () => {
       '100:hidden-gone': { hidden: true },
       '100:group:100:old': { name: 'Old group' },
       '100:manual:m1': { weight: 3 },
+      '100:group:100:manual:m1': { name: 'Manual parent' },
     };
     const conflicts = transitionConflicts(corrections, base, '100', '2026-10-30T00:00:00.000Z');
     expect(conflicts.map(item => [item.type, item.key, item.field])).toEqual([
