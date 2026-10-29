@@ -47,6 +47,22 @@ export async function recordCourseChanges(projectDir, entry, row) {
   catch { row.reason = [row.reason, '变更记录写入失败。'].filter(Boolean).join(' '); }
 }
 
+/**
+ * Whether the log already has a line for `courseId` written by one of `runIds` (the job IDs of a resume lineage), so
+ * the merge stage of a resumed sync never appends the same course's changes twice (design §13, decision #355).
+ */
+export async function changeLogHasRun(projectDir, courseId, runIds) {
+  if (!runIds.length) return false;
+  let raw;
+  try { raw = await readFile(logFile(projectDir), 'utf8'); }
+  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+  const runs = new Set(runIds);
+  return raw.split('\n').some(line => {
+    if (!line.trim()) return false;
+    try { const entry = JSON.parse(line); return entry?.courseId === courseId && runs.has(entry?.runId); } catch { return false; }
+  });
+}
+
 /** The newest `limit` well-formed change lines, newest first; malformed lines are skipped and a missing log is empty. */
 export async function readCourseChanges(projectDir, limit = CHANGE_LOG_LIMIT) {
   let raw;

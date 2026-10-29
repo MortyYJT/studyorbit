@@ -43,6 +43,7 @@ export type SyncStore = {
   getJob(id: string): Job | null;
   newestJob(): Job | null;
   listJobs(limit?: number): Job[];
+  childOf(jobId: string): Job | null;
   lineage(jobId: string): string[];
   putArtifact(content: string): string;
   getArtifact(hash: string): string | null;

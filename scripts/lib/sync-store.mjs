@@ -224,6 +224,12 @@ function createStore(db, path, clock, version) {
     newestJob: () => listJobs(1)[0] ?? null,
     listJobs,
 
+    /** The job that resumed `jobId` (at most one), or null. */
+    childOf(jobId) {
+      const row = prepare('SELECT id FROM jobs WHERE resumed_from = $jobId').get({ jobId });
+      return row ? getJob(row.id) : null;
+    },
+
     lineage(jobId) {
       return prepare(`${LINEAGE_CTE} SELECT id FROM lineage ORDER BY depth`).all({ jobId }).map(row => row.id);
     },

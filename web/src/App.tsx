@@ -11,7 +11,7 @@ import { palettes, parsePalette, type Palette } from './palette.js';
 import type { LlmProvider, PublicLlmConfig } from '../../scripts/lib/llm-config.mjs';
 
 type Panel = 'status' | 'settings';
-type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; phase?: string; file?: string }[]; error: string | null };
+type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; phase?: string; file?: string; stage?: string | null; reused?: boolean }[]; error: string | null; jobId?: string | null; resumedFrom?: string | null; resumable?: boolean };
 type TokenUsage = { input: number | null; output: number | null; cached: number | null; reasoning: number | null };
 type SyncUsage = { type: string; runId: string; at: string; course: string; courses: { code: string; status: string }[]; model: string; status: string; durationMs: number | null; coordinator: TokenUsage | null; subagents: TokenUsage | null; recovered: boolean };
 type SyncBatch = { id: string; at: string; durationMs: number | null; ended: boolean; legacy: boolean; recovered: boolean; selected: { code: string; status: string }[]; courses: SyncUsage[] };
@@ -178,6 +178,26 @@ export function App() {
       else { const run = await response.json() as CourseRun; setCourseRun(run); if (!run.running) setSyncModal('finished'); }
     } catch (error) { setCourseRunError(error instanceof Error ? error.message : t.error); setSyncModal(discovery ? 'discovery' : 'syncing'); }
   }
+  /** Continues the newest stopped sync from its checkpoints (POST /api/local/sync-jobs/<jobId>/resume). */
+  async function resumeSync() {
+    const jobId = courseRun?.jobId;
+    if (running || !jobId) return;
+    setCourseRunError(''); setLocalSyncError(''); setSyncModal('starting');
+    try {
+      const response = await fetch(`/api/local/sync-jobs/${encodeURIComponent(jobId)}/resume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (!response.ok) {
+        const failure: unknown = await response.json().catch(() => undefined);
+        const code = failure && typeof failure === 'object' && 'error' in failure && typeof failure.error === 'string' ? failure.error : '';
+        throw new Error(code === 'RESUME_EXPIRED' ? (language === 'zh' ? '上次同步已超过 24 小时，采集的数据可能已过时，请重新同步。' : 'The last sync is more than 24 hours old; its collected data may be stale. Please sync again.')
+          : code === 'SYNC_RUNNING' ? (language === 'zh' ? '已有课程同步正在进行。' : 'A course sync is already running.')
+          : code === 'ALREADY_RESUMED' || code === 'NOT_RESUMABLE' ? (language === 'zh' ? '上次同步已经继续过或无需继续。' : 'The last sync was already resumed or has nothing left to do.')
+          : code.startsWith('ANALYSIS_') ? (language === 'zh' ? '分析模型还没配置好，请在「设置 → 分析模型」里检查。' : 'The analysis model is not configured. Check Settings → Analysis model.')
+          : (language === 'zh' ? '无法继续上次同步。' : 'Could not resume the last sync.'));
+      }
+      setCourseRun(await response.json() as CourseRun);
+      setSyncModal('syncing');
+    } catch (error) { setCourseRunError(error instanceof Error ? error.message : t.error); setSyncModal('finished'); }
+  }
   const go = (next: View) => {
     const key = next.page === 'course' ? `course:${next.courseId}` : next.page;
     if (key === pageKey) { setView(next); setNavOpen(false); return; }
@@ -186,6 +206,8 @@ export function App() {
   const isZh = language === 'zh';
   const title = view.page === 'agent' ? t.agent : (isZh ? '本周' : 'This week');
   const syncButton = <button disabled={!!running} onClick={() => void syncCourses()} aria-busy={!!running}>{running ? t.syncing : t.sync}</button>;
+  const resumeLabel = language === 'zh' ? '继续上次同步' : 'Resume last sync';
+  const canResume = !running && !syncModal && courseRun?.resumable === true && !!courseRun.jobId;
   const syncBatches = groupSyncUsage(syncUsage ?? []);
   return <div className="shell">
     <Backdrop settings={background} image={backgroundImage} />
@@ -212,6 +234,7 @@ export function App() {
         </div>
         <div className="sidebar-foot">
           {syncButton}
+          {canResume && <button className="ghost" onClick={() => void resumeSync()}>{resumeLabel}</button>}
           <div className="owner" ref={menuRoot} onKeyDown={event => { if (event.key === 'Escape') { setMenu(false); avatar.current?.focus(); } }}>
             <button className="owner-button ghost" ref={avatar} aria-label={t.menu} aria-expanded={menu} aria-controls="owner-menu" onClick={() => setMenu(!menu)}>
               <span className="avatar" aria-hidden="true">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><span>{isZh ? '同步数据 · 设置' : 'Sync data · Settings'}</span></button>
@@ -244,10 +267,10 @@ export function App() {
         {modal === 'discovery' && <p>{language === 'zh' ? '正在获取课程列表…' : 'Fetching course list…'}</p>}
         {modal === 'starting' && <p>{language === 'zh' ? '正在启动课程同步…' : 'Starting course sync…'}</p>}
         {modal === 'stopping' && <p>{language === 'zh' ? '正在中止，请稍候…' : 'Stopping…'}</p>}
-        {courseRun && courseRun.courses.length > 0 && <><p>{language === 'zh' ? '已处理' : 'Processed'} {courseRun.courses.filter(course => ['completed', 'partial', 'failed'].includes(course.status)).length} / {courseRun.courses.length}</p>{courseRun.courses.map(course => <div className="sync-course" key={course.id}><b>{course.code}</b><span>{({ pending: language === 'zh' ? '等待' : 'Waiting', running: course.phase === 'canvas' ? (language === 'zh' ? '获取 LMS 信息中' : 'Fetching LMS data') : course.phase === 'ed' ? (language === 'zh' ? '获取 Ed 信息中' : 'Fetching Ed data') : course.phase === 'waiting_analysis' ? (language === 'zh' ? '等待 Agent 分析' : 'Waiting for agent') : course.phase === 'handbook' ? (language === 'zh' ? '获取 Handbook 信息中' : 'Fetching Handbook data') : course.phase === 'analysis' ? (language === 'zh' ? 'Agent 分析中' : 'Agent analysing') : course.phase === 'saving' ? (language === 'zh' ? '校验与保存中' : 'Validating and saving') : (language === 'zh' ? '准备中' : 'Starting'), completed: language === 'zh' ? '已完成' : 'Completed', partial: language === 'zh' ? '部分完成' : 'Partial', failed: language === 'zh' ? '未完成' : 'Failed', cancelled: language === 'zh' ? '已中止' : 'Stopped' } as Record<string,string>)[course.status] ?? course.status}</span>{course.status === 'failed' && course.reason && <small>{course.reason}</small>}</div>)}</>}
+        {courseRun && courseRun.courses.length > 0 && <><p>{language === 'zh' ? '已处理' : 'Processed'} {courseRun.courses.filter(course => ['completed', 'partial', 'failed'].includes(course.status)).length} / {courseRun.courses.length}</p>{courseRun.courses.map(course => <div className="sync-course" key={course.id}><b>{course.code}</b><span>{['failed', 'cancelled', 'interrupted'].includes(course.status) && <i className="signal" aria-hidden="true" />}{({ pending: language === 'zh' ? '等待' : 'Waiting', running: course.phase === 'canvas' ? (language === 'zh' ? '获取 LMS 信息中' : 'Fetching LMS data') : course.phase === 'ed' ? (language === 'zh' ? '获取 Ed 信息中' : 'Fetching Ed data') : course.phase === 'waiting_analysis' ? (language === 'zh' ? '等待 Agent 分析' : 'Waiting for agent') : course.phase === 'handbook' ? (language === 'zh' ? '获取 Handbook 信息中' : 'Fetching Handbook data') : course.phase === 'analysis' ? (language === 'zh' ? 'Agent 分析中' : 'Agent analysing') : course.phase === 'saving' ? (language === 'zh' ? '校验与保存中' : 'Validating and saving') : (language === 'zh' ? '准备中' : 'Starting'), completed: language === 'zh' ? '已完成' : 'Completed', partial: language === 'zh' ? '部分完成' : 'Partial', failed: language === 'zh' ? '未完成' : 'Failed', cancelled: language === 'zh' ? '已中止' : 'Stopped', interrupted: language === 'zh' ? '已中断' : 'Interrupted' } as Record<string,string>)[course.status] ?? course.status}</span>{course.reused && <small className="muted">{language === 'zh' ? '沿用上次结果' : 'Reused from the last sync'}</small>}{course.status === 'failed' && course.reason && <small>{course.reason}</small>}</div>)}</>}
         {(localSyncError || courseRunError || courseRun?.error) && <p role="alert">{localSyncError || courseRunError || courseRun?.error}</p>}
       </>}
-      {modal === 'finished' ? <button onClick={() => setSyncModal(undefined)}>{language === 'zh' ? '关闭' : 'Close'}</button> : <button disabled={modal === 'stopping'} onClick={() => void stopSync()}>{language === 'zh' ? '中止同步' : 'Stop sync'}</button>}
+      {modal === 'finished' ? <div className="sync-actions">{courseRun?.resumable && courseRun.jobId && <button onClick={() => void resumeSync()}>{resumeLabel}</button>}<button className={courseRun?.resumable ? 'ghost' : undefined} onClick={() => setSyncModal(undefined)}>{language === 'zh' ? '关闭' : 'Close'}</button></div> : <button disabled={modal === 'stopping'} onClick={() => void stopSync()}>{language === 'zh' ? '中止同步' : 'Stop sync'}</button>}
     </dialog>
     <dialog ref={dialog} onCancel={event => { event.preventDefault(); close(); }} onClose={() => { setPanel(undefined); avatar.current?.focus(); }} aria-labelledby="panel-title">
       <div className="dialog-heading"><h2 id="panel-title" tabIndex={-1} autoFocus>{panel === 'status' ? (language === 'zh' ? '同步数据' : 'Sync data') : panel ? t[panel] : ''}</h2><button className="ghost" onClick={close}>{t.close}</button></div>
@@ -326,12 +349,13 @@ function duration(ms: number | null, zh: boolean, approximate = false): string {
   const text = minutes ? (zh ? `${minutes} 分 ${rest} 秒` : `${minutes} min ${rest} s`) : (zh ? `${(ms / 1000).toFixed(1)} 秒` : `${(ms / 1000).toFixed(1)} s`);
   return approximate ? (zh ? `约 ${text}` : `~${text}`) : text;
 }
-const statusNames: Record<string, [string, string]> = { completed: ['完成', 'Completed'], partial: ['部分完成', 'Partial'], failed: ['未完成', 'Failed'], cancelled: ['已中止', 'Stopped'] };
+const statusNames: Record<string, [string, string]> = { completed: ['完成', 'Completed'], partial: ['部分完成', 'Partial'], failed: ['未完成', 'Failed'], cancelled: ['已中止', 'Stopped'], interrupted: ['已中断', 'Interrupted'] };
+const problemStatus = (status: string) => status === 'failed' || status === 'cancelled' || status === 'interrupted';
 /** One result per run: a single course names its status; several courses count how many finished. */
 function batchResult(batch: SyncBatch, zh: boolean): { text: string; problem: boolean } {
   const { entries } = batchSummary(batch);
   if (!batch.ended && !batch.legacy) return { text: zh ? '未结束' : 'Did not finish', problem: true };
-  if (entries.length === 1) { const status = entries[0]!.status; return { text: statusNames[status]?.[zh ? 0 : 1] ?? status, problem: status === 'failed' || status === 'cancelled' }; }
+  if (entries.length === 1) { const status = entries[0]!.status; return { text: statusNames[status]?.[zh ? 0 : 1] ?? status, problem: problemStatus(status) }; }
   const done = entries.filter(entry => entry.status === 'completed').length, partial = entries.filter(entry => entry.status === 'partial').length;
   const failed = entries.length - done - partial;
   const parts = [zh ? `${done}/${entries.length} 门完成` : `${done} of ${entries.length} completed`];
@@ -383,7 +407,7 @@ function SyncHistory({ batches, language }: { batches: SyncBatch[]; language: La
         return <div key={batch.id} className={`sync-run${expanded ? ' open' : ''}`} role="rowgroup">
           {many ? <button className="sync-tr" role="row" aria-expanded={expanded} onClick={() => setOpen(expanded ? undefined : batch.id)}>{cells}</button> : <div className="sync-tr" role="row">{cells}</div>}
           {many && expanded && entries.map(({ code, status, row }, index) => <div className="sync-tr sync-sub" role="row" key={`${code}-${index}`}>
-            <span /><span>{code}</span><span>{(status === 'failed' || status === 'cancelled') && <i className="signal" aria-hidden="true" />}{statusNames[status]?.[zh ? 0 : 1] ?? status}</span>
+            <span /><span>{code}</span><span>{problemStatus(status) && <i className="signal" aria-hidden="true" />}{statusNames[status]?.[zh ? 0 : 1] ?? status}</span>
             <span className="num">{duration(row?.durationMs ?? null, zh)}</span><span className="num">{usageTokens(row)?.toLocaleString() ?? '—'}</span></div>)}
         </div>;
       })}

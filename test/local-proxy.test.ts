@@ -87,7 +87,7 @@ describe('localApiProxy', () => {
     const projectDir = join(root, 'project'), desktopDir = join(root, 'Desktop');
     await mkdir(projectDir, { recursive: true });
     await writeSyntheticCourses(projectDir, desktopDir);
-    const local = createLocalApi({ projectDir, desktopDir, token, webPort, env: {}, courseRunner: { start: async () => { throw new Error('INVALID_SELECTION'); }, status: () => ({ running: false, courses: [], error: null }), cancel: () => ({ running: false, courses: [], error: null }) } });
+    const local = createLocalApi({ projectDir, desktopDir, token, webPort, env: {} });
     upstream = local.handle;
     const reports = await call(webPort, '/api/local/course-reports', { headers: { host: page() } });
     expect(reports.json().reports.map((item: { id: string }) => item.id)).toEqual([syntheticCourse.id]);

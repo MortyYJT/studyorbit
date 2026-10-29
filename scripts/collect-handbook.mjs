@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { collectorExitCode, httpFailure, isTemporaryStatus } from './lib/collector-exit.mjs';
 
 const exec = promisify(execFile), wait = ms => new Promise(r => setTimeout(r, ms));
 const [course, year, dest] = process.argv.slice(2);
@@ -41,6 +42,14 @@ const read = `on run argv
   return execute t javascript "document.body ? document.body.innerText : ''"
  end tell
 end run`;
+// HTTP status of the page's navigation, read only after the page failed the content check.
+const readStatus = `on run argv
+ tell application "Microsoft Edge"
+  set w to first window whose id is (item 1 of argv as integer)
+  set t to first tab of w whose id is (item 2 of argv)
+  return execute t javascript "String((performance.getEntriesByType('navigation')[0] || {}).responseStatus || '')"
+ end tell
+end run`;
 const close = `on run argv
  tell application "Microsoft Edge"
   set w to first window whose id is (item 1 of argv as integer)
@@ -64,10 +73,15 @@ try {
     try { if(attempt) await wait(500); content = await run(read, [...target, url]); if (!content.toLowerCase().includes(course.toLowerCase()) || !/assessment/i.test(content)) throw new Error('Handbook 页面未显示考核内容'); break; }
     catch (e) { error=e; content=''; }
   }
-  if (!content) throw error ?? new Error('已中止');
+  if (!content) {
+    // HTTP 429/5xx on the final attempt exits with 75 so the sync retries it (design §9); an unknown status stays 1.
+    const status = Number(await run(readStatus, target).catch(() => ''));
+    if (!interrupted && isTemporaryStatus(status)) throw httpFailure('Handbook', status);
+    throw error ?? new Error('已中止');
+  }
   const path = resolve(dest), tmp = `${path}.${randomUUID()}.tmp`;
   const result = { status:'available', course, year, url, text:content.slice(0,50000), capturedAt:new Date().toISOString(), durationMs:Date.now()-start };
   await mkdir(dirname(path), { recursive:true, mode:0o700 }); await writeFile(tmp, `${JSON.stringify(result,null,2)}\n`, {mode:0o600}); await rename(tmp,path);
   console.log(JSON.stringify({ status:'available', durationMs:result.durationMs }));
-} catch (e) { console.error(`Handbook 采集不可用：${String(e.stderr || e.message).trim().slice(0,400)}`); process.exitCode=1; }
+} catch (e) { console.error(`Handbook 采集不可用：${String(e.stderr || e.message).trim().slice(0,400)}`); process.exitCode=collectorExitCode(e); }
 finally { if(target) await run(close,target).catch(()=>console.error('无法关闭 Handbook 后台标签页，请手动关闭。')); }

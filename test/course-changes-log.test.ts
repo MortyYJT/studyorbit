@@ -3,7 +3,7 @@ import { appendFile, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { appendCourseChanges, createCourseChangesHandler, readCourseChanges, recordCourseChanges } from '../scripts/lib/course-changes-log.mjs';
+import { appendCourseChanges, changeLogHasRun, createCourseChangesHandler, readCourseChanges, recordCourseChanges } from '../scripts/lib/course-changes-log.mjs';
 import type { CourseDocumentV1, CourseDocumentV2 } from '../shared/course-data.js';
 
 // Scenarios from openspec/specs/course-change-log/spec.md (PR 3). Synthetic data only.
@@ -24,6 +24,18 @@ const v2 = (assessments: V1Item[], legacyIds: Record<string, string> = {}): Cour
 const logFile = () => join(dir, '.local', 'lms', 'changes.jsonl');
 const lines = async () => (await readFile(logFile(), 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line));
 const at = '2026-10-30T01:00:00.000Z';
+
+describe('changeLogHasRun', () => {
+  it('finds a line for the course with any of the given run IDs, skipping malformed lines', async () => {
+    expect(await changeLogHasRun(dir, '100', ['run-1'])).toBe(false);
+    await mkdir(join(dir, '.local', 'lms'), { recursive: true });
+    await appendFile(logFile(), `${JSON.stringify({ at, runId: 'run-1', courseId: '100' })}\nnot json\n${JSON.stringify({ at, runId: 'run-2', courseId: '200' })}\n`);
+    expect(await changeLogHasRun(dir, '100', ['run-0', 'run-1'])).toBe(true);
+    expect(await changeLogHasRun(dir, '100', ['run-2'])).toBe(false);
+    expect(await changeLogHasRun(dir, '200', ['run-2'])).toBe(true);
+    expect(await changeLogHasRun(dir, '100', [])).toBe(false);
+  });
+});
 
 describe('appendCourseChanges', () => {
   it('appends one line per change with the run ID, in an owner-only file and directory', async () => {

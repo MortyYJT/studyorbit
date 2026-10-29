@@ -422,6 +422,7 @@ dialog.drawer h3 { font-size:13px; margin:24px 0 6px; }
 .sync-dialog h2 { margin:0 0 12px; font-size:16px; }
 .sync-dialog > p { font-size:13px; }
 .sync-dialog > button { margin-top:14px; }
+.sync-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
 .sync-dialog .local-course-select { padding:0; border:0; }
 .sync-course { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; padding:9px 0; border-bottom:1px solid var(--rule); font-size:13px; }
 .sync-course b { font-weight:600; font-variant-numeric:tabular-nums; }
