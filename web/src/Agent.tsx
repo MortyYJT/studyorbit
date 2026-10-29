@@ -4,8 +4,9 @@ import type { Language } from './i18n.js';
 import type { SidebarCourse } from './LocalPlanning.js';
 import type { Chat, ChatMessage, ChatSummary } from '../../scripts/lib/chat-store.mjs';
 
-/** A request from elsewhere in the app to open a fresh chat, optionally scoped to one course and sending a preset prompt. */
-export type AgentRequest = { nonce: number; courseId?: string; prompt?: string };
+import type { AgentRequest } from './agent-request.js';
+
+export type { AgentRequest };
 type Failure = { code: string; message: string };
 type Draft = { scope: string[] | null };
 
@@ -213,8 +214,8 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
   const note = (message: ChatMessage, index: number) => {
     const parts = [message.model, message.usage ? `${(message.usage.input + message.usage.output).toLocaleString(language)} tokens` : null,
       message.status === 'stopped' ? (zh ? '已停止' : 'Stopped') : message.status === 'error' ? (zh ? '未完成' : 'Incomplete') : null].filter(Boolean);
-    // Only stored replies of a chat about exactly one course can be saved; replies that failed are not offered.
-    const savable = active && active.courseIds.length === 1 && index < active.messages.length && message.status !== 'error' && message.content.trim();
+    // Only stored, finished replies of a chat about exactly one course can be saved; stopped or failed replies are partial.
+    const savable = active && active.courseIds.length === 1 && index < active.messages.length && !message.status && message.content.trim();
     const state = active ? saved[`${active.id}:${index}`] : undefined;
     if (!parts.length && !savable) return null;
     return <small className="msg-note left">{parts.join(' · ')}{savable && <>{parts.length > 0 && ' · '}<button type="button" className="link-button" disabled={state === 'saving' || state === 'saved'} onClick={() => void saveNote(active, index, message.content)}>

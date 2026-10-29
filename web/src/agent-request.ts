@@ -1,0 +1,10 @@
+/** A request from elsewhere in the app to open a fresh chat, optionally scoped to one course and sending a preset prompt. */
+export type AgentRequest = { nonce: number; courseId?: string; prompt?: string };
+
+// The counter never restarts while the page is open, even when the app clears its current request, so the Agent page
+// (which remembers the last nonce it handled) can tell every new request apart.
+let counter = 0;
+export function createAgentRequest(courseId?: string, prompt?: string): AgentRequest {
+  counter += 1;
+  return { nonce: counter, courseId, prompt };
+}

@@ -155,11 +155,13 @@ export default defineConfig({
         try {
           if (req.method === 'GET') { json(200, { notes: await listNotes(projectDir, new URLSearchParams(query).get('courseId') ?? '') }); return; }
           if (req.method === 'DELETE') { if (await deleteNote(projectDir, parts[0]!)) json(200, { ok: true }); else json(404, { error: 'NOTE_NOT_FOUND' }); return; }
-          let raw = '';
+          // Decode once after collecting the bytes: a UTF-8 character can be split across chunks.
+          const chunks: Buffer[] = []; let size = 0;
           for await (const chunk of req) {
-            raw += chunk.toString();
-            if (raw.length > 60000) { json(413, { error: 'TOO_LARGE' }); return; }
+            chunks.push(chunk as Buffer); size += (chunk as Buffer).length;
+            if (size > 100000) { json(413, { error: 'TOO_LARGE' }); return; }
           }
+          const raw = Buffer.concat(chunks).toString('utf8');
           let body: Record<string, unknown>;
           try { const parsed: unknown = JSON.parse(raw); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('shape'); body = parsed as Record<string, unknown>; }
           catch { json(400, { error: 'INVALID_JSON' }); return; }

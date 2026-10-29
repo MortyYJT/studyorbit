@@ -20,6 +20,8 @@ describe('finalNeeded', () => {
   it('decides from the earned points alone when nothing is left to mark', () => {
     expect(finalNeeded({ earned: 81, weight: 100 }, bandTargets.H1)).toEqual({ status: 'secured' });
     expect(finalNeeded({ earned: 79, weight: 100 }, bandTargets.H1)).toEqual({ status: 'unreachable' });
+    // Sums such as weight * score / outOf can land a hair under the target.
+    expect(finalNeeded({ earned: 80 - 1e-12, weight: 100 }, bandTargets.H1)).toEqual({ status: 'secured' });
   });
 
   it('needs the target itself when nothing is graded yet', () => {

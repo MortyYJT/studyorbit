@@ -24,13 +24,20 @@ function titleOf(content) {
   return line.length > TITLE_LIMIT ? `${line.slice(0, TITLE_LIMIT - 1)}…` : line;
 }
 
-/** All stored notes; a missing or unreadable file reads as empty, and invalid entries are skipped. */
-async function readAll(projectDir) {
-  try {
-    const value = JSON.parse(await readFile(notesFile(projectDir), 'utf8'));
-    return Array.isArray(value) ? value.flatMap(item => { const parsed = NoteSchema.safeParse(item); return parsed.success ? [parsed.data] : []; }) : [];
-  } catch { return []; }
+/**
+ * Every stored entry as written, including ones this version does not recognise. Only a missing file reads as empty:
+ * any other read or parse failure throws, so a later write can never replace notes it could not read.
+ */
+async function readRaw(projectDir) {
+  let text;
+  try { text = await readFile(notesFile(projectDir), 'utf8'); } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw new Error('REVISION_UNREADABLE');
+  }
+  try { const value = JSON.parse(text); if (Array.isArray(value)) return value; } catch { /* Reported below. */ }
+  throw new Error('REVISION_UNREADABLE');
 }
+const valid = entries => entries.flatMap(item => { const parsed = NoteSchema.safeParse(item); return parsed.success ? [parsed.data] : []; });
 
 async function writeAll(projectDir, notes) {
   const file = notesFile(projectDir);
@@ -52,7 +59,7 @@ function update(change) {
 
 export async function listNotes(projectDir, courseId) {
   if (!isCourseId(courseId)) throw new Error('INVALID_COURSE_ID');
-  return (await readAll(projectDir)).filter(note => note.courseId === courseId).sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+  return valid(await readRaw(projectDir)).filter(note => note.courseId === courseId).sort((a, b) => b.savedAt.localeCompare(a.savedAt));
 }
 
 export function createNote(projectDir, { courseId, content, chatId }) {
@@ -61,8 +68,8 @@ export function createNote(projectDir, { courseId, content, chatId }) {
   if (!text) return Promise.reject(new Error('CONTENT_EMPTY'));
   if (text.length > NOTE_LIMITS.content) return Promise.reject(new Error('CONTENT_TOO_LONG'));
   return update(async () => {
-    const notes = await readAll(projectDir);
-    if (notes.filter(note => note.courseId === courseId).length >= NOTE_LIMITS.perCourse) throw new Error('TOO_MANY_NOTES');
+    const notes = await readRaw(projectDir);
+    if (valid(notes).filter(note => note.courseId === courseId).length >= NOTE_LIMITS.perCourse) throw new Error('TOO_MANY_NOTES');
     const note = { id: randomUUID(), courseId, title: titleOf(text), content: text, chatId: typeof chatId === 'string' && UUID.test(chatId) ? chatId : null, savedAt: new Date().toISOString() };
     await writeAll(projectDir, [...notes, note]);
     return note;
@@ -72,8 +79,8 @@ export function createNote(projectDir, { courseId, content, chatId }) {
 export function deleteNote(projectDir, id) {
   if (typeof id !== 'string' || !UUID.test(id)) return Promise.reject(new Error('INVALID_NOTE_ID'));
   return update(async () => {
-    const notes = await readAll(projectDir);
-    const rest = notes.filter(note => note.id !== id);
+    const notes = await readRaw(projectDir);
+    const rest = notes.filter(note => !(note && typeof note === 'object' && note.id === id));
     if (rest.length === notes.length) return false;
     await writeAll(projectDir, rest);
     return true;

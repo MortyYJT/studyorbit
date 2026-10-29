@@ -38,3 +38,17 @@ describe('revision store', () => {
     await expect(createNote(dir, { courseId: 'syn-1', content: 'one more', chatId: null })).rejects.toThrow('TOO_MANY_NOTES');
   });
 });
+
+describe('revision store when the file is damaged', () => {
+  it('refuses to write over a file it cannot parse, and keeps entries it does not recognise', async () => {
+    const { mkdir, writeFile, readFile } = await import('node:fs/promises');
+    const file = join(dir, '.local', 'revision', 'notes.json');
+    await mkdir(join(dir, '.local', 'revision'), { recursive: true });
+    await writeFile(file, '{ not json');
+    await expect(createNote(dir, { courseId: 'syn-1', content: 'new', chatId: null })).rejects.toThrow('REVISION_UNREADABLE');
+    expect(await readFile(file, 'utf8')).toBe('{ not json');
+    await writeFile(file, JSON.stringify([{ id: 'future-shape', courseId: 'syn-2', body: 'kept' }]));
+    await createNote(dir, { courseId: 'syn-1', content: 'new', chatId: null });
+    expect(JSON.parse(await readFile(file, 'utf8'))[0]).toEqual({ id: 'future-shape', courseId: 'syn-2', body: 'kept' });
+  });
+});

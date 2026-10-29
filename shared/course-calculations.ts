@@ -30,7 +30,8 @@ export type Band = keyof typeof bandTargets;
 export type FinalNeeded = { status: 'secured' } | { status: 'unreachable' } | { status: 'reachable'; percent: number };
 /** Average still needed across every weight without a mark (100 − graded), so unidentified weight counts as remaining. */
 export function finalNeeded(grades: { earned: number; weight: number }, target: number): FinalNeeded {
-  if (grades.earned >= target) return { status: 'secured' };
+  // Tolerance: weighted sums can land a hair under the target that was in fact reached.
+  if (grades.earned >= target - 1e-9) return { status: 'secured' };
   const remaining = 100 - grades.weight;
   if (remaining <= 0) return { status: 'unreachable' };
   const percent = (target - grades.earned) / remaining * 100;

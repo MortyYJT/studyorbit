@@ -156,12 +156,16 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const [saveError, setSaveError] = useState(false);
   const [notes, setNotes] = useState<RevisionNote[]>();
   const [notesError, setNotesError] = useState(false);
+  // A response for a course the owner has already left is dropped, so one course never shows another's notes.
+  const notesFor = useRef<string | undefined>(undefined);
+  notesFor.current = courseTab === 'revision' ? courseId : undefined;
   async function loadNotes(id: string) {
     try {
       const response = await fetch(`/api/local/revision-notes?courseId=${encodeURIComponent(id)}`, { cache: 'no-store' });
       if (!response.ok) throw new Error('unavailable');
-      setNotes(((await response.json()) as { notes: RevisionNote[] }).notes); setNotesError(false);
-    } catch { setNotes([]); setNotesError(true); }
+      const data = (await response.json()) as { notes: RevisionNote[] };
+      if (notesFor.current === id) { setNotes(data.notes); setNotesError(false); }
+    } catch { if (notesFor.current === id) { setNotes([]); setNotesError(true); } }
   }
   useEffect(() => { setNotes(undefined); if (courseId && courseTab === 'revision') void loadNotes(courseId); }, [courseId, courseTab]);
   async function removeNote(note: RevisionNote) {
