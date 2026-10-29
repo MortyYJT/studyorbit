@@ -1,0 +1,11 @@
+{
+  "today": "2026-09-14",
+  "courses": [
+    { "id": "qa-syn-1", "code": "SYNT10001", "name": "Synthetic Signal Systems" },
+    { "id": "qa-syn-2", "code": "SYNT20002", "name": "Synthetic Data Ethics" },
+    { "id": "qa-syn-3", "code": "SYNT30003", "name": "Synthetic Field Methods" }
+  ],
+  "scope": ["qa-syn-1", "qa-syn-2", "qa-syn-3"],
+  "documents": ["SYNT10001.json", "SYNT20002.json"],
+  "planning": "planning.json"
+}

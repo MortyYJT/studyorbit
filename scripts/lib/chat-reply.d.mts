@@ -12,6 +12,8 @@ export function runChatReply(
   input: {
     config: AnalysisConfig; messages: ChatMessage[]; documents: (CourseDocument | DisplayDocument)[];
     courses: { id: string; code?: string; name?: string }[]; scope: string[]; today: string; language: 'zh' | 'en'; planning: SentPlanning | null;
+    /** Forces a mode (Q&A evaluation only); tool mode throws for Codex. */
+    mode?: 'tools' | 'context';
   },
   options?: { signal?: AbortSignal; onDelta?: (text: string) => void; onStep?: (event: StepEvent) => void; cwd?: string },
 ): Promise<{ ok: boolean; stopped?: true; error?: string; usage: TokenCounts | null; model: string | null; message: ChatMessage | null }>;

@@ -41,7 +41,7 @@
 3. 你：打开 `localhost:5173`，在复习页点一个预设按钮，确认对话正常，把一条回复「存到复习」。
 4. L0/L1/L2（#238 先不做）：以后做时先定方案；Claude 的立场是执行器只在合成演示课程上跑。
 5. 小问题（未排期）：`RichText` 遇到「标题 + 列表」混在一段时列表符号原样显示。
-6. 工具调用对话 + MCP：OpenSpec 变更 `chat-tools-mcp`（决定 #320–#339、#360–#369，待你复核）。第 1 个 PR（工具注册表）已合并（#264）；第 2 个 PR #267（三家服务商的工具循环、计划快照、步骤显示，分支 `claude/chat-tool-loop`）待合并，DeepSeek 实测见 #368（推理回传那条路径未实测）；之后是问答评测（第 3 个）；MCP（第 4 个，分支 `claude/mcp-server`，决定 #400–#404）已开 PR 待审查合并：`scripts/mcp-server.mjs` + `scripts/lib/course-mcp.mjs`，SDK 1.32.2，README 有 Claude Code / Claude Desktop 接法；#330 需要你定是否改用 SDK v2。
+6. 工具调用对话 + MCP：OpenSpec 变更 `chat-tools-mcp`（决定 #320–#339、#360–#369、#395–#404，待你复核）。第 1、2 个 PR 已合并（#264、#267）；第 3 个 PR #273（问答评测，分支 `claude/chat-qa-eval`）待审查合并：32 道合成题 × 5 次 × 2 种模式，`deepseek-flash` 上下文模式 → 工具模式的准确率见 `docs/eval-results.md`「对话问答：改造前后」，上下文模式的错是缺计划数据或剩余权重口径不同，不是算术错；同一 PR 修了 DeepSeek 并行工具调用的回传顺序（#396，#267 的实测没覆盖到，第二步会 400）。MCP（第 4 个，分支 `claude/mcp-server`，决定 #400–#404）已开 PR 待审查合并：`scripts/mcp-server.mjs` + `scripts/lib/course-mcp.mjs`，SDK 1.32.2，README 有 Claude Code / Claude Desktop 接法；#330 需要你定是否改用 SDK v2。
 
 ## 等用户决定
 

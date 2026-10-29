@@ -96,7 +96,7 @@ describe('runChatWithTools', () => {
     expect(second.messages.at(-1)).toEqual({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', content: result.steps[0]!.result }] });
   });
 
-  it('runs parallel DeepSeek calls in order with each output right after its call, and keeps reasoning', async () => {
+  it('runs parallel DeepSeek calls in order, sends all calls before their outputs, and keeps reasoning', async () => {
     const { bodies } = script([
       dsCalls([{ id: 'c1', name: 'list_courses', args: '' }, { id: 'c2', name: 'calculate_grades', args: '{"courseId":"syn-1"}' }], '', 'Need data. '),
       dsText('Done.', undefined, 'Now answer.'),
@@ -107,9 +107,8 @@ describe('runChatWithTools', () => {
     expect(result.reasoning).toBe('Need data. \n\nNow answer.');
     const input = (bodies[1] as { input: { type?: string; call_id?: string }[] }).input;
     const types = input.map(item => item.type ?? 'message');
-    expect(types).toEqual(['message', 'reasoning', 'function_call', 'function_call_output', 'function_call', 'function_call_output']);
-    expect(input[2]!.call_id).toBe('c1'); expect(input[3]!.call_id).toBe('c1');
-    expect(input[4]!.call_id).toBe('c2'); expect(input[5]!.call_id).toBe('c2');
+    expect(types).toEqual(['message', 'reasoning', 'function_call', 'function_call', 'function_call_output', 'function_call_output']);
+    expect(input.slice(2).map(item => item.call_id)).toEqual(['c1', 'c2', 'c1', 'c2']);
   });
 
   it('merges fragmented chat-completions calls and runs an empty-argument call with {}', async () => {

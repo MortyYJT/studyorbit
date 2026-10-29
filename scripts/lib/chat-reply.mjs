@@ -42,17 +42,19 @@ function contextSystem({ documents, courses, scope, today, language }) {
  * Run one reply for a chat whose stored messages already end with the new user message.
  * @param {{ config: import('./llm-config.mjs').AnalysisConfig, messages: import('./chat-store.mjs').ChatMessage[],
  *   documents: import('../../shared/course-data.ts').CourseDocument[], courses: { id: string, code?: string, name?: string }[],
- *   scope: string[], today: string, language: 'zh'|'en', planning: import('../../shared/planning-snapshot.ts').SentPlanning | null }} input
+ *   scope: string[], today: string, language: 'zh'|'en', planning: import('../../shared/planning-snapshot.ts').SentPlanning | null,
+ *   mode?: 'tools'|'context' }} input mode forces a mode (the Q&A evaluation runs both); the chat route leaves it unset
  * @param {{ signal?: AbortSignal, onDelta?: (text: string) => void, onStep?: (event: object) => void, cwd?: string }} options
  * @returns {Promise<{ ok: boolean, stopped?: true, error?: string, usage: object|null, model: string|null,
  *   message: import('./chat-store.mjs').ChatMessage | null }>} message is null when there is nothing to save
  */
-export async function runChatReply({ config, messages, documents, courses, scope, today, language, planning }, { signal, onDelta, onStep, cwd } = {}) {
+export async function runChatReply({ config, messages, documents, courses, scope, today, language, planning, mode }, { signal, onDelta, onStep, cwd } = {}) {
+  if (mode === 'tools' && !TOOL_PROVIDERS.includes(config.provider)) throw new Error(`Tool mode is not available for ${config.provider}.`);
   const contextReply = async fallback => {
     const result = await chat(config, { system: contextSystem({ documents, courses, scope, today, language }), messages: replyHistory(messages, { reasoning: false }) }, { signal, onDelta, cwd });
     return finish(result, { mode: 'context', ...(fallback ? { fallback: true } : {}) });
   };
-  if (chatMode(config.provider) === 'context') return contextReply(false);
+  if ((mode ?? chatMode(config.provider)) === 'context') return contextReply(false);
 
   const display = documents.map(toDisplayDocument);
   const context = { documents: display, courses, scope, today, planning };

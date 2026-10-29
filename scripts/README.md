@@ -13,6 +13,8 @@
 | `mcp-server.mjs` | 本机 stdio MCP 服务（`node scripts/mcp-server.mjs`），把对话用的只读课程工具开放给 MCP 客户端；参数 `--project`、`--desktop`、`--courses`（或 `STUDYORBIT_COURSES`），不写文件、不调用模型、不联网（[接法](../README.md#在-mcp-客户端里使用)） |
 | `lib/course-mcp.mjs` | MCP 服务本体：每个注册表工具一个 MCP 工具（只读标注），每次调用重新读取课程文件；所有 MCP SDK 用法都在这里 |
 | `lib/eval-score.mjs` | 评测的配对与打分纯函数 |
+| `eval-chat-qa.mjs` | 用合成题集比较对话的上下文模式和工具模式：每题 N 次单轮对话、确定性评分、`--fake` 固定输出、`--rescore` 重新评分（[说明](../docs/eval-chat-qa.md)） |
+| `lib/qa-grade.mjs` | 问答评测的评分纯函数 |
 | `lib/course-list.mjs` | Canvas JSON 解析与课程代码筛选 |
 | `lib/course-analysis.mjs` | 统一提示词及模型输出 Schema |
 | `lib/course-reports.mjs` | 读取已选课程和桌面课程文件夹里最新的有效课程 JSON |
