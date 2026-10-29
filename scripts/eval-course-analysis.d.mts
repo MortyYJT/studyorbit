@@ -5,7 +5,7 @@ import type { CourseDocumentV1, CourseDocumentV2 } from '../shared/course-data.t
 
 export type EvalOptions = {
   run?: string; courses?: string; gold?: string; n: number; model?: string; provider?: string;
-  fake?: string; fixture?: string; out?: string; live: boolean;
+  fake?: string; fixture?: string; out?: string; rescore?: string; live: boolean;
 };
 export type EvalCourse = { course: AnalysisCourse & { name?: string; term?: string | null }; canvas: unknown; ed: unknown; handbook: unknown; gold: CourseDocumentV1 };
 export type EvalRunRecord = {
@@ -15,7 +15,9 @@ export type EvalRunRecord = {
 export type CourseEvaluation = { id: string; code: string; runs: EvalRunRecord[]; summary: CourseSummary };
 export type Skipped = { id: string; code?: string; reason: string };
 export type EvalSummary = {
-  startedAt: string; finishedAt: string; n: number; mode: 'fake' | 'model'; provider: string | null; model: string | null;
+  startedAt: string; finishedAt: string; n: number; mode: 'fake' | 'model' | 'rescore'; provider: string | null; model: string | null;
+  /** Rescore only: the saved results folder and its original mode and start time. */
+  source?: string; originalMode?: 'fake' | 'model' | null; originalStartedAt?: string | null;
   courses: Array<{ id: string; code: string; summary: CourseSummary }>; overall: OverallSummary; skipped: Skipped[];
 };
 export type ModelRun = (prompt: string, context: { course: EvalCourse['course']; run: number }) => Promise<ModelResult>;
@@ -25,6 +27,9 @@ export function parseArgs(argv: string[]): EvalOptions;
 export function isInside(path: string, dir: string): Promise<boolean>;
 export function loadFixture(dir: string): Promise<EvalCourse>;
 export function loadRun(options: { runDir: string; coursesPath: string; goldDir: string }): Promise<{ courses: EvalCourse[]; skipped: Skipped[] }>;
+export function loadSavedRuns(options: { resultsDir: string; goldDir: string }): Promise<{
+  courses: Array<{ id: string; code: string; gold: CourseDocumentV1; runs: EvalRunRecord[] }>; skipped: Skipped[]; saved: EvalSummary | null;
+}>;
 export function createFakeRunner(dir: string): ModelRun;
 export function evaluateCourses(options: { courses: EvalCourse[]; n: number; run: ModelRun; isCancelled?: () => boolean }): Promise<{ courses: CourseEvaluation[]; overall: OverallSummary }>;
 export function resolveEvalConfig(projectDir: string, env: Record<string, string | undefined>, overrides?: { provider?: string; model?: string }): Promise<AnalysisConfig>;
