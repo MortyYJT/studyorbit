@@ -32,4 +32,4 @@
 - [x] 3.8 Chat context marks 「权重无出处」/「规则无出处」 (test in `test/chat-context.test.ts`) (PR #265)
 - [x] 3.9 If `scripts/lib/eval-score.mjs` is on `main`: tests then matching by `id`, then platform identity (v2 `refs`, or v1 source URLs and platform-shaped IDs), then name slug, one-to-one; otherwise add this as an open item in `note/handoff.md` (PR #265)
 - [x] 3.10 Rewrite `docs/course-json.md` for v2 (model output, stored document, Handbook components, IDs, back-fill, quotes, `legacyIds`, v1 compatibility) (PR #265)
-- [ ] 3.11 `bash .claude/check.sh`; real-browser check of a synthetic v1 course, then the same course synced to v2 with corrections moved; fresh-context review; update `note/handoff.md`; archive the change after PR 3 merges
+- [x] 3.11 `bash .claude/check.sh`; real-browser check of a synthetic v1 course, then the same course synced to v2 with corrections moved; fresh-context review; update `note/handoff.md`; archive the change after PR 3 merges PR #265 (browser check used a synthetic course served by intercepting the reports API; a real v1 → v2 sync was not run)
