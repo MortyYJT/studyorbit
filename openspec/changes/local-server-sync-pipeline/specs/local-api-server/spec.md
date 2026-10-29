@@ -46,7 +46,7 @@ Before any route runs, the server SHALL answer `403` unless the peer address is 
 - **THEN** the server answers `403` and saves nothing
 
 ### Requirement: Vite proxies the local API
-The Vite dev server SHALL proxy `/api/local` to `http://127.0.0.1:<api port>` without changing the `Host` header, SHALL set `x-studyorbit-token` on every proxied request, replacing any value sent by the browser, and SHALL pass Server-Sent Events through unbuffered. When the browser aborts a proxied request, the server SHALL see the request closed. In `serve` mode other than preview, Vite SHALL refuse to start without `STUDYORBIT_API_TOKEN`, with a message telling the user to run `npm run dev`; `vite build` SHALL NOT require it. Vite SHALL use a strict port.
+The Vite dev server SHALL listen on `localhost` (loopback) only and SHALL proxy `/api/local` to `http://127.0.0.1:<api port>` without changing the `Host` header. Because the API server then sees every proxied request as coming from `127.0.0.1`, the proxy SHALL answer `403` without forwarding when the browser's client address is not loopback. The proxy SHALL set `x-studyorbit-token` on every proxied request, replacing any value sent by the browser, and SHALL pass Server-Sent Events through unbuffered. When the browser aborts a proxied request, the server SHALL see the request closed. In `serve` mode other than preview, Vite SHALL refuse to start without `STUDYORBIT_API_TOKEN`, with a message telling the user to run `npm run dev`, and SHALL never send a request with an undefined token. `vite build` and `vite preview` SHALL NOT require the token; `vite preview` SHALL have no `/api/local` proxy, so those requests get `404` as with the static build. Vite SHALL use a strict port.
 
 #### Scenario: Page request through the proxy
 - **WHEN** the page at `http://localhost:5173` sends `GET /api/local/course-sync`
@@ -56,12 +56,20 @@ The Vite dev server SHALL proxy `/api/local` to `http://127.0.0.1:<api port>` wi
 - **WHEN** a page request carries its own `x-studyorbit-token` header
 - **THEN** the proxied request carries the launch token instead
 
+#### Scenario: LAN client through an exposed dev server
+- **WHEN** Vite was started with `--host` and a client on the local network sends `GET /api/local/course-reports` with `Host: localhost:5173`
+- **THEN** the proxy answers `403` and nothing is forwarded to the API server
+
+#### Scenario: Preview without the API
+- **WHEN** the owner runs `vite preview` and the page requests `/api/local/course-sync`
+- **THEN** the response is `404` and no request is sent to the API port
+
 #### Scenario: Chat reply streams and stops
 - **WHEN** the page streams a chat reply through the proxy and closes the request midway
 - **THEN** delta events arrive as they are produced, and the server aborts the model request
 
 ### Requirement: One command starts both processes
-`npm run dev` SHALL run a launcher that creates a random 32-byte token, starts the API server and then Vite with the token and both ports in their environment, forwards `SIGINT` and `SIGTERM` to both, stops the other process when one exits, and exits with the first non-zero exit code. Vite SHALL start only after the server reports that it is listening. The launcher SHALL NOT add a dependency. Serving the built page from the API server is out of scope.
+`npm run dev` SHALL run a launcher that creates a random 32-byte token, starts the API server with its standard output piped and echoed line by line, starts Vite (inherited output) once the server's listening line has appeared, gives both the token and both ports in their environment, forwards `SIGINT` and `SIGTERM` to both, stops the other process when one exits, and exits with the first non-zero exit code. If the server exits or prints no listening line within 15 seconds, the launcher SHALL NOT start Vite and SHALL exit with a non-zero code. The launcher SHALL NOT add a dependency. Serving the built page from the API server is out of scope.
 
 #### Scenario: Normal start
 - **WHEN** the owner runs `npm run dev`

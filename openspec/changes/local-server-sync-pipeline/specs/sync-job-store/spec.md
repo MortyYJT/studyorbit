@@ -60,8 +60,12 @@ When the database file is not a SQLite database, has a `user_version` higher tha
 - **THEN** the sync routes answer `503 SYNC_STORE_UNAVAILABLE` and the file's bytes are unchanged
 
 ### Requirement: Retention
-On startup the store SHALL keep every running job and the newest 50 other jobs, delete older jobs with their course, stage and snapshot rows, and then delete artifacts no remaining stage references. It SHALL NOT delete run directories or Desktop files.
+On startup the store SHALL prune whole lineages only (a root job and its chain of resumed jobs): it SHALL keep the 50 lineages with the newest jobs and every lineage containing a running job, delete each other lineage's jobs together in one statement with their course, stage and snapshot rows, and then delete artifacts no remaining row references. It SHALL never delete a job whose resumed child is kept. It SHALL NOT delete run directories or Desktop files.
 
 #### Scenario: Old jobs pruned
-- **WHEN** the store holds 55 finished jobs at startup
+- **WHEN** the store holds 55 single-job lineages at startup
 - **THEN** the oldest 5 jobs and their rows are deleted, and artifacts referenced only by them are deleted
+
+#### Scenario: Parent with a kept child
+- **WHEN** the 51st-newest lineage is a job whose resumed child is among the newest jobs
+- **THEN** the lineage counts once by its newest job, neither job is deleted on its own, and no foreign key error occurs

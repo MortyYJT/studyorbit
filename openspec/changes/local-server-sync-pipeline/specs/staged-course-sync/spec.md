@@ -1,7 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: Four stages per course with checkpoints
-The sync SHALL process each selected course through the stages collect, analyse, validate and merge, in that order. Collect SHALL run the Canvas, Ed and Handbook collectors with today's arguments, limits and `unavailable` placeholders into the job's run directory; analyse SHALL run the model with the existing repair loop; validate SHALL run `validateAnalysis`, quote verification when available, and `settleCourse` with the newest valid earlier Desktop document; merge SHALL save the course file, record the course snapshot and run the post-save steps. Each stage SHALL record a checkpoint with its input hash (sha256 of its canonical inputs, including a per-stage version constant), status, output reference, attempts, usage, timing and error. Collect SHALL update its checkpoint after each source. Collection SHALL stay serial across courses; a course's later stages SHALL start once its collect succeeds.
+The sync SHALL process each selected course through the stages collect, analyse, validate and merge, in that order. Collect SHALL run the Canvas, Ed and Handbook collectors with today's arguments, limits and `unavailable` placeholders into the job's run directory; analyse SHALL run the model with the existing repair loop; validate SHALL run `validateAnalysis`, quote verification when available, and `settleCourse` with the course's captured earlier document; merge SHALL save the course file, record the course snapshot and run the post-save steps. Each stage SHALL record a checkpoint with its input hash (sha256 of its canonical inputs, including a per-stage version constant), status, output reference, attempts, usage, timing and error. Collect SHALL update its checkpoint after each source. Collection SHALL stay serial across courses; a course's later stages SHALL start once its collect succeeds. The earlier document SHALL be captured once per course per lineage: when a course first starts in a lineage, the newest valid earlier Desktop document is stored with its hash, a resumed job SHALL copy it from its parent instead of reading the Desktop again, and validate and the change log SHALL use only the captured document.
+
+#### Scenario: Own file is not the earlier document
+- **WHEN** a job crashes after merge wrote course 2's file and is resumed
+- **THEN** the resumed job uses the document captured before that file existed, so `legacyIds`, the input hashes and the change-log diff are those of an uninterrupted run
 
 #### Scenario: Checkpoints after a normal course
 - **WHEN** a course finishes a sync
@@ -23,7 +27,7 @@ A stage SHALL fail only on an exception, a timeout, an I/O error, a temporary co
 - **THEN** course 2 is `failed` with `stopped_stage: 'analyse'`, courses 1 and 3 are saved, and the job is `failed` and resumable
 
 ### Requirement: Resume from checkpoints
-`POST /api/local/sync-jobs/<jobId>/resume` SHALL create a new job with `resumed_from` set to that job, its own run ID and run directory, and the same courses in the same order. A job SHALL be resumable only when it is `failed`, `cancelled` or `interrupted`, has no resumed child, was created less than 24 hours ago, and has a course whose merge stage has not succeeded; otherwise the route SHALL answer `409` with `NOT_RESUMABLE`, `ALREADY_RESUMED` or `RESUME_EXPIRED`, or `404 JOB_NOT_FOUND`. In the resumed job, a course whose merge succeeded anywhere in the lineage (the job and its `resumed_from` ancestors) SHALL be copied as done without running; for other courses each stage SHALL reuse a `succeeded` checkpoint from the lineage with the same idempotency key (course ID, stage, input hash) when its outputs still verify (collected files exist with the recorded sha256; stored outputs exist), and SHALL run otherwise, writing into the new job's run directory. Collect SHALL reuse verified sources individually. A sync started by the owner SHALL NOT reuse checkpoints of other jobs.
+`POST /api/local/sync-jobs/<jobId>/resume` SHALL create a new job with `resumed_from` set to that job, its own run ID and run directory, and the same courses in the same order. A job SHALL be resumable only when it is `failed`, `cancelled` or `interrupted`, has no resumed child, its lineage's root job was created less than 24 hours ago, and has a course whose merge stage has not succeeded; otherwise the route SHALL answer `409` with `NOT_RESUMABLE`, `ALREADY_RESUMED` or `RESUME_EXPIRED`, or `404 JOB_NOT_FOUND`. In the resumed job, a course whose merge succeeded anywhere in the lineage (the job and its `resumed_from` ancestors) SHALL be copied as done without running; for other courses each stage SHALL reuse a `succeeded` checkpoint from the lineage with the same idempotency key (course ID, stage, input hash) when its outputs still verify (collected files exist with the recorded sha256; stored outputs exist), and SHALL run otherwise, writing into the new job's run directory. Collect SHALL reuse verified sources individually. A sync started by the owner SHALL NOT reuse checkpoints of other jobs.
 
 #### Scenario: Resume after an analysis failure
 - **WHEN** a job failed in analyse for one course and is resumed
@@ -45,12 +49,16 @@ A stage SHALL fail only on an exception, a timeout, an I/O error, a temporary co
 - **WHEN** the owner resumes a job created 25 hours ago
 - **THEN** the route answers `409 RESUME_EXPIRED` and no job is created
 
+#### Scenario: Resume of a resume
+- **WHEN** a job created 2 hours ago resumed a root job created 25 hours ago, failed, and the owner resumes it
+- **THEN** the route answers `409 RESUME_EXPIRED`, because ancestors' collected data would be reused
+
 ### Requirement: Idempotent stages and jobs
-Running a stage again with the same input hash SHALL have the same effects as running it once. Merge SHALL record the chosen output path in its checkpoint before writing, write with exclusive create, and, when the planned file already exists, treat equal content as done and different content as the stage error `MERGE_TARGET_CHANGED` without overwriting. Stage outputs SHALL be stored content-addressed. Each job SHALL write at most one usage line per course and SHALL NOT append a change-log line for a course twice. At most one course-sync job SHALL run at a time; starting or resuming while one runs SHALL answer `409 SYNC_RUNNING`.
+Running a stage again with the same input hash SHALL have the same effects as running it once. Merge SHALL record the chosen output path and the document's content hash in its checkpoint before writing and write with exclusive create. Before choosing a path, merge SHALL consult every merge row of the lineage for the course, whatever its status: when a recorded file exists with the recorded content hash, merge SHALL complete from that row without writing; when the recorded file is missing and the input hash matches, it SHALL write to the recorded path; when a recorded file exists with different content, it SHALL fail with `MERGE_TARGET_CHANGED` without overwriting. A new path SHALL be chosen only when no such row exists. Stage outputs SHALL be stored content-addressed. Each job SHALL write at most one usage line per course. A change-log line for a course SHALL NOT be appended when the log already has a line for that course with the run ID of any job in the lineage. At most one course-sync job SHALL run at a time; starting or resuming while one runs SHALL answer `409 SYNC_RUNNING`.
 
 #### Scenario: Crash after the course file was written
 - **WHEN** the server dies after merge wrote `分数结构.json` but before its checkpoint committed, and the job is resumed
-- **THEN** no second course file is written, the snapshot is recorded once, and the course is `completed` or `partial` as it would have been
+- **THEN** the resumed merge finds the interrupted merge row's planned path, no second course file (such as `分数结构-<new run ID>.json`) is written, the snapshot is recorded once, no change-log line is repeated, and the course is `completed` or `partial` as it would have been
 
 #### Scenario: Planned file replaced
 - **WHEN** the planned file exists with different content when merge runs again
@@ -83,7 +91,7 @@ The sync SHALL limit each platform: Canvas, Ed and the Handbook to one collector
 - **THEN** at most four model requests are in flight
 
 ### Requirement: Job status API and resume in the page
-`GET /api/local/course-sync` SHALL keep its response shape (`running`, `courses` with `id`, `code`, `status`, `reason`, `phase`, `file`, and `error`), SHALL be built from the newest job in the store, and SHALL add `jobId`, `resumedFrom`, `resumable`, and per course `stage` and `reused`. `GET /api/local/sync-jobs` SHALL return the newest 20 jobs with their status, times, lineage, resumability and course statuses. `POST /api/local/sync-jobs/<jobId>/resume` SHALL follow the write checks of the other local routes. When the newest job is resumable, the sync dialog SHALL offer 「继续上次同步」, and courses copied from an earlier job SHALL be marked 「沿用上次结果」.
+`GET /api/local/course-sync` SHALL keep its response shape (`running`, `courses` with `id`, `code`, `status`, `reason`, `phase`, `file`, and `error`), SHALL be built from the newest job in the store, and SHALL add `jobId`, `resumedFrom`, `resumable`, and per course `stage` and `reused`. `GET /api/local/sync-jobs` SHALL return the newest 20 jobs with their status, times, lineage, resumability and course statuses. `POST /api/local/sync-jobs/<jobId>/resume` SHALL follow the write checks of the other local routes. The page SHALL label the course status `interrupted` 「已中断」 ("Interrupted") and mark it as a problem like `failed` and `cancelled`. When the newest job is resumable, the sync dialog SHALL offer 「继续上次同步」, and courses copied from an earlier job SHALL be marked 「沿用上次结果」.
 
 #### Scenario: Status survives a restart
 - **WHEN** the server restarts after a finished sync
@@ -94,7 +102,11 @@ The sync SHALL limit each platform: Canvas, Ed and the Handbook to one collector
 - **THEN** a resumed job starts and the dialog shows its progress
 
 ### Requirement: Injectable stage dependencies
-The pipeline SHALL take its collector runner, model caller, model settings resolver, clock, limiters and hooks as constructor parameters. Hooks that simulate a crash before a stage, after a checkpoint, or after merge wrote the course file SHALL be settable only through that parameter, never through a route, environment variable or command-line flag.
+The pipeline SHALL take its collector runner, model caller, model settings resolver, clock, limiters and hooks as constructor parameters. Hooks that simulate a crash before a stage, after a checkpoint, or after merge wrote the course file SHALL be settable only through that parameter, never through a route, environment variable or command-line flag. A simulated crash SHALL halt the whole pipeline instance: it SHALL stop every running task, make every later store or file write of that instance fail before taking effect, close the instance's database handle, and leave the job `running` in the database; the instance's run SHALL settle only after all its tasks have settled.
+
+#### Scenario: Other courses stop writing after a simulated crash
+- **WHEN** a simulated crash hits course 2 while course 1's analysis is still running
+- **THEN** course 1's task writes nothing to the store or the Desktop after the crash, and the instance's run settles before the test resumes
 
 #### Scenario: Production server has no hooks
 - **WHEN** the server creates the pipeline
