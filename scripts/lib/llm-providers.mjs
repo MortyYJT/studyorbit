@@ -377,3 +377,195 @@ export async function chat(config, input, { signal, onDelta, cwd } = {}) {
   if (['deepseek', 'openai-compatible', 'anthropic'].includes(config.provider)) return { ...base, ...(await chatHttp(config, input, signal, onDelta)) };
   return { ...base, ok: false, text: '', usage: null, error: `未知分析提供方：${config.provider}` };
 }
+
+// ---- Tool-calling chat wire formats (decision #325) ----------------------------------------------------------
+// Pure helpers used by `runChatWithTools` in chat-tool-loop.mjs. A conversation is the provider's own array
+// (Responses input items, chat-completions messages or Messages turns). A step's calls are { id, name, args } with
+// `args` the raw JSON text as streamed ('' when the provider sent none).
+
+export { CHAT_TIMEOUT_MS, readEvents as readServerEvents };
+
+/** Quoted transcript of earlier turns, in the same 用户/助手 form as the Codex prompt. */
+function transcript(turns) {
+  return `之前的对话（引用，供参考）：\n\n${turns.map(turn => `${turn.role === 'user' ? '用户' : '助手'}：\n${turn.content}`).join('\n\n')}`;
+}
+
+/**
+ * Convert stored text history ({ role, content, reasoning? }, oldest first) into the provider's conversation.
+ * Earlier tool calls are never replayed. Stored reasoning is replayed for DeepSeek (a `reasoning` item before the
+ * assistant message) and chat completions (`reasoning_content`). For DeepSeek every turn up to and including the last
+ * assistant turn without reasoning is folded into a transcript at the top of the next user message, because DeepSeek
+ * rejects requests with tools when an earlier assistant turn has no reasoning.
+ */
+export function toolConversation(provider, history) {
+  const start = history.findIndex(turn => turn.role === 'user');
+  const turns = start < 0 ? [] : history.slice(start);
+  if (provider === 'openai-compatible') return turns.map(turn => turn.role === 'assistant' && turn.reasoning ? { role: 'assistant', content: turn.content, reasoning_content: turn.reasoning } : { role: turn.role, content: turn.content });
+  if (provider !== 'deepseek') return turns.map(turn => ({ role: turn.role, content: turn.content }));
+  let lastBare = -1;
+  turns.forEach((turn, index) => { if (turn.role === 'assistant' && !turn.reasoning) lastBare = index; });
+  const input = [];
+  let folded = lastBare >= 0 ? transcript(turns.slice(0, lastBare + 1)) : null;
+  for (const turn of turns.slice(lastBare + 1)) {
+    if (turn.role === 'user') {
+      input.push({ role: 'user', content: folded ? `${folded}\n\n---\n\n${turn.content}` : turn.content });
+      folded = null;
+    } else input.push({ type: 'reasoning', content: [{ type: 'reasoning_text', text: turn.reasoning }] }, { role: 'assistant', content: turn.content });
+  }
+  // History that ends on a reasoning-less assistant turn has no later user message to carry the transcript.
+  if (folded) input.push({ role: 'user', content: folded });
+  return input;
+}
+
+/** Build one streaming tool-mode request. `choice` is 'auto' or 'none'. Pure: no network. */
+export function buildToolRequest(config, { system, conversation, tools, choice }) {
+  if (config.provider === 'deepseek') {
+    return { url: DEEPSEEK_RESPONSES_URL, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({ model: config.model, instructions: system, input: conversation, stream: true, tool_choice: choice,
+        tools: tools.map(tool => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.parameters })) }) };
+  }
+  if (config.provider === 'openai-compatible') {
+    return { url: config.baseUrl, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({ model: config.model, messages: [{ role: 'system', content: system }, ...conversation], stream: true, stream_options: { include_usage: true },
+        tools: tools.map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } })), tool_choice: choice }) };
+  }
+  if (config.provider === 'anthropic') {
+    // Tools precede the system block in the cache prefix, so the system breakpoint caches both.
+    return { url: ANTHROPIC_URL, headers: { 'content-type': 'application/json', 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: config.model, max_tokens: CHAT_MAX_TOKENS, stream: true, system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+        messages: conversation, tools: tools.map(tool => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })), tool_choice: { type: choice } }) };
+  }
+  throw new Error(`UNSUPPORTED_PROVIDER:${config.provider}`);
+}
+
+/**
+ * Per-provider parser for one streamed tool-mode step. Feed parsed SSE payloads to `event`; `result()` returns
+ * { text, reasoning, calls, usage, error, blocks? }, where error is null for a finished step (answer or tool calls).
+ */
+export function toolStepParser(provider, key, emit) {
+  let text = '', reasoning = '', usage = null, failure = null, finished = false;
+  const add = delta => { if (typeof delta === 'string' && delta) { text += delta; emit(delta); } };
+  const fail = message => { failure ??= redact(message, key); };
+  if (provider === 'deepseek') {
+    const calls = [];
+    return {
+      event(event) {
+        if (event.type === 'response.output_text.delta') add(event.delta);
+        else if (event.type === 'response.reasoning_text.delta' && typeof event.delta === 'string') reasoning += event.delta;
+        else if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
+          const item = event.item;
+          calls.push({ id: String(item.call_id ?? item.id ?? `call_${calls.length + 1}`), name: String(item.name ?? ''), args: typeof item.arguments === 'string' ? item.arguments : '' });
+        } else if (event.type === 'response.completed') { finished = true; usage = counts(event.response?.usage); }
+        else if (event.type === 'response.incomplete') { usage = counts(event.response?.usage); fail(`DeepSeek 回复未完成：${event.response?.incomplete_details?.reason ?? '未知'}`); }
+        else if (event.type === 'response.failed') fail(`DeepSeek 接口出错：${event.response?.error?.message ?? '未知'}`);
+        else if (event.type === 'error') fail(`DeepSeek 接口出错：${event.message ?? event.error?.message ?? '未知'}`);
+      },
+      result: () => ({ text, reasoning, calls, usage, error: failure ?? (finished ? null : 'DeepSeek 回复中断。') }),
+    };
+  }
+  if (provider === 'openai-compatible') {
+    const fragments = new Map();
+    let reason = null;
+    return {
+      event(event) {
+        if (event.error) { fail(`模型接口出错：${event.error.message ?? event.error}`); return; }
+        const choice = event.choices?.[0];
+        add(choice?.delta?.content);
+        if (typeof choice?.delta?.reasoning_content === 'string') reasoning += choice.delta.reasoning_content;
+        for (const part of Array.isArray(choice?.delta?.tool_calls) ? choice.delta.tool_calls : []) {
+          const index = Number.isInteger(part?.index) ? part.index : fragments.size;
+          const call = fragments.get(index) ?? { id: '', name: '', args: '' };
+          if (typeof part?.id === 'string' && part.id && !call.id) call.id = part.id;
+          if (typeof part?.function?.name === 'string') call.name += part.function.name;
+          if (typeof part?.function?.arguments === 'string') call.args += part.function.arguments;
+          fragments.set(index, call);
+        }
+        if (choice?.finish_reason) reason = choice.finish_reason;
+        if (event.usage) usage = counts(event.usage) ?? usage;
+      },
+      result() {
+        // Calls are detected by presence: some servers end a tool step with finish_reason 'stop'.
+        const calls = [...fragments.entries()].sort((a, b) => a[0] - b[0]).map(([index, call]) => ({ ...call, id: call.id || `call_${index}` }));
+        const done = reason === 'stop' || reason === 'tool_calls' || reason === 'function_call';
+        return { text, reasoning, calls, usage, error: failure ?? (done ? null : reason === 'length' ? '回复超出长度上限。' : reason ? `回复未完成：${reason}` : '模型回复中断。') };
+      },
+    };
+  }
+  // Anthropic: blocks are kept as received so a tool round can send them back unchanged.
+  const blocks = new Map();
+  let raw = null, stopReason = null;
+  return {
+    event(event) {
+      if (event.type === 'message_start') raw = { ...event.message?.usage };
+      else if (event.type === 'content_block_start' && event.content_block) blocks.set(event.index, { ...event.content_block });
+      else if (event.type === 'content_block_delta') {
+        const block = blocks.get(event.index), delta = event.delta;
+        if (delta?.type === 'text_delta') { add(delta.text); if (block?.type === 'text') block.text = (block.text ?? '') + (delta.text ?? ''); }
+        else if (block && delta?.type === 'thinking_delta') block.thinking = (block.thinking ?? '') + (delta.thinking ?? '');
+        else if (block && delta?.type === 'signature_delta') block.signature = (block.signature ?? '') + (delta.signature ?? '');
+        else if (block?.type === 'tool_use' && delta?.type === 'input_json_delta') block.partialJson = (block.partialJson ?? '') + (delta.partial_json ?? '');
+      } else if (event.type === 'message_delta') { stopReason = event.delta?.stop_reason ?? stopReason; raw = { ...raw, ...event.usage }; }
+      else if (event.type === 'message_stop') finished = true;
+      else if (event.type === 'error') fail(`Anthropic 接口出错：${event.error?.message ?? event.error?.type ?? '未知'}`);
+    },
+    result() {
+      const ordered = [...blocks.entries()].sort((a, b) => a[0] - b[0]).map(entry => entry[1]);
+      // A tool_use without input_json_delta keeps the input from content_block_start (normally {}).
+      const calls = ordered.filter(block => block.type === 'tool_use').map(block => ({ id: String(block.id ?? ''), name: String(block.name ?? ''), args: block.partialJson ?? JSON.stringify(block.input ?? {}) }));
+      const error = failure ?? (stopReason === 'tool_use' || stopReason === 'end_turn' || stopReason === 'stop_sequence' ? null
+        : stopReason === 'refusal' ? 'Claude 拒绝了这次请求。' : stopReason === 'max_tokens' ? '回复超出长度上限。'
+          : stopReason ? `Claude 回复未完成：${stopReason}` : finished ? 'Claude 回复未完成。' : 'Claude 回复中断。');
+      return { text, reasoning, calls: stopReason === 'tool_use' ? calls : [], usage: anthropicUsage(raw), error, blocks: ordered };
+    },
+  };
+}
+
+function objectInput(json) {
+  try { const value = JSON.parse(json); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; } catch { return {}; }
+}
+
+/**
+ * Append one tool round: the model's step, then one result per call in call order (`results[i]` is { text, ok } for
+ * `step.calls[i]`). Returns a new conversation.
+ */
+export function appendToolRound(provider, conversation, step, results) {
+  const args = call => call.args.trim() ? call.args : '{}';
+  if (provider === 'deepseek') {
+    // Each function_call_output directly follows its own function_call: DeepSeek rejects anything in between.
+    return [...conversation,
+      ...(step.reasoning ? [{ type: 'reasoning', content: [{ type: 'reasoning_text', text: step.reasoning }] }] : []),
+      ...(step.text ? [{ role: 'assistant', content: step.text }] : []),
+      ...step.calls.flatMap((call, index) => [
+        { type: 'function_call', call_id: call.id, name: call.name, arguments: args(call) },
+        { type: 'function_call_output', call_id: call.id, output: results[index].text },
+      ])];
+  }
+  if (provider === 'openai-compatible') {
+    return [...conversation,
+      { role: 'assistant', content: step.text || null, ...(step.reasoning ? { reasoning_content: step.reasoning } : {}),
+        tool_calls: step.calls.map(call => ({ id: call.id, type: 'function', function: { name: call.name, arguments: args(call) } })) },
+      ...step.calls.map((call, index) => ({ role: 'tool', tool_call_id: call.id, content: results[index].text }))];
+  }
+  // Anthropic: the assistant blocks as received (empty text blocks are rejected), then only tool_result blocks.
+  const content = (step.blocks ?? []).flatMap(({ partialJson, ...block }) => {
+    if (block.type === 'text') return block.text ? [{ type: 'text', text: block.text }] : [];
+    if (block.type === 'tool_use') return [{ type: 'tool_use', id: block.id, name: block.name, input: partialJson === undefined ? block.input ?? {} : objectInput(partialJson) }];
+    return [block];
+  });
+  return [...conversation, { role: 'assistant', content },
+    { role: 'user', content: step.calls.map((call, index) => ({ type: 'tool_result', tool_use_id: call.id, content: results[index].text, ...(results[index].ok ? {} : { is_error: true }) })) }];
+}
+
+/** Redacted text of a failed HTTP response: `message` for display (≤ 300 characters), `body` (≤ 4000) for matching. */
+export async function responseError(response, key) {
+  let body = '';
+  try { body = (await response.text()).slice(0, 4000); } catch { /* No body. */ }
+  if (key) body = body.split(key).join('[key]');
+  let message = body;
+  try {
+    const data = JSON.parse(body);
+    const found = data?.error?.message ?? (typeof data?.error === 'string' ? data.error : undefined) ?? data?.detail ?? data?.message;
+    if (found !== undefined) message = typeof found === 'string' ? found : JSON.stringify(found);
+  } catch { /* Not JSON: keep the raw text. */ }
+  return { body, message: redact(message, key) };
+}

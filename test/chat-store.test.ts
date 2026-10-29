@@ -65,3 +65,47 @@ describe('chat store', () => {
     expect(await listChats(dir)).toEqual([]);
   });
 });
+
+describe('chat store tool-mode fields (decision #326)', () => {
+  const at = '2026-09-14T00:00:00.000Z';
+  const step = { name: 'calculate_grades', args: '{"courseId":"syn-1"}', ok: true, result: '{"average":87.5}', ms: 3 };
+
+  it('keeps mode, fallback, steps and reasoning', async () => {
+    const chat = await createChat(dir, {});
+    await appendMessages(dir, chat.id, [
+      { role: 'user', content: 'Q', at },
+      { role: 'assistant', content: 'A', at, mode: 'tools', steps: [step], reasoning: 'thought' },
+      { role: 'assistant', content: 'B', at, mode: 'context', fallback: true },
+    ]);
+    const stored = await readChat(dir, chat.id);
+    expect(stored?.messages[1]).toMatchObject({ mode: 'tools', steps: [step], reasoning: 'thought' });
+    expect(stored?.messages[2]).toMatchObject({ mode: 'context', fallback: true });
+  });
+
+  it('loads files written before these fields existed', async () => {
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    const id = '22222222-2222-4222-8222-222222222222';
+    await mkdir(join(dir, '.local', 'chat'), { recursive: true });
+    await writeFile(join(dir, '.local', 'chat', `${id}.json`), JSON.stringify({ id, title: 'Old', createdAt: at, updatedAt: at, courseIds: ['syn-1'], messages: [
+      { role: 'user', content: 'Q', at }, { role: 'assistant', content: 'A', at, usage: { input: 1, cached: null, output: 1, reasoning: null }, model: 'synthetic-model' },
+    ] }));
+    const stored = await readChat(dir, id);
+    expect(stored?.messages).toHaveLength(2);
+    expect(stored?.messages[1]?.mode).toBeUndefined();
+    expect((await listChats(dir)).map(item => item.id)).toEqual([id]);
+    expect(await appendMessages(dir, id, [{ role: 'user', content: 'Q2', at }])).not.toBeNull();
+  });
+
+  it('enforces the limits on steps and reasoning', async () => {
+    const chat = await createChat(dir, {});
+    const bad = [
+      { steps: Array.from({ length: 17 }, () => step) },
+      { steps: [{ ...step, args: 'x'.repeat(2001) }] },
+      { steps: [{ ...step, result: 'x'.repeat(8001) }] },
+      { reasoning: 'x'.repeat(30001) },
+      { mode: 'other' },
+    ];
+    for (const patch of bad) await expect(appendMessages(dir, chat.id, [{ role: 'assistant', content: 'A', at, ...patch } as never])).rejects.toThrow();
+    expect((await readChat(dir, chat.id))?.messages).toEqual([]);
+  });
+});

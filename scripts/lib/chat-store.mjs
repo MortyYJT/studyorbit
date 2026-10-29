@@ -17,6 +17,12 @@ const ChatMessageSchema = z.object({
   usage: UsageSchema.nullable().optional(),
   model: z.string().max(200).nullable().optional(),
   status: z.enum(['stopped', 'error']).optional(),
+  // Tool-calling chat (decision #326). Absent mode means context mode (messages written before tools existed).
+  mode: z.enum(['tools', 'context']).optional(),
+  fallback: z.literal(true).optional(),
+  steps: z.array(z.object({ name: z.string().max(64), args: z.string().max(2000), ok: z.boolean(), result: z.string().max(8000), ms: count })).max(16).optional(),
+  // Replayed to the provider in later turns, never shown.
+  reasoning: z.string().max(30000).optional(),
 });
 const ChatSchema = z.object({
   id: z.string().regex(UUID),

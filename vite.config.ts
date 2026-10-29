@@ -7,9 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { filterSubjects } from './scripts/lib/course-list.mjs';
 import { createCourseSyncRunner } from './scripts/course-sync-runner.mjs';
 import { LlmConfigValidationError, configProblem, publicLlmConfig, readLlmConfig, resolveAnalysisConfig, saveLlmConfig } from './scripts/lib/llm-config.mjs';
-import { chat as streamChat, testConnection, type ChatTurn } from './scripts/lib/llm-providers.mjs';
+import { testConnection } from './scripts/lib/llm-providers.mjs';
 import { appendMessages, createChat, deleteChat, isChatId, listChats, readChat } from './scripts/lib/chat-store.mjs';
-import { buildChatContext, chatSystemPrompt } from './scripts/lib/chat-context.mjs';
+import { runChatReply } from './scripts/lib/chat-reply.mjs';
+import { parsePlanningSnapshot } from './shared/planning-snapshot.js';
 import { createNote, deleteNote, listNotes } from './scripts/lib/revision-store.mjs';
 import { loadCourseReports } from './scripts/lib/course-reports.mjs';
 import { createReplyRegistry } from './scripts/lib/chat-replies.mjs';
@@ -171,7 +172,8 @@ export default defineConfig({
           json(known.includes(code) ? (code === 'TOO_MANY_NOTES' ? 409 : 400) : 500, { error: known.includes(code) ? code : 'REVISION_UNAVAILABLE' });
         }
       });
-      // Agent chat (decision #230). Conversations live in .local/chat; replies stream as Server-Sent Events.
+      // Agent chat (decisions #230, #322-#328). Conversations live in .local/chat; replies stream as Server-Sent Events.
+      // DeepSeek, OpenAI-compatible and Anthropic answer with the course tools; Codex keeps the full course context.
       const chatReplies = createReplyRegistry();
       server.middlewares.use('/api/local/chats', async (req, res) => {
         const remote = req.socket.remoteAddress;
@@ -192,7 +194,8 @@ export default defineConfig({
             let raw = '';
             for await (const chunk of req) {
               raw += chunk.toString();
-              if (raw.length > 40000) { json(413, { error: 'TOO_LARGE' }); return; }
+              // Room for the planning snapshot the page sends with each message (decision #322).
+              if (raw.length > 200000) { json(413, { error: 'TOO_LARGE' }); return; }
             }
             try { const parsed: unknown = raw.trim() ? JSON.parse(raw) : {}; if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('shape'); body = parsed as Record<string, unknown>; }
             catch { json(400, { error: 'INVALID_JSON' }); return; }
@@ -217,6 +220,9 @@ export default defineConfig({
           const content = typeof body.content === 'string' ? body.content.trim() : '';
           if (!content) { json(400, { error: 'CONTENT_EMPTY' }); return; }
           if (content.length > 8000) { json(400, { error: 'CONTENT_TOO_LONG' }); return; }
+          // Used for this reply only and never stored.
+          const planning = parsePlanningSnapshot(body.planning);
+          if (!planning.ok) { json(400, { error: 'INVALID_PLANNING' }); return; }
           // Claim the chat before any await so concurrent sends cannot both pass the check.
           const controller = chatReplies.begin(id);
           if (!controller) { json(409, { error: 'REPLY_RUNNING' }); return; }
@@ -240,23 +246,11 @@ export default defineConfig({
             } catch { /* No synced courses yet: the context says so per course. */ }
             const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
             const language = body.language === 'en' ? 'en' : 'zh';
-            const system = `${chatSystemPrompt(language)}\n\n# 课程数据\n\n${buildChatContext(documents, { today, courseIds: scope, courses: known })}`;
-            // Keep the most recent turns within a fixed budget so long chats do not grow without bound.
-            const history: ChatTurn[] = [];
-            let budget = 60000;
-            for (const message of [...updated.messages].reverse()) {
-              if (!message.content) continue;
-              budget -= message.content.length;
-              if (budget < 0 && history.length) break;
-              history.unshift({ role: message.role, content: message.content });
-            }
             res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
             const send = (event: string, data: unknown) => { if (!res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
-            const result = await streamChat(config, { system, messages: history }, { signal: controller.signal, onDelta: text => send('delta', { text }) });
-            const status = result.stopped ? 'stopped' as const : result.ok ? undefined : 'error' as const;
-            const assistant = result.text || result.ok
-              ? { role: 'assistant' as const, content: result.text, at: new Date().toISOString(), usage: result.usage, model: result.model, ...(status ? { status } : {}) }
-              : null;
+            const result = await runChatReply({ config, messages: updated.messages, documents, courses: known, scope, today, language, planning: planning.planning },
+              { signal: controller.signal, onDelta: text => send('delta', { text }), onStep: step => send('step', step) });
+            const assistant = result.message;
             if (assistant) await appendMessages(projectDir, id, [assistant]);
             if (result.ok || result.stopped) send('done', { message: assistant, usage: result.usage, model: result.model, stopped: !!result.stopped });
             else send('error', { error: 'MODEL_ERROR', message: result.error ?? '模型没有完成回复。', message_saved: !!assistant });

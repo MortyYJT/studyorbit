@@ -4,6 +4,7 @@
 import { calculateGrades } from '../../shared/course-calculations.ts';
 import { toDisplayDocument } from '../../shared/course-data.ts';
 import { gradingInputs } from '../../shared/course-tools.ts';
+import { toolSystemPrompt } from './chat-tools-prompt.mjs';
 
 export const CONTEXT_LIMIT = 24000;
 const TRUNCATION_NOTE = '\n（课程数据过长，已截断，后面的内容没有提供给你。）';
@@ -86,8 +87,9 @@ export function buildChatContext(stored, { today, courseIds, courses = [] }) {
   return `${lastBreak > 0 ? text.slice(0, lastBreak) : text}${TRUNCATION_NOTE}`;
 }
 
-/** System prompt for the study assistant. The course context is appended after it. */
-export function chatSystemPrompt(language = 'zh') {
+/** System prompt for the study assistant. Context mode appends the course context; tool mode the course index. */
+export function chatSystemPrompt(language = 'zh', mode = 'context') {
+  if (mode === 'tools') return toolSystemPrompt(language);
   if (language === 'en') return [
     'You are a study assistant for one University of Melbourne student, inside their personal coursework tool.',
     'You help with: explaining grades and weights, working out what score is needed on the remaining items, weekly study plans, revision questions and explaining concepts.',
