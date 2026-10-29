@@ -25,5 +25,5 @@
 
 ## 5. Verification and close
 
-- [ ] 5.1 `bash .claude/check.sh` passes; real-browser screenshots of course page, Revision tab, week view and strip
-- [ ] 5.2 Fresh-context review of each PR; update `note/handoff.md`; archive the change after PR 2 merges
+- [x] 5.1 `bash .claude/check.sh` passes; real-browser screenshots of course page, Revision tab, week view and strip
+- [x] 5.2 Fresh-context review of each PR; update `note/handoff.md`; archive the change after PR 2 merges

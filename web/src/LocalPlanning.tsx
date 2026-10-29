@@ -460,7 +460,9 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       const group = groups.find(entry => entry.sourceKey === raw.key);
       const item = group ? { ...raw, due: group.due ?? '', status: group.status ?? raw.status, weightValue: group.weight } : raw;
       const parent = item.parent ? items.find(entry => entry.key === item.parent) : undefined;
-      const parentWeight = parent ? groups.find(entry => entry.sourceKey === parent.key)?.weight ?? parent.weightValue : undefined;
+      const parentGroup = parent ? groups.find(entry => entry.sourceKey === parent.key) : undefined;
+      // A group entry carries the owner's weight edit, including a cleared weight; only items without one use the synced value.
+      const parentWeight = parentGroup ? parentGroup.weight : parent?.weightValue;
       const graded = !item.caution && !item.ungraded && item.kind !== 'ungraded' && !(parent && notCounted(parent))
         && ((item.weightValue ?? 0) > 0 || item.bonus === true || (parentWeight ?? 0) > 0);
       const day = dueDay(item.due);
