@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LINEAGE_ANCESTORS, MIGRATIONS, openSyncStore, RETENTION_LINEAGES, sha256, storePath } from '../scripts/lib/sync-store.mjs';
 import type { Migration, SyncStore } from '../scripts/lib/sync-store.mjs';
 
-// Scenarios from openspec/changes/local-server-sync-pipeline/specs/sync-job-store/spec.md and design §5.
+// Scenarios from openspec/specs/sync-job-store/spec.md and design §5 of the archived change local-server-sync-pipeline.
 // Every test uses a real database file in a temporary project directory and synthetic course IDs only.
 let dir: string;
 const opened: SyncStore[] = [];
