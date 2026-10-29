@@ -34,17 +34,23 @@ function originAllowed(url, origins) {
 export function createCdpHost({ projectDir, platform = process.platform, env = process.env, start = startCdpBrowser, close = closeCdpBrowser }) {
   /** The running browser: `{ started, key, tabs: Map<targetId, { client, sessionId }> }`, or null. */
   let current = null;
-  let starting = null;
+  let starting = null, startingKey = null;
+  /** A browser being closed: a new one is not launched on the same profile until it is gone. */
+  let closing = null;
   let shuttingDown = false;
 
   const keyOf = (browser, browserPath) => JSON.stringify([browser, browserPath ?? null]);
 
   async function closeCurrent() {
     const entry = current;
-    if (!entry) return;
-    current = null;
-    entry.tabs.clear();
-    await close(entry.started).catch(() => { /* The process is gone or was killed. */ });
+    if (entry) {
+      current = null;
+      entry.tabs.clear();
+      const done = close(entry.started).catch(() => { /* The process is gone or was killed. */ })
+        .finally(() => { if (closing === done) closing = null; });
+      closing = done;
+    }
+    await closing;
   }
 
   /** The running browser for `browser`/`browserPath`, launching (or replacing) it when needed. */
@@ -52,9 +58,16 @@ export function createCdpHost({ projectDir, platform = process.platform, env = p
     const key = keyOf(browser, browserPath);
     for (;;) {
       if (shuttingDown) throw new Error(HOST_CLOSING);
-      if (starting) { await starting.catch(() => {}); continue; }
+      if (starting) {
+        // A failed launch of the same browser fails every request that waited for it, instead of each retrying.
+        const pending = starting, pendingKey = startingKey;
+        try { await pending; } catch (error) { if (pendingKey === key) throw error; }
+        continue;
+      }
+      if (closing) { await closing; continue; }
       if (current && current.started.running() && current.key === key) return current;
       if (current) { await closeCurrent(); continue; }
+      startingKey = key;
       starting = (async () => {
         const started = await start({ id: browser, browserPath: browserPath ?? null, projectDir, platform, env });
         const entry = { started, key, tabs: new Map() };
@@ -64,7 +77,7 @@ export function createCdpHost({ projectDir, platform = process.platform, env = p
         current = entry;
         return entry;
       })();
-      try { return await starting; } finally { starting = null; }
+      try { return await starting; } finally { starting = null; startingKey = null; }
     }
   }
 
@@ -136,7 +149,12 @@ export function createCdpHost({ projectDir, platform = process.platform, env = p
         if (!url.startsWith(prefix)) throw new Error('UNEXPECTED_URL');
         if ((await evaluate(entry, tab, STATE_EXPRESSION)) !== 'complete') throw new Error('PAGE_STILL_LOADING');
       }
-      return evaluate(entry, tab, READ_EXPRESSIONS[kind]);
+      const value = await evaluate(entry, tab, READ_EXPRESSIONS[kind]);
+      // The page may have navigated between the check and the read (a script redirecting to a sign-in page): the
+      // value is returned only if the tab is still on an allowed page.
+      const after = await targetUrl(entry, targetId);
+      if (!originAllowed(after, client.allowedOrigins) || (kind !== 'navigation-status' && !after.startsWith(prefix))) throw new Error('UNEXPECTED_URL');
+      return value;
     },
     async close(client, { tab: targetId }) {
       const { entry } = tabOf(client, targetId);
@@ -207,6 +225,7 @@ export function createCdpHost({ projectDir, platform = process.platform, env = p
       shuttingDown = true;
       await starting?.catch(() => {});
       await closeCurrent();
+      await closing;
     },
 
     running: () => Boolean(current?.started.running()),

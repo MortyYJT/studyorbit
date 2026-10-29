@@ -41,7 +41,7 @@ describe('the dedicated browser host', () => {
       ['Target.getTargetInfo', null, null], ['Runtime.evaluate', 'document.readyState', 'S-T1'],
       ['Target.getTargetInfo', null, null], ['Runtime.evaluate', 'document.readyState', 'S-T1'],
       ['Target.getTargetInfo', null, null], ['Runtime.evaluate', 'document.readyState', 'S-T1'], ['Runtime.evaluate', READ_EXPRESSIONS['same-origin-json'], 'S-T1'],
-      ['Target.closeTarget', null, null],
+      ['Target.getTargetInfo', null, null], ['Target.closeTarget', null, null],
     ]);
     await host.shutdown();
   });
@@ -62,6 +62,61 @@ describe('the dedicated browser host', () => {
     const evaluated = browsers.commands.filter(command => command.method === 'Runtime.evaluate').map(command => command.params.expression);
     expect(evaluated).toEqual(['document.readyState', 'document.readyState']);
     await host.shutdown();
+  });
+
+  it('drops a read when the page navigated away during it', async () => {
+    const { host } = setup({ [COURSES]: { text: 'allowed text', urlAfterRead: 'https://login.example.edu/sso' } });
+    const collector = fakeCollectorChild();
+    host.attach(collector.child, client);
+    await collector.request({ op: 'open', url: marked(COURSES), prefix: PREFIX });
+    expect(await collector.request({ op: 'read', tab: 'T1', prefix: PREFIX, kind: 'body-text' })).toMatchObject({ ok: false, error: 'UNEXPECTED_URL' });
+    await host.shutdown();
+  });
+
+  it('fails every request waiting for a failed launch with its error, launching once', async () => {
+    const { browsers, host } = setup();
+    browsers.failNextLaunch(new Error(PROFILE_IN_USE));
+    const collector = fakeCollectorChild();
+    host.attach(collector.child, client);
+    const [signIn, open] = await Promise.allSettled([
+      host.openSignIn({ browser: 'cdp-chrome', browserPath: null, canvasOrigin: ORIGIN }),
+      collector.request({ op: 'open', url: marked(COURSES), prefix: PREFIX }),
+    ]);
+    expect(signIn).toMatchObject({ status: 'rejected', reason: new Error(PROFILE_IN_USE) });
+    expect(open).toMatchObject({ status: 'fulfilled', value: { ok: false, error: PROFILE_IN_USE } });
+    expect(browsers.launches).toHaveLength(1);
+    await host.shutdown();
+  });
+
+  it('launches no new browser on the profile, and does not finish shutting down, before the old one is closed', async () => {
+    const browsers = fakeCdpBrowsers();
+    const events: string[] = [];
+    let finishClose!: () => void;
+    const close = async (started: { child: { kill(): boolean } }) => {
+      events.push('close started');
+      await new Promise<void>(resolve => { finishClose = resolve; });
+      started.child.kill();
+      events.push('close finished');
+    };
+    const start: typeof browsers.start = async options => { events.push(`launch ${options.browserPath}`); return browsers.start(options); };
+    const host = createCdpHost({ projectDir: '/p', platform: 'linux', env: {}, start, close: close as never });
+    await host.openSignIn({ browser: 'cdp-chrome', browserPath: '/opt/a/chrome', canvasOrigin: ORIGIN });
+    const changed = host.settingsChanged({ browser: 'cdp-chrome', browserPath: '/opt/b/chrome' });
+    const reopened = host.openSignIn({ browser: 'cdp-chrome', browserPath: '/opt/b/chrome', canvasOrigin: ORIGIN });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(events).toEqual(['launch /opt/a/chrome', 'close started']);
+    finishClose();
+    await Promise.all([changed, reopened]);
+    expect(events).toEqual(['launch /opt/a/chrome', 'close started', 'close finished', 'launch /opt/b/chrome']);
+    // A shutdown during a pending close waits for it.
+    const changedAgain = host.settingsChanged({ browser: 'cdp-edge', browserPath: null });
+    let shutDown = false;
+    const shutdown = host.shutdown().then(() => { shutDown = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(shutDown).toBe(false);
+    finishClose();
+    await Promise.all([changedAgain, shutdown]);
+    expect(events.at(-1)).toBe('close finished');
   });
 
   it('treats a tab still on about:blank as loading', async () => {

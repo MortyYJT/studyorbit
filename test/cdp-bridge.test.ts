@@ -123,6 +123,16 @@ describe('collectors over the dedicated browser', () => {
     await host.shutdown();
   });
 
+  it('also treats Canvas\'s HTTP 401 for a signed-out API request as the sign-in failure', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'studyorbit-cdp-'));
+    const browsers = fakeCdpBrowsers({ [COURSES]: { json: { status: 401, body: '{"status":"unauthenticated"}', link: null } } });
+    const host = createCdpHost({ projectDir: dir, platform: 'linux', env: {}, start: browsers.start });
+    const result = await run(browsers, host, 'sources/canvas/collect.mjs', ['discover', join(dir, 'courses.json')]);
+    expect(result.code).toBe(EX_SIGN_IN);
+    expect(result.error).toContain(CDP_SIGN_IN);
+    await host.shutdown();
+  });
+
   it('gives no IPC channel to a collector that does not use the browser, which then cannot reach it', async () => {
     dir = await mkdtemp(join(tmpdir(), 'studyorbit-cdp-'));
     const browsers = fakeCdpBrowsers();

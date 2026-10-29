@@ -35,6 +35,9 @@ const messages = { identity: '无法识别实验标签页', redirect: dedicated 
 /** One API page: HTTP 429/5xx (or no response) on the final attempt exits with 75 so the sync retries it. */
 function acceptPage(text) {
   const response = JSON.parse(text);
+  // Canvas answers a signed-out API request with HTTP 401 rather than a redirect: in the dedicated browser that
+  // means the owner has to sign in there.
+  if (dedicated && response.status === 401) throw new Error(CDP_SIGN_IN);
   if (response.status !== 200) throw httpFailure('Canvas', response.status);
   return { rows: parseCoursePage(response.body), link: response.link };
 }

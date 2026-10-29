@@ -16,6 +16,8 @@ export type FakePage = {
   json?: { status: number; body: string; link: string | null };
   text?: string;
   navigationStatus?: number;
+  /** The URL the tab moves to right after a read expression ran (a page that navigates itself). */
+  urlAfterRead?: string;
 };
 export type FakeCommand = { method: string; params: Record<string, unknown>; sessionId?: string; launch: number };
 
@@ -85,6 +87,7 @@ export function fakeCdpBrowsers(pages: Record<string, FakePage> = {}) {
           } else if (params.expression === READ_EXPRESSIONS['same-origin-json']) value = JSON.stringify(page.json ?? { status: 404, body: '', link: null });
           else if (params.expression === READ_EXPRESSIONS['body-text']) value = page.text ?? '';
           else value = String(page.navigationStatus ?? '');
+          if (params.expression !== STATE_EXPRESSION && page.urlAfterRead) target.url = page.urlAfterRead;
           answer(id, { result: { type: 'string', value } });
           continue;
         }
