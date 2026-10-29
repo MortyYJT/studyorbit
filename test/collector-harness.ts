@@ -43,10 +43,17 @@ export async function runCollectorScript(script: string, args: string[], scenari
   }
 }
 
-/** The call log with every distinct AppleScript listed once and each call pointing at it by index. */
+/** The "is running" check the AppleScript bridges run before each tab (generic-adapters PR 2, decision #445). */
+export const isRunningCheck = (call: Record<string, unknown>) => call.kind === 'osascript' && /^on run argv\n return application "[^"]+" is running\nend run$/.test(String(call.script));
+
+/**
+ * The call log with every distinct AppleScript listed once and each call pointing at it by index. The "is running"
+ * checks are left out: the golden transcripts were recorded before PR 2 added them on purpose (design §6); they are
+ * asserted in test/browser-bridge.test.ts and test/source-adapters.test.ts instead.
+ */
 export function callTranscript(calls: Record<string, unknown>[]) {
   const scripts: string[] = [];
-  const steps = calls.map(call => {
+  const steps = calls.filter(call => !isRunningCheck(call)).map(call => {
     if (call.kind !== 'osascript') return call;
     let index = scripts.indexOf(call.script as string);
     if (index < 0) index = scripts.push(call.script as string) - 1;

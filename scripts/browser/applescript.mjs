@@ -1,12 +1,29 @@
-// AppleScript browser bridge for macOS (openspec change generic-adapters, design §6, decision #445). The scripts are
-// the ones the Canvas and Handbook collectors ran before the move, with the application name taken from a fixed map
-// (never from settings text). `runOsascript` is injectable so tests never drive a real browser.
+// AppleScript browser bridges for Edge and Chrome on macOS (openspec change generic-adapters, design §6, decision
+// #445). The scripts are the ones the Canvas and Handbook collectors ran before the move, with the application name
+// taken from a fixed map (never from settings text). Chrome and Edge share Chromium's scripting dictionary. Before
+// each tab the bridge checks that the browser is running, without `tell application`, so it never starts it.
+// `runOsascript` is injectable so tests never drive a real browser.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { assertAllowedUrl, assertReadKind, markedUrl, READ_EXPRESSIONS, TabUnrecognisedError } from './bridge.mjs';
 
 /** Bridge id → application name. The only place an application name comes from. */
-export const APPLESCRIPT_APPS = Object.freeze({ 'edge-applescript': 'Microsoft Edge' });
+export const APPLESCRIPT_APPS = Object.freeze({ 'edge-applescript': 'Microsoft Edge', 'chrome-applescript': 'Google Chrome' });
+
+/** What to do when the browser refuses JavaScript from Apple Events, naming the chosen browser and its menu path. */
+const APPLE_EVENTS_HINTS = Object.freeze({
+  // Unchanged from before the move.
+  'edge-applescript': '如提示 JavaScript from Apple Events，请在 Edge 开发者菜单允许后重试。',
+  'chrome-applescript': '如提示 JavaScript from Apple Events，请在 Chrome 菜单 View → Developer → Allow JavaScript from Apple Events（中文界面在「显示 → 开发者」里）勾选后重试。',
+});
+export const appleEventsHint = id => (Object.hasOwn(APPLE_EVENTS_HINTS, id) ? APPLE_EVENTS_HINTS[id] : '');
+
+/** `application "<app>" is running` outside a `tell` block, which would launch the application. */
+export const runningScript = app => `on run argv
+ return application "${app}" is running
+end run`;
+// The error code of the create script when the browser has no window: Edge's is unchanged from before the move.
+const WINDOW_MISSING = Object.freeze({ 'Microsoft Edge': 'EDGE_WINDOW_MISSING', 'Google Chrome': 'CHROME_WINDOW_MISSING' });
 
 const exec = promisify(execFile);
 /** Runs one AppleScript with arguments through `/usr/bin/osascript` and returns its trimmed output. */
@@ -28,7 +45,7 @@ const checkedTab = `${findTab}
 /** The AppleScripts of a bridge, byte for byte those of the collectors before the move (with `app` substituted). */
 export function appleScripts(app) {
   return {
-    create: tell(app, `  if (count of windows) is 0 then error "EDGE_WINDOW_MISSING"
+    create: tell(app, `  if (count of windows) is 0 then error "${WINDOW_MISSING[app] ?? 'BROWSER_WINDOW_MISSING'}"
   set w to front window
   set previousTab to active tab of w
   set previousIndex to active tab index of w
@@ -67,6 +84,7 @@ export function createAppleScriptBridge({ id, allowedOrigins, runner = runOsascr
     id,
     async open(url, _expectedPrefix) {
       assertAllowedUrl(url, origins);
+      if ((await runner(runningScript(app), [])) !== 'true') throw new Error(`请先打开 ${app} 并登录`);
       const identity = (await runner(scripts.create, [markedUrl(url)])).split(':');
       if (identity.length !== 2 || !/^\d+$/.test(identity[0]) || !identity[1]) throw new TabUnrecognisedError();
       return identity;

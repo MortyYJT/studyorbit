@@ -11,11 +11,11 @@
 
 ## 2. Chrome on macOS (PR 2)
 
-- [ ] 2.1 Tests then `chrome-applescript` in `applescript.mjs`: app name from the fixed map only; every script addresses the chosen app; the bridge is refused off macOS
-- [ ] 2.2 Tests then the "is running" check for both AppleScript bridges and the not-open message; error text for disabled Apple Events JavaScript names the chosen browser and menu path
-- [ ] 2.3 Temporary environment override `STUDYORBIT_BROWSER=chrome-applescript` until PR 3 adds settings (removed in PR 3)
-- [ ] 2.4 README: Chrome on macOS setup (Apple Events toggle, Automation permission) marked 「未实测」 until the owner runs one discovery
-- [ ] 2.5 `bash .claude/check.sh`; fresh-context review; record the PR number here; owner-run check of one Chrome discovery listed in `note/handoff.md`
+- [x] 2.1 Tests then `chrome-applescript` in `applescript.mjs`: app name from the fixed map only; every script addresses the chosen app; the bridge is refused off macOS (PR #281)
+- [x] 2.2 Tests then the "is running" check for both AppleScript bridges and the not-open message; error text for disabled Apple Events JavaScript names the chosen browser and menu path (PR #281)
+- [x] 2.3 Temporary environment override `STUDYORBIT_BROWSER=chrome-applescript` until PR 3 adds settings (removed in PR 3) (PR #281)
+- [x] 2.4 README: Chrome on macOS setup (Apple Events toggle, Automation permission) marked 「未实测」 until the owner runs one discovery (PR #281)
+- [x] 2.5 `bash .claude/check.sh`; fresh-context review; record the PR number here; owner-run check of one Chrome discovery listed in `note/handoff.md`: PR #281
 
 ## 3. Settings, generic institution and generic Canvas (PR 3)
 
