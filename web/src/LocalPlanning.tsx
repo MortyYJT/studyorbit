@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import type { Language } from './i18n.js';
 import { durations, easeOut, reducedMotion, useCountUp, useSlidingIndicator } from './motion.js';
+import { RichText } from './Agent.js';
+import type { RevisionNote } from '../../scripts/lib/revision-store.mjs';
 import { CourseDocumentSchema } from '../../shared/course-data.js';
-import { calculateGrades, parentGrade } from '../../shared/course-calculations.js';
+import { bandTargets, calculateGrades, finalNeeded, parentGrade, type Band } from '../../shared/course-calculations.js';
 
 type RecordValue = Record<string, unknown>;
 type Course = { id: string; name: string; subjectCode: string; term?: string };
@@ -17,6 +19,7 @@ const workKey = 'coursework.local-planning.work.v1';
 const correctionKey = 'coursework.local-planning.corrections.v1';
 const manualKey = 'coursework.local-planning.assessments.v1';
 const orderKey = 'coursework.local-planning.order.v1';
+const targetKey = 'coursework.local-planning.targets.v1';
 const record = (value: unknown): RecordValue => value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {};
 function text(value: unknown): string {
   if (typeof value === 'string' || typeof value === 'number') return String(value);
@@ -71,9 +74,19 @@ function assessmentParents(_course: CourseData, visible: Assessment[]): ParentAs
 const ringLength = 439.8;
 const averageText = (value: number) => `${value.toFixed(1)}%`;
 const weightText = (value: number) => `${value.toFixed(2).replace(/\.00$/, '')}%`;
-function ScoreOverview({ assessments, parents, zh, animateKey }: { assessments: Assessment[]; parents: ParentAssessment[]; zh: boolean; animateKey: string }) {
-  const [target, setTarget] = useState('H1');
+function readTargets(): Record<string, Band> {
+  try { const value = record(JSON.parse(localStorage.getItem(targetKey) ?? '{}')); return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, Band] => typeof entry[1] === 'string' && entry[1] in bandTargets)); }
+  catch { return {}; }
+}
+function ScoreOverview({ assessments, parents, identified, zh, animateKey }: { assessments: Assessment[]; parents: ParentAssessment[]; identified: number; zh: boolean; animateKey: string }) {
+  // The chosen band is remembered per course; animateKey is the course id.
+  const [target, setTargetState] = useState<Band>(() => readTargets()[animateKey] ?? 'H1');
+  useEffect(() => { setTargetState(readTargets()[animateKey] ?? 'H1'); }, [animateKey]);
+  const setTarget = (band: Band) => { setTargetState(band); try { localStorage.setItem(targetKey, JSON.stringify({ ...readTargets(), [animateKey]: band })); } catch { /* Kept for this view only. */ } };
   const { weight, earned, average } = calculateGrades(assessments, parents);
+  const needed = finalNeeded({ earned, weight }, bandTargets[target]);
+  const neededText = needed.status === 'secured' ? (zh ? '已稳' : 'Secured') : needed.status === 'unreachable' ? (zh ? '已无法达到' : 'Out of reach') : `${needed.percent.toFixed(1)}%`;
+  const missing = Number((100 - identified).toFixed(2));
   // The earned arc draws in from zero and the two facts count up when a course opens; edits apply at once.
   const earnedRing = useRef<SVGCircleElement>(null);
   const offset = ringLength - Math.min(earned, 100) * 4.398;
@@ -92,17 +105,24 @@ function ScoreOverview({ assessments, parents, zh, animateKey }: { assessments: 
     <div><div className="facts">
       <div><div className="muted">{zh ? '当前平均' : 'Current average'}</div><div className="v">{averageShown}</div></div>
       <div><div className="muted">{zh ? '已出分占比' : 'Graded weight'}</div><div className="v">{weightShown}</div></div>
-      <div><label className="inline muted">{zh ? '期末需要 · 目标' : 'Final needed · target'} <select value={target} onChange={event => setTarget(event.target.value)}>{['H1', 'H2A', 'H2B', 'H3', 'P'].map(band => <option key={band}>{band}</option>)}</select></label><div className="v small">—</div></div>
+      <div><label className="inline muted">{zh ? '期末需要 · 目标' : 'Final needed · target'} <select value={target} onChange={event => setTarget(event.target.value as Band)}>{(Object.keys(bandTargets) as Band[]).map(band => <option key={band} value={band}>{band} · {bandTargets[band]}</option>)}</select></label>
+        <div className="v needed" title={zh ? '剩余未出分部分平均需要的得分率' : 'Average needed across the weight not yet marked'}>{needed.status === 'unreachable' && <i className="signal" aria-hidden="true" />}{neededText}</div>
+        {needed.status === 'reachable' && <small className="muted">{zh ? '剩余部分平均' : 'avg. on the rest'}</small>}
+        {missing > 0 && <small className="muted block">{zh ? `另有 ${missing}% 权重未识别，按待出分计算` : `${missing}% of weight is unidentified and counted as remaining`}</small>}</div>
     </div><div className="key"><span><i className="earned" />{zh ? '已得' : 'Earned'}</span><span><i className="not-earned" />{zh ? '未得' : 'Not earned'}</span></div></div>
   </section>;
 }
 
-function WeightBreakdown({ assessments, parents, zh }: { assessments: Assessment[]; parents: ParentAssessment[]; zh: boolean }) {
-  const rows = assessments.filter(item => !item.parent && !item.bonus && !item.ungraded && !item.caution).flatMap(item => {
+function weightRows(assessments: Assessment[], parents: ParentAssessment[]) {
+  return assessments.filter(item => !item.parent && !item.bonus && !item.ungraded && !item.caution).flatMap(item => {
     const parent = parents.find(group => group.sourceKey === item.key);
     const weight = parent ? parent.weight : item.weightValue;
     return weight !== undefined && weight > 0 ? [{ key: item.key, name: parent?.displayName || item.name, weight }] : [];
   });
+}
+const identifiedWeight = (assessments: Assessment[], parents: ParentAssessment[]) => weightRows(assessments, parents).reduce((sum, item) => sum + item.weight, 0);
+function WeightBreakdown({ assessments, parents, zh }: { assessments: Assessment[]; parents: ParentAssessment[]; zh: boolean }) {
+  const rows = weightRows(assessments, parents);
   const total = rows.reduce((sum, item) => sum + item.weight, 0);
   let used = 0;
   return <section className="weight-breakdown"><h2>{zh ? '分数占比' : 'Assessment weights'}</h2><div className="weight-bar-row"><div className="weight-bar" role="img" aria-label={`${zh ? '已识别课程占比' : 'Identified weight'} ${total}/100`}>
@@ -110,7 +130,7 @@ function WeightBreakdown({ assessments, parents, zh }: { assessments: Assessment
     </div><strong>{Number(total.toFixed(2))}/100</strong></div><div className="weight-legend">{rows.map((item, index) => <span key={item.key}><i className={`weight-color-${index % 6}`} />{item.name} {item.weight}%</span>)}</div></section>;
 }
 
-export function LocalPlanning({ language, refreshVersion, courseId, onCourse, onBack, onCourses, onAsk, syncIssues }: { language: Language; refreshVersion: number; courseId?: string; onCourse: (id: string) => void; onBack: () => void; onCourses?: (courses: SidebarCourse[]) => void; onAsk?: (courseId: string) => void; syncIssues: { id: string; status: string; reason: string }[] }) {
+export function LocalPlanning({ language, refreshVersion, courseId, onCourse, onBack, onCourses, onAsk, syncIssues }: { language: Language; refreshVersion: number; courseId?: string; onCourse: (id: string) => void; onBack: () => void; onCourses?: (courses: SidebarCourse[]) => void; onAsk?: (courseId: string, prompt?: string) => void; syncIssues: { id: string; status: string; reason: string }[] }) {
   const zh = language === 'zh';
   const [courses, setCourses] = useState<CourseData[]>([]);
   const [error, setError] = useState('');
@@ -119,6 +139,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const [manual, setManual] = useState<Record<string, Assessment[]>>(() => { try { return record(JSON.parse(localStorage.getItem(manualKey) ?? '{}')) as Record<string, Assessment[]>; } catch { return {}; } });
   const [order, setOrder] = useState<Record<string, string[]>>(() => { try { return record(JSON.parse(localStorage.getItem(orderKey) ?? '{}')) as Record<string, string[]>; } catch { return {}; } });
   const [adding, setAdding] = useState(false);
+  const [addingTask, setAddingTask] = useState(false);
   const [week, setWeek] = useState(() => { const today = localDay(); return addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)); });
   const [chosen, setChosen] = useState<Assessment>();
   const [chosenSiblings, setChosenSiblings] = useState<string[]>();
@@ -133,6 +154,26 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const [mode, setMode] = useState<'plan' | 'month'>('plan');
   const [courseTab, setCourseTab] = useState<'assessments' | 'revision'>('assessments');
   const [saveError, setSaveError] = useState(false);
+  const [notes, setNotes] = useState<RevisionNote[]>();
+  const [notesError, setNotesError] = useState(false);
+  // A response for a course the owner has already left is dropped, so one course never shows another's notes.
+  const notesFor = useRef<string | undefined>(undefined);
+  notesFor.current = courseTab === 'revision' ? courseId : undefined;
+  async function loadNotes(id: string) {
+    try {
+      const response = await fetch(`/api/local/revision-notes?courseId=${encodeURIComponent(id)}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error('unavailable');
+      const data = (await response.json()) as { notes: RevisionNote[] };
+      if (notesFor.current === id) { setNotes(data.notes); setNotesError(false); }
+    } catch { if (notesFor.current === id) { setNotes([]); setNotesError(true); } }
+  }
+  useEffect(() => { setNotes(undefined); if (courseId && courseTab === 'revision') void loadNotes(courseId); }, [courseId, courseTab]);
+  async function removeNote(note: RevisionNote) {
+    if (!window.confirm(zh ? `删除复习笔记「${note.title || '笔记'}」？` : `Delete the revision note "${note.title || 'Note'}"?`)) return;
+    try { const response = await fetch(`/api/local/revision-notes/${note.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }); if (!response.ok && response.status !== 404) throw new Error('failed'); }
+    catch { setNotesError(true); }
+    if (courseId) void loadNotes(courseId);
+  }
   useEffect(() => {
     let live = true;
     async function load() {
@@ -200,9 +241,18 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     const ranks = courseId && Array.isArray(order[courseId]) ? order[courseId] : [];
     return [...items].sort((a, b) => { const x = ranks.indexOf(key(a)), y = ranks.indexOf(key(b)); return (x < 0 ? Infinity : x) - (y < 0 ? Infinity : y); });
   }
+  const inScope = (item: Work) => item.courseId === '' || courses.some(course => course.course.id === item.courseId);
+  const codeOfWork = (item: Work) => item.courseId === '' ? (zh ? '校外' : 'Personal') : item.courseCode;
+  function addTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget); const title = String(data.get('title') ?? '').trim(); const due = String(data.get('due') ?? ''); const minutes = Number(data.get('minutes'));
+    const course = courses.find(item => item.course.id === String(data.get('course') ?? ''));
+    if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(due) || !Number.isFinite(minutes) || minutes <= 0 || minutes > 100000) return;
+    if (saveWork([...work, { key: `task:${crypto.randomUUID()}`, courseId: course?.course.id ?? '', courseCode: course?.course.subjectCode ?? '', title, due, minutes }])) setAddingTask(false);
+  }
   const plan = useMemo(() => {
     const days = new Map<string, { work: Work; minutes: number }[]>();
-    for (const item of [...work].filter(item => courses.some(course => course.course.id === item.courseId)).sort((a, b) => a.due.localeCompare(b.due) || a.key.localeCompare(b.key))) {
+    for (const item of [...work].filter(inScope).sort((a, b) => a.due.localeCompare(b.due) || a.key.localeCompare(b.key))) {
       days.set(item.due, [...(days.get(item.due) ?? []), { work: item, minutes: item.minutes }]);
     }
     return { days };
@@ -246,7 +296,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
       {!selected.available && <p className="needs">{zh ? '这门课尚无可用的同步结果。' : 'No sync result is available for this course yet.'}</p>}
       {syncIssues.filter(item => item.id === selected.course.id && item.status === 'failed').map(item => <p className="needs" key={item.id}>{zh ? '最近一次同步未完成，正在显示已保存的课程信息。' : 'The latest sync failed. Showing saved course information.'}</p>)}
       {selected.available && <div className="course-summary card">
-        <ScoreOverview {...gradingInputs(primaryItems, parents)} zh={zh} animateKey={selected.course.id} />
+        <ScoreOverview {...gradingInputs(primaryItems, parents)} identified={identifiedWeight(primaryItems, parents)} zh={zh} animateKey={selected.course.id} />
         <WeightBreakdown assessments={primaryItems} parents={parents} zh={zh} />
       </div>}
       <div className="tabs" role="tablist" ref={tabList}><span className="tab-indicator" ref={tabIndicator} aria-hidden="true" /><button role="tab" aria-selected={courseTab === 'assessments'} onClick={() => setCourseTab('assessments')}>{zh ? '考核' : 'Assessments'}</button><button role="tab" aria-selected={courseTab === 'revision'} onClick={() => setCourseTab('revision')}>{zh ? '复习' : 'Revision'}</button></div>
@@ -315,8 +365,33 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
           </>;
         })()}
 
-      </div> : <section><p className="muted">{zh ? '复习功能尚未接入。' : 'Revision is not connected yet.'}</p>
-        {!!selected.materials.length && <><h2>{zh ? '课程资料' : 'Materials'}</h2><ul className="linked">{selected.materials.map((item, index) => { const link = url(item['原始链接'] ?? item['链接']); const name = text(item['名称']) || '资料'; return <li key={index}>{link ? <a href={link} target="_blank" rel="noreferrer">{name}</a> : name}</li>; })}</ul></>}</section>}
+      </div> : (() => {
+        // Revision (decision #236): exams from the corrected course data, preset prompts to the agent, and saved notes.
+        const exams = primaryItems.filter(item => item.kind === 'exam').sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
+        const code = selected.course.subjectCode;
+        const examText = exams.length ? (zh ? `（${exams.map(item => item.name).join('、')}）` : ` (${exams.map(item => item.name).join(', ')})`) : '';
+        const prompts = zh ? [
+          { label: '让 Agent 带我复习', prompt: `请带我复习 ${code} 的考试${examText}：先列出要复习的要点，再一次问我一个问题，检查我是否掌握。` },
+          { label: '出 10 道练习题', prompt: `为 ${code} 的考试${examText}出 10 道练习题，由易到难，每题后面附答案和简短解析。` },
+          { label: '整理复习笔记', prompt: `为 ${code} 的考试${examText}整理一份考前复习笔记：核心概念、常见题型和易错点。` },
+        ] : [
+          { label: 'Revise with the agent', prompt: `Help me revise for the ${code} exam${examText}: list the key points first, then quiz me one question at a time.` },
+          { label: '10 practice questions', prompt: `Write 10 practice questions for the ${code} exam${examText}, easiest first, each followed by the answer and a short explanation.` },
+          { label: 'Revision notes', prompt: `Write revision notes for the ${code} exam${examText}: core concepts, common question types and common mistakes.` },
+        ];
+        return <section className="revision">
+          <h2>{zh ? '考试' : 'Exams'}</h2>
+          {exams.length ? <div className="revision-exams">{exams.map(item => <div className="field" key={item.key}><span className="k">{item.name}{item.caution && <small className="muted"> · {zh ? '替代考试' : 'Alternative'}</small>}</span>
+            <span>{longDue(item.due)} · {item.sourceZero ? '0%' : item.weight || (zh ? '权重未知' : 'weight unknown')}{item.rule && <small className="muted block">{item.rule}</small>}</span></div>)}</div>
+            : <p className="muted">{zh ? '这门课还没有识别到考试。' : 'No exam has been identified for this course.'}</p>}
+          {onAsk && <div className="revision-actions">{prompts.map(item => <button key={item.label} className="small" onClick={() => onAsk(selected.course.id, item.prompt)} title={zh ? '打开对话页并发送，会使用模型额度' : 'Opens the Agent page and sends; uses model credit'}>{item.label}</button>)}</div>}
+          <h2>{zh ? '复习笔记' : 'Revision notes'}</h2>
+          {notesError && <p className="muted">{zh ? '无法读取复习笔记（仅在本地开发服务器中可用）。' : 'Could not load revision notes (dev server only).'}</p>}
+          {notes?.length === 0 && !notesError && <p className="muted">{zh ? '还没有笔记。在对话页里，单门课对话的回复下方点「存到复习」即可保存到这里。' : 'No notes yet. In a single-course chat, use "Save to revision" under a reply.'}</p>}
+          {notes?.map(note => <details className="revision-note" key={note.id}><summary><i className="chevron" aria-hidden="true" /><span>{note.title || (zh ? '笔记' : 'Note')}</span>
+            <small className="muted">{new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(note.savedAt))}</small></summary>
+            <div className="revision-note-body"><RichText text={note.content} /><button type="button" className="link-button muted" onClick={() => void removeNote(note)}>{zh ? '删除' : 'Delete'}</button></div></details>)}
+        {!!selected.materials.length && <><h2>{zh ? '课程资料' : 'Materials'}</h2><ul className="linked">{selected.materials.map((item, index) => { const link = url(item['原始链接'] ?? item['链接']); const name = text(item['名称']) || '资料'; return <li key={index}>{link ? <a href={link} target="_blank" rel="noreferrer">{name}</a> : name}</li>; })}</ul></>}</section>; })()}
       {chosen && (() => {
         // Show the live values: the drawer stays open while the owner edits this assessment.
         const item = primaryItems.find(candidate => candidate.key === chosen.key) ?? chosen;
@@ -376,17 +451,23 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     <div className="week-layout"><div className="week-main">
       <div className="week-toolbar"><div className="week-nav" role="group" aria-label={zh ? '周切换' : 'Navigate weeks'}>
         <button onClick={() => shift(-1)}>‹</button><button onClick={() => setWeek(addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)))}>{zh ? '今天' : 'Today'}</button><button onClick={() => shift(1)}>›</button><span className="range">{mode === 'plan' ? `${shortDate(week)} – ${shortDate(addDays(week, 6))}` : currentMonth}</span></div>
-        <div className="week-actions"><span className="muted">{zh ? '学期' : 'Term'}: {courses[0]?.course.term || '—'}</span><div className="seg" role="group" aria-label={zh ? '视图' : 'View'}><button aria-pressed={mode === 'plan'} onClick={() => { setWeek(addDays(week, -((new Date(`${week}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{zh ? '周视图' : 'Week'}</button><button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>{zh ? '月历' : 'Month'}</button></div><button disabled title={zh ? '手动任务尚未接入' : 'Manual tasks are not connected yet'}>{zh ? '添加任务' : 'Add task'}</button></div></div>
+        <div className="week-actions"><span className="muted">{zh ? '学期' : 'Term'}: {courses[0]?.course.term || '—'}</span><div className="seg" role="group" aria-label={zh ? '视图' : 'View'}><button aria-pressed={mode === 'plan'} onClick={() => { setWeek(addDays(week, -((new Date(`${week}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{zh ? '周视图' : 'Week'}</button><button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>{zh ? '月历' : 'Month'}</button></div><button aria-expanded={addingTask} onClick={() => setAddingTask(value => !value)}>{addingTask ? (zh ? '取消' : 'Cancel') : (zh ? '添加任务' : 'Add task')}</button></div></div>
+      {addingTask && <form className="local-confirm task-form" onSubmit={addTask}>
+        <label>{zh ? '任务' : 'Task'}<input name="title" required maxLength={200} placeholder={zh ? '例如：投递实习申请' : 'e.g. Internship application'} /></label>
+        <label>{zh ? '截止日期' : 'Deadline'}<input name="due" type="date" required defaultValue={today} /></label>
+        <label>{zh ? '预计分钟' : 'Estimate (min)'}<input name="minutes" type="number" min="1" max="100000" required defaultValue={60} /></label>
+        <label>{zh ? '课程' : 'Course'}<select name="course" defaultValue=""><option value="">{zh ? '无（校外任务）' : 'None (personal)'}</option>{courses.map(item => <option key={item.course.id} value={item.course.id}>{item.course.subjectCode}</option>)}</select></label>
+        <button type="submit" className="primary">{zh ? '添加' : 'Add'}</button></form>}
       {mode === 'plan' ? <div className="local-week-grid">{Array.from({ length: 7 }, (_, index) => {
-        const day = addDays(week, index); const entries = plan.days.get(day) ?? []; const due = work.filter(item => item.due === day && courses.some(course => course.course.id === item.courseId));
+        const day = addDays(week, index); const entries = plan.days.get(day) ?? []; const due = work.filter(item => item.due === day && inScope(item));
         return <section key={day} style={{ '--i': index } as CSSProperties} className={`local-week-day${day === today ? ' today' : ''}${day < today ? ' past' : ''}`}>
           <div className="local-week-heading"><b>{dayName(day)}</b></div>
-          <div className="local-week-body"><div className="day-deadlines">{due.map(item => <span className="due" key={item.key}>{zh ? '截止' : 'Due'} · {item.courseCode} · {item.title}</span>)}</div>
-          <div className="day-items">{entries.length ? entries.map(entry => <button className="blk" key={entry.work.key} onClick={() => onCourse(entry.work.courseId)}><span className="tm">{entry.minutes} min</span><span className="tt">{entry.work.title}</span><span className="cr">{entry.work.courseCode}</span></button>) : <span className="muted empty-day">{zh ? '无计划' : 'No plan'}</span>}</div>
+          <div className="local-week-body"><div className="day-deadlines">{due.map(item => <span className="due" key={item.key}>{zh ? '截止' : 'Due'} · {codeOfWork(item)} · {item.title}</span>)}</div>
+          <div className="day-items">{entries.length ? entries.map(entry => <button className="blk" key={entry.work.key} disabled={!entry.work.courseId} onClick={() => entry.work.courseId && onCourse(entry.work.courseId)}><span className="tm">{entry.minutes} min</span><span className="tt">{entry.work.title}</span><span className="cr">{codeOfWork(entry.work)}</span></button>) : <span className="muted empty-day">{zh ? '无计划' : 'No plan'}</span>}</div>
           </div>
         </section>; })}</div>
-        : <div className="card month" role="grid"><div className="month-row" role="row">{Array.from({ length: 7 }, (_, i) => <div className="dow" key={i}>{dayName(addDays('2026-01-05', i)).replace(/\d+/g, '')}</div>)}</div>{Array.from({ length: 6 }, (_, row) => <div className="month-row" role="row" key={row}>{Array.from({ length: 7 }, (_, col) => { const day = addDays(monthStart, row * 7 + col); return <div role="gridcell" className={`cell${day.slice(0, 7) === currentMonth ? '' : ' out'}${day === today ? ' today' : ''}`} key={day}><button className="num" onClick={() => { setWeek(addDays(day, -((new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{Number(day.slice(8))}</button>{work.filter(item => item.due === day && courses.some(course => course.course.id === item.courseId)).map(item => <span className="due" key={item.key}>{item.courseCode} · {item.title}</span>)}</div>; })}</div>)}</div>}
-      {!!work.length && <details><summary>{zh ? '已加入的学习任务' : 'Planned work'}</summary>{work.filter(item => courses.some(course => course.course.id === item.courseId)).map(item => <div className="local-group" key={item.key}><span>{item.courseCode} · {item.title} · {item.due} · {item.minutes} min</span><button onClick={() => saveWork(work.filter(row => row.key !== item.key))}>{zh ? '移除' : 'Remove'}</button></div>)}</details>}
+        : <div className="card month" role="grid"><div className="month-row" role="row">{Array.from({ length: 7 }, (_, i) => <div className="dow" key={i}>{dayName(addDays('2026-01-05', i)).replace(/\d+/g, '')}</div>)}</div>{Array.from({ length: 6 }, (_, row) => <div className="month-row" role="row" key={row}>{Array.from({ length: 7 }, (_, col) => { const day = addDays(monthStart, row * 7 + col); return <div role="gridcell" className={`cell${day.slice(0, 7) === currentMonth ? '' : ' out'}${day === today ? ' today' : ''}`} key={day}><button className="num" onClick={() => { setWeek(addDays(day, -((new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{Number(day.slice(8))}</button>{work.filter(item => item.due === day && inScope(item)).map(item => <span className="due" key={item.key}>{codeOfWork(item)} · {item.title}</span>)}</div>; })}</div>)}</div>}
+      {!!work.length && <details><summary>{zh ? '已加入的学习任务' : 'Planned work'}</summary>{work.filter(inScope).map(item => <div className="local-group" key={item.key}><span>{codeOfWork(item)} · {item.title} · {item.due} · {item.minutes} min</span><button onClick={() => saveWork(work.filter(row => row.key !== item.key))}>{zh ? '移除' : 'Remove'}</button></div>)}</details>}
       {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}
     </div></div>
   </>;

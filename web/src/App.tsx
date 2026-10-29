@@ -3,6 +3,7 @@ import { applyBackground, Backdrop, BackgroundSettingsSection, useBackgroundImag
 import { backgroundStorageKey, parseBackground, type BackgroundMode, type BackgroundSettings } from './background.js';
 import { en, zh, type Language, type Theme } from './i18n.js';
 import { AgentChat, type AgentRequest } from './Agent.js';
+import { createAgentRequest } from './agent-request.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning, type SidebarCourse } from './LocalPlanning.js';
 import { closeDialog, durations, easeOut, openDialog, reducedMotion, useSlidingIndicator, viewTransition } from './motion.js';
@@ -229,7 +230,7 @@ export function App() {
       {view.page === 'agent' ? <AgentChat language={language} courses={sidebarCourses} request={agentRequest} onOpenSettings={() => open('settings')} />
         : <LocalPlanning language={language} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined} onCourses={setSidebarCourses}
           syncIssues={courseRun?.courses ?? []} onCourse={courseId => go({ page: 'course', courseId })} onBack={() => go({ page: 'week' })}
-          onAsk={courseId => { setAgentRequest(current => ({ nonce: (current?.nonce ?? 0) + 1, courseId })); go({ page: 'agent' }); }} />}
+          onAsk={(courseId, prompt) => { setAgentRequest(createAgentRequest(courseId, prompt)); go({ page: 'agent' }); }} />}
     </main>
     <dialog ref={selectDialog} className="select-dialog" aria-labelledby="select-title" onCancel={event => { event.preventDefault(); setCoursePanelOpen(false); }} onClose={() => setSelectContent(false)}>
       <div className="dialog-heading"><h2 id="select-title" tabIndex={-1} autoFocus>{isZh ? '修改选课' : 'Edit courses'}</h2><button className="ghost" onClick={() => setCoursePanelOpen(false)}>{t.close}</button></div>

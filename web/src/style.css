@@ -365,7 +365,7 @@ button.due { width:100%; }
 .facts > div:first-child { padding-left:0; }
 .facts > div + div { border-left:1px solid var(--rule); }
 .facts .muted,.facts label { font-size:12px; }
-.facts .v { font-size:24px; font-weight:600; letter-spacing:-.01em; font-variant-numeric:tabular-nums; } .facts .v.small { font-size:14px; font-weight:500; }
+.facts .v { font-size:24px; font-weight:600; letter-spacing:-.01em; font-variant-numeric:tabular-nums; } .facts .v.needed { display:flex; align-items:center; gap:8px; } .facts small.block { display:block; line-height:1.4; }
 .key { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:20px; font-size:12px; color:var(--muted); }
 .key i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; vertical-align:-1px; }
 .key .earned { background:var(--ring-earned); } .key .not-earned { background:var(--ring-rest); }
@@ -856,3 +856,19 @@ dialog.closing::backdrop { animation:fade-out var(--dur-1) var(--ease-in-out) fo
   button:active:enabled { transform:none !important; }
   .palette-swatch[aria-pressed="true"] .palette-chip { transform:none; }
 }
+/* Text-style action inside notes and lists (save to revision, delete note). */
+.link-button { background:none; border:0; padding:0; font:inherit; color:inherit; text-decoration:underline; text-underline-offset:2px; cursor:pointer; box-shadow:none; }
+.link-button:disabled { cursor:default; text-decoration:none; opacity:.7; }
+/* Revision tab (decision #236). */
+small.block { display:block; line-height:1.4; }
+.revision h2 { margin-top:24px; }
+.revision h2:first-child { margin-top:8px; }
+.revision-exams .field { grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); color:var(--text); }
+.revision-exams .field .k { color:inherit; font-size:14px; font-weight:500; }
+.revision-actions { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 4px; }
+.revision-note { border-bottom:1px solid var(--rule); }
+.revision-note > summary { display:flex; align-items:center; gap:8px; padding:12px 4px; cursor:pointer; list-style:none; font-size:14px; }
+.revision-note > summary::-webkit-details-marker { display:none; }
+.revision-note > summary > span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.revision-note-body { padding:0 4px 16px 18px; font-size:14px; line-height:1.6; }
+.revision-note-body .link-button { margin-top:8px; font-size:12px; }

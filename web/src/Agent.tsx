@@ -4,8 +4,9 @@ import type { Language } from './i18n.js';
 import type { SidebarCourse } from './LocalPlanning.js';
 import type { Chat, ChatMessage, ChatSummary } from '../../scripts/lib/chat-store.mjs';
 
-/** A request from elsewhere in the app to open a fresh chat, optionally scoped to one course. */
-export type AgentRequest = { nonce: number; courseId?: string };
+import type { AgentRequest } from './agent-request.js';
+
+export type { AgentRequest };
 type Failure = { code: string; message: string };
 type Draft = { scope: string[] | null };
 
@@ -13,6 +14,8 @@ function selectedCourseIds(): string[] {
   try { const value: unknown = JSON.parse(localStorage.getItem('coursework.selected-course-ids') ?? '[]'); return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []; }
   catch { return []; }
 }
+// The page remounts on every visit, so the last handled request lives outside it: a request is acted on (and its prompt sent) once.
+let handledNonce: number | undefined;
 const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every(id => b.includes(id));
 
 /** Split a server-sent event stream into parsed `{event, data}` records. */
@@ -36,7 +39,7 @@ async function readStream(body: ReadableStream<Uint8Array>, onEvent: (event: str
 }
 
 /** Plain-text rendering: paragraphs, bullet and numbered lists, headings as bold lines. No HTML is interpreted. */
-function RichText({ text }: { text: string }) {
+export function RichText({ text }: { text: string }) {
   const blocks = text.replace(/\*\*(.+?)\*\*/g, '$1').split(/\n{2,}/).map(block => block.split('\n').filter(line => line.trim()));
   return <>{blocks.map((lines, index) => {
     if (!lines.length) return null;
@@ -63,9 +66,11 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
   const [pending, setPending] = useState<string>();
   const [failure, setFailure] = useState<Failure>();
   const [remoteRunning, setRemoteRunning] = useState(false);
+  // A preset prompt waits until the fresh draft it belongs to has rendered, then sends once.
+  const [queued, setQueued] = useState<string>();
+  const [saved, setSaved] = useState<Record<string, 'saving' | 'saved' | 'failed'>>({});
   const messagesRef = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
-  const handled = useRef(request?.nonce);
   // Messages at or after this index were added in this view and rise in; history and the saved copy of a streamed reply do not.
   const entered = useRef(0);
   const busy = streaming !== undefined;
@@ -99,7 +104,12 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
   }
 
   useEffect(() => { void loadList(); }, []);
-  useEffect(() => { if (request && request.nonce !== handled.current) { handled.current = request.nonce; startDraft(request.courseId); } }, [request]);
+  useEffect(() => {
+    if (!request || request.nonce === handledNonce || busy) return;
+    handledNonce = request.nonce; startDraft(request.courseId);
+    if (request.prompt) setQueued(request.prompt);
+  }, [request]);
+  useEffect(() => { if (queued && !active && !busy) { setQueued(undefined); void send(queued); } }, [queued, active, busy]);
   useEffect(() => { const element = messagesRef.current; if (element) element.scrollTop = element.scrollHeight; }, [active, streaming, pending]);
   // A reply started before this page was opened keeps running on the server; poll until it is saved.
   useEffect(() => {
@@ -169,6 +179,15 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
       void loadList();
     }
   }
+  /** Save one finished reply of a single-course chat as a revision note (decision #236). */
+  async function saveNote(chat: Chat, index: number, content: string) {
+    const key = `${chat.id}:${index}`;
+    setSaved(current => ({ ...current, [key]: 'saving' }));
+    try {
+      const response = await fetch('/api/local/revision-notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ courseId: chat.courseIds[0], content, chatId: chat.id }) });
+      setSaved(current => ({ ...current, [key]: response.ok ? 'saved' : 'failed' }));
+    } catch { setSaved(current => ({ ...current, [key]: 'failed' })); }
+  }
   async function stop() {
     if (!active) return;
     try { await fetch(`/api/local/chats/${active.id}/stop`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); } catch { /* The reply ends on its own. */ }
@@ -192,10 +211,15 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
   const suggestions = zh
     ? ['这周我应该先做什么？', '按现在的成绩，期末要拿 H1 需要多少分？', '帮我出 5 道复习题', '解释一下各项考核的权重']
     : ['What should I do first this week?', 'What do I need on the final to get an H1?', 'Give me 5 revision questions', 'Explain how my assessments are weighted'];
-  const note = (message: ChatMessage) => {
+  const note = (message: ChatMessage, index: number) => {
     const parts = [message.model, message.usage ? `${(message.usage.input + message.usage.output).toLocaleString(language)} tokens` : null,
       message.status === 'stopped' ? (zh ? '已停止' : 'Stopped') : message.status === 'error' ? (zh ? '未完成' : 'Incomplete') : null].filter(Boolean);
-    return parts.length ? <small className="msg-note left">{parts.join(' · ')}</small> : null;
+    // Only stored, finished replies of a chat about exactly one course can be saved; stopped or failed replies are partial.
+    const savable = active && active.courseIds.length === 1 && index < active.messages.length && !message.status && message.content.trim();
+    const state = active ? saved[`${active.id}:${index}`] : undefined;
+    if (!parts.length && !savable) return null;
+    return <small className="msg-note left">{parts.join(' · ')}{savable && <>{parts.length > 0 && ' · '}<button type="button" className="link-button" disabled={state === 'saving' || state === 'saved'} onClick={() => void saveNote(active, index, message.content)}>
+      {state === 'saved' ? (zh ? '已存到复习' : 'Saved to revision') : state === 'saving' ? (zh ? '保存中…' : 'Saving…') : state === 'failed' ? (zh ? '保存失败，重试' : 'Save failed, retry') : (zh ? '存到复习' : 'Save to revision')}</button></>}</small>;
   };
 
   return <div className="agent-page card">
@@ -220,7 +244,7 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
         </div>}
         {messages.map((message, index) => message.role === 'user'
           ? <div key={index} className={`msg me${index >= entered.current ? ' enter' : ''}`}>{message.content}</div>
-          : <Fragment key={index}><div className={`msg ag${index >= entered.current ? ' enter' : ''}`}><RichText text={message.content} /></div>{note(message)}</Fragment>)}
+          : <Fragment key={index}><div className={`msg ag${index >= entered.current ? ' enter' : ''}`}><RichText text={message.content} /></div>{note(message, index)}</Fragment>)}
         {busy && <div className={`msg ag enter${streaming ? ' streaming' : ''}`}>{streaming ? <RichText text={streaming} /> : <span className="muted">{zh ? '思考中…' : 'Thinking…'}</span>}</div>}
         {remoteRunning && !busy && <div className="msg ag"><span className="muted">{zh ? '正在回复…' : 'Replying…'}</span></div>}
       </div>
