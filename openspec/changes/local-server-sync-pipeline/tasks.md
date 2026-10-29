@@ -1,0 +1,45 @@
+Prerequisites: PR 1 can start now. PR 3 needs `course-contract-v2` PR 2 (#262) merged (it is built on that runner). Routes added by `local-corrections-merge` or `chat-tools-mcp` after PR 1 go into `server/routes/` (design §13).
+
+## 1. Standalone server, proxy and launcher (PR 1)
+
+- [ ] 1.1 `web/tsconfig.json`: include `../server`, set `allowImportingTsExtensions` and `erasableSyntaxOnly`; a first `server/guard.ts` compiles under `npm run check` and runs under `node` without flags
+- [ ] 1.2 Tests then `server/guard.ts`: loopback peers, token (missing, wrong, wrong length, constant-time path), Host allowlist (`localhost`, `127.0.0.1`, `[::1]` with the web port; other names and ports refused), Origin rule (`foreignOrigin` kept), order of checks, `403` with empty body
+- [ ] 1.3 Tests then `createLocalApi(options)` in `server/app.ts` and one module per route in `server/routes/`, moved from `vite.config.ts` with unchanged behaviour; `test/local-server.test.ts` runs each route on an ephemeral port with a temporary project directory and synthetic files (status codes, bodies, error codes, body limits, write checks, SSE events with a fake chat provider)
+- [ ] 1.4 `server/main.ts`: environment parsing (`STUDYORBIT_API_TOKEN` ≥ 32 hex characters, `STUDYORBIT_API_PORT` default 5190, `STUDYORBIT_WEB_PORT` default 5173), bind `127.0.0.1`, no port fallback on `EADDRINUSE`, listening line, `SIGINT`/`SIGTERM` stop running syncs (as cancel for now) and exit; test the startup errors with child processes
+- [ ] 1.5 Tests then `server/proxy.ts` `localApiProxy`; `test/local-proxy.test.ts` starts a Vite dev server with it (`configFile: false`) against a test API server: token added and a browser-sent token replaced, `Host` preserved, SSE deltas arrive before the stream ends, a client abort closes the upstream request
+- [ ] 1.6 `vite.config.ts` reduced to the React plugin, root, strict port, `cors: false`, the proxy and build options; refuses `serve` without `STUDYORBIT_API_TOKEN` (not build or preview)
+- [ ] 1.7 `scripts/dev.mjs` and `package.json` scripts (`dev`, `dev:web`, `server`): token creation, start order, signal forwarding, stop the other process on exit, exit code; test with stub child scripts
+- [ ] 1.8 Update `docs/overview.md` (process layout, ports, token), `scripts/README.md`, `README.md` and `openspec/config.yaml` context
+- [ ] 1.9 `bash .claude/check.sh`; real-browser check with `npm run dev` on synthetic `.local` data (course list, reports, chat with a fake provider endpoint or none, settings save) without starting a real sync; fresh-context review; record the PR number here
+
+## 2. SQLite store (PR 2)
+
+- [ ] 2.1 `package.json` `engines.node` → `>=24.15.0`
+- [ ] 2.2 Tests then `scripts/lib/sync-store.mjs` (+ `.d.mts`) open: `.local/` 0700, database pre-created 0600 and an existing 0644 file repaired, WAL, busy timeout; real files in a temporary directory
+- [ ] 2.3 Tests then migrations: fresh database to the latest `user_version`; a failing migration rolls back and keeps the old version; backup to `.local/studyorbit.db.v<n>.bak` (0600) before upgrading a non-empty database; newer `user_version`, non-database bytes and migration failure make the store unavailable without changing the file
+- [ ] 2.4 Tests then the data API: create job and courses, update course state, write and read stage checkpoints, `INSERT OR IGNORE` artifacts by sha256, snapshots unique per job and course, lineage lookup by (course, stage, input hash) limited to 20 ancestors, newest job, newest 20 jobs
+- [ ] 2.5 Tests then startup maintenance: running jobs, stages and courses → `interrupted`; retention keeps the newest 50 non-running jobs and deletes unreferenced artifacts; run directories untouched
+- [ ] 2.6 Tests then the single-instance lock in `server/main.ts`: live PID refused with 「另一个 StudyOrbit 本地服务正在运行」, stale lock replaced, lock removed on exit; store unavailable → sync routes `503 SYNC_STORE_UNAVAILABLE`, other routes work
+- [ ] 2.7 `bash .claude/check.sh`; fresh-context review; record the PR number here
+
+## 3. Staged pipeline (PR 3)
+
+- [ ] 3.1 Tests then `scripts/lib/rate-limit.mjs` (+ `.d.mts`) with an injected clock and random source: concurrency cap, minimum interval, three attempts, delays `max(Retry-After, 2 s × 4^(n−2))` capped at 30 s with ±20 % jitter, `Retry-After` above 60 s not waited for, 2-minute total cap, non-retryable failures returned at once, abort during a wait
+- [ ] 3.2 Tests then `analyse` results in `scripts/lib/llm-providers.mjs` carry `httpStatus` and `retryAfterMs` (seconds and HTTP-date forms) for DeepSeek, OpenAI-compatible and Anthropic; connection errors before a response marked retryable; Codex unchanged
+- [ ] 3.3 Collectors exit with code 75 when their final request failed with HTTP 429, HTTP 5xx or a network error; other failures keep exit code 1; test the exit-code helper with synthetic responses (collectors themselves need Edge and are not run in tests)
+- [ ] 3.4 Tests then `scripts/lib/sync-stages.mjs` (+ `.d.mts`): canonical input hashes per stage (version constants; analyse covers prompt, schema, provider, model, base URL and never the key; validate covers the earlier document's hash), checkpoint verification (file sha256, artifact presence), collect per-source checkpoint and reuse, analyse artifact, validate artifact with diagnostics, merge write-ahead (`plannedPath`, exclusive write, equal content done, different content `MERGE_TARGET_CHANGED`)
+- [ ] 3.5 Tests then `scripts/lib/sync-pipeline.mjs` (+ `.d.mts`) `createSyncPipeline(deps)` with fake collectors and a fake model: same files, statuses, reasons and usage lines as the current runner for the synthetic courses; stage failure vs. failed result; job status `finished`/`failed`/`cancelled`; collect serial with Canvas and Handbook never overlapping; model concurrency 4; one usage line per course with `reused`
+- [ ] 3.6 Tests then resume: new job with `resumed_from`, lineage-only reuse, done courses copied, verified per-source reuse, changed file re-collected, changed model re-analysed, fresh sync reuses nothing, `NOT_RESUMABLE`, `ALREADY_RESUMED`, `RESUME_EXPIRED` (injected clock), courses no longer in the course list, `SYNC_RUNNING`
+- [ ] 3.7 Tests then cancellation and interruption: cancel during collect, during a model call and during a backoff wait (no further request, job `cancelled`, checkpoints kept, resumable); shutdown marks `interrupted`
+- [ ] 3.8 `test/sync-faults.test.ts`: one test per boundary (collect→analyse, analyse→validate, validate→merge, merge→done after the file write) with `SimulatedCrash`, store re-opened, resume, equality with an uninterrupted run and call counts as in design §10
+- [ ] 3.9 Server wiring: the sync service in `server/app.ts` uses the pipeline; `GET/POST/DELETE /api/local/course-sync` from the store with the added fields; `GET /api/local/sync-jobs`; `POST /api/local/sync-jobs/<jobId>/resume`; route tests; remove `scripts/course-sync-runner.mjs` and its `.d.mts` once nothing imports them
+- [ ] 3.10 Page: 「继续上次同步」 in the sync dialog when `resumable`, 「沿用上次结果」 on reused courses; check in a real browser with a fake pipeline (no real sync)
+- [ ] 3.11 If `local-corrections-merge` PR 3 is merged: its change-log append moves into the merge stage with the `runId` + course de-duplication; otherwise leave a note in that change's tasks
+- [ ] 3.12 `bash .claude/check.sh`; fresh-context review; record the PR number here
+
+## 4. Measurement and docs (PR 4)
+
+- [ ] 4.1 `scripts/measure-sync-resume.mjs`: four synthetic courses, fake collectors and fake model, per boundary uninterrupted / crash + resume / crash + fresh job, zero-latency and simulated-latency runs (latencies from the 2026-10-28 stage-3 table), output to `.local/measure/<time>/` (0600, refused inside the Desktop); test the report builder on synthetic numbers
+- [ ] 4.2 Run it and add a section to `docs/sync-optimization.md` (in the file's language): table per boundary with tokens and durations of failed, resumed and fresh jobs and the two totals, a note beside every figure that it comes from fake collectors and a fake model (fake-model token units, simulated latencies listed), the measured pipeline overhead, and that no real-model measurement was run (#245 covers evaluation only)
+- [ ] 4.3 Update `docs/overview.md` (stages, database, resume), `note/handoff.md`; archive the change after PR 4 merges
+- [ ] 4.4 `bash .claude/check.sh`; fresh-context review; record the PR number here
