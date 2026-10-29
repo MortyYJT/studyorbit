@@ -1,6 +1,7 @@
 // Load the selected-course candidates and their newest valid course document from the owner's Desktop
 // course folders (`~/Desktop/墨尔本大学 <year> S<n>/<CODE>/分数结构*.json`). Shared by the course-reports
-// route and Agent chat so both read exactly the same data.
+// route and Agent chat so both read exactly the same data. Version 1 and 2 files are both valid; the stored document
+// is returned unchanged, and consumers convert it with `toDisplayDocument` (shared/course-data.ts).
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';

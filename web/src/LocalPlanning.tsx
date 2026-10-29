@@ -3,7 +3,7 @@ import type { Language } from './i18n.js';
 import { durations, easeOut, reducedMotion, useCountUp, useSlidingIndicator } from './motion.js';
 import { RichText } from './Agent.js';
 import type { RevisionNote } from '../../scripts/lib/revision-store.mjs';
-import { CourseDocumentSchema } from '../../shared/course-data.js';
+import { CourseDocumentSchema, toDisplayDocument } from '../../shared/course-data.js';
 import { bandTargets, calculateGrades, finalNeeded, parentGrade, type Band } from '../../shared/course-calculations.js';
 import { parseAvailability, schedulePlan } from '../../shared/planning.js';
 
@@ -56,7 +56,7 @@ function addDays(day: string, count: number): string { const date = new Date(`${
 function normalize(course: Course, value: unknown): CourseData {
   const parsed = CourseDocumentSchema.safeParse(value);
   if (!parsed.success || parsed.data.course.id !== course.id) return { course, assessments: [], materials: [], available: false };
-  const doc = parsed.data;
+  const doc = toDisplayDocument(parsed.data);
   const assessments: Assessment[] = doc.assessments.map(item => ({
     key: `${course.id}:${item.id}`, name: item.name,
     kind: item.kind === 'test' ? 'exam' : item.kind === 'other' ? 'unknown' : item.kind,

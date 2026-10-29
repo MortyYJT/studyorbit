@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildChatContext, chatSystemPrompt, CONTEXT_LIMIT } from '../scripts/lib/chat-context.mjs';
-import type { CourseDocument } from '../shared/course-data.js';
+import { toDisplayDocument, type CourseDocument } from '../shared/course-data.js';
 
 type Item = CourseDocument['assessments'][number];
 const item = (patch: Partial<Item> & { id: string; name: string }): Item => ({
@@ -52,6 +52,14 @@ describe('buildChatContext', () => {
     expect(text).toContain('SYN20002');
     expect(text).not.toContain('SYN10001');
     expect(text).toContain('syn-3');
+  });
+
+  it('describes a v2 document and a display document the same way as the v1 document', () => {
+    const v2: CourseDocument = { ...synthetic, version: 2, legacyIds: {},
+      assessments: synthetic.assessments.map(entry => ({ ...entry, refs: [], weightQuote: null, ruleQuote: null, unsourced: [] })) };
+    const expected = buildChatContext([synthetic], { today: '2026-10-29' });
+    expect(buildChatContext([v2], { today: '2026-10-29' })).toBe(expected);
+    expect(buildChatContext([toDisplayDocument(synthetic)], { today: '2026-10-29' })).toBe(expected);
   });
 
   it('caps the text and appends a truncation note', () => {

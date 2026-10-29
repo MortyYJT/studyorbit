@@ -1,9 +1,10 @@
 import { z } from 'zod';
-import { CourseDocumentSchema } from '../../shared/course-data.ts';
+import { CourseDocumentV1Schema } from '../../shared/course-data.ts';
 
 // Provider-independent output contract; semantic refinements are checked locally.
+// The model still returns a v1 document until the sync moves to contract v2.
 export function courseOutputSchema() {
-  const doc = z.toJSONSchema(CourseDocumentSchema, { target: 'draft-7', unrepresentable: 'any' });
+  const doc = z.toJSONSchema(CourseDocumentV1Schema, { target: 'draft-7', unrepresentable: 'any' });
   function simplify(value) {
     if (Array.isArray(value)) return value.map(simplify);
     if (!value || typeof value !== 'object') return value;
