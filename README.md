@@ -14,6 +14,7 @@
 - **每周计划：** 设置每天可用时间后，按「截止最早先排」把任务分到截止前的几天（同样的输入总得到同样的结果）；截止前放不下的、已过截止的，列在顶部「需要你处理」，同时列出 7 天内截止却还没安排的计分考核和同步失败的课程。周视图和月历显示同步来的截止日期；可以添加课程之外的任务，记录实际用时并和预计对比。
 - **复习：** 课程页「复习」分页列出考试的日期、权重和规则；一键让 Agent 带你复习、出练习题或整理笔记；单门课对话里已完成的回复可以「存到复习」，下次打开还在。
 - **Agent 对话：** 根据已选课程的同步数据回答问题，例如解释权重、算期末需要的分数、排本周计划、出复习题。只做讲解和规划，**不代写、不代做、不提交任何作业**。
+- **MCP：** 本机 stdio MCP 服务把对话用的只读课程工具（课程列表、考核、成绩、期末需要、近期截止、排期）开放给 Claude Code、Claude Desktop 等客户端，见 [在 MCP 客户端里使用](#在-mcp-客户端里使用)。
 - **选择模型：** 在「设置 → 分析模型」选择 DeepSeek、OpenAI 兼容接口（OpenAI、通义、Kimi、本地 Ollama 等）、Anthropic Claude 或 Codex CLI；同步分析和对话共用这份设置。
 - **外观：** 浅色 / 深色 / 跟随系统；五套配色；背景可选渐变、纯色或上传的图片（可调可见度、模糊和卡片不透明度）；系统开启「减少动态效果」时动画自动关闭。
 
@@ -43,6 +44,50 @@ node scripts/eval-course-analysis.mjs --fixture test/fixtures/synthetic-course
 ```
 
 第一份固定输出把 Ed 的得分配上了 Canvas 的满分，会被校验拦下并触发一次修复；另一份能通过校验但漏了一个 hurdle，只有对比标准答案才发现。终端会打印准确率、一致性和拦截次数，完整结果存在 `.local/eval/results/`。加 `--live` 改为调用你设置的模型。标准答案格式、指标定义和用真实采集数据评测的方法见 [课程分析评测](docs/eval-format.md)。
+
+## 在 MCP 客户端里使用
+
+`scripts/mcp-server.mjs` 是一个本机 stdio MCP 服务（服务名 `studyorbit`），提供和 Agent 对话相同的 6 个只读工具：`list_courses`、`get_assessments`、`calculate_grades`、`final_needed`、`upcoming_deadlines`、`plan_schedule`。同样的数据和参数，它和页面里的对话得到相同的结果。
+
+- **只读、只在本机：** 每次调用重新读取 `.local/lms/courses.json` 和桌面课程文件夹里最新的有效课程 JSON（和页面同一份数据，同步后不用重启）；不同步、不写任何文件、不调用模型、不读模型设置和密钥、不联网。不应用你在页面里做的修正。
+- **没有计划数据：** 每周计划的任务存在页面里，MCP 读不到；`plan_schedule` 只在对话中把任务作为参数传入时可用。
+- **需要 Node.js 24 或更新版本：** 客户端启动的 `node` 必须是 24+。客户端（尤其是 Claude Desktop）找不到正确的 `node` 时，把下面的 `node` 换成它的绝对路径（终端里 `which node` 可查）。
+- **要用 `node` 直接启动，不要用 `npm run mcp`：** npm 会往标准输出打印一行标题，破坏协议。`npm run --silent mcp` 只适合手动试运行。
+
+下面的 `<仓库绝对路径>` 换成本仓库在你电脑上的绝对路径。
+
+**Claude Code：**
+
+```bash
+claude mcp add studyorbit -- node <仓库绝对路径>/scripts/mcp-server.mjs
+```
+
+**Claude Desktop：** 编辑 `claude_desktop_config.json`（macOS 在 `~/Library/Application Support/Claude/`，也可从「设置 → 开发者 → 编辑配置」打开），加入后重启 Claude Desktop：
+
+```json
+{
+  "mcpServers": {
+    "studyorbit": {
+      "command": "node",
+      "args": ["<仓库绝对路径>/scripts/mcp-server.mjs"]
+    }
+  }
+}
+```
+
+**其他 MCP 客户端：** 配置一个 stdio 服务，命令 `node`，参数 `["<仓库绝对路径>/scripts/mcp-server.mjs"]`，不需要任何密钥或环境变量。
+
+**可选参数：**
+
+| 参数 | 作用 |
+| --- | --- |
+| `--courses <课程ID,课程ID>` 或环境变量 `STUDYORBIT_COURSES` | 只开放这些课程（Canvas 课程 ID，可先不加筛选调用 `list_courses` 查看）；两者都给时以 `--courses` 为准，不在课程列表里的 ID 会被忽略 |
+| `--project <目录>` | 读取哪个项目的 `.local/`，默认是脚本所在的仓库 |
+| `--desktop <目录>` | 课程文件夹所在的目录，默认 `~/Desktop`（与页面相同） |
+
+例如在 Claude Code 里只开放两门课：`claude mcp add --env STUDYORBIT_COURSES=<课程ID>,<课程ID> studyorbit -- node <仓库绝对路径>/scripts/mcp-server.mjs`；Claude Desktop 则在上面的配置里加 `"env": { "STUDYORBIT_COURSES": "<课程ID>,<课程ID>" }`。
+
+> **数据流向：** 工具结果包含你的成绩和考核信息，会发给你在该客户端里使用的模型（例如 Claude Desktop / Claude Code 发给 Anthropic），按那家服务商的条款处理。不想开放某门课时用 `--courses` 限定。诊断信息（课程数量、读取失败的原因）只写到标准错误输出，在客户端的 MCP 日志里能看到，不含课程内容。
 
 ## 数据与隐私
 
