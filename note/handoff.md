@@ -3,7 +3,7 @@
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`。决定看 `note/decisions.md`（#1–#231）。
 
 - **最后更新：** 2026-10-29 凌晨（任务 4、2、1、3 都已完成），Claude（主 agent，用户在睡觉）。
-- **分支：** `claude/v2-consolidation`（从 `main` 38500e3 开出），已推送并开一个 PR（#232）。v2 历史已去掉成绩后接入；改写前的本地备份分支 `backup/pre-redact`（只在本地，不推送）。
+- **分支：** `claude/v2-consolidation` 已通过 PR #242 以 merge commit 合并进 `main`（`1679e60`，CI 通过），v2 的 75 个提交历史已去掉成绩后保留在主线。无用分支已删，删前打包在 `archive/deleted-branches-20261029.bundle`（本地，不推送）。当前工作分支：`claude/motion-backgrounds`（动画与背景）。
 
 ## 今晚的任务（用户 10-29 凌晨布置）
 
