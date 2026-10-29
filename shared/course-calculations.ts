@@ -16,12 +16,58 @@ export function parentGrade(parent: GradingGroup): GradeResult | undefined {
   }
   return { score, outOf, earned: parent.weight * score / outOf };
 }
-export function calculateGrades(assessments: GradingItem[], parents: GradingGroup[]) {
-  const completed = parents.flatMap(parent => { const grade = parentGrade(parent); return grade ? [{ parent, grade }] : []; });
+/** Why an assessment adds nothing to the course total. */
+export type ExclusionReason = 'bonus' | 'ungraded' | 'alternative' | 'zero-weight' | 'no-weight' | 'no-mark' | 'incomplete-group';
+export type GradeBreakdown = {
+  /** Leaves first (assessment order), then completed groups (parent order); `key` is the group's source key, or `group:<index>`. */
+  counted: { key: string; group: boolean; weight: number; earned: number }[];
+  /** Assessments that add nothing, in assessment order. Non-excluded children of a counted group are in neither list. */
+  excluded: { key: string; reason: ExclusionReason }[];
+};
+const hasMark = (item: GradingItem) => item.score !== undefined && item.outOf !== undefined && item.outOf > 0 && item.score >= 0 && item.score <= item.outOf;
+const isUngraded = (item: GradingItem) => item.ungraded === true || item.kind === 'ungraded';
+/** Reason a child is left out of its group's own aggregation, if any (see parentGrade). */
+function childSkip(item: GradingItem): ExclusionReason | undefined {
+  if (item.bonus) return 'bonus';
+  if (isUngraded(item)) return 'ungraded';
+  if (item.caution) return 'alternative';
+  if (item.sourceZero) return 'zero-weight';
+  return undefined;
+}
+/** Every counted item and group with its weight and earned points, and every excluded item with a reason. */
+export function gradeBreakdown(assessments: GradingItem[], parents: GradingGroup[]): GradeBreakdown {
+  const completed = parents.flatMap((parent, index) => { const grade = parentGrade(parent); return grade ? [{ parent, grade, index }] : []; });
   const counted = new Set(completed.flatMap(({ parent }) => [...parent.children.map(child => child.key), ...(parent.sourceKey ? [parent.sourceKey] : [])]));
-  const graded = assessments.filter(item => !item.bonus && !item.ungraded && !counted.has(item.key) && item.weightValue !== undefined && item.score !== undefined && item.outOf !== undefined && item.outOf > 0 && item.score >= 0 && item.score <= item.outOf && !item.caution && !item.sourceZero && item.kind !== 'ungraded');
-  const weight = graded.reduce((sum, item) => sum + item.weightValue!, 0) + completed.reduce((sum, item) => sum + item.parent.weight!, 0);
-  const earned = graded.reduce((sum, item) => sum + item.weightValue! * item.score! / item.outOf!, 0) + completed.reduce((sum, item) => sum + item.grade.earned, 0);
+  const groupFailure = (parent: GradingGroup): ExclusionReason => parent.weight === undefined ? 'no-weight' : parent.weight <= 0 ? 'zero-weight' : 'incomplete-group';
+  const leaves: GradeBreakdown['counted'] = [];
+  const excluded: GradeBreakdown['excluded'] = [];
+  for (const item of assessments) {
+    if (counted.has(item.key)) {
+      const skip = completed.some(({ parent }) => parent.sourceKey === item.key) ? undefined : childSkip(item);
+      if (skip) excluded.push({ key: item.key, reason: skip });
+      continue;
+    }
+    const skip = childSkip(item);
+    if (skip) { excluded.push({ key: item.key, reason: skip }); continue; }
+    const ownGroup = parents.find(parent => parent.sourceKey === item.key);
+    const group = parents.find(parent => parent.children.some(child => child.key === item.key));
+    if (item.weightValue === undefined) {
+      const failed = ownGroup ?? group;
+      excluded.push({ key: item.key, reason: failed ? groupFailure(failed) : 'no-weight' });
+      continue;
+    }
+    if (!hasMark(item)) { excluded.push({ key: item.key, reason: ownGroup ? groupFailure(ownGroup) : 'no-mark' }); continue; }
+    leaves.push({ key: item.key, group: false, weight: item.weightValue, earned: item.weightValue * item.score! / item.outOf! });
+  }
+  const groups = completed.map(({ parent, grade, index }) => ({ key: parent.sourceKey ?? `group:${index}`, group: true, weight: parent.weight!, earned: grade.earned }));
+  return { counted: [...leaves, ...groups], excluded };
+}
+export function calculateGrades(assessments: GradingItem[], parents: GradingGroup[]) {
+  const { counted } = gradeBreakdown(assessments, parents);
+  // Same summation order as before the breakdown existed: leaves, then groups.
+  const leaves = counted.filter(entry => !entry.group), groups = counted.filter(entry => entry.group);
+  const weight = leaves.reduce((sum, entry) => sum + entry.weight, 0) + groups.reduce((sum, entry) => sum + entry.weight, 0);
+  const earned = leaves.reduce((sum, entry) => sum + entry.earned, 0) + groups.reduce((sum, entry) => sum + entry.earned, 0);
   return { weight, earned, average: weight ? earned / weight * 100 : undefined };
 }
 /** UniMelb grade bands, as a percentage of the course total. */
