@@ -24,5 +24,7 @@ export const handbookSource = Object.freeze({
   promptRules: Object.freeze({
     refs: 'handbook 只能填 handbookComponents 中列出的 name，不得自拟、缩写或截取。',
     quote: 'Handbook 考核表的一行、Handbook 的其他行、',
+    quoteRow: '引用 Handbook 考核表的一行时，按从左到右的顺序复制该行各格，格与格之间用单个空格分隔（如 "Project report Week 10 30%"）。',
+    percent: '或所引 Handbook 考核项的百分比',
   }),
 });

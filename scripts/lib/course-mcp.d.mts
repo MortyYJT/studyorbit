@@ -5,6 +5,7 @@ export function createCourseMcpServer(options: {
   loadContext: () => Promise<ToolContext> | ToolContext;
   version: string;
   onLoadError?: (error: unknown) => void;
+  timeLabel?: string;
 }): McpServer;
 export function courseContextLoader(options: {
   projectDir: string;

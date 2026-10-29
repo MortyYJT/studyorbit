@@ -5,13 +5,15 @@
 | 脚本 | 用途 |
 | --- | --- |
 | `dev.mjs` | `npm run dev` 的启动脚本：生成本次令牌，先启动 `server/main.ts`（端口 5190），看到监听行再启动 Vite（端口 5173），转发 Ctrl-C，一个退出就停另一个 |
-| `sources/canvas/collect.mjs` | 通过浏览器桥在已登录的 Edge 里读取 Canvas 课程，或单课的作业分组、作业和本人提交；按 Link 分页（旧入口 `canvas-background.mjs` 仍可用） |
+| `sources/canvas/collect.mjs` | 通过浏览器桥在已登录的 Edge 或 Chrome 里读取设置里那个 Canvas 的课程（课程列表记下 `canvasOrigin` 和学校），或单课的作业分组、作业和本人提交；按 Link 分页（旧入口 `canvas-background.mjs` 仍可用） |
 | `sources/ed/collect.mjs` | 通过 `edstem` CLI 获取 Ed 目录、部分成绩和选定介绍（旧入口 `collect-ed-course.mjs` 仍可用） |
-| `sources/ed/scores.mjs` | 只读获取本人最终提交成绩，供 Ed 采集器使用（旧入口 `edstem-scores.mjs` 仍可用） |
-| `institutions/unimelb/handbook-collect.mjs` | 在 Edge 后台读取对应年份的 Handbook 考核页（旧入口 `collect-handbook.mjs` 仍可用） |
-| `sources/registry.mjs`、`sources/config.mjs` | 采集来源（Canvas、Ed、学校的框架来源）的注册表和命令拼装；采集器配置 `STUDYORBIT_SOURCE_CONFIG`（没有时按墨大 + Edge） |
-| `institutions/` | 学校插件：`unimelb` 放墨大特有的课程代码、学期、桌面文件夹、措辞和 Handbook 来源 |
-| `browser/bridge.mjs`、`browser/applescript.mjs` | 浏览器桥：只能打开允许的地址、查状态、按固定方式读、关闭；macOS 上用 AppleScript 控制 Edge |
+| `sources/ed/scores.mjs` | 只读获取本人最终提交成绩，供 Ed 采集器使用；接口地址按 CLI 的登录区域（旧入口 `edstem-scores.mjs` 仍可用） |
+| `sources/ed/regions.mjs` | Ed 区域表（`au`/`us`/`eu`，照抄 `edstem` CLI）和课程链接格式 |
+| `institutions/unimelb/handbook-collect.mjs` | 在浏览器后台读取对应年份的 Handbook 考核页（旧入口 `collect-handbook.mjs` 仍可用） |
+| `sources/registry.mjs`、`sources/config.mjs` | 采集来源（Canvas、Ed、学校的框架来源）的注册表和命令拼装；采集器配置 `STUDYORBIT_SOURCE_CONFIG`（由服务按数据来源设置生成；没有时按墨大 + Edge） |
+| `institutions/` | 学校插件：`unimelb` 放墨大特有的课程代码、学期、桌面文件夹、时区、措辞和 Handbook 来源；`generic.mjs` 适用任何 Canvas（课程代码规则、`StudyOrbit <学期>/<代码>` 文件夹、设置的时区、中性措辞，没有框架来源） |
+| `lib/source-settings.mjs` | 数据来源设置 `.local/config/sources.json` 的默认值、校验、原子写入（600）和生效值 |
+| `browser/bridge.mjs`、`browser/applescript.mjs` | 浏览器桥：只能打开允许的地址、查状态、按固定方式读、关闭；macOS 上用 AppleScript 控制 Edge 或 Chrome |
 | `eval-course-analysis.mjs` | 用已采集的数据或合成课程跑 N 次分析，与标准答案对比，统计准确率、一致性和校验拦截；不采集、不写桌面（[说明](../docs/eval-format.md)） |
 | `mcp-server.mjs` | 本机 stdio MCP 服务（`node scripts/mcp-server.mjs`），把对话用的只读课程工具开放给 MCP 客户端；参数 `--project`、`--desktop`、`--courses`（或 `STUDYORBIT_COURSES`），不写文件、不调用模型、不联网（[接法](../README.md#在-mcp-客户端里使用)） |
 | `lib/course-mcp.mjs` | MCP 服务本体：每个注册表工具一个 MCP 工具（只读标注），每次调用重新读取课程文件；所有 MCP SDK 用法都在这里 |

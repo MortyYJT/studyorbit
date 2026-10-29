@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -60,7 +60,8 @@ async function openStore(): Promise<OpenResult> {
 async function start(options: Partial<LocalApiOptions> = {}) {
   // Every API gets a sync store in the temporary project unless the test passes its own result.
   const store = 'store' in options ? options.store : await openStore();
-  const api = createLocalApi({ projectDir, desktopDir, token, webPort, env: {}, ...options, store });
+  // macOS unless a test says otherwise, so the default browser does not depend on the machine running the tests.
+  const api = createLocalApi({ projectDir, desktopDir, token, webPort, env: {}, platform: 'darwin', ...options, store });
   closeApi = api.close;
   apiRunning = api.syncRunning;
   server = createServer(api.handle);
@@ -339,6 +340,110 @@ describe('course-sync', () => {
     const after = await write('POST', '/api/local/course-sync', { ids: ['900001'] });
     expect([after.status, after.body]).toEqual([503, '']);
     expect(api.syncRunning()).toBe(false);
+  });
+});
+
+describe('source-settings', () => {
+  const generic = { institution: 'generic', canvasOrigin: 'https://canvas.example.edu', browser: 'chrome-applescript', edRegion: 'us', timeZone: 'America/New_York', codePattern: '^([A-Z]+\\d+)_' };
+  const file = () => join(projectDir, '.local', 'config', 'sources.json');
+
+  it('answers the defaults, saves valid settings owner-only and refuses invalid ones naming the field', async () => {
+    await start();
+    const first = await get('/api/local/source-settings');
+    expect(first.status).toBe(200);
+    expect(first.json()).toMatchObject({
+      saved: false, platform: 'darwin',
+      settings: { version: 1, institution: 'unimelb', canvasOrigin: 'https://canvas.lms.unimelb.edu.au', browser: 'edge-applescript', browserPath: null, edRegion: 'auto', timeZone: 'Australia/Melbourne', codePattern: null },
+      available: { edRegions: ['auto', 'au', 'us', 'eu'] },
+    });
+    expect(first.json().available.browsers.filter((browser: { experimental: boolean }) => browser.experimental).map((browser: { id: string }) => browser.id)).toEqual(['cdp-chrome', 'cdp-edge']);
+    const saved = await write('PUT', '/api/local/source-settings', generic);
+    expect(saved.status, saved.body).toBe(200);
+    expect(saved.json()).toMatchObject({ saved: true, settings: { ...generic, browserPath: null } });
+    expect((await stat(file())).mode & 0o777).toBe(0o600);
+    const bad = await write('PUT', '/api/local/source-settings', { ...generic, codePattern: '[A-Z]+\\d+' });
+    expect([bad.status, bad.json().error, bad.json().field]).toEqual([400, 'INVALID_SOURCE_SETTINGS', 'codePattern']);
+    const http = await write('PUT', '/api/local/source-settings', { ...generic, canvasOrigin: 'http://canvas.example.edu' });
+    expect([http.status, http.json().field]).toEqual([400, 'canvasOrigin']);
+    expect((await write('PUT', '/api/local/source-settings', 'not json')).json()).toMatchObject({ error: 'INVALID_SOURCE_SETTINGS' });
+    expect(JSON.parse(await readFile(file(), 'utf8'))).toMatchObject({ codePattern: generic.codePattern, canvasOrigin: generic.canvasOrigin });
+  });
+
+  it('uses the same access checks as the other write routes', async () => {
+    await start();
+    expect((await write('PUT', '/api/local/source-settings', generic, { origin: undefined })).status).toBe(403);
+    expect((await write('PUT', '/api/local/source-settings', generic, { 'content-type': 'text/plain' })).status).toBe(403);
+    expect((await write('PUT', '/api/local/source-settings', generic, { origin: 'http://localhost:5998' })).status).toBe(403);
+    expect((await write('PUT', '/api/local/source-settings', generic, { [TOKEN_HEADER]: 'wrong' })).status).toBe(403);
+    expect((await write('POST', '/api/local/source-settings', generic)).status).toBe(405);
+    expect((await get('/api/local/source-settings/x')).status).toBe(404);
+    expect(existsSync(file())).toBe(false);
+  });
+
+  it('offers only the CDP browsers off macOS', async () => {
+    await start({ platform: 'linux' });
+    const reply = (await get('/api/local/source-settings')).json();
+    expect(reply.settings.browser).toBe('cdp-chrome');
+    expect((await write('PUT', '/api/local/source-settings', generic)).json()).toMatchObject({ field: 'browser' });
+    const path = await write('PUT', '/api/local/source-settings', { ...generic, browser: 'cdp-chrome', browserPath: join(root, 'no-such-browser') });
+    expect(path.json()).toMatchObject({ field: 'browserPath' });
+  });
+
+  it('refuses changes with 409 SYNC_RUNNING while a sync runs, keeping the file', async () => {
+    await writeSyntheticCourses(projectDir, desktopDir);
+    const api = await start({ store: await openStore(), pipelineDeps: fakePipelineDeps() });
+    expect((await write('POST', '/api/local/course-sync', { ids: ['900001'] })).status).toBe(202);
+    expect(api.syncRunning()).toBe(true);
+    const refused = await write('PUT', '/api/local/source-settings', generic);
+    expect([refused.status, refused.json()]).toEqual([409, { error: 'SYNC_RUNNING' }]);
+    expect(existsSync(file())).toBe(false);
+    await write('DELETE', '/api/local/course-sync', {});
+    await expect.poll(() => api.syncRunning(), { interval: 10 }).toBe(false);
+    expect((await write('PUT', '/api/local/source-settings', generic)).status).toBe(200);
+  });
+
+  it('refuses changes while course discovery runs, and discovery uses the saved settings', async () => {
+    const script = join(root, 'discover-stub.mjs');
+    await writeFile(script, `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(join(root, 'env.json'))}, process.env.STUDYORBIT_SOURCE_CONFIG);\nsetTimeout(() => {}, 30000);\n`);
+    await start({ discoveryScript: script });
+    expect((await write('PUT', '/api/local/source-settings', generic)).status).toBe(200);
+    const running = call(port, '/api/local/sync-courses', { method: 'POST', headers: headers({ origin: page, 'content-type': 'application/json' }), body: '{}' });
+    await expect.poll(() => existsSync(join(root, 'env.json')), { interval: 10 }).toBe(true);
+    expect(JSON.parse(await readFile(join(root, 'env.json'), 'utf8'))).toEqual({
+      version: 1, institution: 'generic', canvasOrigin: generic.canvasOrigin, browser: 'chrome-applescript', browserPath: null, edRegion: 'us', profileDir: null,
+    });
+    expect((await write('PUT', '/api/local/source-settings', { ...generic, edRegion: 'eu' })).json()).toEqual({ error: 'SYNC_RUNNING' });
+    await write('DELETE', '/api/local/sync-courses', {});
+    expect((await running).status).toBe(409);
+  });
+
+  it('answers 409 COURSE_LIST_STALE for a course list from another Canvas; an old list counts as the default Canvas', async () => {
+    await writeSyntheticCourses(projectDir, desktopDir);
+    await start({ store: await openStore(), pipelineDeps: fakePipelineDeps() });
+    expect((await get('/api/local/course-candidates')).status).toBe(200);
+    expect((await get('/api/local/course-reports')).status).toBe(200);
+    expect((await write('PUT', '/api/local/source-settings', generic)).status).toBe(200);
+    for (const path of ['/api/local/course-candidates', '/api/local/course-reports']) {
+      const stale = await get(path);
+      expect([stale.status, stale.json()], path).toEqual([409, { error: 'COURSE_LIST_STALE' }]);
+    }
+    const sync = await write('POST', '/api/local/course-sync', { ids: ['900001'] });
+    expect([sync.status, sync.json()]).toEqual([409, { error: 'COURSE_LIST_STALE' }]);
+    // A list discovered on the configured Canvas is read with the generic institution's course filter.
+    const list = JSON.parse(await readFile(join(projectDir, '.local', 'lms', 'courses.json'), 'utf8'));
+    await writeFile(join(projectDir, '.local', 'lms', 'courses.json'), JSON.stringify({ ...list, canvasOrigin: generic.canvasOrigin, institution: 'generic' }));
+    expect((await get('/api/local/course-candidates')).json().courses).toEqual([expect.objectContaining({ id: '900001', subjectCode: 'SYNT10001' })]);
+  });
+
+  it('answers 500 SOURCE_SETTINGS_UNREADABLE for a settings file it cannot use', async () => {
+    await mkdir(join(projectDir, '.local', 'config'), { recursive: true });
+    await writeFile(file(), '{not json');
+    await writeSyntheticCourses(projectDir, desktopDir);
+    await start();
+    expect((await get('/api/local/source-settings')).json()).toEqual({ error: 'SOURCE_SETTINGS_UNREADABLE' });
+    expect((await get('/api/local/course-reports')).json()).toEqual({ error: 'SOURCE_SETTINGS_UNREADABLE' });
+    // Saving valid settings replaces it.
+    expect((await write('PUT', '/api/local/source-settings', generic)).status).toBe(200);
   });
 });
 

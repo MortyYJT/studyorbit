@@ -1,13 +1,13 @@
-// Contract v2 helpers (openspec/changes/course-contract-v2/design.md §2–§4, §6): Handbook components, text normalisation,
+// Contract v2 helpers (openspec/changes/course-contract-v2/design.md §2–§4, §6): framework components, text normalisation,
 // slugs, deterministic assessment IDs, fact back-fill from collected data, the legacy ID map and the stored document.
 // Pure functions; no I/O.
 import { CourseDocumentV2Schema } from '../../shared/course-data.ts';
-import { parseHandbookComponents, parseHandbookRows } from '../institutions/unimelb/handbook-parse.mjs';
+import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ' };
 
 /**
- * Normalisation shared by Handbook reference matching and quote verification: strip HTML tags, decode the common
+ * Normalisation shared by framework reference matching and quote verification: strip HTML tags, decode the common
  * entities, NFKC, lowercase, unify quote and dash characters, collapse all whitespace to one space, trim.
  */
 export function normaliseText(value) {
@@ -26,10 +26,6 @@ export function normaliseText(value) {
     .replace(/\s+/g, ' ')
     .trim();
 }
-
-// The Handbook parsers moved to the UniMelb framework source (openspec change generic-adapters, design §4); they are
-// re-exported here until the remaining callers take them from the institution.
-export { parseHandbookComponents, parseHandbookRows };
 
 /** NFKC, lowercase, every run of non-alphanumeric characters (Unicode letters and digits count) as one `-`; empty → `item`. */
 export function slug(value) {
@@ -67,8 +63,8 @@ function baseId(item) {
 }
 
 /**
- * Deterministic IDs for model assessments `{ key, parentKey, refs, name }` (design §3). Handbook references must already
- * hold canonical component names. A repeatable base ID (Canvas group, Handbook, group) shared by several items becomes
+ * Deterministic IDs for model assessments `{ key, parentKey, refs, name }` (design §3). Framework (`handbook`) references
+ * must already hold canonical component names. A repeatable base ID (Canvas group, framework component, group) shared by several items becomes
  * `<base>:<slug(name)>` on every one of them. Returns `{ ids, parentIds }` in input order; an unknown parentKey gives null.
  * IDs may still repeat; the caller reports that as a validation issue.
  */
@@ -85,13 +81,14 @@ const list = value => (Array.isArray(value) ? value : []);
 
 /**
  * Lookup tables over the collected data. A collection that is missing or unavailable has empty tables, so every
- * reference to it fails. Handbook references need at least one parsed component.
+ * reference to it fails. `handbook` references need at least one component parsed by the institution's framework source
+ * (`framework`, default the default institution's; null: the institution has none, so every such reference fails).
  */
-export function indexCollected({ canvas, ed, handbook } = {}) {
+export function indexCollected({ canvas, ed, handbook } = {}, framework = DEFAULT_INSTITUTION.framework) {
   const canvasOk = canvas && typeof canvas === 'object' && canvas.status !== 'unavailable';
   const edOk = ed && typeof ed === 'object' && !['unavailable', 'not_found'].includes(ed.status);
-  const handbookOk = handbook && typeof handbook === 'object' && handbook.status === 'available';
-  const components = handbookOk ? parseHandbookComponents(handbook.text) : [];
+  const handbookOk = Boolean(framework) && handbook && typeof handbook === 'object' && handbook.status === 'available';
+  const components = handbookOk ? framework.parseComponents(handbook.text) : [];
   const assignments = canvasOk ? list(canvas.assignments).filter(item => item && item.id !== undefined && item.id !== null) : [];
   return {
     assignments: new Map(assignments.map(item => [String(item.id), item])),
@@ -104,7 +101,7 @@ export function indexCollected({ canvas, ed, handbook } = {}) {
   };
 }
 
-/** The reference in canonical form (a Handbook reference gets the component's own name), or null when it was not collected. */
+/** The reference in canonical form (a framework reference gets the component's own name), or null when it was not collected. */
 export function resolveRef(index, ref) {
   switch (ref.platform) {
     case 'canvas': return index.assignments.has(ref.id) ? ref : null;
@@ -177,7 +174,7 @@ export function backfillFacts(index, refs) {
   return { due, score, maxScore, status };
 }
 
-/** One source per canonical reference, built by code: link to the assignment, lesson or Handbook page; none for a group. */
+/** One source per canonical reference, built by code: link to the assignment, lesson or framework page; none for a group. */
 export function buildSources(index, refs) {
   return refs.map(ref => {
     if (ref.platform === 'canvas') return { platform: 'canvas', url: httpUrl(index.assignments.get(ref.id)?.html_url), evidence: null };
@@ -294,13 +291,14 @@ export function buildLegacyIds(previous, current) {
 }
 
 /**
- * Stored course document v2 from a validated model output (design §1, §3, §4, §6). `collected` is `{ canvas, ed, handbook }`;
+ * Stored course document v2 from a validated model output (design §1, §3, §4, §6). `collected` is `{ canvas, ed, handbook }`
+ * and `framework` the institution's framework source (default the default institution's);
  * `previous` is the newest valid earlier document of the course (v1 or v2) or null. Weights, rules and their quotes are kept
  * as given, except that a quote for a null field is dropped; `unsourced` stays empty until quote verification runs.
  * Throws when a reference was not collected or the result breaks the stored schema (the output was not validated).
  */
-export function buildStoredDocument(modelDocument, collected, previous) {
-  const index = indexCollected(collected);
+export function buildStoredDocument(modelDocument, collected, previous, framework = DEFAULT_INSTITUTION.framework) {
+  const index = indexCollected(collected, framework);
   for (const item of modelDocument.assessments) for (const ref of item.refs) {
     if (!resolveRef(index, ref)) throw new Error(`reference not collected: ${ref.platform} ${ref.id}`);
   }

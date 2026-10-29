@@ -18,7 +18,7 @@ const assessmentFields = {
   scoring, rule, sources: z.array(source),
 };
 
-/** A platform reference: Canvas assignment ID, Canvas assignment group ID, Ed lesson ID, or a Handbook component name. */
+/** A platform reference: Canvas assignment ID, Canvas assignment group ID, Ed lesson ID, or a component name of the institution's framework source (contract value `handbook`). */
 const reference = z.object({ platform: z.enum(['canvas', 'canvas-group', 'ed', 'handbook']), id: z.string().min(1) }).strict();
 const quote = z.string().nullable();
 

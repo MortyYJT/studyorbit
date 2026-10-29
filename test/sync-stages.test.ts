@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  analyseInputHash, ANALYSE_VERSION, canonicalJson, captureEarlierDocument, capturedDocument, chooseCoursePath, collectInputHash,
+  analyseInputHash, ANALYSE_VERSION, canonicalJson, COLLECT_VERSION, captureEarlierDocument, capturedDocument, chooseCoursePath, collectInputHash,
   courseFolder, mergeInputHash, planMerge, sha256Hex, validateInputHash, verifySource,
 } from '../scripts/lib/sync-stages.mjs';
 import { resolveSourceSetup } from '../scripts/sources/registry.mjs';
@@ -21,8 +21,15 @@ const sources = (sha: string) => ({ canvas: { file: '/x/canvas.json', sha256: sh
 describe('input hashes', () => {
   it('are canonical: key order does not matter, values and versions do', () => {
     expect(canonicalJson({ b: 1, a: { d: [2, { y: 1, x: 2 }], c: undefined } })).toBe('{"a":{"d":[2,{"x":2,"y":1}]},"b":1}');
-    expect(collectInputHash({ courseId: '1', code: 'SYNT10001', term: 't' })).toBe(collectInputHash({ term: 't', code: 'SYNT10001', courseId: '1' }));
-    expect(collectInputHash({ courseId: '1', code: 'SYNT10001', term: 't' })).not.toBe(collectInputHash({ courseId: '1', code: 'SYNT10001', term: 'u' }));
+    const setup = { institution: 'unimelb', canvasOrigin: 'https://canvas.example.edu', edRegion: 'auto', sources: ['canvas', 'ed', 'handbook'] };
+    const collect = { courseId: '1', code: 'SYNT10001', term: 't', ...setup };
+    expect(collectInputHash(collect)).toBe(collectInputHash({ ...setup, term: 't', code: 'SYNT10001', courseId: '1' }));
+    expect(collectInputHash(collect)).not.toBe(collectInputHash({ ...collect, term: 'u' }));
+    // The setup that decides what is collected is hashed (generic-adapters PR 3, design §1).
+    for (const change of [{ institution: 'generic' }, { canvasOrigin: 'https://canvas.other.edu' }, { edRegion: 'us' }, { sources: ['canvas', 'ed'] }]) {
+      expect(collectInputHash({ ...collect, ...change }), JSON.stringify(change)).not.toBe(collectInputHash(collect));
+    }
+    expect(COLLECT_VERSION).toBe(2);
     expect(ANALYSE_VERSION).toBeGreaterThan(0);
   });
 

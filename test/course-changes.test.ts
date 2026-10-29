@@ -13,29 +13,32 @@ const course = { id: '100', code: 'SYNT10001', name: 'Synthetic Course', term: n
 const v1 = (assessments: V1Item[]): CourseDocumentV1 => ({ version: 1, course, assessments, materials: [] });
 const v2 = (assessments: CourseDocumentV2['assessments'], legacyIds: Record<string, string> = {}): CourseDocumentV2 => ({ version: 2, course, assessments, materials: [], legacyIds });
 
+/** The default institution's zone in these synthetic cases. */
+const diff = (previous: Parameters<typeof diffSnapshots>[0], current: Parameters<typeof diffSnapshots>[1]) => diffSnapshots(previous, current, 'Australia/Melbourne');
+
 describe('diffSnapshots', () => {
   it('reports a moved due date', () => {
-    expect(diffSnapshots(v2([v2Item('canvas:5551')]), v2([v2Item('canvas:5551', { due: '2026-11-10T12:59:00Z' })]))).toEqual([
+    expect(diff(v2([v2Item('canvas:5551')]), v2([v2Item('canvas:5551', { due: '2026-11-10T12:59:00Z' })]))).toEqual([
       { assessmentId: 'canvas:5551', name: 'Synthetic canvas:5551', field: 'due', before: '2026-11-03T12:59:00Z', after: '2026-11-10T12:59:00Z' },
     ]);
   });
 
   it('treats the same instant in another notation as unchanged', () => {
-    expect(diffSnapshots(v2([v2Item('canvas:5551', { due: '2026-11-10T12:59:00Z' })]), v2([v2Item('canvas:5551', { due: '2026-11-10T23:59:00+11:00' })]))).toEqual([]);
+    expect(diff(v2([v2Item('canvas:5551', { due: '2026-11-10T12:59:00Z' })]), v2([v2Item('canvas:5551', { due: '2026-11-10T23:59:00+11:00' })]))).toEqual([]);
   });
 
   it('reports a changed weight, compared to two decimal places', () => {
-    expect(diffSnapshots(v1([item('a1', { weight: 20 })]), v1([item('a1', { weight: 25 })]))).toEqual([
+    expect(diff(v1([item('a1', { weight: 20 })]), v1([item('a1', { weight: 25 })]))).toEqual([
       { assessmentId: 'a1', name: 'Synthetic a1', field: 'weight', before: 20, after: 25 },
     ]);
-    expect(diffSnapshots(v1([item('a1', { weight: 20 })]), v1([item('a1', { weight: 20.001 })]))).toEqual([]);
+    expect(diff(v1([item('a1', { weight: 20 })]), v1([item('a1', { weight: 20.001 })]))).toEqual([]);
   });
 
   it('reports a weight cleared to null and set from null, and a due set or cleared', () => {
-    expect(diffSnapshots(v1([item('a1', { weight: 20 })]), v1([item('a1', { weight: null })]))).toEqual([
+    expect(diff(v1([item('a1', { weight: 20 })]), v1([item('a1', { weight: null })]))).toEqual([
       { assessmentId: 'a1', name: 'Synthetic a1', field: 'weight', before: 20, after: null },
     ]);
-    expect(diffSnapshots(v1([item('a1', { weight: null, due: null })]), v1([item('a1', { weight: 15, due: '2026-11-03T12:59:00Z' })]))).toEqual([
+    expect(diff(v1([item('a1', { weight: null, due: null })]), v1([item('a1', { weight: 15, due: '2026-11-03T12:59:00Z' })]))).toEqual([
       { assessmentId: 'a1', name: 'Synthetic a1', field: 'due', before: null, after: '2026-11-03T12:59:00Z' },
       { assessmentId: 'a1', name: 'Synthetic a1', field: 'weight', before: null, after: 15 },
     ]);
@@ -44,7 +47,7 @@ describe('diffSnapshots', () => {
   it('reports both fields of one assessment, due first, with the current name', () => {
     const previous = v1([item('a1', { name: 'Old name' })]);
     const current = v1([item('a1', { name: 'New name', due: '2026-11-04T12:59:00Z', weight: 30 })]);
-    expect(diffSnapshots(previous, current)).toEqual([
+    expect(diff(previous, current)).toEqual([
       { assessmentId: 'a1', name: 'New name', field: 'due', before: '2026-11-03T12:59:00Z', after: '2026-11-04T12:59:00Z' },
       { assessmentId: 'a1', name: 'New name', field: 'weight', before: 20, after: 30 },
     ]);
@@ -52,13 +55,13 @@ describe('diffSnapshots', () => {
 
   it('reports nothing when the documents agree', () => {
     const doc = v1([item('a1'), item('a2', { due: null, weight: null })]);
-    expect(diffSnapshots(doc, structuredClone(doc))).toEqual([]);
+    expect(diff(doc, structuredClone(doc))).toEqual([]);
   });
 
   it('pairs a v1 assessment with its v2 successor through legacyIds', () => {
     const previous = v1([item('a1', { weight: 20 })]);
     const current = v2([v2Item('canvas:5551', { weight: 25 })], { a1: 'canvas:5551' });
-    expect(diffSnapshots(previous, current)).toEqual([
+    expect(diff(previous, current)).toEqual([
       { assessmentId: 'canvas:5551', name: 'Synthetic canvas:5551', field: 'weight', before: 20, after: 25 },
     ]);
   });
@@ -67,33 +70,33 @@ describe('diffSnapshots', () => {
     const previous = v1([item('a1', { weight: 10 }), item('canvas:5551', { weight: 20 })]);
     // `a1` points at an assessment the same-ID pair already holds; `a2` points at nothing.
     const current = v2([v2Item('canvas:5551', { weight: 20 })], { a1: 'canvas:5551', a2: 'canvas:9999' });
-    expect(diffSnapshots(previous, current)).toEqual([]);
+    expect(diff(previous, current)).toEqual([]);
   });
 
   it('never reports score, maximum score, status, name or other field changes', () => {
     const previous = v1([item('a1', { score: null, maxScore: 10, status: 'not_started', name: 'A', kind: 'quiz', rule: null })]);
     const current = v1([item('a1', { score: 9, maxScore: 12, status: 'graded', name: 'B', kind: 'assignment', rule: 'Best 3 of 4' })]);
-    const changes = diffSnapshots(previous, current);
+    const changes = diff(previous, current);
     expect(changes).toEqual([]);
-    expect(JSON.stringify(diffSnapshots(previous, v1([{ ...current.assessments[0]!, weight: 30 }])))).not.toMatch(/score|maxScore|status/);
+    expect(JSON.stringify(diff(previous, v1([{ ...current.assessments[0]!, weight: 30 }])))).not.toMatch(/score|maxScore|status/);
   });
 
   it('ignores added and removed assessments', () => {
     const previous = v2([v2Item('canvas:5551'), v2Item('canvas:5552')]);
     const current = v2([v2Item('canvas:5551'), v2Item('canvas:5560', { weight: 50 })]);
-    expect(diffSnapshots(previous, current)).toEqual([]);
+    expect(diff(previous, current)).toEqual([]);
   });
 
   it('orders changes by current document order', () => {
     const previous = v1([item('a1'), item('a2'), item('a3')]);
     const current = v1([item('a3', { weight: 5 }), item('a1', { due: '2026-12-01T00:00:00Z' }), item('a2')]);
-    expect(diffSnapshots(previous, current).map(change => `${change.assessmentId}:${change.field}`)).toEqual(['a3:weight', 'a1:due']);
+    expect(diff(previous, current).map(change => `${change.assessmentId}:${change.field}`)).toEqual(['a3:weight', 'a1:due']);
   });
 
   it('does not modify its inputs', () => {
     const previous = v1([item('a1')]), current = v2([v2Item('canvas:5551', { weight: 30 })], { a1: 'canvas:5551' });
     const before = structuredClone([previous, current]);
-    diffSnapshots(previous, current);
+    diff(previous, current);
     expect([previous, current]).toEqual(before);
   });
 });

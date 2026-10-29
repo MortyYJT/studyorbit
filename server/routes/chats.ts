@@ -10,7 +10,10 @@ import type { CourseDocument } from '../../shared/course-data.ts';
 import { parsePlanningSnapshot } from '../../shared/planning-snapshot.ts';
 import type { RouteContext, RouteHandler } from '../context.ts';
 
-export function chatsRoute({ projectDir, desktopDir, env }: RouteContext, chatReplies: ReplyRegistry = createReplyRegistry()): RouteHandler {
+/** YYYY-MM-DD of `date` in `timeZone`. */
+const dayIn = (date: Date, timeZone: string) => new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+
+export function chatsRoute({ projectDir, desktopDir, env, sourceSetup }: RouteContext, chatReplies: ReplyRegistry = createReplyRegistry()): RouteHandler {
   return async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     const json = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(value)); };
@@ -72,17 +75,19 @@ export function chatsRoute({ projectDir, desktopDir, env }: RouteContext, chatRe
         const updated = await appendMessages(projectDir, id, [userMessage], { courseIds: scope });
         if (!updated) { json(404, { error: 'CHAT_NOT_FOUND' }); return; }
         if (controller.signal.aborted) { res.end(); return; }
+        // The institution of the source settings gives the wording and the time zone of "today" and of due dates.
+        const setup = await sourceSetup();
         let documents: CourseDocument[] = [], known: { id: string; code?: string; name?: string }[] = [];
         try {
-          const loaded = await loadCourseReports(projectDir, { desktop: desktopDir });
+          const loaded = await loadCourseReports(projectDir, { desktop: desktopDir, institution: setup.institution, canvasOrigin: setup.settings.canvasOrigin });
           documents = loaded.reports.flatMap(item => item.report ? [item.report] : []);
           known = loaded.courses.map(course => ({ id: course.id, code: course.subjectCode, name: course.name }));
-        } catch { /* No synced courses yet: the context says so per course. */ }
-        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        } catch { /* No synced courses yet, or a course list from another Canvas: the context says so per course. */ }
+        const today = dayIn(new Date(), setup.timeZone);
         const language = body.language === 'en' ? 'en' : 'zh';
         res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
         const send = (event: string, data: unknown) => { if (!res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
-        const result = await runChatReply({ config, messages: updated.messages, documents, courses: known, scope, today, language, planning: planning.planning },
+        const result = await runChatReply({ config, messages: updated.messages, documents, courses: known, scope, today, language, planning: planning.planning, institution: setup.institution, timeZone: setup.timeZone },
           { signal: controller.signal, onDelta: text => send('delta', { text }), onStep: step => send('step', step) });
         const assistant = result.message;
         if (assistant) await appendMessages(projectDir, id, [assistant]);

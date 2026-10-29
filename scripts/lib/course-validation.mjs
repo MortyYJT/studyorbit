@@ -1,20 +1,26 @@
 import { CourseModelOutputSchema } from '../../shared/course-data.ts';
 import { verifyQuotes } from './course-quotes.mjs';
 import { buildStoredDocument, canonicalRefs, generateIds, indexCollected, resolveRef } from './course-refs.mjs';
+import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
+import { resolveSources } from '../sources/registry.mjs';
+
+/** The sources of the default institution, for callers that settle its recorded data (tests, the evaluation). */
+const DEFAULT_SOURCES = resolveSources(null, DEFAULT_INSTITUTION);
 
 const REPORT_STATUSES = ['completed', 'partial', 'failed'];
 const PLATFORM_LABELS = { canvas: 'Canvas 作业 ID', 'canvas-group': 'Canvas 作业分组 ID', ed: 'Ed lesson ID' };
 
 // Checks one model output (contract v2): JSON shape, the model output schema, references against the collected data,
 // keys and parents, semantic rules the schema cannot express, generated IDs, and that the document belongs to `course`.
-// Also returns the Handbook components parsed from the collected Handbook text.
-export function validateAnalysis(raw, { course, canvas, ed, handbook }) {
+// `framework` is the institution's framework source (default the default institution's; null when it has none). Also
+// returns the framework components parsed from the collected framework text.
+export function validateAnalysis(raw, { course, canvas, ed, handbook, framework = DEFAULT_INSTITUTION.framework }) {
   let report;
   try { report = JSON.parse(raw); } catch { report = null; }
-  const index = indexCollected({ canvas, ed, handbook });
+  const index = indexCollected({ canvas, ed, handbook }, framework);
   const parsed = CourseModelOutputSchema.safeParse(report?.document);
   const issues = parsed.success ? [] : parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`);
-  if (parsed.success) issues.push(...referenceIssues(parsed.data, index), ...structureIssues(parsed.data));
+  if (parsed.success) issues.push(...referenceIssues(parsed.data, index, framework), ...structureIssues(parsed.data));
   if (parsed.success && !issues.length) issues.push(...idIssues(parsed.data, index));
   const valid = Boolean(report) && typeof report.reason === 'string' && REPORT_STATUSES.includes(report.status)
     && (report.status === 'failed' ? report.document === null
@@ -23,15 +29,17 @@ export function validateAnalysis(raw, { course, canvas, ed, handbook }) {
   return { report, parsed, issues, valid, components: index.components };
 }
 
-// Every reference must exist in the collected data; a Canvas assignment or Ed lesson belongs to one item only.
-function referenceIssues(document, index) {
+// Every reference must exist in the collected data; a Canvas assignment or Ed lesson belongs to one item only. A
+// `handbook` reference without a framework source names a source that was not collected.
+function referenceIssues(document, index, framework) {
   const issues = [];
   const owners = new Map();
   for (const [itemIndex, item] of document.assessments.entries()) {
     for (const [refIndex, ref] of item.refs.entries()) {
       const where = `assessments.${itemIndex}.refs.${refIndex}: 「${item.name}」引用的 ${ref.platform} ${ref.id}`;
       if (!resolveRef(index, ref)) {
-        issues.push(`${where} ${ref.platform === 'handbook' ? '不是 Handbook 考核表中列出的考核项名称' : `不是采集到的 ${PLATFORM_LABELS[ref.platform]}`}`);
+        issues.push(`${where} ${ref.platform !== 'handbook' ? `不是采集到的 ${PLATFORM_LABELS[ref.platform]}`
+          : framework ? `不是 ${framework.label} 考核表中列出的考核项名称` : '所属的来源没有采集，不能引用'}`);
         continue;
       }
       if (ref.platform !== 'canvas' && ref.platform !== 'ed') continue;
@@ -114,25 +122,32 @@ export async function analyseWithRepair({ instructions, run, validate, isCancell
 
 // Decides what to save after analysis. Rejected output is never saved; its raw
 // text and issues are returned as a diagnostic for `.local/lms/sync-errors/`.
-// `collection` flags: canvasFailed, canvasUnpaginated, edFailed, edPartial, handbookFailed.
-// `data` is the collected `{ canvas, ed, handbook }` and `previous` the newest valid earlier document (or null); an
-// accepted document is saved as the stored v2 document built from them, after quote verification (design §5): fields
-// without a verified source are cleared and counted in the reason as 「N 项权重或规则无出处」, without changing the status.
-// A Handbook that was collected but has no parsable assessment table also makes the course at most partial.
-export function settleCourse({ result, validation, collection, data, previous = null }) {
+// `sources` are the job's sources in collection order (default the default institution's) and `collection` their flags `{ [id]: { failed, partial,
+// unpaginated } }` (a source missing from `collection` counts as collected). `data` is the collected data by source id
+// and `previous` the newest valid earlier document (or null); an accepted document is saved as the stored v2 document
+// built from them, after quote verification (design §5): fields without a verified source are cleared and counted in
+// the reason as 「N 项权重或规则无出处」, without changing the status. A framework source that was collected but has no
+// parsable assessment table also makes the course at most partial. The reason names each source by its label.
+export function settleCourse({ result, validation, collection, sources = DEFAULT_SOURCES, data, previous = null, framework = DEFAULT_INSTITUTION.framework }) {
   const { report, parsed, issues } = validation;
   if (result.exitCode === 0 && validation.valid) {
     let status = report.status;
     let reason = report.reason.slice(0, 500);
-    const { canvasFailed, canvasUnpaginated, edFailed, edPartial, handbookFailed } = collection;
-    const handbookUnparsed = !handbookFailed && data?.handbook?.status === 'available' && validation.components.length === 0;
-    if (canvasFailed || canvasUnpaginated || edFailed || edPartial || handbookFailed || handbookUnparsed) {
+    const notes = sources.map(source => {
+      const flags = collection[source.id] ?? {};
+      if (flags.failed) return `${source.label} 数据未能读取；`;
+      if (flags.unpaginated) return `${source.label} 分页未验证；`;
+      if (flags.partial) return `部分 ${source.label} 数据未能读取；`;
+      if (framework && source.id === framework.id && data?.[source.id]?.status === 'available' && validation.components.length === 0) return `${source.label} 考核表未能解析；`;
+      return '';
+    }).join('');
+    if (notes) {
       if (status === 'completed') status = 'partial';
-      reason = `${canvasFailed ? 'Canvas 数据未能读取；' : canvasUnpaginated ? 'Canvas 分页未验证；' : ''}${edFailed ? 'Ed 数据未能读取；' : edPartial ? '部分 Ed 数据未能读取；' : ''}${handbookFailed ? 'Handbook 数据未能读取；' : handbookUnparsed ? 'Handbook 考核表未能解析；' : ''}${reason}`;
+      reason = `${notes}${reason}`;
     }
     let document = null;
     if (report.status !== 'failed' && parsed.success) {
-      const verified = verifyQuotes(buildStoredDocument(parsed.data, data, previous), data);
+      const verified = verifyQuotes(buildStoredDocument(parsed.data, data, previous, framework), data, framework);
       document = verified.document;
       if (verified.cleared) reason = `${reason}${reason && !/[；。]$/.test(reason) ? '；' : ''}${verified.cleared} 项权重或规则无出处`;
     }

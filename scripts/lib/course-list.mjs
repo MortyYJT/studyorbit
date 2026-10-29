@@ -47,6 +47,14 @@ export function normalizeCourses(items, origin = DEFAULT_INSTITUTION.defaults.ca
   }])).values()];
 }
 
+/**
+ * The Canvas origin a course list was discovered on. Lists written before discovery recorded it came from the default
+ * institution's Canvas (design §2).
+ */
+export function courseListOrigin(list) {
+  return typeof list?.canvasOrigin === 'string' ? list.canvasOrigin : DEFAULT_INSTITUTION.defaults.canvasOrigin;
+}
+
 /** The institution's subject code of a Canvas course_code (default institution), without using the title as evidence. */
 export function subjectCode(code, institution = DEFAULT_INSTITUTION) {
   return institution.subjectCode(code);

@@ -8,6 +8,7 @@ import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning, type SidebarCourse } from './LocalPlanning.js';
 import { closeDialog, durations, easeOut, openDialog, reducedMotion, useSlidingIndicator, viewTransition } from './motion.js';
 import { palettes, parsePalette, type Palette } from './palette.js';
+import { fetchSourceSettings, SourceSettingsSection, type SourceSettingsReply } from './SourceSettings.js';
 import type { LlmProvider, PublicLlmConfig } from '../../scripts/lib/llm-config.mjs';
 
 type Panel = 'status' | 'settings';
@@ -46,6 +47,10 @@ export function App() {
   const [courseRun, setCourseRun] = useState<CourseRun>();
   const [courseRunError, setCourseRunError] = useState('');
   const [syncModal, setSyncModal] = useState<SyncModal>();
+  // The institution's time zone from the source settings decides "today" and due days; the browser's until it loads.
+  const [timeZone, setTimeZone] = useState(() => new Intl.DateTimeFormat().resolvedOptions().timeZone);
+  // The name of the institution's framework source (the contract's `handbook` platform), or null without one.
+  const [frameworkLabel, setFrameworkLabel] = useState<string | null>(null);
   const syncDialog = useRef<HTMLDialogElement>(null);
   const selectDialog = useRef<HTMLDialogElement>(null);
   const cancelledDiscovery = useRef(false);
@@ -61,6 +66,13 @@ export function App() {
   useEffect(() => { applyBackground(background); remember(backgroundStorageKey, JSON.stringify(background)); }, [background]);
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('coursework.language', language); }, [language]);
   useEffect(() => { if (panel) openDialog(dialog.current); }, [panel]);
+  function applySourceSettings(reply: SourceSettingsReply) {
+    setTimeZone(reply.settings.timeZone);
+    setFrameworkLabel(reply.available.institutions.find(item => item.id === reply.settings.institution)?.frameworkLabel ?? null);
+  }
+  useEffect(() => { let live = true; void fetchSourceSettings().then(reply => { if (live && reply) applySourceSettings(reply); }); return () => { live = false; }; }, []);
+  /** Saved source settings: a new time zone or institution changes the course pages, so they reload. */
+  function sourceSettingsSaved(reply: SourceSettingsReply) { applySourceSettings(reply); setCourseRefresh(value => value + 1); }
   // Page changes run as a View Transition (see go); other view changes, or browsers without it, fade the canvas in.
   const mainRef = useRef<HTMLElement>(null);
   const viaTransition = useRef(false);
@@ -134,7 +146,8 @@ export function App() {
       const response = await fetch('/api/local/sync-courses', { method: 'POST' });
       if (!response.ok) {
         const data: unknown = await response.json().catch(() => undefined);
-        const detail = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : '';
+        const raw = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : '';
+        const detail = raw === 'SOURCE_SETTINGS_UNREADABLE' ? (language === 'zh' ? '无法读取「设置 → 数据来源」，请在设置里重新保存。' : 'Could not read Settings → Data sources. Save them again in Settings.') : raw;
         throw new Error(detail || (response.status === 409 ? (language === 'zh' ? '同步正在进行中。' : 'A sync is already running.') : t.error));
       }
       const data: unknown = await response.json();
@@ -154,7 +167,9 @@ export function App() {
       if (!response.ok) {
         const failure: unknown = await response.json().catch(() => undefined);
         const code = failure && typeof failure === 'object' && 'error' in failure && typeof failure.error === 'string' ? failure.error : '';
-        throw new Error(response.status === 409
+        throw new Error(code === 'COURSE_LIST_STALE' ? (language === 'zh' ? 'Canvas 地址已更改，请重新获取课程。选择已保存，同步没有启动。' : 'The Canvas address changed; fetch the courses again. Selection saved; the sync did not start.')
+          : code === 'SOURCE_SETTINGS_UNREADABLE' ? (language === 'zh' ? '无法读取「设置 → 数据来源」，同步没有启动。请在设置里重新保存。' : 'Could not read Settings → Data sources; the sync did not start. Save them again in Settings.')
+          : response.status === 409
           ? (language === 'zh' ? '已有课程同步正在进行，选择已保存，但新同步尚未启动。' : 'A course sync is running. Selection saved, but a new sync was not started.')
           : code === 'ANALYSIS_PROVIDER_INVALID' ? (language === 'zh' ? '环境变量 COURSE_ANALYSIS_PROVIDER 不是可识别的提供方，同步未启动。请在「设置 → 分析模型」里选择提供方并保存。选择已保存。' : 'COURSE_ANALYSIS_PROVIDER is not a known provider, so the sync did not start. Pick a provider in Settings → Analysis model. Your selection was saved.')
           : code.startsWith('ANALYSIS_') ? (language === 'zh' ? '分析模型还没配置好（缺少密钥或接口地址），请在「设置 → 分析模型」里检查。选择已保存。' : 'The analysis model is not configured (missing key or endpoint). Check Settings → Analysis model. Your selection was saved.')
@@ -190,6 +205,8 @@ export function App() {
         const code = failure && typeof failure === 'object' && 'error' in failure && typeof failure.error === 'string' ? failure.error : '';
         throw new Error(code === 'RESUME_EXPIRED' ? (language === 'zh' ? '上次同步已超过 24 小时，采集的数据可能已过时，请重新同步。' : 'The last sync is more than 24 hours old; its collected data may be stale. Please sync again.')
           : code === 'SYNC_RUNNING' ? (language === 'zh' ? '已有课程同步正在进行。' : 'A course sync is already running.')
+          : code === 'COURSE_LIST_STALE' ? (language === 'zh' ? 'Canvas 地址已更改，请重新获取课程后再同步。' : 'The Canvas address changed; fetch the courses again and sync.')
+          : code === 'SOURCES_CHANGED' ? (language === 'zh' ? '数据来源设置已更改，无法继续上次同步，请重新同步。' : 'The data-source settings changed, so the last sync cannot be resumed. Please sync again.')
           : code === 'ALREADY_RESUMED' || code === 'NOT_RESUMABLE' ? (language === 'zh' ? '上次同步已经继续过或无需继续。' : 'The last sync was already resumed or has nothing left to do.')
           : code.startsWith('ANALYSIS_') ? (language === 'zh' ? '分析模型还没配置好，请在「设置 → 分析模型」里检查。' : 'The analysis model is not configured. Check Settings → Analysis model.')
           : (language === 'zh' ? '无法继续上次同步。' : 'Could not resume the last sync.'));
@@ -253,7 +270,7 @@ export function App() {
       {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1>{view.page !== 'agent' && <button className="ghost" onClick={() => setCourseRefresh(value => value + 1)}>{t.refresh}</button>}</div>}
       {savedNotice > 0 && <div className="save-toast" role="status">{isZh ? '课程已经保存' : 'Courses saved'}</div>}
       {view.page === 'agent' ? <AgentChat language={language} courses={sidebarCourses} request={agentRequest} onOpenSettings={() => open('settings')} />
-        : <LocalPlanning language={language} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined} onCourses={setSidebarCourses}
+        : <LocalPlanning key={timeZone} language={language} timeZone={timeZone} frameworkLabel={frameworkLabel} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined} onCourses={setSidebarCourses}
           syncIssues={courseRun?.courses ?? []} onCourse={courseId => go({ page: 'course', courseId })} onBack={() => go({ page: 'week' })}
           onAsk={(courseId, prompt) => { setAgentRequest(createAgentRequest(courseId, prompt)); go({ page: 'agent' }); }} />}
     </main>
@@ -269,7 +286,7 @@ export function App() {
         {modal === 'discovery' && <p>{language === 'zh' ? '正在获取课程列表…' : 'Fetching course list…'}</p>}
         {modal === 'starting' && <p>{language === 'zh' ? '正在启动课程同步…' : 'Starting course sync…'}</p>}
         {modal === 'stopping' && <p>{language === 'zh' ? '正在中止，请稍候…' : 'Stopping…'}</p>}
-        {courseRun && courseRun.courses.length > 0 && <><p>{language === 'zh' ? '已处理' : 'Processed'} {courseRun.courses.filter(course => ['completed', 'partial', 'failed'].includes(course.status)).length} / {courseRun.courses.length}</p>{courseRun.courses.map(course => <div className="sync-course" key={course.id}><b>{course.code}</b><span>{['failed', 'cancelled', 'interrupted'].includes(course.status) && <i className="signal" aria-hidden="true" />}{({ pending: language === 'zh' ? '等待' : 'Waiting', running: course.phase === 'canvas' ? (language === 'zh' ? '获取 LMS 信息中' : 'Fetching LMS data') : course.phase === 'ed' ? (language === 'zh' ? '获取 Ed 信息中' : 'Fetching Ed data') : course.phase === 'waiting_analysis' ? (language === 'zh' ? '等待 Agent 分析' : 'Waiting for agent') : course.phase === 'handbook' ? (language === 'zh' ? '获取 Handbook 信息中' : 'Fetching Handbook data') : course.phase === 'analysis' ? (language === 'zh' ? 'Agent 分析中' : 'Agent analysing') : course.phase === 'saving' ? (language === 'zh' ? '校验与保存中' : 'Validating and saving') : (language === 'zh' ? '准备中' : 'Starting'), completed: language === 'zh' ? '已完成' : 'Completed', partial: language === 'zh' ? '部分完成' : 'Partial', failed: language === 'zh' ? '未完成' : 'Failed', cancelled: language === 'zh' ? '已中止' : 'Stopped', interrupted: language === 'zh' ? '已中断' : 'Interrupted' } as Record<string,string>)[course.status] ?? course.status}</span>{course.reused && <small className="muted">{language === 'zh' ? '沿用上次结果' : 'Reused from the last sync'}</small>}{course.status === 'failed' && course.reason && <small>{course.reason}</small>}</div>)}</>}
+        {courseRun && courseRun.courses.length > 0 && <><p>{language === 'zh' ? '已处理' : 'Processed'} {courseRun.courses.filter(course => ['completed', 'partial', 'failed'].includes(course.status)).length} / {courseRun.courses.length}</p>{courseRun.courses.map(course => <div className="sync-course" key={course.id}><b>{course.code}</b><span>{['failed', 'cancelled', 'interrupted'].includes(course.status) && <i className="signal" aria-hidden="true" />}{({ pending: language === 'zh' ? '等待' : 'Waiting', running: course.phase === 'canvas' ? (language === 'zh' ? '获取 LMS 信息中' : 'Fetching LMS data') : course.phase === 'ed' ? (language === 'zh' ? '获取 Ed 信息中' : 'Fetching Ed data') : course.phase === 'waiting_analysis' ? (language === 'zh' ? '等待 Agent 分析' : 'Waiting for agent') : course.phase === 'handbook' ? (language === 'zh' ? `获取 ${frameworkLabel ?? '考核框架'} 信息中` : `Fetching ${frameworkLabel ?? 'framework'} data`) : course.phase === 'analysis' ? (language === 'zh' ? 'Agent 分析中' : 'Agent analysing') : course.phase === 'saving' ? (language === 'zh' ? '校验与保存中' : 'Validating and saving') : (language === 'zh' ? '准备中' : 'Starting'), completed: language === 'zh' ? '已完成' : 'Completed', partial: language === 'zh' ? '部分完成' : 'Partial', failed: language === 'zh' ? '未完成' : 'Failed', cancelled: language === 'zh' ? '已中止' : 'Stopped', interrupted: language === 'zh' ? '已中断' : 'Interrupted' } as Record<string,string>)[course.status] ?? course.status}</span>{course.reused && <small className="muted">{language === 'zh' ? '沿用上次结果' : 'Reused from the last sync'}</small>}{course.status === 'failed' && course.reason && <small>{course.reason}</small>}</div>)}</>}
         {(localSyncError || courseRunError || courseRun?.error) && <p role="alert">{localSyncError || courseRunError || courseRun?.error}</p>}
       </>}
       {modal === 'finished' ? <div className="sync-actions">{courseRun?.resumable && courseRun.jobId && <button onClick={() => void resumeSync()}>{resumeLabel}</button>}<button className={courseRun?.resumable ? 'ghost' : undefined} onClick={() => setSyncModal(undefined)}>{language === 'zh' ? '关闭' : 'Close'}</button></div> : <button disabled={modal === 'stopping'} onClick={() => void stopSync()}>{language === 'zh' ? '中止同步' : 'Stop sync'}</button>}
@@ -286,6 +303,7 @@ export function App() {
         <section className="settings-row"><div><h3>{isZh ? '课程' : 'Courses'}</h3><p className="muted">{sidebarCourses.length ? (isZh ? `已选 ${sidebarCourses.length} 门：${sidebarCourses.map(course => course.code).join('、')}` : `${sidebarCourses.length} selected: ${sidebarCourses.map(course => course.code).join(', ')}`) : (isZh ? '还没有选课。' : 'No courses selected.')}</p></div>
           <button disabled={courseRun?.running} onClick={() => { close(); setCoursePanelOpen(true); }}>{isZh ? '修改选课' : 'Edit courses'}</button></section>
         <AnalysisModelSettings language={language} />
+        <SourceSettingsSection language={language} onSaved={sourceSettingsSaved} />
         <div className="avatar-settings"><span className="avatar-preview">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><div><label className="avatar-upload">{language === 'zh' ? '上传头像' : 'Upload photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
           const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!file) return;
           if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) { setAvatarError(language === 'zh' ? '请选择不超过 2 MB 的 JPG、PNG 或 WebP 图片。' : 'Choose a JPG, PNG or WebP image up to 2 MB.'); return; }

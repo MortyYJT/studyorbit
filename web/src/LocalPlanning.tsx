@@ -74,15 +74,17 @@ function changedCourses(before: Stores, after: Stores): string[] {
   return [...ids].filter(id => JSON.stringify(sliceOf(before, id)) !== JSON.stringify(sliceOf(after, id)));
 }
 const viewSlice = (view: CorrectionsView): CourseSlice => ({ corrections: view.corrections, manual: view.manual, order: view.order });
-// The calendar day of a due value for a date input: a date-only value as is, a date-time as its Melbourne day.
-function dateInput(due: string | undefined): string | undefined {
+// The calendar day of a due value for a date input: a date-only value as is, a date-time as its day in the institution's
+// time zone.
+function dateInput(due: string | undefined, timeZone: string): string | undefined {
   if (!due) return undefined;
   if (/^\d{4}-\d{2}-\d{2}$/.test(due)) return due;
   const date = new Date(due);
-  return Number.isNaN(date.getTime()) ? undefined : localDay(date);
+  return Number.isNaN(date.getTime()) ? undefined : localDay(timeZone, date);
 }
 function readAvailability(): number[] { try { return parseAvailability(JSON.parse(localStorage.getItem(availabilityKey) ?? 'null')); } catch { return parseAvailability(null); } }
-function localDay(date = new Date()): string { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date); }
+/** YYYY-MM-DD of `date` in `timeZone` (the institution's, from the source settings). */
+function localDay(timeZone: string, date = new Date()): string { return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date); }
 function addDays(day: string, count: number): string { const date = new Date(`${day}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + count); return date.toISOString().slice(0, 10); }
 function normalize(course: Course, value: unknown): CourseData {
   const parsed = CourseDocumentSchema.safeParse(value);
@@ -192,7 +194,7 @@ function WeightBreakdown({ assessments, parents, zh }: { assessments: Assessment
       {unsourcedWeightRows(assessments, parents).map(item => <span key={item.key} className="unsourced-row"><i aria-hidden="true" />{item.name} —<Unsourced zh={zh} /></span>)}</div></section>;
 }
 
-export function LocalPlanning({ language, refreshVersion, courseId, onCourse, onBack, onCourses, onAsk, syncIssues }: { language: Language; refreshVersion: number; courseId?: string; onCourse: (id: string) => void; onBack: () => void; onCourses?: (courses: SidebarCourse[]) => void; onAsk?: (courseId: string, prompt?: string) => void; syncIssues: { id: string; status: string; reason: string }[] }) {
+export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersion, courseId, onCourse, onBack, onCourses, onAsk, syncIssues }: { language: Language; timeZone: string; frameworkLabel: string | null; refreshVersion: number; courseId?: string; onCourse: (id: string) => void; onBack: () => void; onCourses?: (courses: SidebarCourse[]) => void; onAsk?: (courseId: string, prompt?: string) => void; syncIssues: { id: string; status: string; reason: string }[] }) {
   const zh = language === 'zh';
   const [courses, setCourses] = useState<CourseData[]>([]);
   const [error, setError] = useState('');
@@ -204,7 +206,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const [addingTask, setAddingTask] = useState(false);
   const [availability, setAvailability] = useState<number[]>(readAvailability);
   const [editingHours, setEditingHours] = useState(false);
-  const [week, setWeek] = useState(() => { const today = localDay(); return addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)); });
+  const [week, setWeek] = useState(() => { const today = localDay(timeZone); return addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)); });
   const [chosen, setChosen] = useState<Assessment>();
   const [chosenSiblings, setChosenSiblings] = useState<string[]>();
   const kindName: Record<Kind, string> = zh ? { exam: '考试', quiz: '测验', assignment: '作业', presentation: '展示', participation: '参与', hurdle: 'Hurdle', ungraded: '不计分', unknown: '其他' } : { exam: 'Exam', quiz: 'Quiz', assignment: 'Assignment', presentation: 'Presentation', participation: 'Participation', hurdle: 'Hurdle', ungraded: 'Ungraded', unknown: 'Other' };
@@ -212,9 +214,9 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   // A score reads as a percentage when its maximum is known; the points stay in the drawer.
   const scoreText = (score: number, outOf?: number) => outOf ? `${Number((score / outOf * 100).toFixed(1))}%` : `${Number(score.toFixed(2))}`;
   const dueDate = (due: string): Date | undefined => { if (!due) return undefined; const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(due) ? `${due}T12:00:00Z` : due); return Number.isNaN(date.getTime()) ? undefined : date; };
-  const shortDue = (due: string) => { const date = dueDate(due); return !due ? '—' : !date ? due : new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', timeZone: 'Australia/Melbourne' }).format(date); };
+  const shortDue = (due: string) => { const date = dueDate(due); return !due ? '—' : !date ? due : new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', timeZone }).format(date); };
   const longDue = (due: string) => { const date = dueDate(due); if (!due) return zh ? '未知' : 'Unknown'; if (!date) return due;
-    return new Intl.DateTimeFormat(language, /^\d{4}-\d{2}-\d{2}$/.test(due) ? { dateStyle: 'medium', timeZone: 'Australia/Melbourne' } : { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Australia/Melbourne' }).format(date); };
+    return new Intl.DateTimeFormat(language, /^\d{4}-\d{2}-\d{2}$/.test(due) ? { dateStyle: 'medium', timeZone } : { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(date); };
   const [mode, setMode] = useState<'plan' | 'month'>('plan');
   const [courseTab, setCourseTab] = useState<'assessments' | 'revision'>('assessments');
   const [saveError, setSaveError] = useState(false);
@@ -255,6 +257,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     async function load() {
       try {
         const response = await fetch('/api/local/course-reports', { cache: 'no-store' });
+        if (response.status === 409) { if (live) setError(zh ? 'Canvas 地址已更改，请重新获取课程。' : 'The Canvas address changed. Fetch the courses again.'); return; }
         if (!response.ok) throw new Error('unavailable');
         const data: { courses: Course[]; reports: { id: string; report: unknown }[] } = await response.json();
         let ids: string[] = [];
@@ -423,7 +426,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
           const unchanged = JSON.stringify(sliceOf(latest.current, id)) === before;
           adopt(id, body, unchanged);
           // Newer edits are waiting to be sent: apply the choice to them too, so that save does not restore the old value.
-          if (!unchanged) commit(withSlice(latest.current, id, applyChoiceToSlice(sliceOf(latest.current, id), conflict, choice)));
+          if (!unchanged) commit(withSlice(latest.current, id, applyChoiceToSlice(sliceOf(latest.current, id), conflict, choice, timeZone)));
           setCorrectionsNotice(notice => notice === 'resolve' ? '' : notice); return;
         }
         if (response.status === 409 && body?.current) { adopt(id, body.current, true); setCorrectionsNotice('refreshed'); return; }
@@ -486,7 +489,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
     if (saveWork([...work, { key: `task:${crypto.randomUUID()}`, courseId: course?.course.id ?? '', courseCode: course?.course.subjectCode ?? '', title, due, minutes }])) setAddingTask(false);
   }
   // Decision #237: the schedule is recomputed from tasks, spent time and availability; nothing about it is stored.
-  const today = localDay();
+  const today = localDay(timeZone);
   const plan = useMemo(() => schedulePlan(work.filter(inScope), availability, today), [work, courses, availability, today]);
   function saveWork(next: Work[]): boolean { try { localStorage.setItem(workKey, JSON.stringify(next)); setWork(next); setSaveError(false); return true; } catch { setSaveError(true); return false; } }
   function schedule(event: FormEvent<HTMLFormElement>) {
@@ -605,7 +608,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
                   const w = String(data.get('weight') ?? '').trim(), n = String(data.get('score') ?? '').trim(), m = String(data.get('outOf') ?? '').trim(); const weight = w ? Number(w) : null, score = n ? Number(n) : null, outOf = m ? Number(m) : null;
                   if ((weight !== null && (!Number.isFinite(weight) || weight < 0 || weight > 100)) || (score !== null && (!Number.isFinite(score) || score < 0)) || (outOf !== null && (!Number.isFinite(outOf) || outOf < 0)) || (score !== null && outOf !== null && score > outOf)) return;
                   saveCorrections({ ...corrections, [parent.sourceKey!]: { ...corrections[parent.sourceKey!], nature: String(data.get('nature')) as Correction['nature'] }, [entry.key]: { ...corrections[entry.key], name, kind: String(data.get('kind')) as Kind, scoring: String(data.get('scoring')) as 'none' | 'points' | 'weighted', weight, score, outOf, due: String(data.get('due') ?? '') || null, status: String(data.get('status') ?? '').trim() } }); }}>
-                  <label>{zh ? '名称' : 'Name'}<input name="name" required defaultValue={parent.displayName || parent.name} /></label><label>{zh ? '类型' : 'Type'}<select name="kind" defaultValue={parent.kind ?? 'assignment'}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'hurdle', 'unknown'] as Kind[]).map(value => <option key={value} value={value}>{groupName[value]}</option>)}</select></label><label>{zh ? '性质' : 'Nature'}<select name="nature" defaultValue={(() => { const source = visible.find(item => item.key === parent.sourceKey); return source?.bonus ? 'bonus' : source?.caution ? 'alternative' : source?.ungraded ? 'ungraded' : 'regular'; })()}><option value="regular">{zh ? '普通考核' : 'Regular'}</option><option value="bonus">{zh ? '加分' : 'Bonus'}</option><option value="ungraded">{zh ? '不计分' : 'Ungraded'}</option><option value="alternative">{zh ? '替代考试' : 'Alternative'}</option></select></label><label>{zh ? '占比 %' : 'Weight %'}<input type="number" min="0" max="100" step="any" name="weight" defaultValue={parent.weight} /></label><label>{zh ? '子项计分方式' : 'Child scoring'}<select name="scoring" defaultValue={parent.scoringRule}><option value="none">{zh ? '不自动汇总' : 'No aggregation'}</option><option value="points">{zh ? '按分值' : 'By points'}</option><option value="weighted">{zh ? '按各项权重' : 'By weights'}</option></select></label><label>{zh ? '得分' : 'Score'}<input type="number" min="0" step="any" name="score" defaultValue={parent.score} /></label><label>{zh ? '满分' : 'Out of'}<input type="number" min="0" step="any" name="outOf" defaultValue={parent.outOf} /></label><label>{zh ? '日期' : 'Due date'}<input type="date" name="due" defaultValue={dateInput(parent.due)} /></label><label>{zh ? '状态' : 'Status'}<input name="status" defaultValue={parent.status} /></label><button type="submit">{zh ? '保存' : 'Save'}</button></form></details>
+                  <label>{zh ? '名称' : 'Name'}<input name="name" required defaultValue={parent.displayName || parent.name} /></label><label>{zh ? '类型' : 'Type'}<select name="kind" defaultValue={parent.kind ?? 'assignment'}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'hurdle', 'unknown'] as Kind[]).map(value => <option key={value} value={value}>{groupName[value]}</option>)}</select></label><label>{zh ? '性质' : 'Nature'}<select name="nature" defaultValue={(() => { const source = visible.find(item => item.key === parent.sourceKey); return source?.bonus ? 'bonus' : source?.caution ? 'alternative' : source?.ungraded ? 'ungraded' : 'regular'; })()}><option value="regular">{zh ? '普通考核' : 'Regular'}</option><option value="bonus">{zh ? '加分' : 'Bonus'}</option><option value="ungraded">{zh ? '不计分' : 'Ungraded'}</option><option value="alternative">{zh ? '替代考试' : 'Alternative'}</option></select></label><label>{zh ? '占比 %' : 'Weight %'}<input type="number" min="0" max="100" step="any" name="weight" defaultValue={parent.weight} /></label><label>{zh ? '子项计分方式' : 'Child scoring'}<select name="scoring" defaultValue={parent.scoringRule}><option value="none">{zh ? '不自动汇总' : 'No aggregation'}</option><option value="points">{zh ? '按分值' : 'By points'}</option><option value="weighted">{zh ? '按各项权重' : 'By weights'}</option></select></label><label>{zh ? '得分' : 'Score'}<input type="number" min="0" step="any" name="score" defaultValue={parent.score} /></label><label>{zh ? '满分' : 'Out of'}<input type="number" min="0" step="any" name="outOf" defaultValue={parent.outOf} /></label><label>{zh ? '日期' : 'Due date'}<input type="date" name="due" defaultValue={dateInput(parent.due, timeZone)} /></label><label>{zh ? '状态' : 'Status'}<input name="status" defaultValue={parent.status} /></label><button type="submit">{zh ? '保存' : 'Save'}</button></form></details>
               </div></details>; };
           const entries = (kind: Kind) => { const items = kind === 'ungraded' ? foldedItems : groupedItem(kind); const combined: { key: string; item?: Assessment; parent?: ParentAssessment }[] = [
             ...parents.filter(parent => kind === 'ungraded' ? foldedParent(parent) : !foldedParent(parent) && (parent.kind ?? 'assignment') === kind).map(parent => ({ key: `${selected.course.id}:group:${parent.name}`, parent })), ...items.map(item => ({ key: item.key, item })) ];
@@ -663,7 +666,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         {siblings && <div className="field"><span className="k">{zh ? '状态' : 'Status'}</span><span>{statusLabel(corrections[item.key]?.status || item.status || (item.score !== undefined ? 'graded' : 'unknown'), zh)}{conflictMark(item.key, 'status')}</span></div>}
         {item.rule ? <p className="drawer-note">{item.rule}{conflictMark(item.key, 'rule')}{item.ruleQuote && <q className="source-quote" title={zh ? '同步时核对过的原文' : 'Source text checked during sync'}>{item.ruleQuote}</q>}</p>
           : item.unsourced?.includes('rule') && <p className="drawer-note">{zh ? '规则未知' : 'Rule unknown'}<Unsourced zh={zh} /></p>}
-        {(item.link || item.sources.length > 0) && <p className="drawer-links">{item.link && !item.sources.some(source => source.link === item.link) && <><a href={item.link} target="_blank" rel="noreferrer">{zh ? '我的链接' : 'My link'}</a>{item.sources.length > 0 && ' · '}</>}{item.sources.map((source, index) => <span key={`${source.link}-${index}`}>{index > 0 && ' · '}<a href={source.link} target="_blank" rel="noreferrer">{source.platform.toLowerCase() === 'ed' ? 'Ed' : source.platform.toLowerCase() === 'canvas' ? 'Canvas' : source.platform.toLowerCase() === 'handbook' ? 'Handbook' : (zh ? '来源' : 'Source')}</a></span>)}</p>}
+        {(item.link || item.sources.length > 0) && <p className="drawer-links">{item.link && !item.sources.some(source => source.link === item.link) && <><a href={item.link} target="_blank" rel="noreferrer">{zh ? '我的链接' : 'My link'}</a>{item.sources.length > 0 && ' · '}</>}{item.sources.map((source, index) => <span key={`${source.link}-${index}`}>{index > 0 && ' · '}<a href={source.link} target="_blank" rel="noreferrer">{source.platform.toLowerCase() === 'ed' ? 'Ed' : source.platform.toLowerCase() === 'canvas' ? 'Canvas' : source.platform.toLowerCase() === 'handbook' ? (frameworkLabel ?? (zh ? '考核框架' : 'Framework')) : (zh ? '来源' : 'Source')}</a></span>)}</p>}
         {all.filter(other => corrections[other.key]?.mergeInto === item.key).map(other => <div key={other.key} className="local-group"><span>{zh ? '已合并来源' : 'Merged source'}: {other.name} {other.link && <a href={other.link} target="_blank" rel="noreferrer">{zh ? '查看' : 'View'}</a>}</span><button className="small" onClick={() => { const next = { ...corrections }; const change = { ...next[other.key] }; delete change.mergeInto; next[other.key] = change; saveCorrections(next); }}>{zh ? '撤销合并' : 'Undo merge'}</button></div>)}
         <h3>{zh ? '安排学习' : 'Plan study'}</h3>
         <form className="plan-form" key={item.key} onSubmit={schedule}><label>{zh ? '截止日期' : 'Due date'}<input name="due" type="date" required defaultValue={work.find(entry => entry.key === item.key)?.due ?? corrections[item.key]?.due ?? (/^\d{4}-\d{2}-\d{2}/.test(item.due) ? item.due.slice(0, 10) : undefined)} /></label><label>{zh ? '预计学习分钟数' : 'Estimated minutes'}<input name="minutes" type="number" min="1" max="100000" required defaultValue={work.find(entry => entry.key === item.key)?.minutes} /></label><button className="primary" type="submit">{zh ? '保存并排期' : 'Save and plan'}</button></form>
@@ -706,7 +709,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const first = `${currentMonth}-01`;
   const monthStart = addDays(first, -((new Date(`${first}T12:00:00Z`).getUTCDay() + 6) % 7));
   // Deadlines on the calendar: synced and manual assessments with the owner's corrections, then tasks not already shown.
-  const dueDay = (due: string): string | undefined => { if (/^\d{4}-\d{2}-\d{2}$/.test(due)) return due; const date = dueDate(due); return date ? localDay(date) : undefined; };
+  const dueDay = (due: string): string | undefined => { if (/^\d{4}-\d{2}-\d{2}$/.test(due)) return due; const date = dueDate(due); return date ? localDay(timeZone, date) : undefined; };
   const covers = (task: Work, courseId: string, key: string) => task.courseId === courseId && (task.key === key || task.key === `${courseId}:group:${key}`);
   // A parent's own date, status and weight edits are stored under its group key, so they are laid over its source item.
   // `graded` mirrors the grading inputs: weighted, and not under a bonus, alternative, ungraded or 0% parent.

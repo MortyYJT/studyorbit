@@ -19,6 +19,9 @@ const fields = (patch: Partial<Fields> = {}): Fields => ({
   name: 'Synthetic', kind: 'assignment', nature: 'regular', weight: 20, score: null, outOf: null, due: '2026-11-10T12:59:00Z',
   status: 'not_started', rule: null, scoring: 'none', parent: null, link: null, ...patch,
 });
+/** The default institution's zone in these synthetic cases (the merge compares a date-only due by day in it). */
+const ZONE = 'Australia/Melbourne';
+const normalise = (value: Omit<Parameters<typeof normaliseCorrections>[0], 'timeZone'>) => normaliseCorrections({ ...value, timeZone: ZONE });
 const store = (patch: Partial<CorrectionStore> = {}): CorrectionStore => ({
   version: 1, courseId: '100', revision: 1, base: { digest: 'd1', assessments: { a1: fields(), a2: fields({ name: 'Second' }) } },
   corrections: {}, manual: [], order: [], pins: {}, conflicts: [], updatedAt: '2026-10-30T00:00:00.000Z', ...patch,
@@ -127,40 +130,40 @@ describe('assessmentFields', () => {
 
 describe('sameValue', () => {
   it('treats undefined, null and blank strings as the same empty value', () => {
-    expect(sameValue('rule', undefined, null)).toBe(true);
-    expect(sameValue('rule', '  ', null)).toBe(true);
-    expect(sameValue('parent', '', null)).toBe(true);
-    expect(sameValue('weight', 0, null)).toBe(false);
-    expect(sameValue('name', 'A', null)).toBe(false);
+    expect(sameValue('rule', undefined, null, ZONE)).toBe(true);
+    expect(sameValue('rule', '  ', null, ZONE)).toBe(true);
+    expect(sameValue('parent', '', null, ZONE)).toBe(true);
+    expect(sameValue('weight', 0, null, ZONE)).toBe(false);
+    expect(sameValue('name', 'A', null, ZONE)).toBe(false);
   });
 
   it('compares numbers to two decimal places and other text trimmed', () => {
-    expect(sameValue('weight', 20, 20.001)).toBe(true);
-    expect(sameValue('weight', 0.1 + 0.2, 0.3)).toBe(true);
-    expect(sameValue('weight', 20, 20.02)).toBe(false);
-    expect(sameValue('name', ' Essay ', 'Essay')).toBe(true);
-    expect(sameValue('name', 'Essay', 'essay')).toBe(false);
-    expect(sameValue('hidden', true, true)).toBe(true);
-    expect(sameValue('hidden', false, undefined)).toBe(false);
+    expect(sameValue('weight', 20, 20.001, ZONE)).toBe(true);
+    expect(sameValue('weight', 0.1 + 0.2, 0.3, ZONE)).toBe(true);
+    expect(sameValue('weight', 20, 20.02, ZONE)).toBe(false);
+    expect(sameValue('name', ' Essay ', 'Essay', ZONE)).toBe(true);
+    expect(sameValue('name', 'Essay', 'essay', ZONE)).toBe(false);
+    expect(sameValue('hidden', true, true, ZONE)).toBe(true);
+    expect(sameValue('hidden', false, undefined, ZONE)).toBe(false);
   });
 
   it('compares due date-times by instant and a date-only due by its Melbourne day', () => {
-    expect(sameValue('due', '2026-11-10T12:59:00Z', '2026-11-10T23:59:00+11:00')).toBe(true);
-    expect(sameValue('due', '2026-11-10T12:59:00Z', '2026-11-10T13:59:00Z')).toBe(false);
+    expect(sameValue('due', '2026-11-10T12:59:00Z', '2026-11-10T23:59:00+11:00', ZONE)).toBe(true);
+    expect(sameValue('due', '2026-11-10T12:59:00Z', '2026-11-10T13:59:00Z', ZONE)).toBe(false);
     // 12:59Z on 10 November is 23:59 on 10 November in Melbourne (AEDT, +11:00).
-    expect(sameValue('due', '2026-11-10', '2026-11-10T12:59:00Z')).toBe(true);
-    expect(sameValue('due', '2026-11-10T12:59:00Z', '2026-11-10')).toBe(true);
+    expect(sameValue('due', '2026-11-10', '2026-11-10T12:59:00Z', ZONE)).toBe(true);
+    expect(sameValue('due', '2026-11-10T12:59:00Z', '2026-11-10', ZONE)).toBe(true);
     // 14:00Z on 10 November is already 11 November in Melbourne.
-    expect(sameValue('due', '2026-11-10', '2026-11-10T14:00:00Z')).toBe(false);
-    expect(sameValue('due', '2026-11-10', '2026-11-10')).toBe(true);
-    expect(sameValue('due', '2026-11-10', '2026-11-11')).toBe(false);
-    expect(sameValue('due', 'Week 12', ' Week 12 ')).toBe(true);
+    expect(sameValue('due', '2026-11-10', '2026-11-10T14:00:00Z', ZONE)).toBe(false);
+    expect(sameValue('due', '2026-11-10', '2026-11-10', ZONE)).toBe(true);
+    expect(sameValue('due', '2026-11-10', '2026-11-11', ZONE)).toBe(false);
+    expect(sameValue('due', 'Week 12', ' Week 12 ', ZONE)).toBe(true);
   });
 });
 
 describe('normaliseCorrections', () => {
   it('drops item fields equal to the base, empty statuses and empty corrections', () => {
-    const result = normaliseCorrections(store({ corrections: {
+    const result = normalise(store({ corrections: {
       // The edit form resends every field; only the weight changed.
       '100:a1': { name: 'Synthetic', kind: 'assignment', nature: 'regular', rule: '', weight: 25, score: null, outOf: null, due: '2026-11-10T23:59:00+11:00', parent: '', status: '', link: '' },
       '100:a2': { name: 'Second', status: '' },
@@ -169,12 +172,12 @@ describe('normaliseCorrections', () => {
   });
 
   it('removes an empty status even when the base has a status', () => {
-    const result = normaliseCorrections(store({ base: { digest: 'd1', assessments: { a1: fields({ status: 'graded' }) } }, corrections: { '100:a1': { status: '' } } }));
+    const result = normalise(store({ base: { digest: 'd1', assessments: { a1: fields({ status: 'graded' }) } }, corrections: { '100:a1': { status: '' } } }));
     expect(result.corrections).toEqual({});
   });
 
   it('compares group fields with the effective item value', () => {
-    const result = normaliseCorrections(store({
+    const result = normalise(store({
       base: { digest: 'd1', assessments: { 'canvas-group:300': fields({ name: 'Quizzes', weight: 30 }) } },
       corrections: {
         '100:canvas-group:300': { weight: 40 },
@@ -186,7 +189,7 @@ describe('normaliseCorrections', () => {
   });
 
   it('keeps pinned fields, owner-only fields and manual or unknown keys', () => {
-    const result = normaliseCorrections(store({
+    const result = normalise(store({
       corrections: {
         '100:a1': { weight: 20, name: 'Synthetic' },
         '100:a2': { hidden: true, mergeInto: '100:a1', bonus: false, name: 'Second' },
@@ -203,7 +206,7 @@ describe('normaliseCorrections', () => {
   });
 
   it('drops pins whose field or correction is gone, and strips a link only when equal', () => {
-    const result = normaliseCorrections(store({
+    const result = normalise(store({
       base: { digest: 'd1', assessments: { a1: fields({ link: 'https://canvas.example.edu/a/1' }) } },
       corrections: { '100:a1': { link: 'https://canvas.example.edu/a/1' }, '100:a3': { link: 'https://canvas.example.edu/a/3' } },
       pins: { '100:a1': ['weight'], '100:a9': ['name'] },
@@ -213,7 +216,7 @@ describe('normaliseCorrections', () => {
   });
 
   it('keeps every field when the assessment has no base entry', () => {
-    const result = normaliseCorrections(store({ base: { digest: null, assessments: {} }, corrections: { '100:a1': { weight: 20, status: '' } } }));
+    const result = normalise(store({ base: { digest: null, assessments: {} }, corrections: { '100:a1': { weight: 20, status: '' } } }));
     expect(result.corrections).toEqual({ '100:a1': { weight: 20 } });
   });
 });
@@ -258,7 +261,7 @@ describe('applyOwnerEdit and pruneConflicts', () => {
 
   it('keeps a stored value resent in another notation, with its pin and conflict', () => {
     const current = store({ corrections: { '100:a1': { due: '2026-11-17T12:59:00Z', parent: '100:gone' } }, pins: { '100:a1': ['due'] }, conflicts: [dangling] });
-    const result = applyOwnerEdit(current, { '100:a1': { due: '2026-11-17T23:59:00+11:00', parent: '100:gone', name: 'Renamed' } });
+    const result = applyOwnerEdit(current, { '100:a1': { due: '2026-11-17T23:59:00+11:00', parent: '100:gone', name: 'Renamed' } }, ZONE);
     expect(result.corrections).toEqual({ '100:a1': { due: '2026-11-17T12:59:00Z', parent: '100:gone', name: 'Renamed' } });
     expect(result.pins).toEqual({ '100:a1': ['due'] });
     expect(result.conflicts).toEqual([dangling]);
@@ -266,7 +269,7 @@ describe('applyOwnerEdit and pruneConflicts', () => {
 
   it('releases the pin and closes the conflict of a changed field, and drops state of deleted corrections', () => {
     const current = store({ corrections: { '100:a1': { weight: 30, parent: '100:gone' }, '100:gone': { weight: 5 } }, pins: { '100:a1': ['weight'] }, conflicts: [dangling, orphan] });
-    const result = applyOwnerEdit(current, { '100:a1': { weight: 35, parent: '' } });
+    const result = applyOwnerEdit(current, { '100:a1': { weight: 35, parent: '' } }, ZONE);
     expect(result.corrections).toEqual({ '100:a1': { weight: 35, parent: '' } });
     expect(result.pins).toEqual({});
     expect(result.conflicts).toEqual([]);

@@ -14,7 +14,7 @@ export type CourseCandidate = { id: string; subjectCode: string; term?: unknown;
 
 export interface CourseSource {
   id: SourceId;
-  /** Shown in reasons and the page: 'Canvas', 'Ed', 'Handbook'. */
+  /** Shown in reasons and the page: 'Canvas', 'Ed', or the framework source's name. */
   label: string;
   /** Joins the shared browser limiter. */
   usesBrowser: boolean;

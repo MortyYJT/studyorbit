@@ -171,19 +171,19 @@ describe('applyChoiceToSlice (review of PR #271)', () => {
   const slice = (correction: Record<string, unknown>) => ({ corrections: { '100:a1': correction, '100:a2': { name: 'Other' } }, manual: [], order: ['100:a1'] });
 
   it('sync on a field drops that field from a waiting local copy, keeping the newer edit of another field', () => {
-    expect(applyChoiceToSlice(slice({ weight: 30, name: 'Edited meanwhile' }), conflict('field', 'weight', 30), 'sync').corrections)
+    expect(applyChoiceToSlice(slice({ weight: 30, name: 'Edited meanwhile' }), conflict('field', 'weight', 30), 'sync', 'Australia/Melbourne').corrections)
       .toEqual({ '100:a1': { name: 'Edited meanwhile' }, '100:a2': { name: 'Other' } });
-    expect(applyChoiceToSlice(slice({ weight: 30 }), conflict('field', 'weight', 30), 'sync').corrections).toEqual({ '100:a2': { name: 'Other' } });
+    expect(applyChoiceToSlice(slice({ weight: 30 }), conflict('field', 'weight', 30), 'sync', 'Australia/Melbourne').corrections).toEqual({ '100:a2': { name: 'Other' } });
   });
 
   it('keeps a field the owner changed again after choosing', () => {
-    expect(applyChoiceToSlice(slice({ weight: 33 }), conflict('field', 'weight', 30), 'sync').corrections['100:a1']).toEqual({ weight: 33 });
+    expect(applyChoiceToSlice(slice({ weight: 33 }), conflict('field', 'weight', 30), 'sync', 'Australia/Melbourne').corrections['100:a1']).toEqual({ weight: 33 });
   });
 
   it('sync on an orphaned conflict drops the whole correction; dangling drops the reference; mine changes nothing', () => {
-    expect(applyChoiceToSlice(slice({ weight: 8, name: 'X' }), conflict('orphaned', null, { weight: 8 }), 'sync').corrections).toEqual({ '100:a2': { name: 'Other' } });
-    expect(applyChoiceToSlice(slice({ mergeInto: '100:a9', hidden: true }), conflict('dangling', 'mergeInto', '100:a9'), 'sync').corrections['100:a1']).toEqual({ hidden: true });
+    expect(applyChoiceToSlice(slice({ weight: 8, name: 'X' }), conflict('orphaned', null, { weight: 8 }), 'sync', 'Australia/Melbourne').corrections).toEqual({ '100:a2': { name: 'Other' } });
+    expect(applyChoiceToSlice(slice({ mergeInto: '100:a9', hidden: true }), conflict('dangling', 'mergeInto', '100:a9'), 'sync', 'Australia/Melbourne').corrections['100:a1']).toEqual({ hidden: true });
     const waiting = slice({ weight: 30 });
-    expect(applyChoiceToSlice(waiting, conflict('field', 'weight', 30), 'mine')).toBe(waiting);
+    expect(applyChoiceToSlice(waiting, conflict('field', 'weight', 30), 'mine', 'Australia/Melbourne')).toBe(waiting);
   });
 });

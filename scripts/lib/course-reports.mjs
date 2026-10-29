@@ -6,7 +6,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CourseDocumentSchema } from '../../shared/course-data.ts';
-import { filterSubjects } from './course-list.mjs';
+import { courseListOrigin, filterSubjects } from './course-list.mjs';
 import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
 
 function courseListFile(projectDir) { return join(projectDir, '.local', 'lms', 'courses.json'); }
@@ -43,12 +43,14 @@ async function newestReport(course, desktop, institution) {
 }
 
 /**
- * Course candidates from `.local/lms/courses.json` and the newest valid report for each.
- * Throws when the course list is missing (ENOENT) or invalid.
+ * Course candidates from `.local/lms/courses.json` and the newest valid report for each, under `institution`.
+ * Throws when the course list is missing (ENOENT) or invalid, and with code `COURSE_LIST_STALE` when `canvasOrigin` is
+ * given and the list was discovered on another Canvas (design §2).
  */
-export async function loadCourseReports(projectDir, { desktop = join(homedir(), 'Desktop'), institution = DEFAULT_INSTITUTION } = {}) {
+export async function loadCourseReports(projectDir, { desktop = join(homedir(), 'Desktop'), institution = DEFAULT_INSTITUTION, canvasOrigin } = {}) {
   const input = JSON.parse(await readFile(courseListFile(projectDir), 'utf8'));
   if (!Array.isArray(input.courses)) throw new Error('Invalid course file');
+  if (canvasOrigin !== undefined && courseListOrigin(input) !== canvasOrigin) throw Object.assign(new Error('COURSE_LIST_STALE'), { code: 'COURSE_LIST_STALE' });
   const candidates = input.courses.filter(item => !!item && typeof item === 'object' && typeof item.id === 'string' && typeof item.name === 'string');
   const courses = filterSubjects(candidates, institution);
   const reports = await Promise.all(courses.map(course => newestReport(course, desktop, institution)));

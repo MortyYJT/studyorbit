@@ -3,7 +3,7 @@
 import type { SyncPipeline } from '../../scripts/lib/sync-pipeline.mjs';
 import type { RouteHandler } from '../context.ts';
 
-const CONFLICTS = new Set(['SYNC_RUNNING', 'NOT_RESUMABLE', 'ALREADY_RESUMED', 'RESUME_EXPIRED']);
+const CONFLICTS = new Set(['SYNC_RUNNING', 'NOT_RESUMABLE', 'ALREADY_RESUMED', 'RESUME_EXPIRED', 'COURSE_LIST_STALE']);
 
 export function syncJobsRoute(pipeline: SyncPipeline | null): RouteHandler {
   return async (req, res) => {

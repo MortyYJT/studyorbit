@@ -5,11 +5,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { chatSystemPrompt } from '../scripts/lib/chat-context.mjs';
 import { buildAnalysisPrompt } from '../scripts/lib/course-analysis.mjs';
 import { filterSubjects, normalizeCourses } from '../scripts/lib/course-list.mjs';
-import { parseHandbookComponents as fromRefs } from '../scripts/lib/course-refs.mjs';
+import { parseHandbookComponents as fromParse } from '../scripts/institutions/unimelb/handbook-parse.mjs';
 import { courseFolder, limiterKey, spawnCollector, type CollectorRequest } from '../scripts/lib/sync-stages.mjs';
 import { unimelb } from '../scripts/institutions/unimelb/index.mjs';
 import { handbookSource } from '../scripts/institutions/unimelb/handbook-source.mjs';
-import { canvasOrigin, DEFAULT_SOURCE_CONFIG, defaultSourceConfig, MISSING_CONFIG_OFF_MACOS, readSourceConfig, SOURCE_CONFIG_ENV, sourceConfigEnv } from '../scripts/sources/config.mjs';
+import { canvasOrigin, collectorConfig, DEFAULT_SOURCE_CONFIG, MISSING_CONFIG_OFF_MACOS, readSourceConfig, SOURCE_CONFIG_ENV, sourceConfigEnv } from '../scripts/sources/config.mjs';
 import { canvasSource, edSource, LEGACY_SOURCE_IDS, resolveSourceSetup, resolveSources } from '../scripts/sources/registry.mjs';
 import type { CourseSource } from '../scripts/sources/types.d.mts';
 import { runCollectorScript } from './collector-harness.ts';
@@ -33,23 +33,23 @@ describe('collector configuration (STUDYORBIT_SOURCE_CONFIG)', () => {
     expect(readSourceConfig({ env, platform: 'linux', needsBrowser: true })).toEqual(DEFAULT_SOURCE_CONFIG);
     const bad = (value: unknown) => () => readSourceConfig({ env: { [SOURCE_CONFIG_ENV]: typeof value === 'string' ? value : JSON.stringify(value) }, platform: 'darwin' });
     expect(bad('{not json')).toThrow('不是有效的 JSON');
-    for (const change of [{ version: 2 }, { institution: 'elsewhere' }, { browser: 'safari' }, { canvasOrigin: 'http://canvas.example.edu' }, { edRegion: 'us' }, { token: 'x' }]) {
+    for (const change of [{ version: 2 }, { institution: 'elsewhere' }, { browser: 'safari' }, { canvasOrigin: 'http://canvas.example.edu' }, { edRegion: 'mars' }, { token: 'x' },
+      { browserPath: '/Applications/Chrome' }, { browser: 'cdp-chrome', browserPath: 'relative/chrome' }, { profileDir: '/tmp/p' }]) {
       expect(bad({ ...DEFAULT_SOURCE_CONFIG, ...change })).toThrow(`${SOURCE_CONFIG_ENV} 无效`);
     }
   });
 
-  it('takes Chrome from the temporary STUDYORBIT_BROWSER override until the settings file exists', () => {
-    expect(defaultSourceConfig({})).toEqual(DEFAULT_SOURCE_CONFIG);
-    expect(defaultSourceConfig({ STUDYORBIT_BROWSER: 'chrome-applescript' }).browser).toBe('chrome-applescript');
-    expect(() => defaultSourceConfig({ STUDYORBIT_BROWSER: 'safari' })).toThrow('STUDYORBIT_BROWSER');
-    expect(readSourceConfig({ env: { STUDYORBIT_BROWSER: 'chrome-applescript' }, platform: 'darwin', needsBrowser: true }).browser).toBe('chrome-applescript');
-    expect(() => readSourceConfig({ env: { STUDYORBIT_BROWSER: 'safari' }, platform: 'darwin', needsBrowser: true })).toThrow('STUDYORBIT_BROWSER');
-    // Ed never uses the browser, so a wrong override does not stop it.
-    expect(readSourceConfig({ env: { STUDYORBIT_BROWSER: 'safari' }, platform: 'darwin' })).toEqual(DEFAULT_SOURCE_CONFIG);
-    // The variable from StudyOrbit wins over the override.
-    expect(readSourceConfig({ env: { ...sourceConfigEnv(DEFAULT_SOURCE_CONFIG), STUDYORBIT_BROWSER: 'chrome-applescript' }, platform: 'darwin' }).browser).toBe('edge-applescript');
-    const chrome = resolveSourceSetup(defaultSourceConfig({ STUDYORBIT_BROWSER: 'chrome-applescript' }));
-    expect(JSON.parse(chrome.context.env[SOURCE_CONFIG_ENV]!).browser).toBe('chrome-applescript');
+  it('accepts the generic institution, every Ed region and the CDP browsers with an absolute path (generic-adapters PR 3)', () => {
+    const generic = { ...DEFAULT_SOURCE_CONFIG, institution: 'generic' as const, canvasOrigin: 'https://canvas.example.edu', browser: 'cdp-edge' as const, browserPath: '/opt/edge/msedge', edRegion: 'us' as const };
+    expect(readSourceConfig({ env: sourceConfigEnv(generic), platform: 'linux', needsBrowser: true })).toEqual(generic);
+    for (const edRegion of ['auto', 'au', 'us', 'eu'] as const) expect(readSourceConfig({ env: sourceConfigEnv({ ...DEFAULT_SOURCE_CONFIG, edRegion }) }).edRegion).toBe(edRegion);
+    expect(collectorConfig({ institution: 'generic', canvasOrigin: 'https://canvas.example.edu', browser: 'chrome-applescript', edRegion: 'eu' }))
+      .toEqual({ version: 1, institution: 'generic', canvasOrigin: 'https://canvas.example.edu', browser: 'chrome-applescript', browserPath: null, edRegion: 'eu', profileDir: null });
+  });
+
+  it('ignores the removed STUDYORBIT_BROWSER override: the settings file chooses the browser now', () => {
+    expect(readSourceConfig({ env: { STUDYORBIT_BROWSER: 'chrome-applescript' }, platform: 'darwin', needsBrowser: true })).toEqual(DEFAULT_SOURCE_CONFIG);
+    expect(readSourceConfig({ env: { STUDYORBIT_BROWSER: 'safari' }, platform: 'darwin', needsBrowser: true })).toEqual(DEFAULT_SOURCE_CONFIG);
   });
 
   it('accepts only https origins without user, path, query, fragment or IP address', () => {
@@ -109,7 +109,7 @@ describe('the unimelb institution', () => {
     expect(chatSystemPrompt('zh').split('\n')[0]).toBe(unimelb.wording.assistantIntro.zh);
     expect(chatSystemPrompt('en').split('\n')[0]).toBe(unimelb.wording.assistantIntro.en);
     expect(unimelb.framework).toBe(handbookSource);
-    expect(handbookSource.parseComponents).toBe(fromRefs);
+    expect(handbookSource.parseComponents).toBe(fromParse);
     expect(handbookSource.parseComponents('Project report\tWeek 10\t30%')).toEqual([{ name: 'Project report', percent: 30, rowTexts: ['Project report Week 10 30%'] }]);
     expect(handbookSource.origins).toEqual(['https://handbook.unimelb.edu.au']);
   });
@@ -179,9 +179,9 @@ describe('collectors through the new entry points and the configuration', () => 
     // The same courses as through Edge.
     const edge = await runCollectorScript('scripts/sources/canvas/collect.mjs', ['discover', '<out>'], discover);
     expect(run.output).toBe(edge.output);
-    // By hand, the temporary STUDYORBIT_BROWSER override chooses Chrome too.
+    // The temporary STUDYORBIT_BROWSER override of PR 2 is gone: by hand, without the configuration, Edge is used.
     const byHand = await runCollectorScript('scripts/canvas-background.mjs', ['discover', '<out>'], discover, { STUDYORBIT_BROWSER: 'chrome-applescript' });
-    expect(byHand.calls.map(call => String(call.script))).toEqual(scripts);
+    expect(byHand.calls.map(call => String(call.script))).toEqual(edge.calls.map(call => String(call.script)));
 
     const closed = await runCollectorScript('scripts/sources/canvas/collect.mjs', ['discover', '<out>'], { ...discover, running: false }, sourceConfigEnv(chrome));
     expect([closed.code, closed.output]).toEqual([1, null]);
@@ -208,6 +208,98 @@ describe('collectors through the new entry points and the configuration', () => 
     });
     expect(run.code, run.stderr).toBe(0);
     expect(JSON.parse(run.output!)).toMatchObject({ status: 'complete', unitId: '1' });
+  });
+});
+
+describe('another Canvas and the Ed regions (generic-adapters PR 3)', () => {
+  const OTHER = 'https://canvas.example.edu';
+  const other = { ...DEFAULT_SOURCE_CONFIG, institution: 'generic' as const, canvasOrigin: OTHER };
+  const page = (body: unknown, link: string | null = null) => ({ status: 200, link, body: JSON.stringify(body) });
+
+  it('discovers on the configured origin, records it with the institution, and links courses there', async () => {
+    const url = `${OTHER}/api/v1/courses?enrollment_state=active&include[]=term&per_page=100`;
+    const run = await runCollectorScript('scripts/sources/canvas/collect.mjs', ['discover', '<out>'], {
+      now: '2026-10-30T01:02:03.000Z', pages: { [url]: page([{ id: 77, name: 'Intro', course_code: 'CS101', term: { name: 'Fall 2026' } }]) },
+    }, sourceConfigEnv(other));
+    expect(run.code, run.stderr).toBe(0);
+    const written = JSON.parse(run.output!);
+    expect(written).toMatchObject({ canvasOrigin: OTHER, institution: 'generic', source: url, courses: [{ id: '77', code: 'CS101', term: 'Fall 2026', url: `${OTHER}/courses/77` }] });
+    expect(run.calls.filter(call => call.kind === 'osascript' && Array.isArray(call.argv) && String(call.argv[0]).startsWith('https://'))
+      .every(call => String((call.argv as string[])[0]).startsWith(`${OTHER}/`))).toBe(true);
+  });
+
+  it('follows the next page on the same origin and path only', async () => {
+    const prefix = `${OTHER}/api/v1/courses/77/`;
+    const groups = `${prefix}assignment_groups?per_page=100`;
+    const assignments = `${prefix}assignments?include%5B%5D=submission&per_page=100`;
+    const next = `${prefix}assignments?include%5B%5D=submission&page=2&per_page=100`;
+    const scenario = { pages: { [groups]: page([]), [assignments]: page([{ id: 1, name: 'A' }], `<${next}>; rel="next"`), [next]: page([{ id: 2, name: 'B' }]) } };
+    const ok = await runCollectorScript('scripts/sources/canvas/collect.mjs', ['77', '<out>'], scenario, sourceConfigEnv(other));
+    expect(ok.code, ok.stderr).toBe(0);
+    expect(JSON.parse(ok.output!).assignments.map((item: { id: number }) => item.id)).toEqual([1, 2]);
+    for (const foreign of ['https://canvas.lms.example.org/api/v1/courses/77/assignments?page=2', `${OTHER}/api/v1/courses/78/assignments?page=2`]) {
+      const refused = await runCollectorScript('scripts/sources/canvas/collect.mjs', ['77', '<out>'], { pages: { ...scenario.pages, [assignments]: page([{ id: 1 }], `<${foreign}>; rel="next"`) } }, sourceConfigEnv(other));
+      expect([refused.code, refused.output]).toEqual([1, null]);
+      expect(refused.stderr).toContain('Canvas 下一页链接不属于当前接口');
+    }
+  });
+
+  it('stops before any browser call for the CDP bridge, which is not built yet', async () => {
+    const run = await runCollectorScript('scripts/sources/canvas/collect.mjs', ['discover', '<out>'], { platform: 'linux' }, sourceConfigEnv({ ...other, browser: 'cdp-chrome' }));
+    expect([run.code, run.calls, run.output]).toEqual([1, [], null]);
+    expect(run.stderr).toContain('专用浏览器（CDP）还没有实现');
+  });
+
+  const units = { 'units list --json': [{ id: 5, code: 'CS101', year: 2026, session: 'Fall' }, { id: 6, code: 'CS.1019', year: 2026, session: 'Fall' }, { id: 7, code: 'CSX101', year: 2026, session: 'Fall' }],
+    'lessons list 5 --json --module all --state all --status all': [{ id: 9, courseId: 5, title: 'Week 1 notes' }] };
+
+  it('makes Ed unavailable with no Ed request when the explicit region differs from the CLI sign-in', async () => {
+    const run = await runCollectorScript('scripts/sources/ed/collect.mjs', ['CS101', 'Fall 2026', '<out>'], {
+      edstem: { ...units, 'auth status --json': { authenticated: true, user: { id: 1 }, region: 'au' } },
+    }, sourceConfigEnv({ ...other, edRegion: 'us' }));
+    expect(run.code, run.stderr).toBe(0);
+    expect(JSON.parse(run.output!)).toMatchObject({ status: 'unavailable', reason: 'Ed 登录区域与设置不一致', lessons: [], scores: [] });
+    expect(run.calls).toEqual([{ kind: 'edstem', args: ['auth', 'status', '--json'] }]);
+    expect(run.stderr).toContain('设置 us，edstem 登录 au');
+  });
+
+  it('links lessons on the explicit region when it matches; auto makes no extra call and links on au', async () => {
+    const env = sourceConfigEnv({ ...other, edRegion: 'us' });
+    const us = await runCollectorScript('scripts/sources/ed/collect.mjs', ['CS101', 'Fall 2026', '<out>'], {
+      edstem: { ...units, 'auth status --json': { authenticated: true, user: { id: 1 }, region: 'us' } },
+    }, env);
+    expect(us.code, us.stderr).toBe(0);
+    expect(JSON.parse(us.output!).lessons[0].url).toBe('https://edstem.org/us/courses/5/lessons/9');
+    expect(us.calls[0]).toEqual({ kind: 'edstem', args: ['auth', 'status', '--json'] });
+    const auto = await runCollectorScript('scripts/sources/ed/collect.mjs', ['CS101', 'Fall 2026', '<out>'], { edstem: units }, sourceConfigEnv(other));
+    expect(auto.code, auto.stderr).toBe(0);
+    expect(JSON.parse(auto.output!).lessons[0].url).toBe('https://edstem.org/au/courses/5/lessons/9');
+    expect(auto.calls.some(call => (call.args as string[] | undefined)?.[0] === 'auth')).toBe(false);
+  });
+
+  it('matches a generic code case-insensitively and as literal text', async () => {
+    const lower = await runCollectorScript('scripts/sources/ed/collect.mjs', ['cs101', 'Fall 2026', '<out>'], { edstem: units }, sourceConfigEnv(other));
+    expect(JSON.parse(lower.output!)).toMatchObject({ status: 'complete', unitId: '5' });
+    // `CS.101` must not match `CSX101` through the regex dot; the only unit starting with the literal text is absent.
+    const dotted = await runCollectorScript('scripts/sources/ed/collect.mjs', ['CS.101', 'Fall 2026', '<out>'], { edstem: units }, sourceConfigEnv(other));
+    expect(JSON.parse(dotted.output!)).toMatchObject({ status: 'not_found' });
+  });
+
+  it('reads scores from the API base of the CLI region and refuses another explicit region', async () => {
+    const auth = { authenticated: true, user: { id: 501 }, region: 'eu' };
+    const scenario = {
+      edstem: { 'auth status --json': auth },
+      fetch: {
+        'https://eu.edstem.org/api/lessons/3001/attempts/501': { json: { attempts: [{ id: 9, user_id: 501, lesson_id: 3001 }], final_id: null } },
+      },
+    };
+    const run = await runCollectorScript('scripts/sources/ed/scores.mjs', ['3001'], scenario, { EDSTEM_TOKEN: 'synthetic-token', ...sourceConfigEnv(other) });
+    expect(run.code, run.stderr).toBe(0);
+    expect(JSON.parse(run.stdout).results).toEqual([{ lessonId: '3001', status: 'no_final_submission', durationMs: 0 }]);
+    const refused = await runCollectorScript('scripts/sources/ed/scores.mjs', ['3001'], scenario, { EDSTEM_TOKEN: 'synthetic-token', ...sourceConfigEnv({ ...other, edRegion: 'us' }) });
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('Ed 登录区域与设置不一致');
+    expect(refused.calls.filter(call => call.kind === 'fetch')).toEqual([]);
   });
 });
 

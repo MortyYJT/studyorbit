@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { courseOutputSchema } from './course-analysis.mjs';
 import { recordCourseChanges } from './course-changes-log.mjs';
-import { filterSubjects } from './course-list.mjs';
+import { courseListOrigin, filterSubjects } from './course-list.mjs';
 import { configProblem, resolveAnalysisConfig } from './llm-config.mjs';
 import { analyse, counts } from './llm-providers.mjs';
 import { createLimiter, systemClock } from './rate-limit.mjs';
@@ -33,7 +33,7 @@ export class SimulatedCrash extends Error {
 
 /**
  * Limiters (design §9): one collector limiter per key, one at a time with 500 ms between starts. Every source that
- * uses the browser (Canvas and the Handbook) has the key `browser`, so they never overlap; Ed has `ed`. One limiter
+ * uses the browser (Canvas and a framework source) has the key `browser`, so they never overlap; Ed has `ed`. One limiter
  * per model provider, four at a time.
  */
 export function createSyncLimiters({ clock = systemClock, random = Math.random } = {}) {
@@ -88,8 +88,8 @@ const codeError = code => new Error(code);
 
 /**
  * `deps`: `store` (an open sync store), `projectDir`, `desktopDir`, and optionally `env`, `setup` (settings,
- * institution, sources and source context; default today's UniMelb setup), `sources` (replaces the setup's sources,
- * for tests), `runCollector`, `callModel`, `resolveModel`, `childUsage`, `clock` ({ now, sleep }), `random`,
+ * institution, sources and source context, or a function returning it, called once per start and resume; default
+ * today's setup), `sources` (replaces the setup's sources, for tests), `runCollector`, `callModel`, `resolveModel`, `childUsage`, `clock` ({ now, sleep }), `random`,
  * `limiters`, `hooks` ({ beforeStage, afterCheckpoint, afterMergeWrite }) and `newId`.
  */
 export function createSyncPipeline(deps) {
@@ -97,11 +97,13 @@ export function createSyncPipeline(deps) {
     store: rawStore, projectDir, desktopDir, env = process.env, runCollector = spawnCollector, callModel = analyse,
     childUsage = codexChildUsage, clock = systemClock, random = Math.random, hooks = {}, newId = randomUUID,
   } = deps;
-  const baseSetup = deps.setup ?? resolveSourceSetup();
-  const setup = deps.sources ? { ...baseSetup, sources: deps.sources } : baseSetup;
-  const { institution } = setup;
-  /** The source objects of stored ids (a job created before ids were stored used the three UniMelb sources). */
-  const sourcesFor = ids => (ids ?? LEGACY_SOURCE_IDS).map(id => {
+  /** The setup of one start or resume: read once, then kept by the job (decision #447). */
+  async function loadSetup() {
+    const base = typeof deps.setup === 'function' ? await deps.setup() : deps.setup ?? resolveSourceSetup();
+    return deps.sources ? { ...base, sources: deps.sources } : base;
+  }
+  /** The source objects of stored ids (a job created before ids were stored used the three sources of that time). */
+  const sourcesFor = (setup, ids) => (ids ?? LEGACY_SOURCE_IDS).map(id => {
     const source = setup.sources.find(item => item.id === id);
     if (!source) throw codeError('SOURCES_CHANGED');
     return source;
@@ -198,7 +200,7 @@ export function createSyncPipeline(deps) {
   }
 
   // ---- Start and resume -----------------------------------------------------------------------------------------
-  async function prepare() {
+  async function prepare(setup) {
     const config = await resolveModel();
     const problem = configProblem(config);
     if (problem) throw codeError(problem);
@@ -206,6 +208,9 @@ export function createSyncPipeline(deps) {
     try { input = JSON.parse(await readFile(join(projectDir, '.local', 'lms', 'courses.json'), 'utf8')); }
     catch { throw codeError('COURSES_UNAVAILABLE'); }
     if (!Array.isArray(input?.courses)) throw codeError('COURSES_UNAVAILABLE');
+    // Course IDs of two Canvas instances can collide: a list from another Canvas is never synced (design §2).
+    if (courseListOrigin(input) !== setup.settings.canvasOrigin) throw codeError('COURSE_LIST_STALE');
+    const { institution } = setup;
     const candidates = filterSubjects(input.courses.filter(item => item && typeof item.id === 'string'), institution).filter(item => institution.isSubjectCode(item.subjectCode));
     return { config, candidates };
   }
@@ -221,7 +226,8 @@ export function createSyncPipeline(deps) {
 
   async function start(ids) {
     return begin(async () => {
-      const { config, candidates } = await prepare();
+      const setup = await loadSetup();
+      const { config, candidates } = await prepare(setup);
       if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some(id => typeof id !== 'string' || !/^\d+$/.test(id)) || new Set(ids).size !== ids.length) throw codeError('INVALID_SELECTION');
       const selected = ids.map(id => candidates.find(item => item.id === id));
       if (selected.some(item => !item)) throw codeError('INVALID_SELECTION');
@@ -230,9 +236,9 @@ export function createSyncPipeline(deps) {
       const courses = [];
       for (const course of selected) {
         courses.push({ courseId: course.id, code: course.subjectCode, term: typeof course.term === 'string' ? course.term : null,
-          previous: await captureEarlierDocument(store, desktopDir, course, institution) });
+          previous: await captureEarlierDocument(store, desktopDir, course, setup.institution) });
       }
-      return launch({ jobId, config, selected, courses, resumedFrom: null, sourceIds: setup.sources.map(source => source.id) });
+      return launch({ jobId, config, selected, courses, resumedFrom: null, setup, sourceIds: setup.sources.map(source => source.id) });
     });
   }
 
@@ -244,18 +250,19 @@ export function createSyncPipeline(deps) {
       if (problem) throw codeError(problem);
       // A resume runs the parent's sources, so its checkpoints and hashes keep matching.
       const sourceIds = (parent.sources ?? LEGACY_SOURCE_IDS).slice();
-      sourcesFor(sourceIds);
-      const { config, candidates } = await prepare();
+      const setup = await loadSetup();
+      sourcesFor(setup, sourceIds);
+      const { config, candidates } = await prepare(setup);
       const selected = parent.courses.map(course => candidates.find(item => item.id === course.courseId) ?? null);
       const courses = parent.courses.map((course, index) => ({
         courseId: course.courseId, code: selected[index]?.subjectCode ?? course.code, term: selected[index] ? (typeof selected[index].term === 'string' ? selected[index].term : null) : course.term,
         previous: course.previous,
       }));
-      return launch({ jobId: newId(), config, selected, courses, resumedFrom: parent.id, sourceIds });
+      return launch({ jobId: newId(), config, selected, courses, resumedFrom: parent.id, setup, sourceIds });
     });
   }
 
-  async function launch({ jobId, config, selected, courses, resumedFrom, sourceIds }) {
+  async function launch({ jobId, config, selected, courses, resumedFrom, setup, sourceIds }) {
     await io.mkdir(dirname(schemaPath), { recursive: true });
     await io.writeFile(schemaPath, JSON.stringify(courseOutputSchema(), null, 2), { mode: 0o600 });
     store.createJob({ id: jobId, provider: config.provider, model: config.model, resumedFrom, sources: sourceIds, courses });
@@ -277,7 +284,7 @@ export function createSyncPipeline(deps) {
       if (pendingStop === 'cancelled') cancel(); else stopCurrent(pendingStop);
     }
     // runJob reports its own failures through the job row; a rejection here (store closed under it) is not fatal.
-    idle = runJob(job, config, selected, startedAt).catch(() => {}).finally(() => {
+    idle = runJob(job, config, selected, startedAt, setup).catch(() => {}).finally(() => {
       if (halted) { try { rawStore.close(); } catch { /* Already closed. */ } }
       if (current === job) current = null;
     });
@@ -290,12 +297,12 @@ export function createSyncPipeline(deps) {
     await io.appendFile(usagePath, `${JSON.stringify(line)}\n`, { mode: 0o600 });
   }
 
-  async function runJob(job, config, selected, startedAt) {
+  async function runJob(job, config, selected, startedAt, setup) {
     const jobId = job.jobId;
     const lineageIds = rawStore.lineage(jobId);
     const ctx = {
       store, io, projectDir, desktopDir, jobId, lineageIds, config, limiters, runCollector, callModel, childUsage,
-      institution, sources: sourcesFor(rawStore.getJob(jobId).sources), sourceContext: setup.context,
+      institution: setup.institution, timeZone: setup.timeZone, sources: sourcesFor(setup, rawStore.getJob(jobId).sources), sourceContext: setup.context,
       schema: courseOutputSchema(), schemaPath, signal: job.controller.signal,
       registerStop(stop) {
         job.stops.add(stop);

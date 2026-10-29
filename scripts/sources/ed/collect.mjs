@@ -2,7 +2,9 @@
 // Ed collector (moved from scripts/collect-ed-course.mjs, which remains as a shim; openspec change generic-adapters,
 // design §3): read-only lesson inventory and final-submission scores from the user's edstem-cli account. The unit is
 // matched with the institution's term key and session matcher; the code is regex-escaped and compared
-// case-insensitively on both sides.
+// case-insensitively on both sides. With an explicit Ed region the CLI's signed-in region is checked first: a mismatch
+// writes an `unavailable` result naming it and makes no Ed request. Region `auto` makes no extra call and links
+// lessons on `au`, as before the change (decision #463).
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -10,9 +12,11 @@ import { cliFailureIsTemporary, EX_TEMPFAIL } from '../../lib/collector-exit.mjs
 import { institutionById } from '../../institutions/registry.mjs';
 import { writeJsonAtomic } from '../collector-io.mjs';
 import { readSourceConfig } from '../config.mjs';
+import { edLessonUrl, REGION_MISMATCH } from './regions.mjs';
 const exec = promisify(execFile);
 const [code, term, dest] = process.argv.slice(2);
-const institution = institutionById(readSourceConfig().institution);
+const config = readSourceConfig();
+const institution = institutionById(config.institution);
 if (!institution.isSubjectCode(code) || !dest) throw new Error('Missing course code or output path');
 const key = institution.termKey(term ?? '');
 if (!key.year) throw new Error('无法确定 Ed 的年份与学期');
@@ -21,6 +25,17 @@ const cli = async (command, args) => JSON.parse((await exec(command, args, { tim
 // A failed Ed CLI call whose output names HTTP 429/5xx or a network error exits with 75 so the sync retries it
 // (design §9); every other failure exits with 1 as before.
 try {
+let region = 'au';
+if (config.edRegion !== 'auto') {
+  const auth = await cli('edstem', ['auth', 'status', '--json']);
+  if (auth?.region !== config.edRegion) {
+    const result = { status: 'unavailable', code, term, lessons: [], scores: [], reason: REGION_MISMATCH, capturedAt: new Date().toISOString(), scope: 'lesson_inventory_selected_scores_and_intro' };
+    await writeJsonAtomic(dest, result);
+    console.error(`Ed 采集不可用：${REGION_MISMATCH}（设置 ${config.edRegion}，edstem 登录 ${typeof auth?.region === 'string' ? auth.region.slice(0, 10) : '未知'}）`);
+    process.exit(0);
+  }
+  region = config.edRegion;
+}
 const units = await cli('edstem', ['units', 'list', '--json']);
 if (!Array.isArray(units)) throw new Error('Ed 课程列表格式错误');
 const matches = units.filter(u => typeof u.code === 'string' && new RegExp(`^${escaped}(?![A-Z0-9])`, 'i').test(u.code) && String(u.year) === key.year && institution.edSessionMatches(u.session, key));
@@ -32,7 +47,7 @@ else {
   if (!/^\d+$/.test(unit)) throw new Error('Ed 课程 ID 错误');
   const data = await cli('edstem', ['lessons', 'list', unit, '--json', '--module', 'all', '--state', 'all', '--status', 'all']);
   if (!Array.isArray(data)) throw new Error('Ed 课程目录格式错误');
-  const lessons = data.filter(l => String(l.courseId) === unit).map(l => ({ id: String(l.id), title: l.title, module: l.moduleName ?? null, due: l.dueAt ?? null, status: l.status ?? null, url: `https://edstem.org/au/courses/${unit}/lessons/${l.id}` }));
+  const lessons = data.filter(l => String(l.courseId) === unit).map(l => ({ id: String(l.id), title: l.title, module: l.moduleName ?? null, due: l.dueAt ?? null, status: l.status ?? null, url: edLessonUrl(region, unit, l.id) }));
   const allCandidates = lessons.filter(l => /assignment|assessment|project/i.test(`${l.module ?? ''} ${l.title ?? ''}`) && /^\d+$/.test(l.id));
   const candidates = allCandidates.slice(0, 50);
   let scores = [], scoresError = null;

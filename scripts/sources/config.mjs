@@ -1,16 +1,15 @@
 // The collector configuration (openspec change generic-adapters, design §1, decision #440): one environment variable,
-// STUDYORBIT_SOURCE_CONFIG, holding JSON validated with zod in the child. It never holds a credential. A collector
-// started without it (by hand, or by an old caller) uses today's setup: UniMelb, its Canvas, Ed region `auto` and Edge
-// through Apple Events. Until the settings file arrives (PR 3) the only accepted values are those of that setup, plus
-// Chrome through Apple Events, chosen with the temporary override STUDYORBIT_BROWSER=chrome-applescript.
+// STUDYORBIT_SOURCE_CONFIG, holding JSON validated with zod in the child. It never holds a credential. The server
+// builds it from the owner's source settings (scripts/lib/source-settings.mjs) once per sync and once per discovery. A
+// collector started without it (by hand, or by an old caller) uses today's setup: the default institution, its Canvas,
+// Ed region `auto` and Edge through Apple Events.
+import { isAbsolute } from 'node:path';
 import { z } from 'zod';
-import { UNIMELB_CANVAS_ORIGIN } from '../institutions/unimelb/index.mjs';
+import { DEFAULT_INSTITUTION, INSTITUTIONS } from '../institutions/registry.mjs';
 
 export const SOURCE_CONFIG_ENV = 'STUDYORBIT_SOURCE_CONFIG';
 export const MISSING_CONFIG_OFF_MACOS = '请通过 StudyOrbit 启动，或设置 STUDYORBIT_SOURCE_CONFIG';
-/** Temporary browser override (generic-adapters task 2.3), removed when the settings file arrives in PR 3. */
-export const BROWSER_OVERRIDE_ENV = 'STUDYORBIT_BROWSER';
-const BROWSERS = ['edge-applescript', 'chrome-applescript'];
+export const BRIDGE_IDS = Object.freeze(['edge-applescript', 'chrome-applescript', 'cdp-chrome', 'cdp-edge']);
 
 /**
  * A Canvas origin: `https:`, no user information, no path other than `/`, no query or fragment, not an IP address
@@ -28,25 +27,25 @@ export function canvasOrigin(value) {
 
 export const SourceConfigSchema = z.object({
   version: z.literal(1),
-  institution: z.enum(['unimelb']),
+  institution: z.enum(Object.keys(INSTITUTIONS)),
   canvasOrigin: z.string().refine(value => { try { return canvasOrigin(value) === value; } catch { return false; } }, 'invalid Canvas origin'),
-  browser: z.enum(BROWSERS),
-  browserPath: z.null(),
-  edRegion: z.enum(['auto']),
+  browser: z.enum(BRIDGE_IDS),
+  browserPath: z.string().max(1000).refine(value => isAbsolute(value), 'not an absolute path').nullable(),
+  edRegion: z.enum(['auto', 'au', 'us', 'eu']),
   profileDir: z.null(),
-}).strict();
+}).strict().refine(value => value.browserPath === null || value.browser.startsWith('cdp-'), { path: ['browserPath'], message: 'only for the CDP bridge' });
 
 /** Today's setup, used when the variable is missing. */
 export const DEFAULT_SOURCE_CONFIG = Object.freeze({
-  version: 1, institution: 'unimelb', canvasOrigin: UNIMELB_CANVAS_ORIGIN, browser: 'edge-applescript', browserPath: null, edRegion: 'auto', profileDir: null,
+  version: 1, institution: DEFAULT_INSTITUTION.id, canvasOrigin: DEFAULT_INSTITUTION.defaults.canvasOrigin, browser: 'edge-applescript', browserPath: null, edRegion: 'auto', profileDir: null,
 });
 
-/** Today's setup with the browser of the temporary STUDYORBIT_BROWSER override, if set. */
-export function defaultSourceConfig(env = process.env) {
-  const browser = env[BROWSER_OVERRIDE_ENV];
-  if (browser === undefined || browser === '') return { ...DEFAULT_SOURCE_CONFIG };
-  if (!BROWSERS.includes(browser)) throw new Error(`${BROWSER_OVERRIDE_ENV} 只能是 ${BROWSERS.join(' 或 ')}`);
-  return { ...DEFAULT_SOURCE_CONFIG, browser };
+/** The collector configuration of effective source settings (scripts/lib/source-settings.mjs). */
+export function collectorConfig(settings) {
+  return SourceConfigSchema.parse({
+    version: 1, institution: settings.institution, canvasOrigin: settings.canvasOrigin, browser: settings.browser,
+    browserPath: settings.browserPath ?? null, edRegion: settings.edRegion ?? 'auto', profileDir: null,
+  });
 }
 
 /** The environment a collector command carries. */
@@ -60,8 +59,7 @@ export function readSourceConfig({ env = process.env, platform = process.platfor
   const raw = env[SOURCE_CONFIG_ENV];
   if (raw === undefined || raw === '') {
     if (needsBrowser && platform !== 'darwin') throw new Error(MISSING_CONFIG_OFF_MACOS);
-    // A collector that never uses the browser (Ed) does not depend on the browser override.
-    return needsBrowser ? defaultSourceConfig(env) : { ...DEFAULT_SOURCE_CONFIG };
+    return { ...DEFAULT_SOURCE_CONFIG };
   }
   let parsed;
   try { parsed = JSON.parse(raw); } catch { throw new Error(`${SOURCE_CONFIG_ENV} 不是有效的 JSON`); }

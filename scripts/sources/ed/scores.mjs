@@ -1,15 +1,24 @@
 #!/usr/bin/env node
-/** Experimental read-only Ed adapter: list only the signed-in user's final submissions. */
+/**
+ * Experimental read-only Ed adapter: list only the signed-in user's final submissions. Uses the `edstem` CLI's own
+ * credential and the API base of the CLI's signed-in region; an explicit Ed region in the collector configuration
+ * must match it.
+ */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { readSourceConfig } from '../config.mjs';
+import { ED_API_BASES, isEdRegion, REGION_MISMATCH } from './regions.mjs';
 const exec = promisify(execFile);
 const ids = process.argv.slice(2);
 if (!ids.length || ids.length > 50 || ids.some(id => !/^\d+$/.test(id))) throw new Error('Usage: node scripts/edstem-scores.mjs <lesson-id> [lesson-id...]');
 const auth = JSON.parse((await exec('edstem', ['auth', 'status', '--json'], { timeout: 15000, maxBuffer: 1024 * 1024 })).stdout);
-if (!auth.authenticated || !Number.isSafeInteger(auth.user?.id) || auth.region !== 'au') throw new Error('EdStem Australia authentication is unavailable');
+if (!auth.authenticated || !Number.isSafeInteger(auth.user?.id) || !isEdRegion(auth.region)) throw new Error('EdStem authentication is unavailable');
+const { edRegion } = readSourceConfig();
+if (edRegion !== 'auto' && auth.region !== edRegion) throw new Error(REGION_MISMATCH);
+const apiBase = ED_API_BASES[auth.region];
 let token = process.env.EDSTEM_TOKEN?.trim();
 if (!token) {
   const text = (await readFile(join(homedir(), '.config', 'edstem-cli', 'token'), 'utf8')).trim();
@@ -17,7 +26,7 @@ if (!token) {
 }
 if (typeof token !== 'string' || !token.trim()) throw new Error('EdStem token unavailable');
 async function get(path) {
-  const response = await fetch(`https://edstem.org/api/${path}`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }, redirect: 'manual', signal: AbortSignal.timeout(15000) });
+  const response = await fetch(`${apiBase}${path}`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }, redirect: 'manual', signal: AbortSignal.timeout(15000) });
   if (!response.ok) return { error: `HTTP ${response.status}` };
   try { return { data: await response.json() }; } catch { return { error: 'Invalid JSON' }; }
 }
