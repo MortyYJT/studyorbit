@@ -18,7 +18,12 @@
 每个标准答案考核最多配一个模型考核：
 
 1. 先按相同 `id` 配对；
-2. 剩下的按名称配对：转小写、标点换成空格、合并空白后相同即可（`Weekly Quizzes` 和 `weekly quizzes!` 算同名）。
+2. 剩下的按平台身份配对，分两轮：
+   1. 先看标准答案考核自己的 ID：平台形状的 ID（`canvas-12`、`ed:40`）、Canvas 作业分组 ID（`canvas-group-501`），或纯数字（依次当 Canvas 作业、Ed 课节、Canvas 作业分组试；v1 的分组用分组号做 ID，v2 的分组是 `canvas-group:<分组号>`）；
+   2. 再看 v2 的 `refs` 和 v1 的来源链接（同一个 Canvas 作业或 Ed 课节）。
+
+   ID 先于来源链接，因为 v1 分组的来源链接指向的是它的子项。模型一侧只认 `canvas`、`ed` 引用、平台形状的 ID 和自己的 `canvas-group:` ID，不认 `canvas-group` 引用（子项也会引用所属分组）；
+3. 剩下的按名称配对：转小写、标点换成空格、合并空白后相同即可（`Weekly Quizzes` 和 `weekly quizzes!` 算同名）。
 
 没配上的标准答案考核算「漏掉」，没配上的模型考核算「多出」。
 
@@ -44,6 +49,7 @@
 | 触发修复 | 第一次输出没通过校验、又让模型修了一次的运行数 |
 | 最终拒绝 | 模型正常返回、但修复后仍没通过校验、不会保存的运行数 |
 | 调用失败 | 模型调用或进程出错、抛出异常或被取消而没有结果的运行数；不算「最终拒绝」 |
+| 无出处 | 有结果的运行里，引文核对没找到出处、被清空并记入 `unsourced` 的权重数和规则数（分开计）；每次运行的数也记在 `summary.json` 的 `unsourced.perRun` |
 | 校验问题 | 模型正常返回的尝试里的问题按条计数（调用失败的尝试不计）；去掉 `assessments.N.` 前缀后合并 |
 
 - 准确率、召回、精确只算「有结果」的运行（通过校验且有 document）。被拒绝、调用失败或模型返回 `failed` 的运行不计入准确率，分别计入「最终拒绝」「调用失败」。
@@ -58,6 +64,9 @@ node scripts/eval-course-analysis.mjs --fixture test/fixtures/synthetic-course
 
 # 真实采集数据 + 标准答案，调用「设置 → 分析模型」里的模型，每门课 5 次
 node scripts/eval-course-analysis.mjs --run .local/lms/runs/<runId> --gold .local/eval/gold --n 5
+
+# 用当前打分代码重新打分已保存的结果，不调用模型
+node scripts/eval-course-analysis.mjs --rescore .local/eval/results/<结果目录> --gold .local/eval/gold --out .local/eval/results/<新目录>
 ```
 
 | 参数 | 说明 |
@@ -70,6 +79,7 @@ node scripts/eval-course-analysis.mjs --run .local/lms/runs/<runId> --gold .loca
 | `--fake <目录>` | 不调用模型，改读固定输出（见下） |
 | `--fixture <目录>` | 合成课程的简写：从目录里读 `course.json`、三份采集数据和 `gold.json`，默认用 `outputs/` 作为固定输出 |
 | `--live` | 和 `--fixture` 一起用：改为真实调用模型 |
+| `--rescore <结果目录>` | 不调用模型：读之前一次评测保存的 `<课程代码>/run-<i>.json`，按当前打分代码和 `--gold` 重新打分，只写 `summary.json`（模式 `rescore`，记原目录、原模式、服务商和模型）和 `summary.md`。保存的 document 原样打分，不重新生成；没有标准答案文件的课程跳过。不能和 `--run`、`--fixture`、`--fake`、`--courses`、`--model`、`--provider`、`--live` 一起用；`--out` 不能在原结果目录里 |
 | `--out <目录>` | 结果目录，默认 `.local/eval/results/<开始时间>/`；不能在桌面里（解析符号链接后判断，macOS 上不区分大小写） |
 
 缺采集数据、课程列表里没有或没有标准答案文件的课程会跳过，并在汇总里列出；标准答案文件存在但读不了、不是有效 JSON 或不符合 v1 时直接报错退出。命令行里的路径相对当前目录；默认路径（`.local/...`）和模型设置总是相对仓库根目录。多门课并行，同一门课的多次运行依次进行。按 Ctrl+C 后不再开始新的运行，当前这次调用会跑完；再按一次立即退出。
@@ -87,7 +97,7 @@ node scripts/eval-course-analysis.mjs --run .local/lms/runs/<runId> --gold .loca
 | `3.json` | 漏了实验出勤 hurdle、测验 2 类型错、多了一个练习 | 通过校验但有错，只有评测能发现 |
 | `4.json` | 和 `2.json` 相同 | 同 `2.json` |
 
-固定输出是模型输出 v2（契约 v2，`openspec/changes/course-contract-v2/`）；评测和同步走同一条路：校验、修复一次，再由代码生成存盘 v2 文档（ID、截止、得分、满分、状态、来源），打分对象是这份存盘文档。标准答案仍是 v1，v2 的 ID（如 `canvas:7101`）和标准答案的 ID 不同，目前靠名称配对；按平台身份配对在契约 v2 第 3 个 PR 加入。
+固定输出是模型输出 v2（契约 v2，`openspec/changes/course-contract-v2/`）；评测和同步走同一条路：校验、修复一次，再由代码生成存盘 v2 文档（ID、截止、得分、满分、状态、来源），打分对象是这份存盘文档。标准答案仍是 v1，v2 的 ID（如 `canvas:7101`）和标准答案的 ID 不同，靠平台身份或名称配对。
 
 所以默认 5 次时：第 1 次读 1、2，第 2 次读 3，第 3–5 次读 4。合成课程包含跨 Canvas 和 Ed 的同一作业、带两个子项的测验组、加分项、考试附带的 hurdle 规则和单独的 hurdle。
 
@@ -104,7 +114,7 @@ node scripts/eval-course-analysis.mjs --run .local/lms/runs/<runId> --gold .loca
 ## 局限
 
 - 标准答案只有一份，代表你的判断；有多种合理整理方式时（例如父子拆分），和标准答案不同不一定是错。
-- 名称配对只认规范化后完全相同的名称，改了措辞的考核会算漏掉 + 多出。
+- 平台身份配不上时，名称配对只认规范化后完全相同的名称，改了措辞的考核会算漏掉 + 多出。
 - `due` 只比字符串的日期部分，不换算时区：同一时刻写成 UTC 和本地时间，日期可能差一天。
 - `name`、`rule`、`sources`、`materials` 不打分。
 - 固定输出只验证校验和打分流程，不代表任何真实模型的水平；真实模型的结果只代表那几门课、那个时间点。

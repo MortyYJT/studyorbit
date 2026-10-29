@@ -116,6 +116,31 @@ describe('scoreDocument', () => {
     expect(matchAssessments([gold1.assessments[0]], both.assessments)[0].predicted?.id).toBe('canvas:77');
   });
 
+  it('matches a bare-number v1 group id to the v2 canvas-group item and maps its children through it', () => {
+    const gold1 = doc([
+      // v1 groups cite their children's pages; the group's own id is tried before those sources.
+      item('501', { name: 'Weekly Quizzes', kind: 'quiz', weight: 20, maxScore: null, scoring: 'weighted',
+        sources: [{ platform: 'canvas', url: 'https://canvas.example.edu/courses/12/assignments/7101', evidence: null }] }),
+      item('q1', { name: 'Quiz one', kind: 'quiz', parentId: '501', sources: [{ platform: 'canvas', url: 'https://canvas.example.edu/courses/12/assignments/7101', evidence: null }] }),
+    ]);
+    const run = doc([
+      // A child citing the same group must not take the group's place.
+      item('canvas:7101', { name: 'Quiz 1', kind: 'quiz', parentId: 'canvas-group:501', refs: [{ platform: 'canvas', id: '7101' }, { platform: 'canvas-group', id: '501' }] }),
+      item('canvas-group:501', { name: 'Quizzes (weekly)', kind: 'quiz', weight: 20, maxScore: null, scoring: 'weighted', refs: [{ platform: 'canvas-group', id: '501' }] }),
+    ]);
+    expect(matchAssessments(gold1.assessments, run.assessments).map(pair => pair.predicted?.id)).toEqual(['canvas-group:501', 'canvas:7101']);
+    expect(scoreDocument(gold1, run).fieldAccuracy).toBe(1);
+  });
+
+  it('matches a group-shaped v1 id and gives each canvas-group item to one gold item only', () => {
+    const gold1 = doc([item('canvas-group-501', { name: 'Labs' }), item('501', { name: 'Lab group' })]);
+    const run = doc([item('canvas-group:501', { name: 'Practicals' })]);
+    expect(matchAssessments(gold1.assessments, run.assessments).map(pair => pair.predicted?.id)).toEqual(['canvas-group:501', undefined]);
+    // A Canvas assignment with the same number is tried before the group.
+    const both = doc([item('canvas-group:77', { name: 'Group' }), item('canvas:77', { name: 'Assignment', refs: [{ platform: 'canvas', id: '77' }] })]);
+    expect(matchAssessments([item('77', { name: 'Neither' })], both.assessments)[0].predicted?.id).toBe('canvas:77');
+  });
+
   it('prefers an equal id, then platform identity, then the name slug, one to one', () => {
     const gold1 = doc([
       item('canvas:1', { name: 'A' }),
@@ -233,5 +258,17 @@ describe('summaries', () => {
     expect(overall.fieldAccuracy).toBe((2 * cells - 1) / (2 * cells));
     expect(overall.interception).toMatchObject({ runs: 3, repairTriggered: 1, rejected: 1, failed: 0, issues: { x: 2 } });
     expect(overall.cellAgreement).toBe(1);
+  });
+
+  it('counts weights and rules cleared as unsourced per run, per course and overall', () => {
+    const cleared = (id: string, fields: string[]) => edit(id, { unsourced: fields, ...(fields.includes('weight') ? { weight: null } : {}) });
+    const both = clone(gold);
+    Object.assign(both.assessments[0], { weight: null, unsourced: ['weight', 'rule'] });
+    Object.assign(both.assessments[3], { weight: null, unsourced: ['weight'] });
+    const one = summariseCourse(gold, [run(clone(gold)), run(both), run(null, { accepted: false })]);
+    expect(one.unsourced).toEqual({ weight: 2, rule: 1, perRun: [{ weight: 0, rule: 0 }, { weight: 2, rule: 1 }, null] });
+    const two = summariseCourse(gold, [run(cleared('q1', ['rule']))]);
+    expect(two.unsourced).toEqual({ weight: 0, rule: 1, perRun: [{ weight: 0, rule: 1 }] });
+    expect(summariseOverall([one, two]).unsourced).toEqual({ weight: 2, rule: 2 });
   });
 });
