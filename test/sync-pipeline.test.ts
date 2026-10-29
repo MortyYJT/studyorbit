@@ -383,6 +383,23 @@ describe('resume', () => {
     await expect(pipeline.resume('run-2')).rejects.toThrow('RESUME_EXPIRED');
   });
 
+  it('refuses to resume past the lineage limit, where the results of the root would no longer be visible', async () => {
+    const courses = await setup(1);
+    const db = await store();
+    for (const [prefix, length] of [['a', 20], ['b', 21]] as const) {
+      const chain = Array.from({ length }, (_, index) => `${prefix}-${index + 1}`);
+      chain.forEach((id, index) => {
+        db.createJob({ id, resumedFrom: index ? chain[index - 1] : null, courses: [{ courseId: '900001', code: 'SYNT10001' }] });
+        db.updateJob(id, { status: 'failed' });
+      });
+    }
+    const pipeline = pipelineFor(project!, db, { runCollector: fakeCollectors(courses).runCollector, callModel: fakeModel(courses).callModel });
+    // a-20 heads a lineage of 20 jobs: its resume still sees the root. b-21 heads 21 jobs and cannot be resumed.
+    await expect(pipeline.resume('b-21')).rejects.toThrow('NOT_RESUMABLE');
+    const status = await run(pipeline, () => pipeline.resume('a-20'));
+    expect(status).toMatchObject({ resumedFrom: 'a-20', courses: [{ status: 'completed' }] });
+  });
+
   it('reports courses no longer in the course list as failed', async () => {
     const { pipeline } = await failedJob();
     await writeCourseList(project!.projectDir, [syntheticCourse(1), syntheticCourse(3)]);

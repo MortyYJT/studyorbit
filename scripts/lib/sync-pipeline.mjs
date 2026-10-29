@@ -14,6 +14,7 @@ import { filterSubjects } from './course-list.mjs';
 import { configProblem, resolveAnalysisConfig } from './llm-config.mjs';
 import { analyse, counts } from './llm-providers.mjs';
 import { createLimiter, systemClock } from './rate-limit.mjs';
+import { LINEAGE_ANCESTORS } from './sync-store.mjs';
 import {
   analyseStage, captureEarlierDocument, collectStage, mergeStage, REASONS, spawnCollector, STAGES, StageFailure, validateStage,
 } from './sync-stages.mjs';
@@ -119,6 +120,7 @@ export function createSyncPipeline(deps) {
   let reserving = false;
   // A cancel or shutdown that arrives while a start or resume is being prepared applies to the job it creates.
   let pendingStop = null;
+  let reservation = Promise.resolve();
   let idle = Promise.resolve();
 
   function halt() {
@@ -145,9 +147,12 @@ export function createSyncPipeline(deps) {
     if (!RESUMABLE.has(job.status)) return 'NOT_RESUMABLE';
     if (rawStore.childOf(job.id)) return 'ALREADY_RESUMED';
     // The age is the lineage root's: ancestors' collected data can be reused (design §7).
-    let root = job;
-    for (let depth = 0; root?.resumedFrom && depth < 1000; depth++) root = rawStore.getJob(root.resumedFrom);
+    let root = job, length = 1;
+    while (root?.resumedFrom && length <= LINEAGE_ANCESTORS + 1) { root = rawStore.getJob(root.resumedFrom); length++; }
     if (!root || clock.now() - Date.parse(root.createdAt) >= RESUME_WINDOW_MS) return 'RESUME_EXPIRED';
+    // A resumed job sees itself plus LINEAGE_ANCESTORS ancestors; past that, the root's merged courses and change-log
+    // lines would be invisible and done courses would run again (decision #431).
+    if (length > LINEAGE_ANCESTORS) return 'NOT_RESUMABLE';
     if (job.courses.every(course => courseDone(job.id, course.courseId))) return 'NOT_RESUMABLE';
     return null;
   }
@@ -196,7 +201,9 @@ export function createSyncPipeline(deps) {
     if (halted) throw codeError('PIPELINE_HALTED');
     reserving = true;
     pendingStop = null;
-    try { return await action(); } finally { reserving = false; pendingStop = null; }
+    const work = action();
+    reservation = work.then(() => {}, () => {});
+    try { return await work; } finally { reserving = false; pendingStop = null; }
   }
 
   async function start(ids) {
@@ -435,8 +442,8 @@ export function createSyncPipeline(deps) {
 
   /** Server shutdown: stop as for cancel, but mark the work `interrupted`. Resolves when the job's tasks settled. */
   function shutdown() {
-    if (current) stopCurrent('interrupted');
-    else if (reserving) pendingStop = 'interrupted';
+    if (current) { stopCurrent('interrupted'); return idle; }
+    if (reserving) { pendingStop = 'interrupted'; return reservation.then(() => idle); }
     return idle;
   }
 
