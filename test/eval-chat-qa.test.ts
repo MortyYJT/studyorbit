@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promise
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { formatQaSummary, parseArgs, runQaEvaluation, summariseQa, type QaMode, type QaRecord } from '../scripts/eval-chat-qa.mjs';
+import { formatQaSummary, parseArgs, runPool, runQaEvaluation, summariseQa, type QaMode, type QaRecord } from '../scripts/eval-chat-qa.mjs';
 
 // The Q&A runner with scripted provider streams (--fake): no network, synthetic fixtures only.
 const FIXTURES = join(import.meta.dirname, 'fixtures', 'qa');
@@ -97,6 +97,35 @@ describe('runQaEvaluation with --fake', () => {
     await expect(runQaEvaluation({ ...parseArgs([]), fake: await fakeDir(), out, fixtures: FIXTURES }, { projectDir: process.cwd(), log: () => {} }))
       .rejects.toThrow('OUT_DIR_NOT_ALLOWED');
     await expect(stat(out)).rejects.toThrow();
+  });
+});
+
+describe('runPool', () => {
+  it('stops starting tasks after a failure and rejects only when running tasks have finished', async () => {
+    const events: string[] = [];
+    let releaseSlow!: () => void;
+    const slow = new Promise<void>(resolve => { releaseSlow = resolve; });
+    const tasks = [
+      async () => { events.push('slow:start'); await slow; events.push('slow:end'); },
+      async () => { events.push('fail'); throw new Error('disk full'); },
+      async () => { events.push('later'); },
+    ];
+    let settled = false;
+    const done = runPool(tasks, 2, () => false).then(() => { settled = true; }, error => { settled = true; throw error; });
+    await new Promise(resolve => setTimeout(resolve, 5));
+    expect(settled).toBe(false);
+    releaseSlow();
+    await expect(done).rejects.toThrow('disk full');
+    expect(events).toEqual(['slow:start', 'fail', 'slow:end']);
+  });
+
+  it('runs every task when nothing fails and stops early when cancelled', async () => {
+    const seen: number[] = [];
+    await runPool([1, 2, 3].map(value => async () => { seen.push(value); }), 2, () => false);
+    expect(seen.sort()).toEqual([1, 2, 3]);
+    const none: number[] = [];
+    await runPool([1, 2].map(value => async () => { none.push(value); }), 2, () => true);
+    expect(none).toEqual([]);
   });
 });
 

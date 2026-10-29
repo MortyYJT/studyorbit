@@ -198,10 +198,20 @@ export function formatQaSummary(summary) {
 
 // ---- Run ------------------------------------------------------------------------------------------------------
 
-async function pool(tasks, size, isCancelled) {
-  let next = 0;
-  const worker = async () => { while (next < tasks.length && !isCancelled()) { const task = tasks[next++]; await task(); } };
+/**
+ * Run tasks with at most `size` at a time. After the first failure no new task starts, and the promise rejects with
+ * that failure only once every running task has finished, so callers never clean up (or restore `fetch`) under them.
+ */
+export async function runPool(tasks, size, isCancelled) {
+  let next = 0, failure = null;
+  const worker = async () => {
+    while (next < tasks.length && !failure && !isCancelled()) {
+      const task = tasks[next++];
+      try { await task(); } catch (error) { failure ??= { error }; }
+    }
+  };
   await Promise.all(Array.from({ length: Math.min(size, tasks.length) }, worker));
+  if (failure) throw failure.error;
 }
 
 async function writeSummary(outDir, summary, projectDir, log) {
@@ -304,7 +314,7 @@ export async function runQaEvaluation(options, { projectDir = PROJECT_DIR, env =
       records.push(record);
       log(`${mode} ${question.id} #${run}: ${record.grade.pass ? '通过' : record.grade.failedCall ? `调用失败（${answer.stopped ? '已停止' : answer.error}）` : '未通过'}`);
     })));
-    await pool(tasks, options.concurrency, isCancelled);
+    await runPool(tasks, options.concurrency, isCancelled);
   } finally {
     if (fakeFetch) globalThis.fetch = realFetch;
   }

@@ -186,7 +186,7 @@
       "gold": {
         "answer": "Nothing more: 33.66 marks are already earned, so 30 is secured.",
         "numbers": [],
-        "facts": [["already", "secured", "nothing", "no minimum", "0%", "zero", "any score", "regardless"]],
+        "facts": [["secured", "no minimum", "don't need", "do not need", "nothing further", "nothing more", "already above", "already met", "already reached", "already exceed", "even if you score", "even scoring"]],
         "forbidden": [], "refusal": false, "expectTools": ["final_needed"]
       }
     },

@@ -35,6 +35,7 @@ export type QaSummary = {
   questions: number; only?: string[] | null; cancelled?: boolean; modes: Partial<Record<QaMode, QaModeSummary>>;
 };
 export function parseArgs(argv: string[]): QaOptions;
+export function runPool(tasks: (() => Promise<unknown>)[], size: number, isCancelled: () => boolean): Promise<void>;
 export function loadQaFixtures(dir: string): Promise<QaFixtures>;
 export function toolContextFor(fixtures: QaFixtures, question: QaQuestion): ToolContext;
 export function summariseQa(records: QaRecord[], questions: Pick<QaQuestion, 'id' | 'category'>[]): Partial<Record<QaMode, QaModeSummary>>;
