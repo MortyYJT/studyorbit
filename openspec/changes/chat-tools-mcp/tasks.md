@@ -21,7 +21,7 @@
 - [x] 2.7 `vite.config.ts`: body limit 200 000, snapshot validation, tool mode for the three providers, `step` SSE events, saving `mode`/`steps`/`reasoning`
 - [x] 2.8 `Agent.tsx`: send the snapshot, show running steps, `<details>` step list from storage, fallback note; zh/en labels per tool
 - [x] 2.9 One live call per provider whose key is available locally (cost: a few cents), including a two-turn DeepSeek tool-mode chat and a DeepSeek chat with an older context-mode history; record results or "not verified" in the PR (DeepSeek only, 3 requests, decision #368: tool round and folded older history verified; replayed `reasoning` item not exercised because turn 1 streamed no reasoning; OpenAI-compatible and Anthropic not verified)
-- [ ] 2.10 `bash .claude/check.sh`; real-browser check with synthetic data and an intercepted chat stream; fresh-context review; record the PR number here
+- [ ] 2.10 `bash .claude/check.sh`; real-browser check with synthetic data and an intercepted chat stream; fresh-context review; record the PR number here (PR #267; check passes, browser check done, review pending)
 
 ## 3. Q&A evaluation (PR 3)
 
