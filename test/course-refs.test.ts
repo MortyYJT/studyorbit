@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CourseDocumentV2Schema } from '../shared/course-data.js';
-import { backfillFacts, buildLegacyIds, buildSources, buildStoredDocument, canonicalRefs, generateIds, indexCollected, normaliseText, parseHandbookComponents, slug } from '../scripts/lib/course-refs.mjs';
+import { backfillFacts, buildLegacyIds, buildSources, buildStoredDocument, canonicalRefs, compareIds, generateIds, indexCollected, normaliseText, parseHandbookComponents, slug } from '../scripts/lib/course-refs.mjs';
 
 // Synthetic Handbook text only; no real course content.
 
@@ -101,6 +101,12 @@ describe('generateIds', () => {
     expect(ids([item('a', [{ platform: 'canvas', id: '9' }, { platform: 'canvas', id: '12' }])])).toEqual(['canvas:9']);
     expect(ids([item('a', [{ platform: 'handbook', id: 'b exam' }, { platform: 'handbook', id: 'a test' }])])).toEqual(['handbook:a-test']);
     expect(ids([item('a', [{ platform: 'ed', id: 'x1' }, { platform: 'ed', id: '20' }])])).toEqual(['ed:20']);
+  });
+
+  it('orders all-digit IDs before the others, so the primary reference is the same for any input order', () => {
+    const refs = ['10', '9', '1a'].map(id => ({ platform: 'canvas' as const, id }));
+    for (const order of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) expect(ids([item('a', order.map(i => refs[i]))])).toEqual(['canvas:9']);
+    expect(['b', '10', 'a', '9', '1a'].sort(compareIds)).toEqual(['9', '10', '1a', 'a', 'b']);
   });
 
   it('suffixes every item that shares a repeatable base ID with its name slug', () => {
@@ -283,6 +289,11 @@ describe('buildLegacyIds', () => {
       current(v2('canvas:5551', 'A', [canvas('5551')])))).toEqual({});
     expect(buildLegacyIds(previousV1(v1('q', 'Quizzes', [['canvas', canvasUrl('1')], ['canvas', canvasUrl('2')]])),
       current(v2('canvas:1', 'Quiz 1', [canvas('1')]), v2('canvas:2', 'Quiz 2', [canvas('2')])))).toEqual({});
+  });
+
+  it('leaves a current item unmapped when several earlier items match it, even if one of them also matches another item', () => {
+    expect(buildLegacyIds(previousV1(v1('a', 'A', [['canvas', canvasUrl('1')], ['ed', edUrl('2')]]), v1('b', 'B', [['canvas', canvasUrl('1')]])),
+      current(v2('canvas:1', 'P', [canvas('1')]), v2('ed:2', 'Q', [ed('2')])))).toEqual({});
   });
 
   it('does not let a name match take an item already matched by platform identity', () => {

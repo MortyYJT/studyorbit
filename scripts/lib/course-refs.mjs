@@ -72,9 +72,11 @@ export function slug(value) {
   return String(value ?? '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '') || 'item';
 }
 
-/** Order of two reference IDs: numeric when both are digits, otherwise by code point. */
+/** Total order of reference IDs: all-digit IDs first in numeric order, then the others in code-point order. */
 export function compareIds(a, b) {
-  if (/^\d+$/.test(a) && /^\d+$/.test(b)) { const x = BigInt(a), y = BigInt(b); return x < y ? -1 : x > y ? 1 : 0; }
+  const digitsA = /^\d+$/.test(a), digitsB = /^\d+$/.test(b);
+  if (digitsA !== digitsB) return digitsA ? -1 : 1;
+  if (digitsA) { const x = BigInt(a), y = BigInt(b); return x < y ? -1 : x > y ? 1 : 0; }
   const left = [...a], right = [...b];
   for (let i = 0; i < Math.min(left.length, right.length); i++) {
     const diff = left[i].codePointAt(0) - right[i].codePointAt(0);
@@ -279,7 +281,8 @@ export function buildLegacyIds(previous, current) {
   }
 
   const targets = new Map();
-  for (const found of candidates.values()) if (found.size === 1) { const [match] = found; targets.set(match, (targets.get(match) ?? 0) + 1); }
+  // Count every candidate of every earlier item: a current item matched by several earlier items stays unmapped.
+  for (const found of candidates.values()) for (const match of found) targets.set(match, (targets.get(match) ?? 0) + 1);
   const pairs = new Map();
   for (const [item, found] of candidates) {
     if (found.size !== 1) continue;
