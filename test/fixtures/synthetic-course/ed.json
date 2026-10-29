@@ -1,0 +1,22 @@
+{
+  "status": "ok",
+  "code": "SYNT10001",
+  "term": "2026 Semester 2",
+  "unitId": "42",
+  "lessons": [
+    { "id": "3001", "title": "Assignment 1 submission", "module": "Assignments", "due": "2026-08-28T13:59:00Z", "status": "completed", "url": "https://edstem.example.org/courses/42/lessons/3001" },
+    { "id": "3002", "title": "Week 1 Practice", "module": "Practice", "due": null, "status": "attempted", "url": "https://edstem.example.org/courses/42/lessons/3002" },
+    { "id": "3003", "title": "Bonus Challenge", "module": "Extras", "due": "2026-10-10T12:59:00Z", "status": "unattempted", "url": "https://edstem.example.org/courses/42/lessons/3003" }
+  ],
+  "scores": [
+    { "lessonId": "3001", "status": "graded", "score": 24, "maxScore": 30, "submittedAt": "2026-08-27T09:00:00Z", "durationMs": 5 }
+  ],
+  "scoresError": null,
+  "context": [
+    { "lessonId": "3003", "lessonTitle": "Bonus Challenge", "slideId": "1", "slideTitle": "Rules", "text": "Optional. Up to 2 bonus marks are added to your final total, capped at 100.", "url": "https://edstem.example.org/courses/42/lessons/3003/slides/1" }
+  ],
+  "contextError": false,
+  "coverage": { "lessons": 3, "scoreCandidates": 1, "scoresRequested": 1, "unavailableScores": 0, "candidatesTruncated": false, "contextTargets": 1, "contextsCollected": 1 },
+  "capturedAt": "2026-09-15T00:00:00.000Z",
+  "scope": "lesson_inventory_selected_scores_and_intro"
+}

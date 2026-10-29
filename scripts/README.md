@@ -9,6 +9,8 @@
 | `edstem-scores.mjs` | 只读获取本人最终提交成绩，供 Ed 采集器使用 |
 | `collect-handbook.mjs` | 在 Edge 后台读取对应年份的 Handbook 考核页 |
 | `course-sync-runner.mjs` | 串行采集、并行模型整理、本地校验、取消、保存和用量 |
+| `eval-course-analysis.mjs` | 用已采集的数据或合成课程跑 N 次分析，与标准答案对比，统计准确率、一致性和校验拦截；不采集、不写桌面（[说明](../docs/eval-format.md)） |
+| `lib/eval-score.mjs` | 评测的配对与打分纯函数 |
 | `lib/course-list.mjs` | Canvas JSON 解析与课程代码筛选 |
 | `lib/course-analysis.mjs` | 统一提示词及模型输出 Schema |
 | `lib/course-reports.mjs` | 读取已选课程和桌面课程文件夹里最新的有效课程 JSON |
