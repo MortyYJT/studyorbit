@@ -534,14 +534,14 @@ function objectInput(json) {
 export function appendToolRound(provider, conversation, step, results) {
   const args = call => call.args.trim() ? call.args : '{}';
   if (provider === 'deepseek') {
-    // Each function_call_output directly follows its own function_call: DeepSeek rejects anything in between.
+    // Reasoning, text and every function_call of the round stay together, then the outputs. Live check 2026-10-30
+    // (decision #396): with two calls, interleaving call/output pairs makes DeepSeek reject the request with HTTP 400
+    // ("reasoning_text ... must be passed back"), because the second call is no longer next to the round's reasoning.
     return [...conversation,
       ...(step.reasoning ? [{ type: 'reasoning', content: [{ type: 'reasoning_text', text: step.reasoning }] }] : []),
       ...(step.text ? [{ role: 'assistant', content: step.text }] : []),
-      ...step.calls.flatMap((call, index) => [
-        { type: 'function_call', call_id: call.id, name: call.name, arguments: args(call) },
-        { type: 'function_call_output', call_id: call.id, output: results[index].text },
-      ])];
+      ...step.calls.map(call => ({ type: 'function_call', call_id: call.id, name: call.name, arguments: args(call) })),
+      ...step.calls.map((call, index) => ({ type: 'function_call_output', call_id: call.id, output: results[index].text }))];
   }
   if (provider === 'openai-compatible') {
     return [...conversation,

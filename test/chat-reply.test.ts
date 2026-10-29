@@ -169,6 +169,23 @@ describe('openai-compatible fallback', () => {
   });
 });
 
+describe('forced mode (Q&A evaluation)', () => {
+  it('runs DeepSeek in context mode with the pinned prompt and no tools when mode is context', async () => {
+    const bodies = script([dsText('按上下文回答。')]);
+    const reply = await runChatReply({ config: deepseek, messages: [user('平均分？')], ...base, mode: 'context' }, {});
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]!.tools).toBeUndefined();
+    expect(bodies[0]!.instructions).toBe(`${chatSystemPrompt('zh')}\n\n# 课程数据\n\n${buildChatContext([synthetic], { today: '2026-09-14', courseIds: ['syn-1'], courses: base.courses })}`);
+    expect(reply.message).toMatchObject({ content: '按上下文回答。', mode: 'context' });
+    expect(reply.message!.fallback).toBeUndefined();
+  });
+
+  it('refuses tool mode for Codex, which has no tool loop', async () => {
+    await expect(runChatReply({ config: { provider: 'codex', model: 'gpt-6-luna', baseUrl: null, apiKey: null }, messages: [user('hi')], ...base, mode: 'tools' }, {}))
+      .rejects.toThrow('codex');
+  });
+});
+
 describe('Codex keeps context mode', () => {
   it('sends the pinned context-mode prompt and saves no steps', async () => {
     const proc = new EventEmitter() as EventEmitter & { stdout: PassThrough; stderr: PassThrough; stdin: PassThrough; pid: number };

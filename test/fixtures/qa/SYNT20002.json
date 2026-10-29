@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "course": { "id": "qa-syn-2", "code": "SYNT20002", "name": "Synthetic Data Ethics", "term": "2026 Semester 2" },
+  "assessments": [
+    { "id": "reflection", "name": "Reading reflection", "kind": "assignment", "nature": "regular", "parentId": null, "weight": 10, "score": null, "maxScore": 10, "due": "2026-09-16T13:59:00Z", "status": "not_started", "scoring": "none", "rule": null, "sources": [], "refs": [], "weightQuote": null, "ruleQuote": null, "unsourced": [] },
+    { "id": "essay", "name": "Ethics essay", "kind": "assignment", "nature": "regular", "parentId": null, "weight": 30, "score": null, "maxScore": 100, "due": "2026-09-25T13:59:00Z", "status": "not_started", "scoring": "none", "rule": "1500 words.", "sources": [], "refs": [], "weightQuote": null, "ruleQuote": null, "unsourced": [] },
+    { "id": "presentation", "name": "Group presentation", "kind": "presentation", "nature": "regular", "parentId": null, "weight": 20, "score": null, "maxScore": null, "due": "2026-10-09T05:00:00Z", "status": "not_started", "scoring": "none", "rule": null, "sources": [], "refs": [], "weightQuote": null, "ruleQuote": null, "unsourced": [] },
+    { "id": "exam", "name": "Final exam", "kind": "test", "nature": "regular", "parentId": null, "weight": 40, "score": null, "maxScore": 100, "due": null, "status": "not_started", "scoring": "none", "rule": null, "sources": [], "refs": [], "weightQuote": null, "ruleQuote": null, "unsourced": [] }
+  ],
+  "materials": [],
+  "legacyIds": {}
+}

@@ -198,7 +198,9 @@ describe('toolStepParser', () => {
 });
 
 describe('appendToolRound', () => {
-  it('puts each DeepSeek function_call_output directly after its own function_call', () => {
+  // Live DeepSeek check 2026-10-30 (decision #396): with two calls and reasoning, call/output pairs interleaved
+  // (call 1, output 1, call 2, output 2) get HTTP 400 "reasoning_text ... must be passed back"; all calls first passes.
+  it('puts the DeepSeek reasoning, text and every function_call of the round together, then the outputs', () => {
     const step = parse('deepseek', [
       { type: 'response.reasoning_text.delta', delta: 'r' }, { type: 'response.output_text.delta', delta: 'Sure.' },
       { type: 'response.output_item.done', item: { type: 'function_call', call_id: 'c1', name: 'list_courses', arguments: '' } },
@@ -211,8 +213,8 @@ describe('appendToolRound', () => {
       { type: 'reasoning', content: [{ type: 'reasoning_text', text: 'r' }] },
       { role: 'assistant', content: 'Sure.' },
       { type: 'function_call', call_id: 'c1', name: 'list_courses', arguments: '{}' },
-      { type: 'function_call_output', call_id: 'c1', output: 'R1' },
       { type: 'function_call', call_id: 'c2', name: 'calculate_grades', arguments: '{"courseId":"syn-1"}' },
+      { type: 'function_call_output', call_id: 'c1', output: 'R1' },
       { type: 'function_call_output', call_id: 'c2', output: 'R2' },
     ]);
   });

@@ -21,15 +21,15 @@
 - [x] 2.7 `vite.config.ts`: body limit 200 000, snapshot validation, tool mode for the three providers, `step` SSE events, saving `mode`/`steps`/`reasoning`
 - [x] 2.8 `Agent.tsx`: send the snapshot, show running steps, `<details>` step list from storage, fallback note; zh/en labels per tool
 - [x] 2.9 One live call per provider whose key is available locally (cost: a few cents), including a two-turn DeepSeek tool-mode chat and a DeepSeek chat with an older context-mode history; record results or "not verified" in the PR (DeepSeek only, 3 requests, decision #368: tool round and folded older history verified; replayed `reasoning` item not exercised because turn 1 streamed no reasoning; OpenAI-compatible and Anthropic not verified)
-- [ ] 2.10 `bash .claude/check.sh`; real-browser check with synthetic data and an intercepted chat stream; fresh-context review; record the PR number here (PR #267; check passes, browser check done, review pending)
+- [x] 2.10 `bash .claude/check.sh`; real-browser check with synthetic data and an intercepted chat stream; fresh-context review; record the PR number here (PR #267; check passes, browser check done, review pending)
 
 ## 3. Q&A evaluation (PR 3)
 
-- [ ] 3.1 Synthetic fixtures in `test/fixtures/qa/` (two courses, planning snapshot, context, ≥ 24 questions with gold data); every gold number has `source: { tool, args, path }`; test that each `source` call on the fixture context gives that number at `path`
-- [ ] 3.2 Tests then `scripts/lib/qa-grade.mjs` (+ `.d.mts`): normalisation, number tolerance, fact groups, forbidden strings, refusal markers, failed calls
-- [ ] 3.3 Tests then `scripts/eval-chat-qa.mjs` with `--fake`: both modes, N, `--only`, output layout and file modes, summary metrics, Desktop output refused
-- [ ] 3.4 `docs/eval-chat-qa.md`: question format, grading rules, runner options, cost note, limitations
-- [ ] 3.5 Context-mode baseline with DeepSeek Flash, N = 5 (can run before PR 2 merges); after PR 2 merges, tool-mode run with the same settings; record both in `docs/eval-results.md`
+- [x] 3.1 Synthetic fixtures in `test/fixtures/qa/` (two courses, planning snapshot, context, ≥ 24 questions with gold data); every gold number has `source: { tool, args, path }`; test that each `source` call on the fixture context gives that number at `path`
+- [x] 3.2 Tests then `scripts/lib/qa-grade.mjs` (+ `.d.mts`): normalisation, number tolerance, fact groups, forbidden strings, refusal markers, failed calls
+- [x] 3.3 Tests then `scripts/eval-chat-qa.mjs` with `--fake`: both modes, N, `--only`, output layout and file modes, summary metrics, Desktop output refused
+- [x] 3.4 `docs/eval-chat-qa.md`: question format, grading rules, runner options, cost note, limitations
+- [x] 3.5 Context-mode baseline with DeepSeek Flash, N = 5 (can run before PR 2 merges); after PR 2 merges, tool-mode run with the same settings; record both in `docs/eval-results.md` (both modes in one run after PR 2, decisions #396–#399)
 - [ ] 3.6 `bash .claude/check.sh`; fresh-context review; record the PR number here
 
 ## 4. MCP server (PR 4)

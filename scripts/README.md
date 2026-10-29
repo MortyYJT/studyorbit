@@ -11,6 +11,8 @@
 | `course-sync-runner.mjs` | 串行采集、并行模型整理、本地校验、取消、保存和用量 |
 | `eval-course-analysis.mjs` | 用已采集的数据或合成课程跑 N 次分析，与标准答案对比，统计准确率、一致性和校验拦截；不采集、不写桌面（[说明](../docs/eval-format.md)） |
 | `lib/eval-score.mjs` | 评测的配对与打分纯函数 |
+| `eval-chat-qa.mjs` | 用合成题集比较对话的上下文模式和工具模式：每题 N 次单轮对话、确定性评分、`--fake` 固定输出、`--rescore` 重新评分（[说明](../docs/eval-chat-qa.md)） |
+| `lib/qa-grade.mjs` | 问答评测的评分纯函数 |
 | `lib/course-list.mjs` | Canvas JSON 解析与课程代码筛选 |
 | `lib/course-analysis.mjs` | 统一提示词及模型输出 Schema |
 | `lib/course-reports.mjs` | 读取已选课程和桌面课程文件夹里最新的有效课程 JSON |

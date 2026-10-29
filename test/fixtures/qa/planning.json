@@ -1,0 +1,11 @@
+{
+  "tasks": [
+    { "key": "qa-syn-1:lab-3", "title": "Lab report 3", "courseId": "qa-syn-1", "courseCode": "SYNT10001", "due": "2026-09-11", "minutes": 90 },
+    { "key": "qa-syn-1:quiz-4", "title": "Quiz 4 prep", "courseId": "qa-syn-1", "courseCode": "SYNT10001", "due": "2026-09-15", "minutes": 45 },
+    { "key": "personal:tax", "title": "Tax return", "courseId": "", "courseCode": "", "due": "2026-09-16", "minutes": 60 },
+    { "key": "qa-syn-1:a2", "title": "Assignment 2", "courseId": "qa-syn-1", "courseCode": "SYNT10001", "due": "2026-09-18", "minutes": 420, "spent": 60 },
+    { "key": "qa-syn-2:essay", "title": "Ethics essay", "courseId": "qa-syn-2", "courseCode": "SYNT20002", "due": "2026-09-25", "minutes": 240 }
+  ],
+  "availability": [120, 90, 0, 120, 60, 180, 0],
+  "targets": { "qa-syn-1": "H2B" }
+}
