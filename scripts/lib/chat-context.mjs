@@ -3,6 +3,7 @@
 // (owner corrections made in the browser are not visible here).
 import { calculateGrades } from '../../shared/course-calculations.ts';
 import { toDisplayDocument } from '../../shared/course-data.ts';
+import { gradingInputs } from '../../shared/course-tools.ts';
 
 export const CONTEXT_LIMIT = 24000;
 const TRUNCATION_NOTE = '\n（课程数据过长，已截断，后面的内容没有提供给你。）';
@@ -41,22 +42,9 @@ function describe(item) {
   return fields.join('｜');
 }
 
-/** Same inputs as the course page's gradingInputs, built from an uncorrected document. */
+/** Totals from the same grading inputs as the course page and the course tools, built from an uncorrected document. */
 function totals(doc) {
-  const items = doc.assessments.map(item => ({
-    key: item.id, parent: item.parentId, weightValue: item.weight ?? undefined, score: item.score ?? undefined, outOf: item.maxScore ?? undefined,
-    bonus: item.nature === 'bonus', ungraded: item.nature === 'ungraded', caution: item.nature === 'alternative', sourceZero: item.weight === 0,
-    kind: item.kind === 'test' ? 'exam' : item.kind === 'other' ? 'unknown' : item.kind, scoring: item.scoring,
-  }));
-  const excluded = source => source.bonus || source.caution || source.ungraded || source.sourceZero;
-  const assessments = items.filter(item => {
-    const source = item.parent ? items.find(parent => parent.key === item.parent) : undefined;
-    return !item.caution && !(source && excluded(source));
-  });
-  const parents = items.flatMap(source => {
-    const children = items.filter(item => item.parent === source.key && !item.caution);
-    return children.length && !excluded(source) ? [{ weight: source.weightValue, score: source.score, outOf: source.outOf, children, scoringRule: source.scoring ?? 'none', sourceKey: source.key }] : [];
-  });
+  const { assessments, parents } = gradingInputs(doc);
   return calculateGrades(assessments, parents);
 }
 
