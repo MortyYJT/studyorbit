@@ -3,6 +3,7 @@
 // Reads already-collected data only: it never runs a collector and never writes into the desktop course folders.
 // Usage: node scripts/eval-course-analysis.mjs --fixture test/fixtures/synthetic-course
 //        node scripts/eval-course-analysis.mjs --run .local/lms/runs/<runId> --gold <goldDir> [--n 5]
+//        node scripts/eval-course-analysis.mjs --rescore <resultsDir> --gold <goldDir>   (no model calls)
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -15,13 +16,13 @@ import { configProblem, readLlmConfig, resolveFromStored } from './lib/llm-confi
 import { analyse } from './lib/llm-providers.mjs';
 import { summariseCourse, summariseOverall } from './lib/eval-score.mjs';
 
-const VALUE_OPTIONS = new Set(['run', 'courses', 'gold', 'n', 'model', 'provider', 'fake', 'fixture', 'out']);
+const VALUE_OPTIONS = new Set(['run', 'courses', 'gold', 'n', 'model', 'provider', 'fake', 'fixture', 'out', 'rescore']);
 const GENERIC_ENV = ['COURSE_ANALYSIS_MODEL', 'COURSE_ANALYSIS_URL', 'COURSE_ANALYSIS_API_KEY'];
-const PATH_OPTIONS = ['run', 'courses', 'gold', 'fake', 'fixture', 'out'];
+const PATH_OPTIONS = ['run', 'courses', 'gold', 'fake', 'fixture', 'out', 'rescore'];
 /** Repository root: defaults (.local/...) and the model settings resolve here, whatever the working directory. */
 export const PROJECT_DIR = fileURLToPath(new URL('..', import.meta.url));
 
-/** Parse CLI arguments. Needs either --fixture, or --run together with --gold. */
+/** Parse CLI arguments. Needs --fixture, or --run together with --gold, or --rescore together with --gold. */
 export function parseArgs(argv) {
   const options = { n: 5, live: false };
   for (let i = 0; i < argv.length; i++) {
@@ -34,7 +35,14 @@ export function parseArgs(argv) {
   }
   options.n = Number(options.n);
   if (!Number.isInteger(options.n) || options.n < 1 || options.n > 50) throw new Error('--n 必须是 1 到 50 的整数');
-  if (!options.fixture && !(options.run && options.gold)) throw new Error('需要 --fixture <dir>，或同时提供 --run <runDir> 和 --gold <goldDir>');
+  if (options.rescore) {
+    if (!options.gold) throw new Error('--rescore 需要同时提供 --gold <goldDir>');
+    const extra = ['run', 'fixture', 'fake', 'courses', 'model', 'provider'].filter(key => options[key]);
+    if (options.live) extra.push('live');
+    if (extra.length) throw new Error(`--rescore 只重新打分已保存的结果，不能和 ${extra.map(key => `--${key}`).join('、')} 一起用`);
+    return options;
+  }
+  if (!options.fixture && !(options.run && options.gold)) throw new Error('需要 --fixture <dir>，或同时提供 --run <runDir> 和 --gold <goldDir>，或 --rescore <resultsDir> 和 --gold <goldDir>');
   if (options.fixture && options.run) throw new Error('--fixture 和 --run 只能选一个');
   return options;
 }
@@ -84,6 +92,36 @@ export async function loadRun({ runDir, coursesPath, goldDir }) {
     loaded.push({ course, canvas, ed, handbook, gold: parseGold(gold, course.subjectCode, `${course.subjectCode}.json`) });
   }
   return { courses: loaded, skipped };
+}
+
+/**
+ * Saved run records of an earlier evaluation: `<resultsDir>/<SUBJECTCODE>/run-<i>.json` (as written by runEvaluation) and
+ * gold documents from `<goldDir>/<SUBJECTCODE>.json`. Course folders without a gold file are skipped. The saved summary.json
+ * (when present) supplies the original mode, provider, model and N. Saved documents are scored as they are; nothing is rebuilt.
+ */
+export async function loadSavedRuns({ resultsDir, goldDir }) {
+  let saved = null;
+  try { saved = await readJson(join(resultsDir, 'summary.json')); } catch { saved = null; }
+  const ids = new Map((saved?.courses ?? []).map(course => [course.code, course.id]));
+  const courses = [], skipped = [];
+  for (const entry of (await readdir(resultsDir, { withFileTypes: true })).filter(entry => entry.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+    const code = entry.name;
+    const files = (await readdir(join(resultsDir, code))).map(name => /^run-(\d+)\.json$/.exec(name)).filter(Boolean)
+      .sort((a, b) => Number(a[1]) - Number(b[1])).map(match => match[0]);
+    if (!files.length) continue;
+    let goldText;
+    try { goldText = await readFile(join(goldDir, `${code}.json`), 'utf8'); }
+    catch (error) {
+      if (error?.code !== 'ENOENT') throw new Error(`标准答案读取失败：${code}.json（${error?.code ?? error?.message ?? error}）`);
+      skipped.push({ id: ids.get(code) ?? code, code, reason: '没有标准答案文件' }); continue;
+    }
+    let gold;
+    try { gold = JSON.parse(goldText); }
+    catch (error) { throw new Error(`标准答案不是有效 JSON：${code}.json（${error.message}）`); }
+    const runs = await Promise.all(files.map(name => readJson(join(resultsDir, code, name))));
+    courses.push({ id: ids.get(code) ?? code, code, gold: parseGold(gold, code, `${code}.json`), runs });
+  }
+  return { courses, skipped, saved };
 }
 
 /**
@@ -165,7 +203,7 @@ const pct = value => (value === null || value === undefined ? '—' : `${(value 
 export function formatSummary(summary) {
   const lines = [
     `# 课程分析评测 ${summary.startedAt}`, '',
-    `模式：${summary.mode === 'fake' ? '固定输出' : `模型 ${summary.provider} / ${summary.model ?? '默认'}`}；每门课 ${summary.n} 次。`, '',
+    `模式：${summary.mode === 'rescore' ? `重新打分已保存的结果（原来是${summary.originalMode === 'fake' ? '固定输出' : `模型 ${summary.provider} / ${summary.model ?? '默认'}`}），不调用模型` : summary.mode === 'fake' ? '固定输出' : `模型 ${summary.provider} / ${summary.model ?? '默认'}`}；每门课 ${summary.n} 次。`, '',
     '| 课程 | 运行 | 有结果 | 触发修复 | 最终拒绝 | 调用失败 | 字段准确率 | 召回 | 精确 | 单元格一致 | 与首次相同 | 无出处（权重/规则） | 输入/输出 token | 平均耗时 |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
@@ -207,6 +245,7 @@ export async function runEvaluation(options, { projectDir, env = process.env, lo
   const startedAt = new Date().toISOString();
   const outDir = resolve(projectDir, options.out ?? join('.local', 'eval', 'results', startedAt.replace(/[:.]/g, '-')));
   if (await isInside(outDir, join(homedir(), 'Desktop'))) throw new Error('OUT_DIR_NOT_ALLOWED：结果不能写到桌面，避免和课程文件夹混在一起');
+  if (options.rescore) return rescoreEvaluation(options, { projectDir, outDir, startedAt, log });
   const fakeDir = options.fake ?? (options.fixture && !options.live ? join(options.fixture, 'outputs') : null);
   const { courses, skipped } = options.fixture
     ? { courses: [await loadFixture(resolve(projectDir, options.fixture))], skipped: [] }
@@ -244,6 +283,28 @@ export async function runEvaluation(options, { projectDir, env = process.env, lo
   log(markdown);
   log(`结果已保存到 ${relative(projectDir, outDir) || '.'}`);
   return { outDir, summary, evaluation };
+}
+
+/** Re-score saved run records against gold with the current scorer and write summary.json / summary.md; no model calls. */
+async function rescoreEvaluation(options, { projectDir, outDir, startedAt, log }) {
+  const resultsDir = resolve(projectDir, options.rescore);
+  if (await isInside(outDir, resultsDir)) throw new Error('OUT_DIR_NOT_ALLOWED：重新打分的结果不能写进原结果目录，避免覆盖原来的汇总');
+  const { courses, skipped, saved } = await loadSavedRuns({ resultsDir, goldDir: resolve(projectDir, options.gold) });
+  if (!courses.length) throw new Error('没有可重新打分的课程（需要已保存的 run-<i>.json 和对应的标准答案）');
+  await mkdir(outDir, { recursive: true, mode: 0o700 });
+  const scored = courses.map(({ id, code, gold, runs }) => ({ id, code, summary: summariseCourse(gold, runs) }));
+  const summary = {
+    startedAt, finishedAt: new Date().toISOString(), n: saved?.n ?? Math.max(...courses.map(course => course.runs.length)), mode: 'rescore',
+    source: resultsDir, originalMode: saved?.mode ?? null, originalStartedAt: saved?.startedAt ?? null,
+    provider: saved?.provider ?? null, model: saved?.model ?? null,
+    courses: scored, overall: summariseOverall(scored.map(course => course.summary)), skipped,
+  };
+  await writeFile(join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`, { mode: 0o600 });
+  const markdown = formatSummary(summary);
+  await writeFile(join(outDir, 'summary.md'), markdown, { mode: 0o600 });
+  log(markdown);
+  log(`结果已保存到 ${relative(projectDir, outDir) || '.'}`);
+  return { outDir, summary, evaluation: { courses: scored, overall: summary.overall } };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

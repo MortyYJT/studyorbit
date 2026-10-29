@@ -18,7 +18,11 @@
 每个标准答案考核最多配一个模型考核：
 
 1. 先按相同 `id` 配对；
-2. 剩下的按平台身份配对：同一个 Canvas 作业或 Ed 课节（v2 的 `refs`、v1 来源链接或平台形状的 ID；标准答案里纯数字的 ID 先当 Canvas、再当 Ed 试）；
+2. 剩下的按平台身份配对，分两轮：
+   1. 先看标准答案考核自己的 ID：平台形状的 ID（`canvas-12`、`ed:40`）、Canvas 作业分组 ID（`canvas-group-501`），或纯数字（依次当 Canvas 作业、Ed 课节、Canvas 作业分组试；v1 的分组用分组号做 ID，v2 的分组是 `canvas-group:<分组号>`）；
+   2. 再看 v2 的 `refs` 和 v1 的来源链接（同一个 Canvas 作业或 Ed 课节）。
+
+   ID 先于来源链接，因为 v1 分组的来源链接指向的是它的子项。模型一侧只认 `canvas`、`ed` 引用、平台形状的 ID 和自己的 `canvas-group:` ID，不认 `canvas-group` 引用（子项也会引用所属分组）；
 3. 剩下的按名称配对：转小写、标点换成空格、合并空白后相同即可（`Weekly Quizzes` 和 `weekly quizzes!` 算同名）。
 
 没配上的标准答案考核算「漏掉」，没配上的模型考核算「多出」。
@@ -60,6 +64,9 @@ node scripts/eval-course-analysis.mjs --fixture test/fixtures/synthetic-course
 
 # 真实采集数据 + 标准答案，调用「设置 → 分析模型」里的模型，每门课 5 次
 node scripts/eval-course-analysis.mjs --run .local/lms/runs/<runId> --gold .local/eval/gold --n 5
+
+# 用当前打分代码重新打分已保存的结果，不调用模型
+node scripts/eval-course-analysis.mjs --rescore .local/eval/results/<结果目录> --gold .local/eval/gold --out .local/eval/results/<新目录>
 ```
 
 | 参数 | 说明 |
@@ -72,6 +79,7 @@ node scripts/eval-course-analysis.mjs --run .local/lms/runs/<runId> --gold .loca
 | `--fake <目录>` | 不调用模型，改读固定输出（见下） |
 | `--fixture <目录>` | 合成课程的简写：从目录里读 `course.json`、三份采集数据和 `gold.json`，默认用 `outputs/` 作为固定输出 |
 | `--live` | 和 `--fixture` 一起用：改为真实调用模型 |
+| `--rescore <结果目录>` | 不调用模型：读之前一次评测保存的 `<课程代码>/run-<i>.json`，按当前打分代码和 `--gold` 重新打分，只写 `summary.json`（模式 `rescore`，记原目录、原模式、服务商和模型）和 `summary.md`。保存的 document 原样打分，不重新生成；没有标准答案文件的课程跳过。不能和 `--run`、`--fixture`、`--fake`、`--courses`、`--model`、`--provider`、`--live` 一起用；`--out` 不能在原结果目录里 |
 | `--out <目录>` | 结果目录，默认 `.local/eval/results/<开始时间>/`；不能在桌面里（解析符号链接后判断，macOS 上不区分大小写） |
 
 缺采集数据、课程列表里没有或没有标准答案文件的课程会跳过，并在汇总里列出；标准答案文件存在但读不了、不是有效 JSON 或不符合 v1 时直接报错退出。命令行里的路径相对当前目录；默认路径（`.local/...`）和模型设置总是相对仓库根目录。多门课并行，同一门课的多次运行依次进行。按 Ctrl+C 后不再开始新的运行，当前这次调用会跑完；再按一次立即退出。

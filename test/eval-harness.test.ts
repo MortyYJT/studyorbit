@@ -18,6 +18,10 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--n', '0'])).toThrow();
     expect(() => parseArgs(['--unknown'])).toThrow();
     expect(() => parseArgs(['--run', 'r'])).toThrow();
+    expect(parseArgs(['--rescore', 'saved', '--gold', 'g'])).toMatchObject({ rescore: 'saved', gold: 'g' });
+    expect(() => parseArgs(['--rescore', 'saved'])).toThrow();
+    expect(() => parseArgs(['--rescore', 'saved', '--gold', 'g', '--run', 'r'])).toThrow();
+    expect(() => parseArgs(['--rescore', 'saved', '--gold', 'g', '--model', 'm'])).toThrow();
   });
 });
 
@@ -150,6 +154,34 @@ describe('runEvaluation', () => {
     expect(markdown).toContain('SYNT10001');
     expect(markdown).toContain('无出处（权重/规则）');
     expect(logs.join('\n')).toContain('SYNT10001');
+  });
+
+  it('rescores saved runs against gold without a model and leaves the originals alone', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'studyorbit-eval-rescore-'));
+    temps.push(root);
+    const first = join(root, 'first');
+    const { summary: original } = await runEvaluation(parseArgs(['--fixture', fixture, '--n', '3', '--out', first]), { projectDir: process.cwd(), env: {}, log: () => {} });
+    const savedSummary = await readFile(join(first, 'summary.json'), 'utf8');
+    await mkdir(join(root, 'gold'));
+    await cp(join(fixture, 'gold.json'), join(root, 'gold', 'SYNT10001.json'));
+    await mkdir(join(first, 'NOGOLD99'));
+    await writeFile(join(first, 'NOGOLD99', 'run-1.json'), '{}');
+
+    const out = join(root, 'again');
+    const logs: string[] = [];
+    // No model settings or keys: a rescore never calls a model.
+    const { summary } = await runEvaluation(parseArgs(['--rescore', first, '--gold', join(root, 'gold'), '--out', out]), { projectDir: process.cwd(), env: {}, log: line => logs.push(line) });
+    expect(summary.mode).toBe('rescore');
+    expect(summary.n).toBe(3);
+    expect(summary.courses.map(course => course.code)).toEqual(['SYNT10001']);
+    expect(summary.skipped).toEqual([{ id: 'NOGOLD99', code: 'NOGOLD99', reason: '没有标准答案文件' }]);
+    const [before, after] = [original.courses[0].summary, summary.courses[0].summary];
+    for (const key of ['fieldAccuracy', 'recall', 'precision', 'cellAgreement', 'identicalToFirst', 'interception', 'tokens', 'unsourced'] as const) expect(after[key]).toEqual(before[key]);
+    expect(JSON.parse(await readFile(join(out, 'summary.json'), 'utf8')).source).toBe(first);
+    expect(await readFile(join(out, 'summary.md'), 'utf8')).toContain('重新打分');
+    expect(await readFile(join(first, 'summary.json'), 'utf8')).toBe(savedSummary);
+    await expect(runEvaluation(parseArgs(['--rescore', first, '--gold', join(root, 'gold'), '--out', join(first, 'nested')]), { projectDir: process.cwd(), env: {}, log: () => {} }))
+      .rejects.toThrow('OUT_DIR_NOT_ALLOWED');
   });
 
   it('refuses to write into the desktop', async () => {
