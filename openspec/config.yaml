@@ -1,0 +1,35 @@
+schema: spec-driven
+
+context: |
+  Product: StudyOrbit (`study-orbit`), a local-first coursework assistant for one University of Melbourne
+  student. Scripts collect Canvas (through the owner's signed-in Edge), Ed (the `edstem` CLI) and Handbook;
+  a model the owner picks (DeepSeek, OpenAI-compatible, Anthropic, Codex CLI) turns them into one course
+  JSON per course, validated by `shared/course-data.ts`. The React app shows grades, the final-needed
+  target, a deterministic weekly plan, revision, and an Agent chat over the synced data.
+  Architecture: Vite dev server only; the loopback, same-origin `/api/local/*` routes live in
+  `vite.config.ts`; pure, tested logic lives in `shared/` (grades, planning); local stores live in
+  `scripts/lib/` and write to the ignored `.local/`. Owner corrections, tasks and preferences live in
+  browser localStorage. Decisions are in `note/decisions.md` (v2 starts at #223).
+  Stack: Node 24, strict TypeScript, React 19, Vite 8, zod, vitest. No other runtime dependencies.
+  Red lines: no self-issued Canvas tokens; models never see or type passwords; real course data, grades,
+  cookies and keys never enter the repo or fixtures (tests use synthetic data); the chat explains and
+  plans only and never completes or submits assessments; autonomy levels L1/L2 are not built (#238).
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
