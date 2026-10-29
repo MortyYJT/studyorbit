@@ -14,7 +14,7 @@ import {
 // course 4 has partial Ed data. A SimulatedCrash at a boundary of course 2 halts the pipeline instance; the store is
 // re-opened (the job becomes `interrupted`) and the job is resumed by a new instance. The result must equal an
 // uninterrupted run, with no extra collector or model call. Each boundary also runs "crash + fresh restart" and
-// prints fake-model tokens and wall time of both totals (the measurement document is local-server-sync-pipeline PR 4).
+// prints fake-model tokens, call counts and wall time per job and both totals (copied into docs/sync-optimization.md).
 const courses = [1, 2, 3, 4].map(syntheticCourse);
 const ids = courses.map(course => course.id);
 const projects: Project[] = [];
@@ -163,8 +163,14 @@ describe('fault injection at every stage boundary', () => {
     const resumeTokens = tokens(run.model.usage) - run.failed.tokens;
     const restartTokens = tokens(restart.model.usage) - restartTokens0;
     expect(resumeTokens).toBeLessThan(restartTokens);
-    report.push(`${boundary.name}: uninterrupted ${reference.tokens} tokens / ${reference.ms.toFixed(0)} ms; failed job ${run.failed.tokens} tokens / ${run.failedMs.toFixed(0)} ms; `
-      + `resume ${resumeTokens} tokens / ${resumeMs.toFixed(0)} ms; fresh restart ${restartTokens} tokens / ${restartMs.toFixed(0)} ms; `
+    // Restarting repeats exactly the model work the failed job had already finished.
+    expect(restartTokens - resumeTokens).toBe(run.failed.tokens);
+    // Calls are shown as collector/model counts (each collector call is one source of one course).
+    const calls = (collector: number, modelCalls: number) => `${collector}/${modelCalls} calls`;
+    report.push(`${boundary.name}: uninterrupted ${reference.tokens} tokens / ${calls(reference.collector, reference.model)} / ${reference.ms.toFixed(0)} ms; `
+      + `failed job ${run.failed.tokens} tokens / ${calls(run.failed.collector, run.failed.model)} / ${run.failedMs.toFixed(0)} ms; `
+      + `resume ${resumeTokens} tokens / ${calls(resumed.collector.length, resumed.model.length)} / ${resumeMs.toFixed(0)} ms; `
+      + `fresh restart ${restartTokens} tokens / ${calls(restart.collectors.calls.length - restart.failed.collector, restart.model.count() - restart.failed.model)} / ${restartMs.toFixed(0)} ms; `
       + `failed + resume ${run.failed.tokens + resumeTokens} tokens, failed + restart ${run.failed.tokens + restartTokens} tokens`);
   });
 

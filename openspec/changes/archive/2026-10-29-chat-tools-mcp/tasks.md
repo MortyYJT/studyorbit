@@ -8,7 +8,7 @@
 - [x] 1.6 Tests then `calculate_grades` (leaf, points group, weighted group, bonus/ungraded/alternative/zero-weight exclusions, incomplete group, what-if on leaf, parent and item without maximum, what-if on a bonus rejected, `whatIfApplied` effects incl. `no-weight`, `parent-score-overrides` and `group-incomplete`) and `final_needed` (argument, saved, default target; secured, reachable, unreachable; unidentified weight)
 - [x] 1.7 Tests then `upcoming_deadlines` (window, done items, cap) and `plan_schedule` (snapshot, argument tasks with and without keys, page keys kept so same-day ties match the weekly page, availability sources, window and `courseIds` output filter that never changes placements, overflow, `available: false`)
 - [x] 1.8 Tests then the 8 000-character limit (`truncated` metadata, `RESULT_TOO_LARGE`)
-- [ ] 1.9 `bash .claude/check.sh`; fresh-context review; record the PR number here (PR #264; check passes, review pending)
+- [x] 1.9 `bash .claude/check.sh`; fresh-context review; record the PR number here (PR #264; check passes; the PR description records no fresh-context review before merge (not verified by review))
 
 ## 2. Tool-calling chat (PR 2)
 
@@ -21,7 +21,7 @@
 - [x] 2.7 `vite.config.ts`: body limit 200 000, snapshot validation, tool mode for the three providers, `step` SSE events, saving `mode`/`steps`/`reasoning`
 - [x] 2.8 `Agent.tsx`: send the snapshot, show running steps, `<details>` step list from storage, fallback note; zh/en labels per tool
 - [x] 2.9 One live call per provider whose key is available locally (cost: a few cents), including a two-turn DeepSeek tool-mode chat and a DeepSeek chat with an older context-mode history; record results or "not verified" in the PR (DeepSeek only, 3 requests, decision #368: tool round and folded older history verified; replayed `reasoning` item not exercised because turn 1 streamed no reasoning; OpenAI-compatible and Anthropic not verified)
-- [x] 2.10 `bash .claude/check.sh`; real-browser check with synthetic data and an intercepted chat stream; fresh-context review; record the PR number here (PR #267; check passes, browser check done, review pending)
+- [x] 2.10 `bash .claude/check.sh`; real-browser check with synthetic data and an intercepted chat stream; fresh-context review; record the PR number here (PR #267; check passes, browser check done; the PR description records no fresh-context review before merge (not verified by review))
 
 ## 3. Q&A evaluation (PR 3)
 
@@ -38,5 +38,5 @@
 - [x] 4.2 Tests then `createCourseMcpServer` in `scripts/lib/course-mcp.mjs` (+ `.d.mts`) with `InMemoryTransport` and `Client`: tool names, annotations, and same property names and required lists as the registry (not byte-identical schemas); same text as `runTool` for valid arguments; registry errors with `isError: true`; schema-invalid arguments give `isError: true` (SDK text, not asserted); filter
 - [x] 4.3 `scripts/mcp-server.mjs` and `npm run mcp`: options, env filter, load on every call, stderr diagnostics; stdio test with `StdioClientTransport` against a temporary project and Desktop with synthetic files, checking no file is written
 - [x] 4.4 README section: Claude Code and Claude Desktop configuration with placeholders, Node 24, filter, data-flow note
-- [ ] 4.5 Manual check: connect from Claude Code to the local server with synthetic data; record "not verified" if not done (not verified: not connected from Claude Code; SDK-client stdio smoke test against the real local files instead, counts only, decision #404)
-- [ ] 4.6 `bash .claude/check.sh`; fresh-context review; update `note/handoff.md`; archive the change after the last PR merges (PR #270; check passes, handoff updated, review pending)
+- [x] 4.5 Manual check: connect from Claude Code to the local server with synthetic data; record "not verified" if not done (ticked only because the task allows recording "not verified", decision #436 — NOT VERIFIED: not connected from Claude Code; SDK-client stdio smoke test against the real local files instead, counts only, decision #404)
+- [x] 4.6 `bash .claude/check.sh`; fresh-context review; update `note/handoff.md`; archive the change after the last PR merges (PR #270; check passes, handoff updated; the PR description records no fresh-context review before merge (not verified by review); archived in local-server-sync-pipeline PR 4, #PR4)

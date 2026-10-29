@@ -17,12 +17,12 @@
 ## 主流程
 
 1. **发现课程：** `POST /api/local/sync-courses` 启动 `scripts/canvas-background.mjs discover`，在已登录的 Edge 里读取全部 Canvas 课程，存 `.local/lms/courses.json`；读取时（`/api/local/course-candidates`、`scripts/lib/course-reports.mjs`）再由 `scripts/lib/course-list.mjs` 按课程代码筛出候选。
-2. **选课并同步：** `web/src/LocalCourseSelect.tsx` 把选择存进浏览器，调用 `POST /api/local/course-sync`（GET 查进度，DELETE 取消）。`scripts/lib/sync-pipeline.mjs` 对每门课依次采集 Canvas、Ed、Handbook；采集串行，已采集课程的模型分析可与后续采集并行。同步记录和各阶段检查点存在 `.local/studyorbit.db`，停下的同步可以用 `POST /api/local/sync-jobs/<jobId>/resume` 继续（阶段、数据库和续跑的完整说明在第 4 部分补充）。
+2. **选课并同步：** `web/src/LocalCourseSelect.tsx` 把选择存进浏览器，调用 `POST /api/local/course-sync`（GET 查进度，DELETE 取消）。`scripts/lib/sync-pipeline.mjs` 对每门课依次采集 Canvas、Ed、Handbook；采集串行，已采集课程的模型分析可与后续采集并行。每门课分四步：采集 → 分析 → 校验 → 合并（`scripts/lib/sync-stages.mjs`），每步完成后把检查点写进 `.local/studyorbit.db`（`scripts/lib/sync-store.mjs`，`node:sqlite`）。失败、取消或服务退出（标为「已中断」）的同步，可以在第一次开始后 24 小时内用 `POST /api/local/sync-jobs/<jobId>/resume`（页面上「继续上次同步」）继续：检查点和文件核对无误的步骤直接沿用，不再采集或调模型。采集一次只跑一个、两次开始至少隔 500 毫秒；模型每家最多 4 个并发；临时失败（模型的 HTTP 429、5xx、连接错误，采集器的退出码 75）最多试 3 次（`scripts/lib/rate-limit.mjs`）。
 3. **模型整理：** `scripts/lib/course-analysis.mjs` 生成统一提示词和输出 Schema，`scripts/lib/llm-providers.mjs` 调用设置里选的模型（DeepSeek、OpenAI 兼容、Anthropic、Codex CLI）。结果经 `shared/course-data.ts` 校验，不合格时修复一次，合格的 JSON 存到桌面课程文件夹。
 4. **展示与修正：** `GET /api/local/course-reports` 读每门课最新的有效 JSON；`web/src/LocalPlanning.tsx` 展示课程页和周视图。你的修正、新增、排序和隐藏存在 `.local/corrections/<课程 ID>.json`（`/api/local/corrections`，`scripts/lib/corrections-store.mjs`），不改同步原件；同步结果变了时按三方合并保留你的修改，双方都改且不同的显示为「同步冲突」（`shared/corrections.ts`）。浏览器 localStorage 里的旧修正迁移后只作备份。
 5. **变更提醒：** 同步保存课程文件后，`scripts/lib/course-changes-log.mjs` 用 `shared/course-changes.ts` 的 `diffSnapshots` 按稳定 ID 和上一份有效文件比较，截止时间或权重变了就追加到 `.local/lms/changes.jsonl`（不记分数，第一次同步不记）；页面经 `GET /api/local/course-changes` 读最新 200 条，在「需要你处理」和课程页顶部提示，点「知道了」后不再显示。
 6. **计算：** 成绩与「期末需要」在 `shared/course-calculations.ts`，每周排期在 `shared/planning.ts`，都是纯函数，有单元测试。
-7. **对话与复习：** `web/src/Agent.tsx` 通过 `/api/local/chats*` 流式对话，上下文是已选课程的同步数据（`scripts/lib/chat-context.mjs`，不含页面修正）。复习页可发预设提示词；单门课对话里已完成的回复可以「存到复习」（`/api/local/revision-notes`）。
+7. **对话与复习：** `web/src/Agent.tsx` 通过 `/api/local/chats*` 流式对话。DeepSeek、OpenAI 兼容和 Anthropic 用只读课程工具回答（`shared/course-tools.ts` 的 6 个工具，循环在 `scripts/lib/chat-tool-loop.mjs`；OpenAI 兼容服务第一次请求就拒绝工具时退回整份上下文）；Codex 仍把已选课程的同步数据整份放进上下文（`scripts/lib/chat-context.mjs`）。两种方式都不含页面修正。复习页可发预设提示词；单门课对话里已完成的回复可以「存到复习」（`/api/local/revision-notes`）。
 
 ## 采集范围
 
@@ -45,6 +45,9 @@
 | `scripts/dev.mjs` | `npm run dev`：生成令牌，先启动接口服务再启动 Vite |
 | `vite.config.ts` | 只有页面、端口和代理 |
 | `scripts/lib/sync-pipeline.mjs`、`scripts/lib/sync-stages.mjs` | 分阶段编排（采集 → 分析 → 校验 → 合并）、检查点与续跑、模型调用、取消与中断、保存、用量和变更记录 |
+| `scripts/lib/sync-store.mjs`、`scripts/lib/rate-limit.mjs`、`scripts/lib/server-lock.mjs` | 同步数据库（任务、阶段检查点、课程快照）、限速与重试、单实例锁 |
+| `shared/course-tools.ts`、`scripts/lib/chat-tool-loop.mjs` | 对话用的只读课程工具和工具调用循环 |
+| `scripts/mcp-server.mjs`、`scripts/lib/course-mcp.mjs` | `npm run mcp`：把同一组只读工具经 stdio 提供给 MCP 客户端（如 Claude Code） |
 | `scripts/lib/` | 模型设置与适配器、对话存储与上下文、复习笔记存储、课程读取、修正存储、变更记录 |
 | `shared/` | 课程 JSON 契约、成绩计算、排期、修正合并、变更比较 |
 | `test/` | vitest 单元测试（只用合成数据） |
@@ -54,6 +57,8 @@
 | 内容 | 位置 |
 | --- | --- |
 | 课程候选、采集快照、同步记录与用量 | `.local/lms/` |
+| 同步任务、阶段检查点、课程快照（SQLite，权限 600） | `.local/studyorbit.db` |
+| 本地服务单实例锁（服务退出时删除） | `.local/server.lock` |
 | 截止时间和权重的变更记录（每行 `{ at, runId, courseId, assessmentId, name, field, before, after }`，权限 600，可随时删除） | `.local/lms/changes.jsonl` |
 | 修正、手动考核、排序、合并基准和未处理冲突（每门课一个文件，权限 600，目录 700） | `.local/corrections/<课程 ID>.json` |
 | 模型设置（权限 600，密钥只写） | `.local/config/llm.json` |
@@ -68,4 +73,4 @@
 
 ## 当前边界
 
-Node.js 24+；只在 macOS + Edge 上实际跑过，其他平台和浏览器未完成。`edstem` 和模型密钥属于外部依赖。Vite 重启会丢失内存中的同步状态。四家模型的真实调用和真实同步在 v2 并入后还没有重新验证。
+Node.js 24+；只在 macOS + Edge 上实际跑过，其他平台和浏览器未完成。`edstem` 和模型密钥属于外部依赖。同步状态存在数据库里，Vite 或本地服务重启不会丢；服务退出时正在跑的同步标为「已中断」，可以继续。分阶段同步还没有跑过真实同步（只用假采集器和假模型测过）；对话工具模式只用 DeepSeek 实测过 3 次请求，其他模型的真实调用在 v2 并入后还没有重新验证；MCP 没有从 Claude Code / Claude Desktop 实际连接过。
