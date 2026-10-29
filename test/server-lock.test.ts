@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { uptime } from 'node:os';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -40,11 +41,13 @@ describe('server lock', () => {
     first.release();
   });
 
-  it('replaces a stale lock whose process is gone, or one that holds no PID', async () => {
+  it('replaces a stale lock whose process is gone, or an old one that holds no PID', async () => {
     await mkdir(join(dir, '.local'), { recursive: true });
     await writeFile(lockPath(), `${deadPid()}\n`);
     acquireServerLock(dir).release();
     await writeFile(lockPath(), 'not a pid');
+    const old = new Date(Date.now() - 60_000);
+    await utimes(lockPath(), old, old);
     const lock = acquireServerLock(dir);
     expect(await readFile(lockPath(), 'utf8')).toBe(`${process.pid}\n`);
     lock.release();
@@ -55,5 +58,33 @@ describe('server lock', () => {
     await writeFile(lockPath(), '999999\n');
     lock.release();
     expect(await readFile(lockPath(), 'utf8')).toBe('999999\n');
+  });
+
+  it('never exposes an empty lock file and leaves no temporary file behind', async () => {
+    const lock = acquireServerLock(dir);
+    expect(await readdir(join(dir, '.local'))).toEqual(['server.lock']);
+    lock.release();
+  });
+
+  it('treats an empty or unreadable lock younger than a few seconds as held, and an older one as stale', async () => {
+    await mkdir(join(dir, '.local'), { recursive: true });
+    await writeFile(lockPath(), '');
+    expect(() => acquireServerLock(dir)).toThrow(SERVER_RUNNING_MESSAGE);
+    expect(await readFile(lockPath(), 'utf8')).toBe('');
+    const old = new Date(Date.now() - 60_000);
+    await utimes(lockPath(), old, old);
+    acquireServerLock(dir).release();
+  });
+
+  it('treats a lock written before the last boot as stale even if its PID is alive again', async () => {
+    await mkdir(join(dir, '.local'), { recursive: true });
+    // process.pid is certainly alive; the PID was reused after a reboot.
+    await writeFile(lockPath(), `${process.pid}\n`);
+    const beforeBoot = new Date(Date.now() - uptime() * 1000 - 60_000);
+    await utimes(lockPath(), beforeBoot, beforeBoot);
+    const lock = acquireServerLock(dir);
+    expect(await readFile(lockPath(), 'utf8')).toBe(`${process.pid}\n`);
+    expect((await stat(lockPath())).mtimeMs).toBeGreaterThan(beforeBoot.getTime() + 30_000);
+    lock.release();
   });
 });
