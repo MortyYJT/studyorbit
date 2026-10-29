@@ -5,7 +5,7 @@
 - **最后更新：** 2026-10-30，Claude。
 - **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）、#247（全局清理，#239）；规则精简为单一文件 `CLAUDE.md`（#241）。
 - **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，本地 `origin` 已指向新地址），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口在独立的本地服务（`server/`，`127.0.0.1:5190`），Vite（`localhost:5173`）只提供页面并代理 `/api/local`；`npm run dev` 一起启动（`local-server-sync-pipeline` 第 1 部分合并后）。
-- **OpenSpec：** `course-contract-v2` 已全部合并并归档（PR #259、#262、#265、#266）。`local-corrections-merge`（#290–#298）：第 1 部分（`.local/corrections/` 存储、接口、localStorage 一次性迁移，决定 #375–#384）PR #269、第 2 部分（三方合并和冲突，决定 #385–#394）PR #271 已合并；第 3 部分（变更记录和提醒，分支 `claude/change-log`，决定 #410–#414）已开 PR 待审查合并，该 PR 里已把整个变更归档到 `openspec/changes/archive/`，规格并入 `openspec/specs/`（`local-corrections`、`course-change-log`）。`local-server-sync-pipeline`（PR #272、#275、#277、#278 和第 4 个 PR）和 `chat-tools-mcp`（PR #264、#267、#273、#270）已在 `local-server-sync-pipeline` 第 4 个 PR 里归档（决定 #435–#437）；还在进行的是 `generic-adapters`。
+- **OpenSpec：** `course-contract-v2` 已全部合并并归档（PR #259、#262、#265、#266）。`local-corrections-merge`（#290–#298）：第 1 部分（`.local/corrections/` 存储、接口、localStorage 一次性迁移，决定 #375–#384）PR #269、第 2 部分（三方合并和冲突，决定 #385–#394）PR #271 已合并；第 3 部分（变更记录和提醒，分支 `claude/change-log`，决定 #410–#414）已开 PR 待审查合并，该 PR 里已把整个变更归档到 `openspec/changes/archive/`，规格并入 `openspec/specs/`（`local-corrections`、`course-change-log`）。`local-server-sync-pipeline`（PR #272、#275、#277、#278、#279）和 `chat-tools-mcp`（PR #264、#267、#273、#270）已在 `local-server-sync-pipeline` 第 4 个 PR 里归档（决定 #435–#437）；还在进行的是 `generic-adapters`。
 - **现行规格：** 在 `openspec/specs/`（`agent-chat`、`chat-qa-eval`、`course-analysis`、`course-change-log`、`course-contract`、`course-mcp-server`、`course-tools`、`grade-target`、`local-api-server`、`local-corrections`、`revision`、`staged-course-sync`、`sync-job-store`、`sync-resume-measurement`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
 
 ## 已完成
@@ -23,7 +23,7 @@
 - **同步存储（`local-server-sync-pipeline` 第 2 部分，PR #272 已合并）：** `scripts/lib/sync-store.mjs`（`node:sqlite`，`.local/studyorbit.db` 0600、WAL、按 `user_version` 迁移、升级前备份、不可用的文件绝不改写、启动标记中断、按续跑链保留 50 条）和 `scripts/lib/server-lock.mjs`（单实例锁）；`engines.node` ≥ 24.15.0；还没接进服务和同步（等第 1、3 部分），决定 #405–#409。
 - **独立本地服务（`local-server-sync-pipeline` 第 1 部分，分支 `claude/local-server`，PR #275 已合并，决定 #415–#424；#278 修了信号处理装得太晚导致的偶发测试失败）：** 所有 `/api/local/*` 从 `vite.config.ts` 搬到 `server/`（`app.ts` 路由表、`routes/` 每个路由一个文件、`guard.ts` 回环 → 令牌 → Host → Origin、`proxy.ts`、`main.ts` 接上单实例锁和数据库，不可用时同步接口 503）；`scripts/dev.mjs` 每次启动生成令牌，先起服务再起 Vite；顺手修了课程发现「取消」从来没生效的问题（#420）。测试：`server-guard`、`local-server`（每个路由）、`server-main`（子进程：令牌、锁、端口被占、坏数据库、信号）、`local-proxy`（真 Vite：令牌替换、Host、SSE 不缓冲、中断传到上游）、`dev-launcher`、`vite-config`。真实数据只读浏览器检查（5181/5191 端口）通过。
 - **分阶段同步（`local-server-sync-pipeline` 第 3 部分，分支 `claude/staged-sync`，PR #277 已合并，决定 #425–#434）：** `scripts/lib/sync-stages.mjs`（采集 → 分析 → 校验 → 合并，输入哈希、检查点、按来源复用、先记录再写的合并、按续跑链去重的变更记录）、`scripts/lib/sync-pipeline.mjs`（任务存数据库、续跑、取消与中断、模拟崩溃、用量记录照旧）、`scripts/lib/rate-limit.mjs`（采集一次一个、每家模型 4 个、最多 3 次、`Retry-After`、2 分钟上限）；模型结果带 `httpStatus`，采集器临时失败退出码 75；新接口 `GET /api/local/sync-jobs`、`POST /api/local/sync-jobs/<jobId>/resume`；页面「已中断」「继续上次同步」「沿用上次结果」；`scripts/course-sync-runner.mjs` 已删。每个阶段边界一个故障注入测试（`test/sync-faults.test.ts`），续跑与重来的假模型 token 用 `npx vitest run test/sync-faults.test.ts --silent=false` 打印。
-- **续跑与重来的测量（第 4 部分，分支 `claude/pipeline-measurements`，PR 待审查合并，决定 #435–#437）：** 没写单独脚本，`test/sync-faults.test.ts` 打印每个边界的假 token、调用次数和耗时；`docs/sync-optimization.md` 新增「续跑和重来（假模型、合成数据，不是真实运行）」一节：每个边界「失败 + 续跑」都等于不中断（13,885 假 token、12 次采集 / 5 次模型），「失败 + 重来」多花 2,949（采集 → 分析）或 5,898（之后三个边界）；按 2026-10-28 真实数字估算的节省单独标为估算。`docs/overview.md` 补了阶段、数据库、续跑、工具对话和 MCP；两个 change 已归档。
+- **续跑与重来的测量（第 4 部分，分支 `claude/pipeline-measurements`，PR #279 待审查合并，决定 #435–#437）：** 没写单独脚本，`test/sync-faults.test.ts` 打印每个边界的假 token、调用次数和耗时；`docs/sync-optimization.md` 新增「续跑和重来（假模型、合成数据，不是真实运行）」一节：每个边界「失败 + 续跑」都等于不中断（13,885 假 token、12 次采集 / 5 次模型），「失败 + 重来」多花 2,949（采集 → 分析）或 5,898（之后三个边界）；按 2026-10-28 真实数字估算的节省单独标为估算。`docs/overview.md` 补了阶段、数据库、续跑、工具对话和 MCP；两个 change 已归档。
 - **验证（较早）：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
 
 ## 未验证
@@ -44,7 +44,7 @@
 
 ## 下一步
 
-0. 审查并合并 `local-server-sync-pipeline` 第 4 个 PR（测量文档 + 两个 change 归档）。新路由一律写进 `server/routes/`。是否授权一次真实续跑测量（决定 #350，约多花两次四门课分析）由你定。
+0. 审查并合并 PR #279（`local-server-sync-pipeline` 第 4 个 PR，测量文档 + 两个 change 归档）。新路由一律写进 `server/routes/`。是否授权一次真实续跑测量（决定 #350，约多花两次四门课分析）由你定。
 1. 你：第一次真实同步后看一眼「同步数据」面板和 `.local/studyorbit.db` 是否正常；如果同步被中断，试一次「继续上次同步」。分阶段同步还没跑过真实采集和真实模型。
 2. 你：第一次 v2 同步后看一眼各课的「无出处」数量；太多的话再调提示词（评测可以量清空率）。
    - 评测里 20 次运行「无出处」都是 0。
