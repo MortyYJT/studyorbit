@@ -128,7 +128,7 @@ When the server reads a course store and the newest valid course file for that c
 - **THEN** the second read does not change the store or its revision
 
 ### Requirement: Conflicts are shown and the owner chooses
-The course page SHALL list the course's open conflicts with the assessment name, the field, the sync value and the owner's value, and offer 「用同步的」 and 「保留我的」 (for an assessment no longer in the sync, 「删除修正」 and 「保留」); the drawer SHALL mark a conflicted field; and the week page's 「需要你处理」 list SHALL show one line per course with open conflicts that opens the course. Choosing the sync value SHALL remove the correction field (an orphaned correction is removed whole) and close the conflict; keeping the owner's value SHALL close the conflict and keep the correction, and the same disagreement SHALL NOT be raised again unless a later sync changes that field again. Saving a new value for a conflicted field SHALL close its conflict. Choosing the sync value SHALL also remove the field's pin.
+The course page SHALL list the course's open conflicts with the assessment name, the field, the sync value and the owner's value, and offer 「用同步的」 and 「保留我的」 (for an assessment no longer in the sync, 「删除修正」 and 「保留」); the drawer SHALL mark a conflicted field; and the week page's 「需要你处理」 list SHALL show one line per course with open conflicts that opens the course. Choosing the sync value SHALL remove the correction field (an orphaned correction is removed whole) and close the conflict; keeping the owner's value SHALL close the conflict and keep the correction, and the same disagreement SHALL NOT be raised again unless a later sync changes that field again. A save SHALL count a field as changed only when the stored and sent values are not equal under the same equality used for the merge; an unchanged field SHALL keep its stored value, pin and conflict. Saving a changed value for a conflicted field SHALL close its conflict. Saving a changed value for a pinned field, or choosing the sync value, SHALL remove the field's pin. When a merge moves corrections to new keys through `legacyIds`, their pins and open conflicts SHALL move with them, and SHALL be dropped when the new key's own correction wins.
 
 #### Scenario: Use the sync value
 - **WHEN** a weight conflict shows sync 25 and owner 30, and the owner clicks 「用同步的」
@@ -141,3 +141,15 @@ The course page SHALL list the course's open conflicts with the assessment name,
 #### Scenario: Conflict in the attention list
 - **WHEN** course `SYNT10001` has two open conflicts
 - **THEN** the week page's 「需要你处理」 list shows 「SYNT10001：2 项修正和同步结果不一致」 and clicking it opens that course
+
+#### Scenario: Resending a pinned value in another notation
+- **WHEN** a due date pinned as `2026-11-10T12:59:00Z` is resent by the edit form as `2026-11-10T23:59:00+11:00` together with a name change
+- **THEN** the due date keeps its stored value and its pin, and only the name counts as changed
+
+#### Scenario: Owner edit releases a pin
+- **WHEN** a weight of 30 is pinned (base 30) and the owner saves the edit form with weight 35
+- **THEN** the pin is removed and 35 is kept as an owner change; when a later sync changes the weight to 25, a conflict records sync 25 and owner 35
+
+#### Scenario: Pin follows a legacy ID rename
+- **WHEN** the weight of `100:a1` is pinned and the new document's `legacyIds` maps `a1` to `canvas:5551`
+- **THEN** the correction and its pin move to `100:canvas:5551`, and a later sync change of that weight raises a conflict instead of replacing the owner's value
