@@ -4,12 +4,12 @@
 
 ## 主流程
 
-1. **发现课程：** `POST /api/local/sync-courses` 启动 `scripts/canvas-background.mjs discover`，在已登录的 Edge 里读取 Canvas 课程；`scripts/lib/course-list.mjs` 按课程代码筛出候选，存 `.local/lms/courses.json`。
+1. **发现课程：** `POST /api/local/sync-courses` 启动 `scripts/canvas-background.mjs discover`，在已登录的 Edge 里读取全部 Canvas 课程，存 `.local/lms/courses.json`；读取时（`/api/local/course-candidates`、`scripts/lib/course-reports.mjs`）再由 `scripts/lib/course-list.mjs` 按课程代码筛出候选。
 2. **选课并同步：** `web/src/LocalCourseSelect.tsx` 把选择存进浏览器，调用 `POST /api/local/course-sync`（GET 查进度，DELETE 取消）。`scripts/course-sync-runner.mjs` 对每门课依次采集 Canvas、Ed、Handbook；采集串行，已采集课程的模型分析可与后续采集并行。
 3. **模型整理：** `scripts/lib/course-analysis.mjs` 生成统一提示词和输出 Schema，`scripts/lib/llm-providers.mjs` 调用设置里选的模型（DeepSeek、OpenAI 兼容、Anthropic、Codex CLI）。结果经 `shared/course-data.ts` 校验，不合格时修复一次，合格的 JSON 存到桌面课程文件夹。
 4. **展示与修正：** `GET /api/local/course-reports` 读每门课最新的有效 JSON；`web/src/LocalPlanning.tsx` 展示课程页和周视图。你的修正、新增、排序和隐藏只存在浏览器里，不改同步原件。
 5. **计算：** 成绩与「期末需要」在 `shared/course-calculations.ts`，每周排期在 `shared/planning.ts`，都是纯函数，有单元测试。
-6. **对话与复习：** `web/src/Agent.tsx` 通过 `/api/local/chats*` 流式对话，上下文是已选课程的同步数据（`scripts/lib/chat-context.mjs`，不含页面修正）。复习页可发预设提示词，把回复「存到复习」（`/api/local/revision-notes`）。
+6. **对话与复习：** `web/src/Agent.tsx` 通过 `/api/local/chats*` 流式对话，上下文是已选课程的同步数据（`scripts/lib/chat-context.mjs`，不含页面修正）。复习页可发预设提示词；单门课对话里已完成的回复可以「存到复习」（`/api/local/revision-notes`）。
 
 ## 采集范围
 

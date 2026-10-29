@@ -627,7 +627,9 @@ button.sync-tr:hover:enabled { background:var(--raised); }
   border:1px solid var(--border); border-radius:12px; }
 :root[data-bg="image"] :is(.sidebar,.canvas)::before { content:""; position:absolute; inset:0; z-index:-1; background:var(--panel-ground); pointer-events:none; }
 :root[data-bg="image"] .canvas::before { inset:-1px; border-radius:inherit; }
+:root[data-bg="image"] :is(.card,.local-week-grid,.needs,.local-confirm,.local-drawer,.menu,dialog) { background:var(--panel); }
 :root[data-bg="image"] .dialog-heading { background:var(--panel-strong); }
+:root[data-bg="image"] :is(.course-summary .weight-breakdown,.day-deadlines) { background:var(--panel-raised); }
 /* Blur only fixed or small surfaces; the page-sized canvas keeps just its translucent fill so scrolling stays cheap. */
 :root[data-glass] .sidebar::before,:root[data-glass] :is(dialog,.local-drawer,.menu,.dialog-heading) { -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
 /* A sticky heading over translucent content spans the full width, so it reads as one toolbar band. */

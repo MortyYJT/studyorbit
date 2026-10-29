@@ -13,7 +13,7 @@
 - **复习页（#236）：** 考试信息；三个预设提示词按钮（点击才发送，用模型额度）；单课程对话里完成的回复可「存到复习」，存 `.local/revision/notes.json`（0600），接口 `/api/local/revision-notes`。读不了文件时拒绝写入，避免覆盖。测试 `test/revision-store.test.ts`、`test/agent-request.test.ts`。
 - **添加任务：** 校外任务（不选课程）也可以；存在原来的 `coursework.local-planning.work.v1`。
 - **每周计划（#237，PR #246）：** `shared/planning.ts` 截止最早先排，从今天往后、按每天可用时间拆分到多天，按整分钟、最多排一年；排不下和已过截止列进「需要你处理」；周视图和月历显示同步来的截止日期（含你的修正）；任务可记已用时间和完成。测试 `test/planning.test.ts`。
-- **清理（#239）：** 删了 6 份过时文档和 131 条死 CSS 规则（同一页面状态下新旧样式逐元素对比，13 个状态 0 差异）；README、overview、scripts/README、OpenSpec 项目背景按代码重写；品牌名改为 StudyOrbit。
+- **清理（#239）：** 删了 6 份过时文档和约 130 条死 CSS 规则（13 个页面状态 × 6 种主题和背景组合，逐元素对比新旧计算样式，0 差异；同步弹窗和选课弹窗没测，因为打开会触发真实同步）；README、overview、scripts/README、OpenSpec 项目背景按代码重写；品牌名改为 StudyOrbit。
 - **验证：** `npm run check` 13 个文件、89 个测试通过；两份 PR 都经新上下文子代理两轮审查；无头浏览器用合成任务验证了桌面和 390 px 手机宽度。
 
 ## 未验证
