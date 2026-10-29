@@ -12,6 +12,8 @@ export type Facts = { due: string | null; score: number | null; maxScore: number
 export type Source = { platform: 'canvas' | 'ed' | 'handbook'; url: string | null; evidence: null };
 
 export function normaliseText(value: unknown): string;
+export type HandbookRow = { name: string; percent: number | null; rowText: string; start: number; end: number };
+export function parseHandbookRows(text: unknown): HandbookRow[];
 export function parseHandbookComponents(text: unknown): HandbookComponent[];
 export function slug(value: unknown): string;
 export function compareIds(a: string, b: string): number;
@@ -22,6 +24,8 @@ export function resolveRef(index: CollectedIndex, ref: Ref): Ref | null;
 export function canonicalRefs(index: CollectedIndex, refs: Ref[]): Ref[];
 export function backfillFacts(index: CollectedIndex, refs: Ref[]): Facts;
 export function buildSources(index: CollectedIndex, refs: Ref[]): Source[];
+export type PlatformIdentity = { platform: 'canvas' | 'ed'; id: string } | { bare: string };
+export function platformIdentities(item: { id?: unknown; refs?: unknown; sources?: unknown }): PlatformIdentity[];
 export function buildLegacyIds(
   previous: { version: 1 | 2; assessments: Array<{ id: string; name: string; [key: string]: unknown }>; legacyIds?: Record<string, string> } | null,
   current: { assessments: Array<{ id: string; name: string; refs?: Ref[] }> },

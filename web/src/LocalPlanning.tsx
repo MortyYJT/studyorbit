@@ -6,21 +6,22 @@ import type { RevisionNote } from '../../scripts/lib/revision-store.mjs';
 import { CourseDocumentSchema, toDisplayDocument } from '../../shared/course-data.js';
 import { bandTargets, calculateGrades, finalNeeded, parentGrade, type Band } from '../../shared/course-calculations.js';
 import { parseAvailability, schedulePlan } from '../../shared/planning.js';
+import { migrateStoredKeys, storageKeys } from './local-stores.js';
 
 type RecordValue = Record<string, unknown>;
 type Course = { id: string; name: string; subjectCode: string; term?: string };
 type Kind = 'exam' | 'quiz' | 'assignment' | 'presentation' | 'participation' | 'hurdle' | 'ungraded' | 'unknown';
-type Assessment = { key: string; name: string; due: string; weight: string; weightValue?: number; sourceZero: boolean; kind: Kind; score?: number; outOf?: number; group: string; parent: string; status: string; link: string; sources: { platform: string; link: string }[]; caution: boolean; hurdle: boolean; ungraded?: boolean; bonus?: boolean; rule?: string; scoring?: 'none' | 'points' | 'weighted' };
+type Assessment = { key: string; name: string; due: string; weight: string; weightValue?: number; sourceZero: boolean; kind: Kind; score?: number; outOf?: number; group: string; parent: string; status: string; link: string; sources: { platform: string; link: string }[]; caution: boolean; hurdle: boolean; ungraded?: boolean; bonus?: boolean; rule?: string; scoring?: 'none' | 'points' | 'weighted'; unsourced?: ('weight' | 'rule')[]; weightQuote?: string; ruleQuote?: string };
 type Correction = { kind?: Kind; nature?: 'regular' | 'ungraded' | 'bonus' | 'alternative'; weight?: number | null; due?: string | null; name?: string; score?: number | null; outOf?: number | null; parent?: string; status?: string; link?: string; mergeInto?: string; bonus?: boolean; rule?: string; scoring?: 'none' | 'points' | 'weighted'; hidden?: boolean };
 type CourseData = { course: Course; assessments: Assessment[]; materials: RecordValue[]; available: boolean };
-type ParentAssessment = { name: string; displayName?: string; kind?: Kind; weight?: number; children: Assessment[]; scoringRule: string; score?: number; outOf?: number; status?: string; due?: string; sourceKey?: string };
+type ParentAssessment = { name: string; displayName?: string; kind?: Kind; weight?: number; children: Assessment[]; scoringRule: string; score?: number; outOf?: number; status?: string; due?: string; sourceKey?: string; weightUnsourced?: boolean; weightQuote?: string };
 export type SidebarCourse = { id: string; code: string; name: string; graded?: number };
 // `due` is the deadline; `spent` and `done` record actual time (older entries have neither). courseId '' is a personal task.
 type Work = { key: string; courseId: string; courseCode: string; title: string; due: string; minutes: number; spent?: number; done?: boolean };
-const workKey = 'coursework.local-planning.work.v1';
-const correctionKey = 'coursework.local-planning.corrections.v1';
-const manualKey = 'coursework.local-planning.assessments.v1';
-const orderKey = 'coursework.local-planning.order.v1';
+const workKey = storageKeys.work;
+const correctionKey = storageKeys.corrections;
+const manualKey = storageKeys.manual;
+const orderKey = storageKeys.order;
 const targetKey = 'coursework.local-planning.targets.v1';
 const availabilityKey = 'coursework.local-planning.availability.v1';
 const record = (value: unknown): RecordValue => value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {};
@@ -50,6 +51,7 @@ function readWork(): Work[] {
     return Array.isArray(value) ? value.filter(item => item && typeof item.key === 'string' && typeof item.courseId === 'string' && typeof item.courseCode === 'string' && typeof item.title === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.due) && typeof item.minutes === 'number' && Number.isFinite(item.minutes) && item.minutes > 0).map(item => ({ ...item, spent: typeof item.spent === 'number' && Number.isFinite(item.spent) && item.spent >= 0 ? item.spent : undefined, done: item.done === true })) : [];
   } catch { return []; }
 }
+function readStore<T>(key: string): Record<string, T> { try { return record(JSON.parse(localStorage.getItem(key) ?? '{}')) as Record<string, T>; } catch { return {}; } }
 function readAvailability(): number[] { try { return parseAvailability(JSON.parse(localStorage.getItem(availabilityKey) ?? 'null')); } catch { return parseAvailability(null); } }
 function localDay(date = new Date()): string { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date); }
 function addDays(day: string, count: number): string { const date = new Date(`${day}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + count); return date.toISOString().slice(0, 10); }
@@ -65,19 +67,37 @@ function normalize(course: Course, value: unknown): CourseData {
     group: '', parent: item.parentId ? `${course.id}:${item.parentId}` : '', status: item.status === 'unknown' ? '' : item.status,
     link: item.sources.find(source => source.url)?.url ?? '', sources: item.sources.flatMap(source => source.url ? [{ platform: source.platform, link: source.url }] : []),
     caution: item.nature === 'alternative', hurdle: item.kind === 'hurdle', ungraded: item.nature === 'ungraded', bonus: item.nature === 'bonus', rule: item.rule ?? '', scoring: item.scoring,
+    unsourced: item.unsourced, weightQuote: item.weightQuote ?? undefined, ruleQuote: item.ruleQuote ?? undefined,
   }));
   return { course, assessments, materials: doc.materials.map(item => ({ 名称: item.name, 链接: item.url })), available: true };
+}
+// A correction that supplies a value removes the 「无出处」 tag; a quote is shown only while the value is the synced one.
+function correctedSources(item: Assessment, change: RecordValue): Pick<Assessment, 'unsourced' | 'weightQuote' | 'ruleQuote'> {
+  const weight = number(change.weight);
+  const weightSupplied = weight !== undefined && weight >= 0 && weight <= 100;
+  const ruleSupplied = typeof change.rule === 'string' && change.rule.trim() !== '';
+  const weightChanged = change.weight === null ? item.weightValue !== undefined : weightSupplied && weight !== item.weightValue;
+  const ruleChanged = typeof change.rule === 'string' && change.rule.trim() !== (item.rule ?? '').trim();
+  return {
+    unsourced: item.unsourced?.filter(field => !(field === 'weight' ? weightSupplied : ruleSupplied)),
+    weightQuote: weightChanged ? undefined : item.weightQuote, ruleQuote: ruleChanged ? undefined : item.ruleQuote,
+  };
 }
 function assessmentParents(_course: CourseData, visible: Assessment[]): ParentAssessment[] {
   return visible.flatMap(source => {
     const children = visible.filter(item => item.parent === source.key && !item.caution);
     return children.length ? [{ name: source.key, displayName: source.name, sourceKey: source.key, weight: source.weightValue,
-      kind: source.kind, children, scoringRule: source.scoring ?? 'none', score: source.score, outOf: source.outOf, status: source.status, due: source.due }] : [];
+      kind: source.kind, children, scoringRule: source.scoring ?? 'none', score: source.score, outOf: source.outOf, status: source.status, due: source.due,
+      weightUnsourced: source.unsourced?.includes('weight') ?? false, weightQuote: source.weightQuote }] : [];
   });
 }
 const ringLength = 439.8;
 const averageText = (value: number) => `${value.toFixed(1)}%`;
 const weightText = (value: number) => `${value.toFixed(2).replace(/\.00$/, '')}%`;
+// Contract v2: a weight or rule the sync could not trace to the collected data is shown as 「无出处」 (decision #247).
+function Unsourced({ zh }: { zh: boolean }) {
+  return <span className="unsourced" title={zh ? '同步时没有在采集到的课程数据里找到依据，可自行核对后修正' : 'The sync found no source for this in the collected course data; check it and correct it if needed'}>{zh ? '无出处' : 'No source'}</span>;
+}
 function readTargets(): Record<string, Band> {
   try { const value = record(JSON.parse(localStorage.getItem(targetKey) ?? '{}')); return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, Band] => typeof entry[1] === 'string' && entry[1] in bandTargets)); }
   catch { return {}; }
@@ -124,6 +144,14 @@ function weightRows(assessments: Assessment[], parents: ParentAssessment[]) {
     return weight !== undefined && weight > 0 ? [{ key: item.key, name: parent?.displayName || item.name, weight }] : [];
   });
 }
+// Counted top-level items whose weight was cleared as unsourced and not supplied by a correction.
+function unsourcedWeightRows(assessments: Assessment[], parents: ParentAssessment[]) {
+  return assessments.filter(item => !item.parent && !item.bonus && !item.ungraded && !item.caution).flatMap(item => {
+    const parent = parents.find(group => group.sourceKey === item.key);
+    const unsourced = parent ? parent.weightUnsourced && parent.weight === undefined : item.unsourced?.includes('weight') && item.weightValue === undefined;
+    return unsourced ? [{ key: item.key, name: parent?.displayName || item.name }] : [];
+  });
+}
 const identifiedWeight = (assessments: Assessment[], parents: ParentAssessment[]) => weightRows(assessments, parents).reduce((sum, item) => sum + item.weight, 0);
 function WeightBreakdown({ assessments, parents, zh }: { assessments: Assessment[]; parents: ParentAssessment[]; zh: boolean }) {
   const rows = weightRows(assessments, parents);
@@ -131,7 +159,8 @@ function WeightBreakdown({ assessments, parents, zh }: { assessments: Assessment
   let used = 0;
   return <section className="weight-breakdown"><h2>{zh ? '分数占比' : 'Assessment weights'}</h2><div className="weight-bar-row"><div className="weight-bar" role="img" aria-label={`${zh ? '已识别课程占比' : 'Identified weight'} ${total}/100`}>
     {rows.map((item, index) => { const width = Math.max(0, Math.min(item.weight, 100 - used)); used += item.weight; return <span key={item.key} className={`weight-segment weight-color-${index % 6}`} style={{ width: `${width}%`, '--i': index } as CSSProperties} title={`${item.name}: ${item.weight}%`} />; })}
-    </div><strong>{Number(total.toFixed(2))}/100</strong></div><div className="weight-legend">{rows.map((item, index) => <span key={item.key}><i className={`weight-color-${index % 6}`} />{item.name} {item.weight}%</span>)}</div></section>;
+    </div><strong>{Number(total.toFixed(2))}/100</strong></div><div className="weight-legend">{rows.map((item, index) => <span key={item.key}><i className={`weight-color-${index % 6}`} />{item.name} {item.weight}%</span>)}
+      {unsourcedWeightRows(assessments, parents).map(item => <span key={item.key} className="unsourced-row"><i aria-hidden="true" />{item.name} —<Unsourced zh={zh} /></span>)}</div></section>;
 }
 
 export function LocalPlanning({ language, refreshVersion, courseId, onCourse, onBack, onCourses, onAsk, syncIssues }: { language: Language; refreshVersion: number; courseId?: string; onCourse: (id: string) => void; onBack: () => void; onCourses?: (courses: SidebarCourse[]) => void; onAsk?: (courseId: string, prompt?: string) => void; syncIssues: { id: string; status: string; reason: string }[] }) {
@@ -139,9 +168,9 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const [courses, setCourses] = useState<CourseData[]>([]);
   const [error, setError] = useState('');
   const [work, setWork] = useState<Work[]>(readWork);
-  const [corrections, setCorrections] = useState<Record<string, Correction>>(() => { try { return record(JSON.parse(localStorage.getItem(correctionKey) ?? '{}')) as Record<string, Correction>; } catch { return {}; } });
-  const [manual, setManual] = useState<Record<string, Assessment[]>>(() => { try { return record(JSON.parse(localStorage.getItem(manualKey) ?? '{}')) as Record<string, Assessment[]>; } catch { return {}; } });
-  const [order, setOrder] = useState<Record<string, string[]>>(() => { try { return record(JSON.parse(localStorage.getItem(orderKey) ?? '{}')) as Record<string, string[]>; } catch { return {}; } });
+  const [corrections, setCorrections] = useState<Record<string, Correction>>(() => readStore<Correction>(correctionKey));
+  const [manual, setManual] = useState<Record<string, Assessment[]>>(() => readStore<Assessment[]>(manualKey));
+  const [order, setOrder] = useState<Record<string, string[]>>(() => readStore<string[]>(orderKey));
   const [adding, setAdding] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
   const [availability, setAvailability] = useState<number[]>(readAvailability);
@@ -189,7 +218,14 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         const data: { courses: Course[]; reports: { id: string; report: unknown }[] } = await response.json();
         let ids: string[] = [];
         try { const selected: unknown = JSON.parse(localStorage.getItem('coursework.selected-course-ids') ?? '[]'); if (Array.isArray(selected)) ids = selected.filter((id): id is string => typeof id === 'string'); } catch { /* No saved selection. */ }
-        if (live) { setCourses(data.courses.filter(course => ids.includes(course.id)).map(course => normalize(course, data.reports.find(item => item.id === course.id)?.report))); setError(''); }
+        if (!live) return;
+        // Contract v2 (decision #278): move local keys to the new assessment IDs once, before anything reads them.
+        const migrations = data.reports.flatMap(item => { const parsed = CourseDocumentSchema.safeParse(item.report);
+          return parsed.success && parsed.data.version === 2 && parsed.data.course.id === item.id ? [{ courseId: item.id, legacyIds: parsed.data.legacyIds }] : []; });
+        const migrated = migrateStoredKeys(localStorage, migrations);
+        if (migrated.changed) { setCorrections(readStore<Correction>(correctionKey)); setManual(readStore<Assessment[]>(manualKey)); setOrder(readStore<string[]>(orderKey)); setWork(readWork()); }
+        if (migrated.failed) setSaveError(true);
+        setCourses(data.courses.filter(course => ids.includes(course.id)).map(course => normalize(course, data.reports.find(item => item.id === course.id)?.report))); setError('');
       } catch { if (live) setError(zh ? '无法读取本地课程数据，请先同步课程。' : 'Could not load local course data. Sync courses first.'); }
     }
     void load(); return () => { live = false; };
@@ -199,7 +235,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const withCorrections = (original: CourseData) => ({ ...original, assessments: [...original.assessments, ...(Array.isArray(manual[original.course.id]) ? manual[original.course.id] : [])].map(item => {
     const change = record(corrections[item.key]); const overrideWeight = number(change.weight);
     const validKind = ['exam', 'quiz', 'assignment', 'presentation', 'participation', 'hurdle', 'ungraded', 'unknown'].includes(String(change.kind)) ? change.kind as Kind : item.kind;
-    return { ...item, kind: validKind, ...(typeof change.name === 'string' && change.name ? { name: change.name } : {}),
+    return { ...item, kind: validKind, ...correctedSources(item, change), ...(typeof change.name === 'string' && change.name ? { name: change.name } : {}),
       ...(change.weight === null ? { weightValue: undefined, weight: '', sourceZero: false } : overrideWeight !== undefined && overrideWeight >= 0 && overrideWeight <= 100 ? { weightValue: overrideWeight, weight: `${overrideWeight}%`, sourceZero: overrideWeight === 0 } : {}),
       ...(change.score === null ? { score: undefined } : number(change.score) !== undefined ? { score: number(change.score) } : {}),
       ...(change.outOf === null ? { outOf: undefined } : number(change.outOf) !== undefined ? { outOf: number(change.outOf) } : {}),
@@ -212,7 +248,8 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
   const groupParents = (course: CourseData, items: Assessment[]) => assessmentParents(course, items).map(parent => {
     const change = corrections[`${course.course.id}:group:${parent.name}`];
     return change ? { ...parent, displayName: change.name || parent.displayName || parent.name, kind: change.kind ?? parent.kind, scoringRule: change.scoring ?? parent.scoringRule, weight: change.weight === null ? undefined : change.weight ?? parent.weight,
-      score: change.score === null ? undefined : change.score ?? parent.score, outOf: change.outOf === null ? undefined : change.outOf ?? parent.outOf, status: change.status ?? parent.status, due: change.due === null ? undefined : change.due ?? parent.due } : parent;
+      score: change.score === null ? undefined : change.score ?? parent.score, outOf: change.outOf === null ? undefined : change.outOf ?? parent.outOf, status: change.status ?? parent.status, due: change.due === null ? undefined : change.due ?? parent.due,
+      weightUnsourced: parent.weightUnsourced && typeof change.weight !== 'number', weightQuote: change.weight !== undefined && change.weight !== parent.weight ? undefined : parent.weightQuote } : parent;
   });
   const gradingInputs = (items: Assessment[], groups: ParentAssessment[]) => ({
     assessments: items.filter(item => {
@@ -322,7 +359,7 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
           // One row per assessment, as in the 10-15 prototype: name and type, weight, score (or due date), status. Details open in the drawer.
           const row = (item: Assessment, siblings: string[]) => <button key={item.key} className="arow" onClick={() => openDrawer(item, siblings)}>
             <span className="aname">{item.name}{item.kind !== 'unknown' && item.kind !== 'ungraded' && <span className={`kind ${item.kind}`}>{kindName[item.kind]}</span>}{item.bonus && <span className="kind">{zh ? '加分' : 'Bonus'}</span>}{work.some(entry => entry.key === item.key) && <span className="planned">{zh ? '已排期' : 'Planned'}</span>}</span>
-            <span className="num">{item.bonus ? (item.outOf !== undefined ? `≤ ${item.outOf} ${zh ? '分' : 'pts'}` : '—') : item.sourceZero ? '0%' : item.weight || '—'}</span>
+            <span className="num">{item.bonus ? (item.outOf !== undefined ? `≤ ${item.outOf} ${zh ? '分' : 'pts'}` : '—') : item.sourceZero ? '0%' : item.weight || '—'}{item.unsourced?.includes('weight') && <Unsourced zh={zh} />}</span>
             <span className="num muted">{item.score !== undefined ? scoreText(item.score, item.outOf) : shortDue(item.due)}</span>
             <span className="muted">{statusLabel(corrections[item.key]?.status || item.status || (item.score !== undefined ? 'graded' : 'unknown'), zh)}</span></button>;
           const scoredParticipation = (item: Assessment) => item.kind === 'participation' && !item.ungraded && (item.bonus === true || !item.sourceZero && (item.weightValue ?? 0) > 0);
@@ -340,13 +377,13 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
           const parentRow = (entry: { key: string; parent?: ParentAssessment }, siblingKeys: string[]) => { const parent = entry.parent!; const grade = parentGrade(parent); const children = sorted(parent.children, item => item.key); const childOrder = children.map(item => item.key);
             return <details className="assessment-parent" key={entry.key}><summary className="arow">
               <span className="aname"><i className="chevron" aria-hidden="true" />{parent.displayName || parent.name}{parent.kind && parent.kind !== 'unknown' && parent.kind !== 'ungraded' && <span className={`kind ${parent.kind}`}>{kindName[parent.kind]}</span>}<small className="count">{parent.children.length} {zh ? '项' : 'items'}</small></span>
-              <span className="num">{parent.weight === undefined ? '—' : `${parent.weight}%`}</span>
+              <span className="num">{parent.weight === undefined ? '—' : `${parent.weight}%`}{parent.weightUnsourced && <Unsourced zh={zh} />}</span>
               <span className="num muted">{grade ? scoreText(grade.score, grade.outOf) : shortDue(parent.due ?? '')}</span>
               <span className="muted">{statusLabel(parent.status || (grade ? 'graded' : 'unknown'), zh)}</span></summary>
               <div className="assessment-children">
                 {children.map(item => row(item, childOrder))}
                 <div className="parent-actions">
-                  <button className="small ghost" onClick={() => { openDrawer({ key: entry.key, name: parent.displayName || parent.name, due: parent.due || '', weight: parent.weight === undefined ? '' : `${parent.weight}%`, sourceZero: false, kind: 'assignment', group: parent.name, status: parent.status || '', link: '', sources: [], parent: '', caution: false, hurdle: false }, undefined); }}>{zh ? '安排整个作业' : 'Plan assignment'}</button>
+                  <button className="small ghost" onClick={() => { openDrawer({ key: entry.key, name: parent.displayName || parent.name, due: parent.due || '', weight: parent.weight === undefined ? '' : `${parent.weight}%`, sourceZero: false, kind: 'assignment', group: parent.name, status: parent.status || '', link: '', sources: [], parent: '', caution: false, hurdle: false, unsourced: parent.weightUnsourced ? ['weight'] : [], weightQuote: parent.weightQuote }, undefined); }}>{zh ? '安排整个作业' : 'Plan assignment'}</button>
                   <button className="small ghost" type="button" disabled={siblingKeys.indexOf(entry.key) <= 0} onClick={() => move(entry.key, siblingKeys, -1)}>{zh ? '上移' : 'Move up'}</button>
                   <button className="small ghost" type="button" disabled={siblingKeys.indexOf(entry.key) >= siblingKeys.length - 1} onClick={() => move(entry.key, siblingKeys, 1)}>{zh ? '下移' : 'Move down'}</button>
                   <button className="small ghost" onClick={() => saveCorrections({ ...corrections, [parent.sourceKey!]: { ...corrections[parent.sourceKey!], hidden: true } })}>{zh ? '移除' : 'Remove'}</button>
@@ -386,7 +423,9 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         return <section className="revision">
           <h2>{zh ? '考试' : 'Exams'}</h2>
           {exams.length ? <div className="revision-exams">{exams.map(item => <div className="field" key={item.key}><span className="k">{item.name}{item.caution && <small className="muted"> · {zh ? '替代考试' : 'Alternative'}</small>}</span>
-            <span>{longDue(item.due)} · {item.sourceZero ? '0%' : item.weight || (zh ? '权重未知' : 'weight unknown')}{item.rule && <small className="muted block">{item.rule}</small>}</span></div>)}</div>
+            <span>{longDue(item.due)} · {item.sourceZero ? '0%' : item.weight || (zh ? '权重未知' : 'weight unknown')}{item.unsourced?.includes('weight') && <Unsourced zh={zh} />}
+              {item.rule ? <small className="muted block">{item.rule}</small> : item.unsourced?.includes('rule') && <small className="muted block">{zh ? '规则未知' : 'Rule unknown'}</small>}
+              {item.unsourced?.includes('rule') && <Unsourced zh={zh} />}</span></div>)}</div>
             : <p className="muted">{zh ? '这门课还没有识别到考试。' : 'No exam has been identified for this course.'}</p>}
           {onAsk && <div className="revision-actions">{prompts.map(item => <button key={item.label} className="small" onClick={() => onAsk(selected.course.id, item.prompt)} title={zh ? '打开对话页并发送，会使用模型额度' : 'Opens the Agent page and sends; uses model credit'}>{item.label}</button>)}</div>}
           <h2>{zh ? '复习笔记' : 'Revision notes'}</h2>
@@ -404,11 +443,13 @@ export function LocalPlanning({ language, refreshVersion, courseId, onCourse, on
         return <div className={`local-drawer-overlay${drawerClosing ? ' closing' : ''}`} role="presentation" onClick={event => { if (event.target === event.currentTarget) close(); }}><section className="local-drawer" role="dialog" aria-modal="true" aria-label={item.name}>
         <div className="dialog-heading"><div><small>{selected.course.subjectCode}</small><h2>{item.name}</h2></div><button className="ghost" onClick={close}>{zh ? '关闭' : 'Close'}</button></div>
         <div className="field"><span className="k">{zh ? '截止' : 'Due'}</span><span>{longDue(item.due)}</span></div>
-        <div className="field"><span className="k">{zh ? '权重' : 'Weight'}</span><span>{item.sourceZero ? '0%' : item.weight || '—'}</span></div>
+        <div className="field"><span className="k">{zh ? '权重' : 'Weight'}</span><span>{item.sourceZero ? '0%' : item.weight || '—'}{item.unsourced?.includes('weight') && <Unsourced zh={zh} />}
+          {item.weightQuote && <q className="source-quote" title={zh ? '同步时核对过的原文' : 'Source text checked during sync'}>{item.weightQuote}</q>}</span></div>
         {siblings && <div className="field"><span className="k">{zh ? '类型' : 'Type'}</span><span>{kindName[item.kind] ?? '—'}{item.bonus ? ` · ${zh ? '加分' : 'Bonus'}` : item.caution ? ` · ${zh ? '替代考试' : 'Alternative'}` : item.ungraded ? ` · ${zh ? '不计分' : 'Ungraded'}` : ''}</span></div>}
         <div className="field"><span className="k">{zh ? '分数' : 'Score'}</span><span>{item.score === undefined ? '—' : `${item.score}${item.outOf !== undefined ? ` / ${item.outOf}` : ''}${item.outOf ? ` · ${scoreText(item.score, item.outOf)}` : ''}`}</span></div>
         {siblings && <div className="field"><span className="k">{zh ? '状态' : 'Status'}</span><span>{statusLabel(corrections[item.key]?.status || item.status || (item.score !== undefined ? 'graded' : 'unknown'), zh)}</span></div>}
-        {item.rule && <p className="drawer-note">{item.rule}</p>}
+        {item.rule ? <p className="drawer-note">{item.rule}{item.ruleQuote && <q className="source-quote" title={zh ? '同步时核对过的原文' : 'Source text checked during sync'}>{item.ruleQuote}</q>}</p>
+          : item.unsourced?.includes('rule') && <p className="drawer-note">{zh ? '规则未知' : 'Rule unknown'}<Unsourced zh={zh} /></p>}
         {(item.link || item.sources.length > 0) && <p className="drawer-links">{item.link && !item.sources.some(source => source.link === item.link) && <><a href={item.link} target="_blank" rel="noreferrer">{zh ? '我的链接' : 'My link'}</a>{item.sources.length > 0 && ' · '}</>}{item.sources.map((source, index) => <span key={`${source.link}-${index}`}>{index > 0 && ' · '}<a href={source.link} target="_blank" rel="noreferrer">{source.platform.toLowerCase() === 'ed' ? 'Ed' : source.platform.toLowerCase() === 'canvas' ? 'Canvas' : source.platform.toLowerCase() === 'handbook' ? 'Handbook' : (zh ? '来源' : 'Source')}</a></span>)}</p>}
         {all.filter(other => corrections[other.key]?.mergeInto === item.key).map(other => <div key={other.key} className="local-group"><span>{zh ? '已合并来源' : 'Merged source'}: {other.name} {other.link && <a href={other.link} target="_blank" rel="noreferrer">{zh ? '查看' : 'View'}</a>}</span><button className="small" onClick={() => { const next = { ...corrections }; const change = { ...next[other.key] }; delete change.mergeInto; next[other.key] = change; saveCorrections(next); }}>{zh ? '撤销合并' : 'Undo merge'}</button></div>)}
         <h3>{zh ? '安排学习' : 'Plan study'}</h3>
