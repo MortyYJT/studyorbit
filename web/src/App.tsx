@@ -70,7 +70,9 @@ export function App() {
     setTimeZone(reply.settings.timeZone);
     setFrameworkLabel(reply.available.institutions.find(item => item.id === reply.settings.institution)?.frameworkLabel ?? null);
   }
-  useEffect(() => { let live = true; void fetchSourceSettings().then(reply => { if (live && reply) applySourceSettings(reply); }); return () => { live = false; }; }, []);
+  // Read again whenever the course data reloads (after a sync, a course fetch or a settings save), so a failed read
+  // does not keep the browser's zone for the whole session.
+  useEffect(() => { let live = true; void fetchSourceSettings().then(reply => { if (live && reply) applySourceSettings(reply); }); return () => { live = false; }; }, [courseRefresh]);
   /** Saved source settings: a new time zone or institution changes the course pages, so they reload. */
   function sourceSettingsSaved(reply: SourceSettingsReply) { applySourceSettings(reply); setCourseRefresh(value => value + 1); }
   // Page changes run as a View Transition (see go); other view changes, or browsers without it, fade the canvas in.

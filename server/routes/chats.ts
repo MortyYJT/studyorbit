@@ -69,14 +69,16 @@ export function chatsRoute({ projectDir, desktopDir, env, sourceSetup }: RouteCo
         const config = await resolveAnalysisConfig(projectDir, env);
         const problem = configProblem(config);
         if (problem) { json(400, { error: problem }); return; }
+        // The institution of the source settings gives the wording and the time zone of "today" and of due dates. Read
+        // before the message is saved, so unusable settings leave no unanswered message behind.
+        let setup;
+        try { setup = await sourceSetup(); } catch { json(500, { error: 'SOURCE_SETTINGS_UNREADABLE' }); return; }
         if (controller.signal.aborted) return;
         const scope = courseIds ?? chat.courseIds;
         const userMessage = { role: 'user' as const, content, at: new Date().toISOString() };
         const updated = await appendMessages(projectDir, id, [userMessage], { courseIds: scope });
         if (!updated) { json(404, { error: 'CHAT_NOT_FOUND' }); return; }
         if (controller.signal.aborted) { res.end(); return; }
-        // The institution of the source settings gives the wording and the time zone of "today" and of due dates.
-        const setup = await sourceSetup();
         let documents: CourseDocument[] = [], known: { id: string; code?: string; name?: string }[] = [];
         try {
           const loaded = await loadCourseReports(projectDir, { desktop: desktopDir, institution: setup.institution, canvasOrigin: setup.settings.canvasOrigin });

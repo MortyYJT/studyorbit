@@ -138,6 +138,8 @@ describe('the generic institution', () => {
     expect(custom.subjectCode('CS/101 Fall')).toBe('CS/101');
     expect(custom.subjectCode('Community')).toBeNull();
     expect(custom.subjectCode(`CS/101 ${'x'.repeat(100)}`)).toBeNull();
+    // A captured code the sync would refuse is never a candidate (fresh-context review of PR 3).
+    expect(createGenericInstitution({ codePattern: '^(.+)$' }).subjectCode('AB\u0007C')).toBeNull();
     expect(filterSubjects([{ id: '1', code: 'CS101' }, { id: '2', code: null }, { id: '3' }], generic)).toEqual([{ id: '1', code: 'CS101', subjectCode: 'CS101' }]);
     expect(generic.isSubjectCode('CS/101')).toBe(true);
     expect(generic.isSubjectCode(' CS101')).toBe(false);

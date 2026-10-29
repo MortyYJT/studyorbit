@@ -1,6 +1,6 @@
 // Parsing of the UniMelb Handbook assessment page (the `unimelb` framework source; openspec change generic-adapters,
 // design §4), moved unchanged from scripts/lib/course-refs.mjs (contract v2, course-contract-v2 design §2).
-import { normaliseText } from '../../lib/course-refs.mjs';
+import { normaliseText } from '../../lib/normalise-text.mjs';
 
 const PERCENT_CELL = /^(\d+(?:\.\d+)?)\s*%$/;
 const NO_PERCENT_CELLS = new Set(['n/a', 'nil', '-', '—']);

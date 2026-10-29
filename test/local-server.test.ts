@@ -260,6 +260,16 @@ describe('chats', () => {
     await expect.poll(async () => (await get(`/api/local/chats/${id}`)).json().running).toBe(false);
     model.release();
   });
+
+  it('saves no message when the source settings cannot be read', async () => {
+    await configure('https://model.example.invalid/v1/chat/completions');
+    const id = (await write('POST', '/api/local/chats', {})).json().id;
+    await mkdir(join(projectDir, '.local', 'config'), { recursive: true });
+    await writeFile(join(projectDir, '.local', 'config', 'sources.json'), '{not json');
+    const reply = await write('POST', `/api/local/chats/${id}/messages`, { content: 'Hi' });
+    expect([reply.status, reply.json()]).toEqual([500, { error: 'SOURCE_SETTINGS_UNREADABLE' }]);
+    expect((await get(`/api/local/chats/${id}`)).json().messages).toEqual([]);
+  });
 });
 
 describe('course-sync', () => {

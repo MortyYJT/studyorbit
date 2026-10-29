@@ -44,6 +44,9 @@ export function compileCodePattern(pattern) {
   return { ok: true, regex };
 }
 
+/** Any non-empty trimmed string without control characters, up to 100 characters (folders are sanitised). */
+const isSubjectCode = code => typeof code === 'string' && code.length > 0 && code.length <= CODE_INPUT_LIMIT && code === code.trim() && !/[\u0000-\u001f\u007f]/.test(code);
+
 /**
  * A generic institution for the owner's settings: `codePattern` (string or null) and `timeZone` (an IANA name, or null
  * for the system's zone at the time of use).
@@ -62,10 +65,10 @@ export function createGenericInstitution({ codePattern = null, timeZone = null }
       if (!value || value.length > CODE_INPUT_LIMIT) return null;
       if (!pattern) return DEFAULT_CODE.test(value) ? value : null;
       const code = pattern.regex.exec(value)?.[1]?.trim();
-      return code && code.length <= CODE_INPUT_LIMIT ? code : null;
+      // A candidate must also pass the sync's own check, or selecting it would make the whole sync invalid.
+      return code && isSubjectCode(code) ? code : null;
     },
-    /** Any non-empty trimmed string without control characters, up to 100 characters (folders are sanitised). */
-    isSubjectCode: code => typeof code === 'string' && code.length > 0 && code.length <= CODE_INPUT_LIMIT && code === code.trim() && !/[\u0000-\u001f\u007f]/.test(code),
+    isSubjectCode,
     /** The first `20xx` of the term as the year; never a session. */
     termKey(term) {
       const year = /20\d{2}/.exec(typeof term === 'string' ? term : '')?.[0] ?? null;

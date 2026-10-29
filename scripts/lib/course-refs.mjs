@@ -3,29 +3,11 @@
 // Pure functions; no I/O.
 import { CourseDocumentV2Schema } from '../../shared/course-data.ts';
 import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
+import { normaliseText } from './normalise-text.mjs';
 
-const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ' };
-
-/**
- * Normalisation shared by framework reference matching and quote verification: strip HTML tags, decode the common
- * entities, NFKC, lowercase, unify quote and dash characters, collapse all whitespace to one space, trim.
- */
-export function normaliseText(value) {
-  return String(value ?? '')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&(?:(amp|lt|gt|quot|#39|nbsp)|#(\d+)|#x([0-9a-f]+));/gi, (match, name, dec, hex) => {
-      if (name) return ENTITIES[name.toLowerCase()];
-      const code = dec ? Number(dec) : parseInt(hex, 16);
-      return code <= 0x10ffff ? String.fromCodePoint(code) : match;
-    })
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[‘’‚‛′]/g, "'")
-    .replace(/[“”„‟″]/g, '"')
-    .replace(/[‐‑‒–—−]/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+// The normalisation lives in its own module without imports, so the framework parsers can use it without importing
+// this module (which imports the institution registry, which imports the parsers).
+export { normaliseText };
 
 /** NFKC, lowercase, every run of non-alphanumeric characters (Unicode letters and digits count) as one `-`; empty → `item`. */
 export function slug(value) {

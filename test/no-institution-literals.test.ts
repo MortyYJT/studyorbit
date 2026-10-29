@@ -76,3 +76,15 @@ describe('generic modules contain no institution literals', () => {
     for (const entry of ALLOWED) expect(entry.reason.length, entry.file).toBeGreaterThan(20);
   });
 });
+
+describe('institution modules load in any order', () => {
+  it('imports every plugin and registry module first in a fresh process without an initialisation error', async () => {
+    const { spawnSync } = await import('node:child_process');
+    const first = ['scripts/institutions/unimelb/index.mjs', 'scripts/institutions/unimelb/handbook-source.mjs', 'scripts/institutions/unimelb/handbook-parse.mjs',
+      'scripts/institutions/registry.mjs', 'scripts/institutions/generic.mjs', 'scripts/lib/course-refs.mjs', 'scripts/lib/source-settings.mjs', 'scripts/sources/registry.mjs'];
+    for (const module of first) {
+      const run = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(join(repo, module))});`], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '' } });
+      expect([run.status, run.stderr.trim()], module).toEqual([0, '']);
+    }
+  });
+});
