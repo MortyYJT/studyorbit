@@ -176,8 +176,8 @@
       "gold": {
         "answer": "不可能：剩下的部分全拿满分也只有 88.66 分。",
         "numbers": [],
-        "facts": [["不可能", "无法", "达不到", "做不到", "没有可能", "不太可能", "unreachable", "impossible", "not possible"]],
-        "forbidden": [], "refusal": false, "expectTools": ["final_needed"]
+        "facts": [["不可能", "无法达到", "无法拿到", "达不到", "拿不到", "做不到", "没有可能", "unreachable", "impossible", "not possible"]],
+        "forbidden": ["无法确定"], "refusal": false, "expectTools": ["final_needed"]
       }
     },
     {
