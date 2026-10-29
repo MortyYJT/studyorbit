@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadCourseReports } from '../scripts/lib/course-reports.mjs';
+import { loadCourseReports, newestCourseDocument } from '../scripts/lib/course-reports.mjs';
 
 // Synthetic course folders in a temporary directory; never the owner's Desktop.
 const course = { id: '900001', code: 'SYNT10001', name: 'Synthetic Course', term: '2026 Semester 2' };
@@ -53,5 +53,18 @@ describe('loadCourseReports', () => {
     const invalid = { ...v2, assessments: [{ ...v2.assessments[0], unsourced: ['score'] }] };
     await files([['分数结构.json', v1], ['分数结构-2.json', invalid]]);
     expect(await load()).toEqual([{ id: course.id, report: v1 }]);
+  });
+});
+
+describe('newestCourseDocument', () => {
+  it('returns the newest valid document of the course in a folder, of either version', async () => {
+    await files([['分数结构.json', v2], ['分数结构-2.json', v1], ['分数结构-3.json', { ...v1, course: { ...course, id: '900002' } }], ['notes.json', v2]]);
+    expect(await newestCourseDocument(folder, course.id)).toEqual(v1);
+  });
+
+  it('returns null for a missing folder or no valid file', async () => {
+    expect(await newestCourseDocument(join(root, 'missing'), course.id)).toBeNull();
+    await files([['分数结构.json', { version: 3 }]]);
+    expect(await newestCourseDocument(folder, course.id)).toBeNull();
   });
 });

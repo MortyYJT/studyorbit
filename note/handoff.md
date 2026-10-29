@@ -5,8 +5,8 @@
 - **最后更新：** 2026-10-30，Claude。
 - **主线：** `main` 含 PR #245（期末需要、复习页、添加任务）、#246（每周计划）、#247（全局清理，#239）；规则精简为单一文件 `CLAUDE.md`（#241）。
 - **项目是什么：** StudyOrbit（仓库 `MortyYJT/studyorbit`，本地 `origin` 已指向新地址），本地优先的墨大课业原型。Edge 已登录会话发现 Canvas 课程 → 脚本采集 Canvas / Ed / Handbook → 模型整理成课程 JSON（`shared/course-data.ts` 校验）→ 网页展示成绩、计划、复习、Agent 对话。本地接口只在 Vite 开发服务器（`vite.config.ts`）。
-- **OpenSpec：** 进行中的 change：`course-contract-v2`（课程 JSON v2）。第 1 部分（v2 存盘 Schema、模型输出 Schema、v1/v2 兼容读取，`claude/contract-v2-schemas`）已开 PR 待合并；同步仍写 v1，第 2、3 部分见其 `tasks.md`。
-- **本地服务与分阶段同步（提案）：** `openspec/changes/local-server-sync-pipeline/`（决定 #340–#352，待你复核）：`/api/local/*` 拆成独立服务（端口 5190，Vite 只代理），`node:sqlite`（Node 24 中为 release candidate，v24.15.0 起）存同步任务和快照，同步分采集 → 分析 → 校验 → 合并四段，可从检查点续跑；只写了方案，未实现。
+- **OpenSpec：** 进行中的 change：`course-contract-v2`（课程 JSON v2）。第 1 部分（v2 存盘 Schema、兼容读取）已合并（PR #259）。第 2 部分（模型输出 v2 接入同步：Handbook 考核项解析、引用校验、代码生成 ID、回填截止/得分/状态、`legacyIds`、存盘写 v2；分支 `claude/contract-v2-sync`）已开 PR 待审查合并，决定 #300–#305；引文核对、本地键迁移、「无出处」显示和评测按平台身份配对在第 3 部分，见其 `tasks.md`。合并后新同步写 v2，页面仍按 v1/v2 兼容读取；本地修正要等第 3 部分迁移才会跟到新 ID。
+- **本地服务与分阶段同步（提案）：** `openspec/changes/local-server-sync-pipeline/`（决定 #340–#359，待你复核）：`/api/local/*` 拆成独立服务（端口 5190，Vite 只代理），`node:sqlite`（Node 24 中为 release candidate，v24.15.0 起）存同步任务和快照，同步分采集 → 分析 → 校验 → 合并四段，可从检查点续跑；只写了方案，未实现。
 - **现行规格：** 在 `openspec/specs/`（`grade-target`、`revision`、`weekly-plan`）。进度表在 `note/product/roadmap.md`。
 
 ## 已完成
@@ -29,6 +29,7 @@
 1. 你：打开 `localhost:5173`，在复习页点一个预设按钮，确认对话正常，把一条回复「存到复习」。
 2. L0/L1/L2（#238 先不做）：以后做时先定方案；Claude 的立场是执行器只在合成演示课程上跑。
 3. 小问题（未排期）：`RichText` 遇到「标题 + 列表」混在一段时列表符号原样显示。
+4. 工具调用对话 + MCP：OpenSpec 变更 `chat-tools-mcp`（决定 #320–#332，待你复核），按其 `tasks.md` 分 4 个 PR 实现；#330 需要你定 MCP 是否改用 SDK v2。
 
 ## 等用户决定
 

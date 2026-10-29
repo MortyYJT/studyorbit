@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { filterSubjects } from './lib/course-list.mjs';
 import { courseOutputSchema, buildAnalysisPrompt } from './lib/course-analysis.mjs';
 import { analyseWithRepair, settleCourse, validateAnalysis } from './lib/course-validation.mjs';
+import { newestCourseDocument } from './lib/course-reports.mjs';
 import { configProblem, resolveAnalysisConfig } from './lib/llm-config.mjs';
 import { analyse, counts } from './lib/llm-providers.mjs';
 
@@ -151,16 +152,13 @@ export function createCourseSyncRunner(projectDir) {
           try {
         const canvasData = JSON.parse(await readFile(canvasPath, 'utf8'));
         const edData = JSON.parse(await readFile(edPath, 'utf8'));
-        const instructions = buildAnalysisPrompt({ course, term,
-          canvas: canvasData,
-          ed: edData,
-          handbook: JSON.parse(await readFile(handbookPath, 'utf8')),
-        });
+        const handbookData = JSON.parse(await readFile(handbookPath, 'utf8'));
+        const instructions = buildAnalysisPrompt({ course, term, canvas: canvasData, ed: edData, handbook: handbookData });
         if (cancelled) { row.status = 'cancelled'; return; }
         const { result, validation, attempts } = await analyseWithRepair({
           instructions,
           run: prompt => analyse(analysisConfig, prompt, { schema, schemaPath, cwd: projectDir, registerStop: trackStop, onPhase: () => { row.phase = 'analysis'; } }),
-          validate: raw => validateAnalysis(raw, { course, canvas: canvasData, ed: edData }),
+          validate: raw => validateAnalysis(raw, { course, canvas: canvasData, ed: edData, handbook: handbookData }),
           isCancelled: () => cancelled,
         });
         if (attempts.length > 1) {
@@ -179,10 +177,12 @@ export function createCourseSyncRunner(projectDir) {
         row.phase = 'saving';
         const child = await childUsage(result.threadId, start);
         if (cancelled) { row.status = 'cancelled'; return; }
+        // The newest valid earlier document of this course (v1 or v2) gives the legacy ID map of the new one.
+        const previous = await newestCourseDocument(courseDir, course.id);
         const settled = settleCourse({ result, validation, collection: {
           canvasFailed: canvas.code !== 0, canvasUnpaginated: canvasData.paginationVerified === false,
           edFailed: ed.code !== 0, edPartial: edData.status === 'partial', handbookFailed: handbook.code !== 0,
-        } });
+        }, data: { canvas: canvasData, ed: edData, handbook: handbookData }, previous });
         row.status = settled.status;
         row.reason = settled.reason;
         if (settled.diagnostic) {
