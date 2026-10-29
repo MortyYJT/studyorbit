@@ -163,9 +163,10 @@ function grade(original: DisplayDocument, entries: WhatIf): Graded | Failure {
     const parent = item.parentId ? current.get(item.parentId) : undefined;
     const none = (reason: string): Applied => ({ assessmentId, percent, effect: 'none', reason });
     if (countedMap.has(item.id)) return { assessmentId, percent, effect: 'counted' };
-    if (parent && countedMap.has(parent.id)) return ownScore(parent) ? none('parent-score-overrides') : { assessmentId, percent, effect: 'counted' };
+    // The item's own exclusion comes first: a counted group still drops its zero-weight children.
     const reason = reasonOf(item);
     if (reason === 'bonus' || reason === 'ungraded' || reason === 'alternative' || reason === 'zero-weight') return none(reason);
+    if (parent && countedMap.has(parent.id)) return ownScore(parent) ? none('parent-score-overrides') : { assessmentId, percent, effect: 'counted' };
     if (parent) return none(parent.weight === null && item.weight === null ? 'no-weight' : 'group-incomplete');
     if (item.weight === null) return none('no-weight');
     return none(reason ?? 'group-incomplete');

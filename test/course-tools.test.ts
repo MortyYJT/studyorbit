@@ -252,6 +252,18 @@ describe('calculate_grades', () => {
     expect(full.whatIfApplied.map((entry: Value) => entry.effect)).toEqual(['counted', 'counted']);
   });
 
+  it('reports a zero-weight child of a counted group as not counted', () => {
+    const doc = course('syn-3', 'SYN30003', [
+      item({ id: 'quizzes', name: 'Quizzes', kind: 'quiz', weight: 30, scoring: 'points' }),
+      item({ id: 'q1', name: 'Quiz 1', kind: 'quiz', parentId: 'quizzes', score: 8, maxScore: 10 }),
+      item({ id: 'q0', name: 'Practice quiz', kind: 'quiz', parentId: 'quizzes', weight: 0, maxScore: 10 }),
+    ]);
+    const result = ok('calculate_grades', { courseId: 'syn-3', whatIf: [{ assessmentId: 'q0', percent: 100 }] }, one(doc));
+    expect(result).toMatchObject({ gradedWeight: 30, earned: 24 });
+    expect(result.excluded).toEqual([{ id: 'q0', name: 'Practice quiz', reason: 'zero-weight' }]);
+    expect(result.whatIfApplied).toEqual([{ assessmentId: 'q0', percent: 100, effect: 'none', reason: 'zero-weight' }]);
+  });
+
   it('counts a weighted group once every weighted child has a mark', () => {
     const doc = course('syn-3', 'SYN30003', [
       item({ id: 'labs', name: 'Labs', weight: 10, scoring: 'weighted' }),
