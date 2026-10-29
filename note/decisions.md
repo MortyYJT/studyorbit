@@ -258,3 +258,12 @@
 | 251 | 2026-10-29 | 工具调用式对话覆盖 DeepSeek、OpenAI 兼容和 Anthropic；Codex 保持旧方式 | 你（同上，10） | 未写理由 |
 | 252 | 2026-10-29 | 通用化（通用 Canvas 适配器、Chrome、Windows）留在 P2 最后 | 你（同上，11） | 未写理由 |
 | 253 | 2026-10-30 | 执行桌面任务清单期间，清单没写到的设计选择由 Claude 自主决定，记在这里并标「Claude 自主（待 MortyYJT 复核）」；覆盖 `CLAUDE.md`「Ask the user first」，仅限本清单 | 你（清单执行规则，2026-10-30 授权） | 你在睡觉，不等回复连续执行 |
+| 270 | 2026-10-30 | 契约 v2：模型输出保留外层 `{ status, reason, document }`，`document` 为 `version: 2`，考核项用 `key`/`parentKey`/`refs`，`course` 和 `materials` 不变；存盘文档的 `sources` 由代码按引用生成（Canvas 作业链接、Ed lesson 链接、Handbook 页面链接，Canvas 分组无链接），`evidence` 一律为 null | Claude 自主（待 MortyYJT 复核） | 模型不再写链接，避免编造；依据由引文字段承担 |
+| 271 | 2026-10-30 | Handbook 引用的校验方式：采集结果只有页面全文，没有结构化考核项，所以引用名规范化后出现在 Handbook 全文里即算存在 | Claude 自主（待 MortyYJT 复核） | 不改采集器也能校验 Handbook 引用 |
+| 272 | 2026-10-30 | 引用唯一性：同一 Canvas 作业或 Ed lesson 只能被一个考核项引用；Canvas 分组和 Handbook 引用可重复；没有任何引用的考核项必须有子项（纯分组），否则算校验失败 | Claude 自主（待 MortyYJT 复核） | 防止一项事实被重复计分；无来源的叶子项没有依据 |
+| 273 | 2026-10-30 | 同一平台有多个引用时取 ID 最小的作为主引用（数字按数值，否则按码点），ID 和回填事实都用主引用 | Claude 自主（待 MortyYJT 复核） | ID 不随模型列出顺序变化，多次运行稳定 |
+| 274 | 2026-10-30 | 细化「满分以 Canvas 为准」：得分和满分必须成对取自同一来源（Canvas 已出分优先，其次 Ed 已出分；都没出分时满分取 Canvas `points_possible`）；成对得分超过满分（Canvas 额外加分）时保留得分、满分置 null | Claude 自主（待 MortyYJT 复核） | 沿用 v1「不混用不同来源的分子和分母」；存盘 Schema 不允许得分大于满分 |
+| 275 | 2026-10-30 | 状态取各来源中最靠前的一个（graded > submitted > not_started > unknown）；Ed 映射：graded→graded，not_available 且有提交时间→submitted，no_final_submission→not_started，其余 unknown；Canvas 无 submission 对象→unknown | Claude 自主（待 MortyYJT 复核） | 延续 v1「已出分记录优先于另一平台未提交」 |
+| 276 | 2026-10-30 | 引文核对细则：引文须出现在采集数据的单个字符串内（不跨字段拼接）；规范化另外解码常见 HTML 实体；规范化后长度 6–500 字符；权重引文须含与权重相等的独立数字（`5` 不匹配 `25%`）；Canvas 分组权重保留两位小数后相等即算有出处 | Claude 自主（待 MortyYJT 复核） | 防止过短或跨字段拼出的假引文，以及数字部分匹配造成的误判 |
+| 277 | 2026-10-30 | 引文核对在校验与修复循环之后进行，不触发修复；清空某子项权重导致 `weighted` 父项缺权重时，父项计分改为 `none`；课程状态不变，`reason` 追加「N 项权重或规则无出处」 | Claude 自主（待 MortyYJT 复核） | 按 #247 照常保存；避免页面用不完整权重算出错误总分 |
+| 278 | 2026-10-30 | v2 的 ID 与 v1 不同；页面查找用户修正时，新 ID 下没有修正就回退到主 Canvas（否则主 Ed）引用的裸平台 ID；其他旧修正留在存储里不删除也不使用；不改写旧 v1 文件 | Claude 自主（待 MortyYJT 复核） | v1 提示要求优先用平台原始 ID，回退能覆盖多数旧修正；#248 迁移另行处理 |
