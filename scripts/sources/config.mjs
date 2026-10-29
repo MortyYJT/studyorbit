@@ -60,7 +60,8 @@ export function readSourceConfig({ env = process.env, platform = process.platfor
   const raw = env[SOURCE_CONFIG_ENV];
   if (raw === undefined || raw === '') {
     if (needsBrowser && platform !== 'darwin') throw new Error(MISSING_CONFIG_OFF_MACOS);
-    return defaultSourceConfig(env);
+    // A collector that never uses the browser (Ed) does not depend on the browser override.
+    return needsBrowser ? defaultSourceConfig(env) : { ...DEFAULT_SOURCE_CONFIG };
   }
   let parsed;
   try { parsed = JSON.parse(raw); } catch { throw new Error(`${SOURCE_CONFIG_ENV} 不是有效的 JSON`); }

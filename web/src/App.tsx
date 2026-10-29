@@ -259,13 +259,13 @@ export function App() {
     </main>
     <dialog ref={selectDialog} className="select-dialog" aria-labelledby="select-title" onCancel={event => { event.preventDefault(); setCoursePanelOpen(false); }} onClose={() => setSelectContent(false)}>
       <div className="dialog-heading"><h2 id="select-title" tabIndex={-1} autoFocus>{isZh ? '修改选课' : 'Edit courses'}</h2><button className="ghost" onClick={() => setCoursePanelOpen(false)}>{t.close}</button></div>
-      <p className="select-note"><i className="signal" aria-hidden="true" />{isZh ? '保存后会立即开始同步所选课程（会使用 Edge、Ed 和模型额度）。' : 'Saving starts a sync of the selected courses right away (uses Edge, Ed and model quota).'}</p>
+      <p className="select-note"><i className="signal" aria-hidden="true" />{isZh ? '保存后会立即开始同步所选课程（会使用浏览器（Edge 或 Chrome）、Ed 和模型额度）。' : 'Saving starts a sync of the selected courses right away (uses the browser (Edge or Chrome), Ed and model quota).'}</p>
       {(coursePanelOpen || selectContent) && <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setCoursePanelOpen(false); setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); void startSelectedCourses(ids); }} />}
     </dialog>
     <dialog ref={syncDialog} className="sync-dialog" aria-labelledby="sync-title" onCancel={event => event.preventDefault()}>
       <h2 id="sync-title">{language === 'zh' ? (modal === 'finished' ? '同步结果' : '正在同步课程') : (modal === 'finished' ? 'Sync results' : 'Syncing courses')}</h2>
       {modal === 'select' ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); if (ids.length) void startSelectedCourses(ids); else setSyncModal('finished'); }} /> : <>
-        {modal !== 'finished' && <><p>{language === 'zh' ? '同步中，请保持 Edge 和 coursework 页面打开。' : 'Syncing. Please keep Edge and the coursework page open.'}</p><div className="sync-indeterminate" role="progressbar" aria-label={language === 'zh' ? '同步进行中' : 'Sync in progress'}><span /></div></>}
+        {modal !== 'finished' && <><p>{language === 'zh' ? '同步中，请保持浏览器（Edge 或 Chrome）和 coursework 页面打开。' : 'Syncing. Please keep the browser (Edge or Chrome) and the coursework page open.'}</p><div className="sync-indeterminate" role="progressbar" aria-label={language === 'zh' ? '同步进行中' : 'Sync in progress'}><span /></div></>}
         {modal === 'discovery' && <p>{language === 'zh' ? '正在获取课程列表…' : 'Fetching course list…'}</p>}
         {modal === 'starting' && <p>{language === 'zh' ? '正在启动课程同步…' : 'Starting course sync…'}</p>}
         {modal === 'stopping' && <p>{language === 'zh' ? '正在中止，请稍候…' : 'Stopping…'}</p>}

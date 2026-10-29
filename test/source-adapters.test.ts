@@ -43,6 +43,9 @@ describe('collector configuration (STUDYORBIT_SOURCE_CONFIG)', () => {
     expect(defaultSourceConfig({ STUDYORBIT_BROWSER: 'chrome-applescript' }).browser).toBe('chrome-applescript');
     expect(() => defaultSourceConfig({ STUDYORBIT_BROWSER: 'safari' })).toThrow('STUDYORBIT_BROWSER');
     expect(readSourceConfig({ env: { STUDYORBIT_BROWSER: 'chrome-applescript' }, platform: 'darwin', needsBrowser: true }).browser).toBe('chrome-applescript');
+    expect(() => readSourceConfig({ env: { STUDYORBIT_BROWSER: 'safari' }, platform: 'darwin', needsBrowser: true })).toThrow('STUDYORBIT_BROWSER');
+    // Ed never uses the browser, so a wrong override does not stop it.
+    expect(readSourceConfig({ env: { STUDYORBIT_BROWSER: 'safari' }, platform: 'darwin' })).toEqual(DEFAULT_SOURCE_CONFIG);
     // The variable from StudyOrbit wins over the override.
     expect(readSourceConfig({ env: { ...sourceConfigEnv(DEFAULT_SOURCE_CONFIG), STUDYORBIT_BROWSER: 'chrome-applescript' }, platform: 'darwin' }).browser).toBe('edge-applescript');
     const chrome = resolveSourceSetup(defaultSourceConfig({ STUDYORBIT_BROWSER: 'chrome-applescript' }));
