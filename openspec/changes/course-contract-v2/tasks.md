@@ -5,7 +5,7 @@
 - [x] 1.3 Tests then `toDisplayDocument`: v1 → empty `refs`, `null` quotes, empty `unsourced`, empty `legacyIds`; v2 passes through
 - [x] 1.4 Tests then the model output schema (`CourseModelOutputSchema`): allowed fields only; `id`, `parentId`, `due`, `score`, `maxScore`, `status`, `sources` rejected (schema only; not wired to the sync yet)
 - [x] 1.5 Route every reader through the union and `toDisplayDocument`: `scripts/lib/course-reports.mjs` (+ `.d.mts`), `scripts/lib/chat-context.mjs`, `vite.config.ts`, `web/src/LocalPlanning.tsx`; existing v1 tests stay green
-- [ ] 1.6 `bash .claude/check.sh`; fresh-context review; record the PR number here
+- [ ] 1.6 `bash .claude/check.sh`; fresh-context review; record the PR number here (PR #259; check passed, fresh-context review pending)
 
 ## 2. Model output v2 in the sync (PR 2)
 
