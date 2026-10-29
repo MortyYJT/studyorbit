@@ -12,7 +12,7 @@ The system SHALL send the model a JSON Schema whose `document` contains `version
 - **THEN** it passes validation
 
 ### Requirement: Handbook components are parsed from the assessment table
-The system SHALL parse Handbook components from the collected Handbook text: a row ends at a line that has a tab and whose last tab-separated cell is a percentage or one of `N/A`, `Nil`, `-`, `—`; a row starts after the previous row end or after a header line containing a `Percentage` cell, whichever is later, or is the end line alone when neither precedes it. The component name SHALL be the first non-empty line of the row's first cell with whitespace collapsed; the percentage SHALL be the number in the last cell or `null`; the row text SHALL be the whole row with tabs and line breaks replaced by single spaces. Repeated names SHALL get ` (2)`, ` (3)` in page order. When the Handbook was collected but no component parses, the course status SHALL be at most `partial` and the reason SHALL include 「Handbook 考核表未能解析」.
+The system SHALL parse Handbook components from the collected Handbook text: a row ends at a line that has a tab and whose last tab-separated cell is a percentage or one of `N/A`, `Nil`, `-`, `—`; a row starts after the previous row end or after a header line containing a `Percentage` cell, whichever is later, or is the end line alone when neither precedes it. The component name SHALL be the first non-empty line of the row's first cell with whitespace collapsed; the percentage SHALL be the number in the last cell or `null`; the row text SHALL be the whole row with tabs and line breaks replaced by single spaces. Rows with the same normalised name and the same percentage SHALL be merged into one component that keeps every row text; other repeated names SHALL get ` (2)`, ` (3)` in page order. When the Handbook was collected but no component parses, the course status SHALL be at most `partial` and the reason SHALL include 「Handbook 考核表未能解析」.
 
 #### Scenario: Row with timing between name and percentage
 - **WHEN** the Handbook text contains the line `Project report\tWeek 10\t30%`
@@ -25,6 +25,14 @@ The system SHALL parse Handbook components from the collected Handbook text: a r
 #### Scenario: Hurdle row without a percentage
 - **WHEN** a row ends with the cell `N/A`
 - **THEN** a component with `percent: null` is parsed and the following row is parsed separately
+
+#### Scenario: Table repeated per study period
+- **WHEN** the Handbook text contains the row `Project report\tWeek 10\t30%` twice, once under each study period
+- **THEN** one component `Project report` is parsed and both row texts are in the quote corpus
+
+#### Scenario: Same name, different percentage
+- **WHEN** one row is `Quiz\tWeekly\t10%` and a later row is `Quiz\tWeek 12\t5%`
+- **THEN** the components are `Quiz` and `Quiz (2)`
 
 #### Scenario: No table found
 - **WHEN** the Handbook was collected but no line ends with a percentage cell
@@ -112,7 +120,7 @@ The system SHALL set `due`, `score`, `maxScore`, `status` and `sources` from the
 - **THEN** its `sources` has one entry `{ platform: 'canvas', url: null, evidence: null }`
 
 ### Requirement: Weights and rules need a verified source
-After validation succeeds, the system SHALL verify each non-null `weight` and `rule`. Quotes are matched against corpus units that describe assessments only: each parsed Handbook row text, each other non-empty Handbook line, each Ed context text, each Canvas group name, and each Canvas group's rendered rule text (`drop lowest <n>`, `drop highest <n>`, `never drop <assignment name>`); Canvas assignment names, Ed lesson titles, URLs and IDs are excluded. Quote and corpus MUST be normalised the same way (HTML tags stripped, common entities decoded, NFKC, lowercase, quote and dash characters unified, all whitespace collapsed to one space), and a quote MUST be 6 to 500 characters after normalisation and occur within one unit. A weight SHALL count as sourced when the assessment cites a Canvas group whose `group_weight`, or a Handbook component whose percentage, equals the weight to two decimals, or when its quote passes and contains a number token equal to the weight followed by `%`, `per cent` or `percent`. A rule SHALL count as sourced when its quote passes. A field that fails SHALL be set to `null` together with its quote, its name added to `unsourced`, and the rest of the document saved. Verification SHALL NOT be a validation failure and SHALL NOT trigger a repair.
+After validation succeeds, the system SHALL verify each non-null `weight` and `rule`. Quotes are matched against corpus units that describe assessments only: each parsed Handbook row text, each other non-empty Handbook line, each Ed context text, each Canvas group name, and each Canvas group's rendered rule text (`drop lowest <n>`, `drop highest <n>`, `never drop <assignment name>`); Canvas assignment names, Ed lesson titles, URLs and IDs are excluded. Quote and corpus MUST be normalised the same way (HTML tags stripped, common entities decoded, NFKC, lowercase, quote and dash characters unified, all whitespace collapsed to one space), and a quote MUST be 6 to 500 characters after normalisation and occur within one unit. A weight SHALL count as sourced when the assessment cites a Canvas group whose `group_weight`, or a Handbook component whose percentage, equals the weight to two decimals, or when its quote passes and contains a number token equal to the weight followed by `%`, `per cent` or `percent`; a quote matched in a Handbook row MUST also contain that row's component name. A rule SHALL count as sourced when its quote passes. A field that fails SHALL be set to `null` together with its quote, its name added to `unsourced`, and the rest of the document saved. Verification SHALL NOT be a validation failure and SHALL NOT trigger a repair.
 
 #### Scenario: Weight quoted from a Handbook row
 - **WHEN** an assessment with `weight: 30` cites no Handbook component, its `weightQuote` is "Project report Week 10 30%", and the Handbook text has the line `Project report\tWeek 10\t30%`
@@ -136,6 +144,10 @@ After validation succeeds, the system SHALL verify each non-null `weight` and `r
 
 #### Scenario: Number inside a larger number
 - **WHEN** `weight: 5`, no structured source matches, and the quote found in the corpus is "Quizzes worth 25% in total"
+- **THEN** the weight is cleared and flagged
+
+#### Scenario: Fragment of another Handbook row
+- **WHEN** an item named "Lab report" has `weight: 15`, cites no Handbook component, and its quote is "Week 6 15%", which occurs only in the row `Mid-semester test Week 6 15%`
 - **THEN** the weight is cleared and flagged
 
 #### Scenario: Assignment name is not a source

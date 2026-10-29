@@ -8,7 +8,7 @@ A course sync runs three collectors per course and writes their raw output to `.
 
 `buildAnalysisPrompt` sends all three to the model with the JSON Schema from `courseOutputSchema()`; `analyseWithRepair` validates with `validateAnalysis` and retries once with the issues; `settleCourse` decides what to save; the runner writes `分数结构*.json` to the Desktop course folder. Readers (`course-reports.mjs`, `chat-context.mjs`, `vite.config.ts`, `LocalPlanning.tsx`) parse with `CourseDocumentSchema` (v1 only). Browser stores in `LocalPlanning.tsx` refer to synced assessments by item key `<courseId>:<assessmentId>`: corrections (keyed by item key, or by group key `<courseId>:group:<item key>` for a parent's own edits, with `parent` and `mergeInto` values holding item keys), manual assessments (`parent`), planned work (`key`, item or group key) and the per-course order list.
 
-Owner decisions: #208 (platform facts come from the platform, not the model), #246 (v2 with references and quotes; v1 still readable), #247 (failing quote → clear, flag 「无出处」, save the rest). Lead design choices made under #253 are recorded as #270–#280.
+Owner decisions: #208 (platform facts come from the platform, not the model), #246 (v2 with references and quotes; v1 still readable), #247 (failing quote → clear, flag 「无出处」, save the rest). Lead design choices made under #253 are recorded as #270–#281.
 
 ## Goals / Non-Goals
 
@@ -71,7 +71,7 @@ Alternative: one schema with optional fields for both model and storage — reje
 3. A *header line* is a line with a tab and a cell equal (case-insensitive, trimmed) to `Percentage`.
 4. A row runs from the line after the later of the previous terminal line and the header line, through the next terminal line; with neither before it, the row is the terminal line alone. This keeps multi-line description cells together.
 5. The row's first cell is the row text before its first tab. The component `name` is the first non-empty line of the first cell, whitespace collapsed, at most 200 characters; rows with an empty name are skipped. `percent` is the number from the last cell, or `null`. `rowText` is the whole row with tabs and line breaks replaced by single spaces.
-6. A second row with the same normalised name gets ` (2)`, a third ` (3)`, in page order.
+6. Some captures repeat the assessment table once per study period. Rows whose normalised name and `percent` are both equal are merged into one component, which keeps every row's `rowText` (all of them stay in the quote corpus). Among the remaining rows, a second component with the same normalised name but a different `percent` gets ` (2)`, a third ` (3)`, in page order (decision #281).
 
 The prompt receives `handbookComponents: [{ name, percent }]` next to the raw Handbook text and is told to cite Handbook components only by a name from that list. When the Handbook was collected but no component parses, Handbook references are invalid and the course reason gains 「Handbook 考核表未能解析」 with status at most `partial` (like a failed Handbook collection).
 
@@ -131,7 +131,7 @@ Runs after the validation and repair loop on the built stored document; it is ne
 - **Weight** is sourced when any of these holds:
   1. the item cites a Canvas group whose `group_weight` equals `weight` after rounding both to two decimals;
   2. the item cites a Handbook component whose `percent` equals `weight` after rounding both to two decimals;
-  3. the normalised `weightQuote` is 6–500 characters, occurs in one corpus unit, and contains a number token (`\d+(?:\.\d+)?`, not touching another digit or `.`) equal to `weight` and followed, after optional spaces, by `%`, `per cent` or `percent`. So `5` matches neither "25%" nor "Quiz 5".
+  3. the normalised `weightQuote` is 6–500 characters, occurs in one corpus unit, and contains a number token (`\d+(?:\.\d+)?`, not touching another digit or `.`) equal to `weight` and followed, after optional spaces, by `%`, `per cent` or `percent`. So `5` matches neither "25%" nor "Quiz 5". When the unit is a Handbook row, the quote must also contain that row's normalised component name, so a fragment such as `Week 6 15%` taken from another component's row cannot source an item weighted 15 (decision #281); a Handbook weight without the name is accepted only through check 2, i.e. by citing the component. A quote passes if any unit it occurs in satisfies these conditions.
 
   `weightQuote` is stored only when check 3 passes; with check 1 or 2 alone it is `null`. The prompt tells the model to copy a weight quote from one Handbook row as its cells read left to right, separated by single spaces (e.g. `Project report Week 10 30%`).
 - **Rule:** sourced when the normalised `ruleQuote` is 6–500 characters and occurs in one corpus unit (a Canvas drop rule is quoted from its rendered text, e.g. `drop lowest 2`).
@@ -148,10 +148,11 @@ Runs after the validation and repair loop on the built stored document; it is ne
 
 *Building the map* (pure, `buildLegacyIds(previous, current)` in `scripts/lib/course-refs.mjs`; the runner passes the newest valid earlier document of the same course from the Desktop course folder, or none):
 
-1. Platform identity of a previous assessment: from v2 `refs`; or, for v1, Canvas assignment IDs parsed from `sources[].url` (`/courses/<course>/assignments/<id>`), Ed lesson IDs parsed from `sources[].url` (`/lessons/<id>`), and the v1 `id` itself when it is `<digits>`, `canvas-<digits>`, `canvas:<digits>`, `ed-<digits>` or `ed:<digits>` (bare digits are tried as a Canvas ID, then as an Ed ID). A previous item maps to the current item whose `refs` contain one of these identities (`canvas` and `ed` references only, since they are unique per item).
-2. Otherwise, by equal `slug(name)` when exactly one previous item and exactly one current item have that slug.
-3. Only one-to-one pairs are kept: a previous item matching several current items, or several previous items matching one current item, is left unmapped. Pairs with an unchanged ID are omitted.
-4. When the previous document is v2, its own `legacyIds` are carried forward and composed with the new pairs (`a → b` with `b → c` becomes `a → c`); entries whose target no longer exists are dropped.
+1. Equal IDs first: a previous item whose ID equals a current item's ID is paired with it (unchanged, so no entry is written), and both are excluded from the later steps, so an unchanged item is never paired by name with another item (decision #281).
+2. Platform identity of a previous assessment: from v2 `refs`; or, for v1, Canvas assignment IDs parsed from `sources[].url` (`/courses/<course>/assignments/<id>`), Ed lesson IDs parsed from `sources[].url` (`/lessons/<id>`), and the v1 `id` itself when it is `<digits>`, `canvas-<digits>`, `canvas:<digits>`, `ed-<digits>` or `ed:<digits>` (bare digits are tried as a Canvas ID, then as an Ed ID). A previous item maps to the current item whose `refs` contain one of these identities (`canvas` and `ed` references only, since they are unique per item).
+3. Otherwise, by equal `slug(name)` when exactly one previous item and exactly one current item have that slug.
+4. Only one-to-one pairs are kept: a previous item matching several current items, or several previous items matching one current item, is left unmapped.
+5. When the previous document is v2, its own `legacyIds` are carried forward and composed with the new pairs (`a → b` with `b → c` becomes `a → c`); entries whose target no longer exists are dropped.
 
 *Applying the map* (pure, `migrateLocalKeys(stores, courseId, legacyIds)` in `shared/`; today the page runs it on browser storage when it loads course reports, and after #248 the same function runs on the `.local/` store in Node). For every `old → new` of the course, with `K(id) = <courseId>:<id>` and `G(id) = <courseId>:group:<courseId>:<id>`:
 
@@ -159,7 +160,9 @@ Runs after the validation and repair loop on the built stored document; it is ne
 - manual assessments: `parent` equal to `K(old)` → `K(new)`;
 - planned work: `key` equal to `K(old)` or `G(old)` → `K(new)` or `G(new)`;
 - the course's order list: entries `K(old)` / `G(old)` rewritten the same way.
-- If the target key already has its own entry, the new entry wins and the old one is left in place, unused. Running the migration again changes nothing (idempotent), so no marker is needed.
+- Correction keys are the only competing values: if `K(new)` or `G(new)` already has its own correction, that correction wins and the old one is left in place, unused.
+- Planned work keys, manual `parent` values, and correction `parent`/`mergeInto` values are references and are always rewritten. The order list is always rewritten and then de-duplicated, keeping the first occurrence. The page keeps at most one planned task per key, so if a task already has the new key, it keeps it and the old-key task keeps its old key (no task is lost) (decision #281).
+- Running the migration again changes nothing (idempotent), so no marker is needed.
 
 *Cannot be mapped* (left in storage, untouched and unused): previous items with no platform URL, no platform-shaped ID and no unique name match (typically Handbook-only exams and model-invented groups that were renamed); items merged or split differently between the two documents (ambiguous pairs); items that no longer exist; everything when no earlier document is found in the course folder (e.g. the v1 files were deleted before the first v2 sync). Manual assessments keep their own `manual:` keys and need no mapping.
 

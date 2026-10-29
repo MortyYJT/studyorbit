@@ -46,7 +46,7 @@ The course page SHALL show a 「无出处」 tag beside the weight wherever the 
 - **THEN** the corrected weight is shown and used, and the 「无出处」 tag is not shown
 
 ### Requirement: Legacy ID map from the previous document
-When saving a course, the system SHALL fill `legacyIds` by matching each assessment of the newest valid earlier document of the same course to the new assessments: first by platform identity (version 2 `canvas` and `ed` references; for version 1, Canvas assignment and Ed lesson IDs parsed from `sources` URLs, and an `id` of the form `<digits>`, `canvas-<digits>`, `canvas:<digits>`, `ed-<digits>` or `ed:<digits>`), then by equal name slug when that slug is unique on both sides. Only one-to-one pairs whose ID changed SHALL be kept. Entries from an earlier version 2 document's `legacyIds` SHALL be carried forward and composed, dropping entries whose target no longer exists.
+When saving a course, the system SHALL fill `legacyIds` by matching each assessment of the newest valid earlier document of the same course to the new assessments: first by equal ID (such pairs are unchanged, write no entry, and are excluded from the later steps), then by platform identity (version 2 `canvas` and `ed` references; for version 1, Canvas assignment and Ed lesson IDs parsed from `sources` URLs, and an `id` of the form `<digits>`, `canvas-<digits>`, `canvas:<digits>`, `ed-<digits>` or `ed:<digits>`), then by equal name slug when that slug is unique on both sides. Only one-to-one pairs whose ID changed SHALL be kept. Entries from an earlier version 2 document's `legacyIds` SHALL be carried forward and composed, dropping entries whose target no longer exists.
 
 #### Scenario: v1 Canvas item
 - **WHEN** the earlier v1 document has an assessment `a1` whose source URL is a Canvas assignment `5551` URL and the new document has `canvas:5551`
@@ -55,6 +55,10 @@ When saving a course, the system SHALL fill `legacyIds` by matching each assessm
 #### Scenario: v1 Ed item with a bare ID
 - **WHEN** the earlier v1 assessment has `id: '77'`, no Canvas assignment 77 exists in the new document, and the new document has `ed:77`
 - **THEN** `legacyIds` contains `77 → ed:77`
+
+#### Scenario: Unchanged item is not re-paired by name
+- **WHEN** the earlier v2 document has `handbook:exam` and `group:exam`, and the new document has `handbook:exam` and `group:exam-1` named "Exam"
+- **THEN** `handbook:exam` is paired with itself and is not considered for `group:exam-1`
 
 #### Scenario: Ambiguous match left out
 - **WHEN** two earlier assessments both match the same new assessment
@@ -65,7 +69,7 @@ When saving a course, the system SHALL fill `legacyIds` by matching each assessm
 - **THEN** the new `legacyIds` still contains `a1 → canvas:5551`
 
 ### Requirement: Local stores move to the new IDs
-The system SHALL apply a course's `legacyIds` to every local store that refers to synced assessments, with one pure function usable both on browser storage and, after decision #248, on the `.local/` store: correction keys in item form `<courseId>:<id>` and group form `<courseId>:group:<courseId>:<id>`; the `parent` and `mergeInto` values inside corrections; the `parent` of manual assessments; the `key` of planned work; and the course's order list. An old entry whose new key already has an entry SHALL be left in place unused. Applying the map twice SHALL change nothing. Entries that cannot be mapped (no platform identity and no unique name match, ambiguous matches, assessments that no longer exist, or no earlier document in the course folder) SHALL stay in storage untouched.
+The system SHALL apply a course's `legacyIds` to every local store that refers to synced assessments, with one pure function usable both on browser storage and, after decision #248, on the `.local/` store: correction keys in item form `<courseId>:<id>` and group form `<courseId>:group:<courseId>:<id>`; the `parent` and `mergeInto` values inside corrections; the `parent` of manual assessments; the `key` of planned work; and the course's order list. An old correction whose new key already has a correction SHALL be left in place unused. Planned work keys, manual `parent` values, correction `parent` and `mergeInto` values and order entries SHALL always be rewritten, and the order list SHALL then be de-duplicated keeping the first occurrence; when a planned task already holds the new key, the old-key task SHALL keep its old key so no task is lost. Applying the map twice SHALL change nothing. Entries that cannot be mapped (no platform identity and no unique name match, ambiguous matches, assessments that no longer exist, or no earlier document in the course folder) SHALL stay in storage untouched.
 
 #### Scenario: Group correction and work move together
 - **WHEN** `legacyIds` maps `quizzes` to `canvas-group:300` for course `100`, a correction exists under `100:group:100:quizzes` and a planned task has key `100:quizzes`
@@ -78,6 +82,10 @@ The system SHALL apply a course's `legacyIds` to every local store that refers t
 #### Scenario: New key already present
 - **WHEN** corrections exist under both `100:a1` and `100:canvas:5551` and `legacyIds` maps `a1` to `canvas:5551`
 - **THEN** `100:canvas:5551` is unchanged and `100:a1` stays in storage unused
+
+#### Scenario: Order list de-duplicated
+- **WHEN** the order list of course `100` is `['100:a1', '100:canvas:5551']` and `legacyIds` maps `a1` to `canvas:5551`
+- **THEN** the order list becomes `['100:canvas:5551']`
 
 #### Scenario: Idempotent
 - **WHEN** the migration runs a second time on already migrated stores
