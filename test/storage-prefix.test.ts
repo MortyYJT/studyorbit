@@ -46,6 +46,25 @@ describe('migrateStoragePrefix', () => {
     expect(migrateStoragePrefix(storage)).toEqual({ moved: 1, failed: true });
     expect(Object.fromEntries(storage.data)).toEqual({ 'coursework.avatar': 'data:x', 'studyorbit.theme': 'dark' });
   });
+  it('moves a value too large to hold twice by freeing the old key first', () => {
+    const big = 'x'.repeat(60);
+    const data = new Map<string, string>([['coursework.avatar', big], ['coursework.theme', 'dark']]);
+    const quota = 100; // total characters, like a browser's per-origin localStorage quota
+    const used = () => [...data].reduce((sum, [key, value]) => sum + key.length + value.length, 0);
+    const storage = {
+      get length() { return data.size; },
+      key: (index: number) => [...data.keys()][index] ?? null,
+      getItem: (key: string) => data.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        const before = data.get(key);
+        data.set(key, value);
+        if (used() > quota) { if (before === undefined) data.delete(key); else data.set(key, before); throw new Error('QuotaExceededError'); }
+      },
+      removeItem: (key: string) => { data.delete(key); },
+    };
+    expect(migrateStoragePrefix(storage)).toEqual({ moved: 2, failed: false });
+    expect(Object.fromEntries(data)).toEqual({ 'studyorbit.avatar': big, 'studyorbit.theme': 'dark' });
+  });
 });
 
 describe('migrateBackgroundImage', () => {
