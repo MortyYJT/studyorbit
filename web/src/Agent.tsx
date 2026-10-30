@@ -12,7 +12,7 @@ type Failure = { code: string; message: string };
 type Draft = { scope: string[] | null };
 
 function selectedCourseIds(): string[] {
-  try { const value: unknown = JSON.parse(localStorage.getItem('coursework.selected-course-ids') ?? '[]'); return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []; }
+  try { const value: unknown = JSON.parse(localStorage.getItem('studyorbit.selected-course-ids') ?? '[]'); return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []; }
   catch { return []; }
 }
 // Localised labels for the course tools (decision #327); unknown names are shown as sent.

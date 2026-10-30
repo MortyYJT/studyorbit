@@ -25,8 +25,8 @@ const workKey = storageKeys.work;
 const correctionKey = storageKeys.corrections;
 const manualKey = storageKeys.manual;
 const orderKey = storageKeys.order;
-const targetKey = 'coursework.local-planning.targets.v1';
-const availabilityKey = 'coursework.local-planning.availability.v1';
+const targetKey = 'studyorbit.local-planning.targets.v1';
+const availabilityKey = 'studyorbit.local-planning.availability.v1';
 const record = (value: unknown): RecordValue => value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {};
 function text(value: unknown): string {
   if (typeof value === 'string' || typeof value === 'number') return String(value);
@@ -265,7 +265,7 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
         if (!response.ok) throw new Error('unavailable');
         const data: { courses: Course[]; reports: { id: string; report: unknown }[] } = await response.json();
         let ids: string[] = [];
-        try { const selected: unknown = JSON.parse(localStorage.getItem('coursework.selected-course-ids') ?? '[]'); if (Array.isArray(selected)) ids = selected.filter((id): id is string => typeof id === 'string'); } catch { /* No saved selection. */ }
+        try { const selected: unknown = JSON.parse(localStorage.getItem('studyorbit.selected-course-ids') ?? '[]'); if (Array.isArray(selected)) ids = selected.filter((id): id is string => typeof id === 'string'); } catch { /* No saved selection. */ }
         if (!live) return;
         // Contract v2 (decision #278): move local keys to the new assessment IDs once, before anything reads them.
         const migrations = data.reports.flatMap(item => { const parsed = CourseDocumentSchema.safeParse(item.report);

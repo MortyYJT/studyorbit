@@ -51,7 +51,7 @@ export const CourseChangeSchema = z.discriminatedUnion('field', [
 export type CourseChange = z.infer<typeof CourseChangeSchema>;
 
 /** localStorage key of the newest change time the owner dismissed with 「知道了」 (an ISO time; absent = nothing seen). */
-export const CHANGES_SEEN_KEY = 'coursework.course-changes-seen.v1';
+export const CHANGES_SEEN_KEY = 'studyorbit.course-changes-seen.v1';
 
 const time = (value: string | null | undefined) => (value ? Date.parse(value) : NaN);
 

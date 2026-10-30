@@ -12,7 +12,7 @@
       "kind": "osascript",
       "script": 0,
       "argv": [
-        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignment_groups?per_page=100#coursework-<uuid>"
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignment_groups?per_page=100#studyorbit-<uuid>"
       ]
     },
     {
@@ -46,7 +46,7 @@
       "kind": "osascript",
       "script": 0,
       "argv": [
-        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignments?include%5B%5D=submission&per_page=100#coursework-<uuid>"
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignments?include%5B%5D=submission&per_page=100#studyorbit-<uuid>"
       ]
     },
     {
@@ -80,7 +80,7 @@
       "kind": "osascript",
       "script": 0,
       "argv": [
-        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignments?include%5B%5D=submission&page=2&per_page=100#coursework-<uuid>"
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses/900001/assignments?include%5B%5D=submission&page=2&per_page=100#studyorbit-<uuid>"
       ]
     },
     {

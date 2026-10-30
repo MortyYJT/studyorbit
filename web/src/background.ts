@@ -1,3 +1,4 @@
+import { migrateBackgroundImage, NEW_IMAGE_DB } from './storage-prefix.js';
 /** Page background preferences. The settings live in localStorage; an uploaded image lives only in IndexedDB. */
 export const backgroundModes = ['gradient', 'solid', 'image'] as const;
 export type BackgroundMode = (typeof backgroundModes)[number];
@@ -11,7 +12,7 @@ export type BackgroundSettings = {
   cardOpacity: number;
 };
 
-export const backgroundStorageKey = 'coursework.background';
+export const backgroundStorageKey = 'studyorbit.background';
 export const defaultBackground: BackgroundSettings = { mode: 'gradient', visibility: 70, blur: 0, cardOpacity: 94 };
 export const backgroundLimits = { visibility: [0, 100], blur: [0, 24], cardOpacity: [70, 100] } as const;
 /** Raw upload limit before the image is downscaled and re-encoded in the browser. */
@@ -58,19 +59,19 @@ export function surfaceAlpha(settings: BackgroundSettings): number {
 
 // ---- Browser-only helpers (IndexedDB and canvas). Not called at import, so the parser stays testable in Node. ----
 
-const dbName = 'coursework', storeName = 'background', imageKey = 'image';
+const storeName = 'background', imageKey = 'image';
 
-function openDb(): Promise<IDBDatabase> {
+function openDb(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(dbName, 1);
+    const request = indexedDB.open(name, 1);
     request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains(storeName)) request.result.createObjectStore(storeName); };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
 
-async function withStore<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  const db = await openDb();
+async function withStore<T>(name: string, mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const db = await openDb(name);
   try {
     return await new Promise<T>((resolve, reject) => {
       const transaction = db.transaction(storeName, mode);
@@ -82,12 +83,21 @@ async function withStore<T>(mode: IDBTransactionMode, run: (store: IDBObjectStor
   } finally { db.close(); }
 }
 
-export async function loadBackgroundImage(): Promise<Blob | undefined> {
-  const value = await withStore<unknown>('readonly', store => store.get(imageKey));
-  return value instanceof Blob ? value : undefined;
+const readImage = async (name: string) => { const value = await withStore<unknown>(name, 'readonly', store => store.get(imageKey)); return value instanceof Blob ? value : undefined; };
+let imageMigration: Promise<unknown> | undefined;
+/** Moves an image saved under the former database name once per page load before any read or write (storage-prefix.ts). */
+function migrated(): Promise<unknown> {
+  imageMigration ??= migrateBackgroundImage({
+    read: readImage,
+    write: async (name, blob) => { await withStore(name, 'readwrite', store => store.put(blob, imageKey)); },
+    remove: name => new Promise<void>(resolve => { const request = indexedDB.deleteDatabase(name); request.onsuccess = request.onerror = request.onblocked = () => resolve(); }),
+  }).catch(() => 'failed');
+  return imageMigration;
 }
-export async function saveBackgroundImage(blob: Blob): Promise<void> { await withStore('readwrite', store => store.put(blob, imageKey)); }
-export async function removeBackgroundImage(): Promise<void> { await withStore('readwrite', store => store.delete(imageKey)); }
+
+export async function loadBackgroundImage(): Promise<Blob | undefined> { await migrated(); return readImage(NEW_IMAGE_DB); }
+export async function saveBackgroundImage(blob: Blob): Promise<void> { await migrated(); await withStore(NEW_IMAGE_DB, 'readwrite', store => store.put(blob, imageKey)); }
+export async function removeBackgroundImage(): Promise<void> { await migrated(); await withStore(NEW_IMAGE_DB, 'readwrite', store => store.delete(imageKey)); }
 
 /** Decodes, downscales and re-encodes an upload as WebP (JPEG where WebP encoding is unavailable). */
 export async function prepareBackgroundImage(file: Blob): Promise<Blob> {

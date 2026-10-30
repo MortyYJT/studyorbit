@@ -3,10 +3,10 @@ import { migrateLocalKeys, type LocalStores } from '../../shared/local-keys.js';
 import { sameValue, type Conflict } from '../../shared/corrections.js';
 
 export const storageKeys = {
-  work: 'coursework.local-planning.work.v1',
-  corrections: 'coursework.local-planning.corrections.v1',
-  manual: 'coursework.local-planning.assessments.v1',
-  order: 'coursework.local-planning.order.v1',
+  work: 'studyorbit.local-planning.work.v1',
+  corrections: 'studyorbit.local-planning.corrections.v1',
+  manual: 'studyorbit.local-planning.assessments.v1',
+  order: 'studyorbit.local-planning.order.v1',
 } as const;
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
@@ -52,7 +52,7 @@ export function migrateStoredKeys(storage: StorageLike, migrations: { courseId: 
 }
 
 /** Courses whose corrections, manual items and order list now live in `.local/corrections/` (decision #294). */
-export const migratedKey = 'coursework.corrections-migrated.v1';
+export const migratedKey = 'studyorbit.corrections-migrated.v1';
 const courseIdPattern = /^\d{1,20}$/;
 const coursePrefix = /^(\d{1,20}):/;
 

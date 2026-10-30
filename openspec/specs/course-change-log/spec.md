@@ -50,7 +50,7 @@ After the sync runner saves a course file, it SHALL diff the newest valid earlie
 - **THEN** the course keeps its status and its reason ends with 「变更记录写入失败。」
 
 ### Requirement: The page reminds the owner of unseen changes
-The system SHALL serve `GET /api/local/course-changes` (loopback, same-origin) returning the newest 200 well-formed change-log lines, newest first, skipping malformed lines and returning an empty list when the log does not exist. The page SHALL treat a change as unseen when its `at` is later than the localStorage marker `coursework.course-changes-seen.v1`, and SHALL show unseen changes of courses in the course list in the week page's 「需要你处理」 list and at the top of that course's page, as the course code, assessment name, field and the values before and after (an empty value shown as 「未知」). 「知道了」 SHALL set the marker to the newest `at` shown, after which those changes are no longer shown.
+The system SHALL serve `GET /api/local/course-changes` (loopback, same-origin) returning the newest 200 well-formed change-log lines, newest first, skipping malformed lines and returning an empty list when the log does not exist. The page SHALL treat a change as unseen when its `at` is later than the localStorage marker `studyorbit.course-changes-seen.v1`, and SHALL show unseen changes of courses in the course list in the week page's 「需要你处理」 list and at the top of that course's page, as the course code, assessment name, field and the values before and after (an empty value shown as 「未知」). 「知道了」 SHALL set the marker to the newest `at` shown, after which those changes are no longer shown.
 
 #### Scenario: Reminder after a sync
 - **WHEN** a sync logs that `SYNT10001` Assignment 1's weight changed from 20 to 25 and the owner opens the page

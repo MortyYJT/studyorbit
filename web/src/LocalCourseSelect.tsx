@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Language } from './i18n.js';
 
 type Course = { id: string; name: string; subjectCode: string; term?: string | null };
-const key = 'coursework.selected-course-ids';
+const key = 'studyorbit.selected-course-ids';
 function storedIds(): string[] {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');

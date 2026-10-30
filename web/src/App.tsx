@@ -22,14 +22,14 @@ type SyncModal = 'discovery' | 'select' | 'starting' | 'syncing' | 'stopping' | 
 export type View = { page: 'week' } | { page: 'agent' } | { page: 'course'; courseId: string };
 function preference(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
 function remember(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Preferences remain usable in memory. */ } }
-function selectionExists(): boolean { try { return localStorage.getItem('coursework.selected-course-ids') !== null; } catch { return false; } }
+function selectionExists(): boolean { try { return localStorage.getItem('studyorbit.selected-course-ids') !== null; } catch { return false; } }
 export function App() {
-  const [language, setLanguage] = useState<Language>(() => preference('coursework.language') === 'en' ? 'en' : 'zh');
-  const [theme, setTheme] = useState<Theme>(() => { const value = preference('coursework.theme'); return value === 'system' || value === 'dark' ? value : 'light'; });
-  const [palette, setPalette] = useState<Palette>(() => parsePalette(preference('coursework.palette')));
+  const [language, setLanguage] = useState<Language>(() => preference('studyorbit.language') === 'en' ? 'en' : 'zh');
+  const [theme, setTheme] = useState<Theme>(() => { const value = preference('studyorbit.theme'); return value === 'system' || value === 'dark' ? value : 'light'; });
+  const [palette, setPalette] = useState<Palette>(() => parsePalette(preference('studyorbit.palette')));
   const [background, setBackground] = useState<BackgroundSettings>(() => parseBackground(preference(backgroundStorageKey)));
   const { url: backgroundImage, setUrl: setBackgroundImage, loadFailed: backgroundLoadFailed, dismissLoadFailure } = useBackgroundImage();
-  const [avatarImage, setAvatarImage] = useState(() => preference('coursework.avatar') ?? '');
+  const [avatarImage, setAvatarImage] = useState(() => preference('studyorbit.avatar') ?? '');
   const [avatarError, setAvatarError] = useState('');
   const [syncUsage, setSyncUsage] = useState<SyncUsage[]>();
   const [usageError, setUsageError] = useState(false);
@@ -62,10 +62,10 @@ export function App() {
   const menuRoot = useRef<HTMLDivElement>(null);
   const t = language === 'zh' ? zh : en;
   const running = localSyncing || courseRun?.running;
-  useEffect(() => { document.documentElement.dataset.theme = theme; remember('coursework.theme', theme); }, [theme]);
-  useEffect(() => { document.documentElement.dataset.palette = palette; remember('coursework.palette', palette); }, [palette]);
+  useEffect(() => { document.documentElement.dataset.theme = theme; remember('studyorbit.theme', theme); }, [theme]);
+  useEffect(() => { document.documentElement.dataset.palette = palette; remember('studyorbit.palette', palette); }, [palette]);
   useEffect(() => { applyBackground(background); remember(backgroundStorageKey, JSON.stringify(background)); }, [background]);
-  useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('coursework.language', language); }, [language]);
+  useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('studyorbit.language', language); }, [language]);
   useEffect(() => { if (panel) openDialog(dialog.current); }, [panel]);
   function applySourceSettings(reply: SourceSettingsReply) {
     setTimeZone(reply.settings.timeZone);
@@ -285,7 +285,7 @@ export function App() {
     <dialog ref={syncDialog} className="sync-dialog" aria-labelledby="sync-title" onCancel={event => event.preventDefault()}>
       <h2 id="sync-title">{language === 'zh' ? (modal === 'finished' ? '同步结果' : '正在同步课程') : (modal === 'finished' ? 'Sync results' : 'Syncing courses')}</h2>
       {modal === 'select' ? <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); if (ids.length) void startSelectedCourses(ids); else setSyncModal('finished'); }} /> : <>
-        {modal !== 'finished' && <><p>{language === 'zh' ? '同步中，请保持浏览器（Edge 或 Chrome）和 coursework 页面打开。' : 'Syncing. Please keep the browser (Edge or Chrome) and the coursework page open.'}</p><div className="sync-indeterminate" role="progressbar" aria-label={language === 'zh' ? '同步进行中' : 'Sync in progress'}><span /></div></>}
+        {modal !== 'finished' && <><p>{language === 'zh' ? '同步中，请保持浏览器（Edge 或 Chrome）和 StudyOrbit 页面打开。' : 'Syncing. Please keep the browser (Edge or Chrome) and the StudyOrbit page open.'}</p><div className="sync-indeterminate" role="progressbar" aria-label={language === 'zh' ? '同步进行中' : 'Sync in progress'}><span /></div></>}
         {modal === 'discovery' && <p>{language === 'zh' ? '正在获取课程列表…' : 'Fetching course list…'}</p>}
         {modal === 'starting' && <p>{language === 'zh' ? '正在启动课程同步…' : 'Starting course sync…'}</p>}
         {modal === 'stopping' && <p>{language === 'zh' ? '正在中止，请稍候…' : 'Stopping…'}</p>}
@@ -312,9 +312,9 @@ export function App() {
           const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!file) return;
           if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) { setAvatarError(language === 'zh' ? '请选择不超过 2 MB 的 JPG、PNG 或 WebP 图片。' : 'Choose a JPG, PNG or WebP image up to 2 MB.'); return; }
           const reader = new FileReader(); reader.onerror = () => setAvatarError(language === 'zh' ? '图片读取失败。' : 'Could not read the image.');
-          reader.onload = () => { if (typeof reader.result !== 'string') return; try { localStorage.setItem('coursework.avatar', reader.result); setAvatarImage(reader.result); setAvatarError(''); } catch { setAvatarError(language === 'zh' ? '头像保存失败，请检查浏览器存储。' : 'Could not save the photo in this browser.'); } };
+          reader.onload = () => { if (typeof reader.result !== 'string') return; try { localStorage.setItem('studyorbit.avatar', reader.result); setAvatarImage(reader.result); setAvatarError(''); } catch { setAvatarError(language === 'zh' ? '头像保存失败，请检查浏览器存储。' : 'Could not save the photo in this browser.'); } };
           reader.readAsDataURL(file);
-        }} /></label>{avatarImage && <button onClick={() => { try { localStorage.removeItem('coursework.avatar'); setAvatarImage(''); setAvatarError(''); } catch { setAvatarError(language === 'zh' ? '头像移除失败。' : 'Could not remove the photo.'); } }}>{language === 'zh' ? '移除' : 'Remove'}</button>}</div></div>
+        }} /></label>{avatarImage && <button onClick={() => { try { localStorage.removeItem('studyorbit.avatar'); setAvatarImage(''); setAvatarError(''); } catch { setAvatarError(language === 'zh' ? '头像移除失败。' : 'Could not remove the photo.'); } }}>{language === 'zh' ? '移除' : 'Remove'}</button>}</div></div>
         {avatarError && <p role="alert">{avatarError}</p>}
         <div className="preferences"><label>{t.theme}<select value={theme} onChange={event => changeTheme(event.target.value as Theme)}>{(['system', 'light', 'dark'] as const).map(value => <option key={value} value={value}>{t[value]}</option>)}</select></label>
           <label>{t.language}<select value={language} onChange={event => setLanguage(event.target.value as Language)}><option value="en">English</option><option value="zh">中文</option></select></label></div>

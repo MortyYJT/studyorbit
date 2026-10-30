@@ -7,17 +7,18 @@
     <title>StudyOrbit</title>
     <script>
       // Apply the saved theme and palette before the app mounts so the first paint is already right; App.tsx owns later changes.
+      // The `coursework.` fallbacks cover the first load after the key rename; main.tsx then moves those keys (storage-prefix.ts).
       // Keep the palette ids in step with web/src/palette.ts (test/palette.test.ts checks this).
       try {
-        var theme = localStorage.getItem('coursework.theme');
-        var palette = localStorage.getItem('coursework.palette');
+        var theme = localStorage.getItem('studyorbit.theme') || localStorage.getItem('coursework.theme');
+        var palette = localStorage.getItem('studyorbit.palette') || localStorage.getItem('coursework.palette');
         document.documentElement.dataset.theme = theme === 'system' || theme === 'dark' ? theme : 'light';
         document.documentElement.dataset.palette = ['mono', 'mist', 'pine', 'stone', 'morty'].indexOf(palette) >= 0 ? palette : 'mono';
       } catch (error) { /* Storage may be blocked; the app falls back to its defaults. */ }
       // Background mode and card opacity (web/src/background.ts parses the same JSON; the image itself loads after mount).
       document.documentElement.dataset.bg = 'gradient';
       try {
-        var background = JSON.parse(localStorage.getItem('coursework.background') || '{}') || {};
+        var background = JSON.parse(localStorage.getItem('studyorbit.background') || localStorage.getItem('coursework.background') || '{}') || {};
         if (['gradient', 'solid', 'image'].indexOf(background.mode) >= 0) document.documentElement.dataset.bg = background.mode;
         var card = typeof background.cardOpacity === 'number' ? Math.min(100, Math.max(70, Math.round(background.cardOpacity))) : 94;
         if (background.mode === 'image') {

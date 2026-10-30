@@ -131,7 +131,7 @@ For example, to expose two courses in Claude Code: `claude mcp add --env STUDYOR
 
 ## Repository history
 
-Since 2026-10-29 this repository follows the local prototype v2; the v2 development history was merged into the main branch after removing personal grades. The earlier v1 implementation (Codex reading pages, the `coursework` CLI, SQLite storage, the v1 OpenSpec specs) was removed from the main branch and remains in the Git history.
+Since 2026-10-29 this repository follows the local prototype v2; the v2 development history was merged into the main branch after removing personal grades. The earlier v1 implementation (Codex reading pages, a CLI, SQLite storage, the v1 OpenSpec specs) was removed from the main branch and remains in the Git history.
 
 ## Licence
 

@@ -42,11 +42,10 @@ function rawVersion(path = dbFile()) {
 }
 
 describe('opening the store', () => {
-  it('creates .local/ as 0700 and the database as 0600 at .local/studyorbit.db, apart from the v1 coursework.db', async () => {
+  it('creates .local/ as 0700 and the database as 0600 at .local/studyorbit.db', async () => {
     const store = await open();
     expect(store.path).toBe(dbFile());
     expect(storePath(dir)).toBe(dbFile());
-    expect(dbFile().endsWith('coursework.db')).toBe(false);
     expect(await mode(join(dir, '.local'))).toBe(0o700);
     expect(await mode(dbFile())).toBe(0o600);
     store.createJob({ id: 'job-1', courses: [{ courseId: 'SYN-1' }] });

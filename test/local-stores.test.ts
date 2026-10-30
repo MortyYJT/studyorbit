@@ -20,7 +20,7 @@ describe('migrateStoredKeys', () => {
       [storageKeys.manual]: { 100: [{ key: '100:manual:m1', parent: '100:a1' }] },
       [storageKeys.order]: { 100: ['100:a1', '100:canvas:5551'] },
       [storageKeys.work]: [{ key: '100:group:100:quizzes', courseId: '100' }, { key: 'task:1', courseId: '' }],
-      'coursework.other': 'untouched',
+      'studyorbit.other': 'untouched',
     });
     const result = migrateStoredKeys(storage, [
       { courseId: '100', legacyIds: { a1: 'canvas:5551', quizzes: 'canvas-group:300' } },
@@ -31,7 +31,7 @@ describe('migrateStoredKeys', () => {
     expect(read(storage, storageKeys.manual)).toEqual({ 100: [{ key: '100:manual:m1', parent: '100:canvas:5551' }] });
     expect(read(storage, storageKeys.order)).toEqual({ 100: ['100:canvas:5551'] });
     expect(read(storage, storageKeys.work)).toEqual([{ key: '100:group:100:canvas-group:300', courseId: '100' }, { key: 'task:1', courseId: '' }]);
-    expect(storage.data.get('coursework.other')).toBe('untouched');
+    expect(storage.data.get('studyorbit.other')).toBe('untouched');
 
     storage.writes.length = 0;
     expect(migrateStoredKeys(storage, [{ courseId: '100', legacyIds: { a1: 'canvas:5551', quizzes: 'canvas-group:300' } }])).toEqual({ changed: false, failed: false });

@@ -174,7 +174,7 @@ describe('AppleScript bridges (Edge and Chrome)', () => {
     const tab = await bridge.open('https://canvas.example.edu/api/v1/courses?x=1', 'https://canvas.example.edu/api/v1/courses');
     expect(tab).toEqual(['7', 'tab-1']);
     expect(calls.shift()!.script).toBe(runningScript('Microsoft Edge'));
-    expect(calls[0]!.args[0]).toMatch(/^https:\/\/canvas\.example\.edu\/api\/v1\/courses\?x=1#coursework-[0-9a-f-]{36}$/);
+    expect(calls[0]!.args[0]).toMatch(/^https:\/\/canvas\.example\.edu\/api\/v1\/courses\?x=1#studyorbit-[0-9a-f-]{36}$/);
     await bridge.read(tab, 'P', 'same-origin-json');
     await bridge.read(tab, 'P', 'body-text');
     await bridge.read(tab, 'P', 'navigation-status');
