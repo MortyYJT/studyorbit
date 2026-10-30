@@ -12,7 +12,7 @@
       "kind": "osascript",
       "script": 0,
       "argv": [
-        "https://canvas.lms.unimelb.edu.au/api/v1/courses?enrollment_state=active&include[]=term&per_page=100#coursework-<uuid>"
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses?enrollment_state=active&include[]=term&per_page=100#studyorbit-<uuid>"
       ]
     },
     {
@@ -46,7 +46,7 @@
       "kind": "osascript",
       "script": 0,
       "argv": [
-        "https://canvas.lms.unimelb.edu.au/api/v1/courses?enrollment_state=active&include%5B%5D=term&page=2&per_page=100#coursework-<uuid>"
+        "https://canvas.lms.unimelb.edu.au/api/v1/courses?enrollment_state=active&include%5B%5D=term&page=2&per_page=100#studyorbit-<uuid>"
       ]
     },
     {

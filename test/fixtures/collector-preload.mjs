@@ -34,7 +34,7 @@ function answer(file, args) {
   if (file === '/usr/bin/osascript') {
     const [flag, script, ...argv] = args;
     if (flag !== '-e') return { error: 'unexpected osascript call' };
-    const at = argv.map(value => String(value).replace(/#coursework-[0-9a-f-]{36}$/, '#coursework-<uuid>'));
+    const at = argv.map(value => String(value).replace(/#studyorbit-[0-9a-f-]{36}$/, '#studyorbit-<uuid>'));
     log({ kind: 'osascript', script, argv: at });
     if (scenario.osascriptError) return { error: scenario.osascriptError };
     if (/is running/.test(script) && !/make new tab/.test(script)) return { stdout: scenario.running === false ? 'false' : 'true' };

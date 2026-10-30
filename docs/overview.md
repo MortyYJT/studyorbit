@@ -93,8 +93,8 @@ Entry points are `npm run dev` (`dev.mjs`) and `npm run sync:courses` (collects 
 | Data source settings (mode 600, folder 700; delete to return to UniMelb + Edge) | `.local/config/sources.json` |
 | Chats, revision notes | `.local/chat/`, `.local/revision/notes.json` |
 | Each course's course JSON | UniMelb `~/Desktop/墨尔本大学 <year> S<semester>/<code>/分数结构*.json`; other institutions `~/Desktop/StudyOrbit <semester>/<code>/分数结构*.json` (new files never overwrite old ones; the newest valid file is read) |
-| Course selection, tasks, availability, target band, appearance, seen-change markers (`coursework.course-changes-seen.v1`); corrections from before the move (backup only) | Browser localStorage (per browser and port; keys keep the `coursework.` prefix so existing data survives) |
-| Background image | Browser IndexedDB `coursework` |
+| Course selection, tasks, availability, target band, appearance, seen-change markers (`studyorbit.course-changes-seen.v1`); corrections from before the move (backup only) | Browser localStorage (per browser and port; keys use the `studyorbit.` prefix; keys and the background image saved under the former prefix are moved on the first load (`web/src/storage-prefix.ts`)) |
+| Background image | Browser IndexedDB `studyorbit` |
 
 `.local/` and `.local-backups/` are ignored by Git but contain personal data.
 

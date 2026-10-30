@@ -28,8 +28,8 @@ export function assertAllowedUrl(url, allowedOrigins) {
   return parsed;
 }
 
-/** `url` with the random `#coursework-<uuid>` fragment that marks a collector's tab. */
-export const markedUrl = (url, uuid = randomUUID()) => `${url}#coursework-${uuid}`;
+/** `url` with the random `#studyorbit-<uuid>` fragment that marks a collector's tab. */
+export const markedUrl = (url, uuid = randomUUID()) => `${url}#studyorbit-${uuid}`;
 
 export function assertReadKind(kind) {
   if (!Object.hasOwn(READ_EXPRESSIONS, kind)) throw new Error(`未知的读取方式：${String(kind)}`);

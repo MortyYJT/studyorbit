@@ -41,7 +41,7 @@ describe('the CDP bridge of a collector', () => {
     answer('T7');
     expect(await opened).toEqual(['T7']);
     expect(channel.sent[0]).toMatchObject({ id: 1, op: 'open', prefix: `${ORIGIN}/api/v1/courses` });
-    expect(String(channel.sent[0]!.url)).toMatch(/^https:\/\/canvas\.example\.edu\/api\/v1\/courses#coursework-[0-9a-f-]{36}$/);
+    expect(String(channel.sent[0]!.url)).toMatch(/^https:\/\/canvas\.example\.edu\/api\/v1\/courses#studyorbit-[0-9a-f-]{36}$/);
     const state = bridge.state(['T7'], 'p');
     answer('ready');
     expect(await state).toBe('ready');

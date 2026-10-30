@@ -19,7 +19,7 @@ describe('Canvas preflight', () => {
     expect(run.output).toBeNull();
     // One tab on the users/self URL, read with the same-origin JSON read, then closed.
     const tabs = run.calls.filter(call => call.kind === 'osascript' && /make new tab/.test(String(call.script)));
-    expect(tabs.map(call => (call.argv as string[])[0])).toEqual([`${SELF}#coursework-<uuid>`]);
+    expect(tabs.map(call => (call.argv as string[])[0])).toEqual([`${SELF}#studyorbit-<uuid>`]);
     expect(run.calls.some(call => /close t$/m.test(String(call.script)))).toBe(true);
   });
 

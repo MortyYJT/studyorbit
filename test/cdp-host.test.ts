@@ -13,7 +13,7 @@ const ORIGIN = 'https://canvas.example.edu';
 const COURSES = `${ORIGIN}/api/v1/courses?enrollment_state=active&include[]=term&per_page=100`;
 const PREFIX = `${ORIGIN}/api/v1/courses`;
 const client = { browser: 'cdp-chrome', browserPath: null, allowedOrigins: [ORIGIN] };
-const marked = (url: string) => `${url}#coursework-00000000-0000-4000-8000-000000000000`;
+const marked = (url: string) => `${url}#studyorbit-00000000-0000-4000-8000-000000000000`;
 
 function setup(pages = {}) {
   const browsers = fakeCdpBrowsers(pages);
@@ -133,7 +133,7 @@ describe('the dedicated browser host', () => {
     const collector = fakeCollectorChild();
     host.attach(collector.child, client);
     for (const message of [
-      { op: 'open', url: 'https://example.org/#coursework-x', prefix: 'https://example.org/' },
+      { op: 'open', url: 'https://example.org/#studyorbit-x', prefix: 'https://example.org/' },
       { op: 'open', url: marked(COURSES), prefix: 'https://example.org/' },
       { op: 'open', url: `http://canvas.example.edu/api/v1/courses`, prefix: PREFIX },
       { op: 'evaluate', tab: 'T1', expression: 'document.cookie' },

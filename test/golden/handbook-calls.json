@@ -11,7 +11,7 @@
       "kind": "osascript",
       "script": 0,
       "argv": [
-        "https://handbook.unimelb.edu.au/2026/subjects/synt10001/assessment#coursework-<uuid>"
+        "https://handbook.unimelb.edu.au/2026/subjects/synt10001/assessment#studyorbit-<uuid>"
       ]
     },
     {
