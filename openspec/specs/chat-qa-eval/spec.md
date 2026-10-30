@@ -29,9 +29,9 @@ A runner script SHALL ask each question as a fresh one-message conversation, N t
 - **THEN** it writes 2 answers per question per mode and a summary whose accuracy matches the scripted answers' grades, without any network call
 
 ### Requirement: Before and after results are recorded
-After the tool loop is merged, the configured model (DeepSeek Flash, per decision #245, unless the owner chooses otherwise) SHALL be run in both modes with N = 5, and `docs/eval-results.md` SHALL record the date, commit, provider and model, N, accuracy per mode overall and by category, tool-use rates, fallbacks, failures, tokens and time, and the limitations. The question format, grading rules and runner options SHALL be documented in `docs/eval-chat-qa.md`.
+After the tool loop is merged, the configured model (DeepSeek Flash, per decision #245, unless the owner chooses otherwise) SHALL be run in both modes with N = 5, and the results section of `docs/eval-chat-qa.md` SHALL record the date, commit, provider and model, N, accuracy per mode overall and by category, tool-use rates, fallbacks, failures, tokens and time, and the limitations. The question format, grading rules and runner options SHALL be documented in `docs/eval-chat-qa.md`.
 
 #### Scenario: Results section
 - **WHEN** the live run finishes
-- **THEN** `docs/eval-results.md` has a section with context-mode and tool-mode accuracy side by side for the same model, questions and N
+- **THEN** `docs/eval-chat-qa.md` has a results section with context-mode and tool-mode accuracy side by side for the same model, questions and N
 

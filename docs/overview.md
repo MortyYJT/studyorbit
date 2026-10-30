@@ -1,82 +1,105 @@
-# 项目结构与数据流
+# Overview: structure and data flow
 
-更新：2026-10-30。StudyOrbit 是本地原型，`npm run dev` 启动两个进程：本地接口服务（`server/`）和提供 React 页面的 Vite 开发服务器。静态构建不含本地接口。
+Updated 2026-10-30. StudyOrbit is a local prototype. `npm run dev` starts two processes: the local API server (`server/`) and the Vite dev server that serves the React page. A static build has no local API.
 
-## 进程、端口和令牌
+## Processes, ports and token
 
-| 进程 | 地址 | 说明 |
+| Process | Address | Notes |
 | --- | --- | --- |
-| 本地接口服务（`node server/main.ts`，`npm run server`） | `http://127.0.0.1:5190`（`STUDYORBIT_API_PORT`） | 提供全部 `/api/local/*`；只绑 `127.0.0.1`；端口被占就报错退出，不换端口 |
-| Vite 开发服务器（`npm run dev:web`） | `http://localhost:5173`（`STUDYORBIT_WEB_PORT`，严格端口） | 只提供页面，把 `/api/local` 代理到本地接口服务 |
+| Local API server (`node server/main.ts`, `npm run server`) | `http://127.0.0.1:5190` (`STUDYORBIT_API_PORT`) | Serves every `/api/local/*` route; binds only `127.0.0.1`; exits with an error if the port is taken instead of picking another |
+| Vite dev server (`npm run dev:web`) | `http://localhost:5173` (`STUDYORBIT_WEB_PORT`, strict port) | Serves the page only and proxies `/api/local` to the local API server |
 
-- **启动：** `scripts/dev.mjs` 每次启动生成一个随机 32 字节令牌，经环境变量 `STUDYORBIT_API_TOKEN` 交给两个进程（不写盘、不打印、不进前端代码）；先启动接口服务，看到 `StudyOrbit local API listening on …` 这一行再启动 Vite（15 秒没看到或服务先退出就整体退出）；Ctrl-C 转发给两个进程，一个退出就停掉另一个。附加参数传给 Vite（`npm run dev -- --open`）；改页面端口用 `STUDYORBIT_WEB_PORT`，不要用 `--port`（接口只认页面自己的端口）。
-- **访问检查**（`server/guard.ts`，依次，失败一律 403 空响应）：对端是本机回环；请求头 `x-studyorbit-token` 等于本次令牌（定长比较）；`Host` 只能是 `localhost` / `127.0.0.1` / `[::1]` 加页面端口（防 DNS 重绑定）；有 `Origin` 时必须等于 `http://<Host>`。各路由原有的写操作要求（同源 `Origin` 加 `Content-Type: application/json`）不变。
-- **代理**（`server/proxy.ts`）：不改 `Host`，在服务端加上令牌并覆盖浏览器自带的值；浏览器不是本机回环地址就直接 403、不转发；SSE 不缓冲，浏览器中断时上游请求随之关闭。直接 `vite`（`npm run dev:web`）没有令牌会拒绝启动；`vite preview` 没有代理，`/api/local` 返回 404。
-- **单实例：** 服务启动时取得 `.local/server.lock`（`scripts/lib/server-lock.mjs`），同一项目已有服务在运行就退出并提示「另一个 StudyOrbit 本地服务正在运行」，退出时删除；随后打开 `.local/studyorbit.db`（`scripts/lib/sync-store.mjs`），数据库不可用时同步接口返回 `503 SYNC_STORE_UNAVAILABLE`，其他接口照常。
+- **Start-up:** `scripts/dev.mjs` generates a random 32-byte token on every start and passes it to both processes in `STUDYORBIT_API_TOKEN` (never written to disk, printed, or put in front-end code). It starts the API server first and starts Vite once it sees the line `StudyOrbit local API listening on …` (if that line does not appear within 15 seconds, or the server exits first, everything exits). Ctrl-C is forwarded to both; when one exits the other is stopped. Extra arguments go to Vite (`npm run dev -- --open`). Change the page port with `STUDYORBIT_WEB_PORT`, not `--port`: the API only accepts the page's own port.
+- **Access checks** (`server/guard.ts`, in order; any failure is a 403 with an empty body): the peer is loopback; the `x-studyorbit-token` header equals this launch's token (constant-time comparison); `Host` is `localhost`, `127.0.0.1` or `[::1]` with the page port (DNS-rebinding defence); an `Origin`, when present, equals `http://<Host>`. Per-route write rules (same-origin `Origin` plus `Content-Type: application/json`) still apply.
+- **Proxy** (`server/proxy.ts`): keeps `Host`, adds the token on the server side and overwrites any value the browser sent; a non-loopback browser gets a 403 and nothing is forwarded; SSE is not buffered and the upstream request closes when the browser disconnects. Running `vite` directly (`npm run dev:web`) without a token refuses to start; `vite preview` has no proxy, so `/api/local` returns 404.
+- **Single instance:** at start-up the server takes `.local/server.lock` (`scripts/lib/server-lock.mjs`); if another server for the same project is running it exits with 「另一个 StudyOrbit 本地服务正在运行」 ("another StudyOrbit local server is running") and removes the lock on exit. It then opens `.local/studyorbit.db` (`scripts/lib/sync-store.mjs`); if the database is unavailable, sync routes return `503 SYNC_STORE_UNAVAILABLE` and other routes keep working.
 
-## 主流程
+## Main flow
 
-0. **数据来源设置：** `GET`/`PUT /api/local/source-settings`（`server/routes/source-settings.ts`、`scripts/lib/source-settings.mjs`）读写 `.local/config/sources.json`：学校（`unimelb` 或 `generic`）、Canvas 地址、浏览器、浏览器路径、Ed 区域，以及只给 `generic` 的时区和课程代码正则。没有文件时等于墨大 + macOS Edge（其他系统默认 Chrome 专用浏览器，实验性）。同步或获取课程进行中保存回 `409 SYNC_RUNNING`。每次同步和每次获取课程各读一次，换成采集器配置（环境变量 `STUDYORBIT_SOURCE_CONFIG`，不含凭据）传给采集子进程；采集器自己不读设置文件。
-1. **发现课程：** `POST /api/local/sync-courses` 启动 Canvas 来源的发现采集器（`scripts/sources/canvas/collect.mjs discover`），在已登录的浏览器里读取全部 Canvas 课程，存 `.local/lms/courses.json`，并记下 `canvasOrigin` 和学校；读取时（`/api/local/course-candidates`、`scripts/lib/course-reports.mjs`）再按当前学校插件的课程代码规则筛出候选。课程列表的 Canvas 地址和设置不一致时（没有这个字段的旧列表按墨大地址算），同步、课程页和选课都回 `409 COURSE_LIST_STALE`（两个 Canvas 的课程 ID 可能撞号）。
-2. **选课并同步：** `web/src/LocalCourseSelect.tsx` 把选择存进浏览器，调用 `POST /api/local/course-sync`（GET 查进度，DELETE 取消）。`scripts/lib/sync-pipeline.mjs` 对每门课依次采集当前设置的来源：Canvas、Ed，再加学校的框架来源（墨大是 Handbook，通用学校没有）；采集串行，已采集课程的模型分析可与后续采集并行。每门课分四步：采集 → 分析 → 校验 → 合并（`scripts/lib/sync-stages.mjs`），每步完成后把检查点写进 `.local/studyorbit.db`（`scripts/lib/sync-store.mjs`，`node:sqlite`）。失败、取消或服务退出（标为「已中断」）的同步，可以在第一次开始后 24 小时内用 `POST /api/local/sync-jobs/<jobId>/resume`（页面上「继续上次同步」）继续：检查点和文件核对无误的步骤直接沿用，不再采集或调模型。采集一门课接一门课地跑（Canvas 和 Handbook 共用一个浏览器限速器，Ed 单独一个，同一个限速器两次开始至少隔 500 毫秒）；模型每家最多 4 个并发；临时失败（模型的 HTTP 429、5xx、连接错误，采集器的退出码 75）最多试 3 次（`scripts/lib/rate-limit.mjs`）。开始采集前先做一次检查（`scripts/sources/canvas/preflight.mjs`、`scripts/sources/ed/preflight.mjs`）：浏览器没窗口、Apple 事件 JavaScript 没开或 Canvas 登录失效时，整个任务立刻停下，每门课写明原因，不调模型、不写桌面；Ed 没登录只提醒。采集器失败时，原因（已去掉路径、链接参数、Cookie 和令牌）写进占位文件和课程原因（`shared/sync-reasons.ts`）。有上一份文件的课程，Canvas、Handbook 或 Ed 采集失败时记为「不完整」：分析结果只留作诊断（`.local/lms/sync-errors/<runId>-<课程 ID>-incomplete.json` 和数据库快照），不写桌面、不记变更，页面继续显示上一份并在「需要你处理」说明原因；第一次同步照常保存（最多「部分完成」）。
-3. **模型整理：** `scripts/lib/course-analysis.mjs` 生成统一提示词和输出 Schema（来源规则、框架引用和引文规则来自学校插件，没有框架来源时整段省略），`scripts/lib/llm-providers.mjs` 调用设置里选的模型（DeepSeek、OpenAI 兼容、Anthropic、Codex CLI）。结果经 `shared/course-data.ts` 校验，不合格时修复一次，合格的 JSON 存到桌面课程文件夹。
-4. **展示与修正：** `GET /api/local/course-reports` 读每门课最新的有效 JSON；`web/src/LocalPlanning.tsx` 展示课程页和周视图。你的修正、新增、排序和隐藏存在 `.local/corrections/<课程 ID>.json`（`/api/local/corrections`，`scripts/lib/corrections-store.mjs`），不改同步原件；同步结果变了时按三方合并保留你的修改，双方都改且不同的显示为「同步冲突」（`shared/corrections.ts`）。浏览器 localStorage 里的旧修正迁移后只作备份。
-5. **变更提醒：** 同步保存课程文件后，`scripts/lib/course-changes-log.mjs` 用 `shared/course-changes.ts` 的 `diffSnapshots` 按稳定 ID 和上一份有效文件比较，截止时间或权重变了就追加到 `.local/lms/changes.jsonl`（不记分数，第一次同步和「不完整」的同步不记）；页面经 `GET /api/local/course-changes` 读最新 200 条，在「需要你处理」和课程页顶部提示，点「知道了」后不再显示。
-6. **计算：** 成绩与「期末需要」在 `shared/course-calculations.ts`，每周排期在 `shared/planning.ts`，都是纯函数，有单元测试。
-7. **对话与复习：** `web/src/Agent.tsx` 通过 `/api/local/chats*` 流式对话。DeepSeek、OpenAI 兼容和 Anthropic 用只读课程工具回答（`shared/course-tools.ts` 的 6 个工具，循环在 `scripts/lib/chat-tool-loop.mjs`；OpenAI 兼容服务第一次请求就拒绝工具时退回整份上下文）；Codex 仍把已选课程的同步数据整份放进上下文（`scripts/lib/chat-context.mjs`）。两种方式都不含页面修正。复习页可发预设提示词；单门课对话里已完成的回复可以「存到复习」（`/api/local/revision-notes`）。
+0. **Data source settings:** `GET`/`PUT /api/local/source-settings` (`server/routes/source-settings.ts`, `scripts/lib/source-settings.mjs`) read and write `.local/config/sources.json`: the institution (`unimelb` or `generic`), Canvas address, browser, browser path, Ed region, and, for `generic` only, the time zone and course-code regular expression. With no file the settings are UniMelb + macOS Edge (on other systems the default is the dedicated Chrome, experimental). Saving while a sync or course fetch is running returns `409 SYNC_RUNNING`. Each sync and each course fetch reads the settings once and turns them into a collector configuration (`STUDYORBIT_SOURCE_CONFIG`, no credentials) for the collector processes; collectors never read the settings file.
+1. **Discover courses:** `POST /api/local/sync-courses` starts the Canvas discovery collector (`scripts/sources/canvas/collect.mjs discover`), which reads every Canvas course in the signed-in browser, saves `.local/lms/courses.json` and records `canvasOrigin` and the institution. Readers (`/api/local/course-candidates`, `scripts/lib/course-reports.mjs`) filter candidates with the current institution plugin's course-code rule. If the course list's Canvas address differs from the settings (an older list without that field counts as UniMelb), sync, the course page and course selection return `409 COURSE_LIST_STALE`, because course IDs of two Canvas instances can collide.
+2. **Select and sync:** `web/src/LocalCourseSelect.tsx` stores the selection in the browser and calls `POST /api/local/course-sync` (GET for progress, DELETE to cancel). `scripts/lib/sync-pipeline.mjs` collects each course's configured sources in turn: Canvas, Ed, and the institution's framework source (the Handbook for UniMelb, none for a generic institution). Collection is serial; analysis of collected courses can run alongside later collection. Each course goes through four stages, collect → analyse → validate → merge (`scripts/lib/sync-stages.mjs`), and each stage writes a checkpoint to `.local/studyorbit.db` (`scripts/lib/sync-store.mjs`, `node:sqlite`).
+   - **Resume:** a sync that failed, was cancelled or was interrupted by the server exiting can be continued within 24 hours of its first start with `POST /api/local/sync-jobs/<jobId>/resume` ("Continue last sync" 「继续上次同步」 in the page). Stages whose checkpoint and files check out are reused; nothing is collected or analysed twice.
+   - **Limits:** one collector at a time (Canvas and the Handbook share one browser limiter, Ed has its own; two starts on the same limiter are at least 500 ms apart); at most 4 concurrent requests per model provider; transient failures (model HTTP 429, 5xx and connection errors; collector exit code 75) are tried at most 3 times (`scripts/lib/rate-limit.mjs`).
+   - **Preflight:** before collecting, `scripts/sources/canvas/preflight.mjs` and `scripts/sources/ed/preflight.mjs` run. If the browser has no window, Apple Events JavaScript is off or the Canvas sign-in has expired, the whole job stops at once, every course gets the reason, no model is called and nothing is written to the Desktop. An Ed sign-in problem is only a warning.
+   - **Failures:** when a collector fails, its reason (with paths, URL parameters, cookies and tokens removed) goes into the placeholder file and the course's reason (`shared/sync-reasons.ts`). For a course that already has a file, a failed Canvas, Handbook or Ed collection makes the result "incomplete": the analysis is kept only for diagnosis (`.local/lms/sync-errors/<runId>-<courseId>-incomplete.json` and a database snapshot), nothing is written to the Desktop or the change log, and the page keeps showing the previous file with the reason under "Needs you" (「需要你处理」). A first sync is saved as usual (at most "partial").
+3. **Model analysis:** `scripts/lib/course-analysis.mjs` builds the shared prompt and output schema (source rules, framework references and quote rules come from the institution plugin; the framework section is omitted when there is no framework source), and `scripts/lib/llm-providers.mjs` calls the configured model (DeepSeek, OpenAI-compatible, Anthropic, Codex CLI). The result is validated against `shared/course-data.ts`, repaired once if needed, and a valid JSON is saved in the Desktop course folder. What the model fills in and what code fills in is in [Course JSON](course-json.md).
+4. **Display and corrections:** `GET /api/local/course-reports` reads each course's newest valid JSON; `web/src/LocalPlanning.tsx` renders the course page and the week view. Your corrections, additions, ordering and hidden items are saved in `.local/corrections/<courseId>.json` (`/api/local/corrections`, `scripts/lib/corrections-store.mjs`) and never change the synced file. When a sync changes the data, a three-way merge keeps your edits, and fields that both sides changed differently show as "Sync conflicts" (「同步冲突」, `shared/corrections.ts`). Corrections previously in browser localStorage are kept there only as a backup after migration.
+5. **Change reminders:** after a sync saves a course file, `scripts/lib/course-changes-log.mjs` compares it with the previous valid file by stable ID using `diffSnapshots` in `shared/course-changes.ts`. Changed deadlines or weights are appended to `.local/lms/changes.jsonl` (scores are not logged; first syncs and incomplete syncs log nothing). The page reads the latest 200 entries from `GET /api/local/course-changes` and shows them under "Needs you" and at the top of the course page until you click "Got it" (「知道了」).
+6. **Calculation:** grades and the final-needed target are in `shared/course-calculations.ts`, the weekly plan in `shared/planning.ts`; both are pure functions with unit tests.
+7. **Chat and revision:** `web/src/Agent.tsx` streams chats through `/api/local/chats*`. DeepSeek, OpenAI-compatible and Anthropic answer with the read-only course tools (the 6 tools in `shared/course-tools.ts`, loop in `scripts/lib/chat-tool-loop.mjs`; an OpenAI-compatible service that rejects tools on the first request falls back to the full context). Codex still gets the selected courses' synced data in full in its context (`scripts/lib/chat-context.mjs`). Neither includes page corrections. The revision tab can send preset prompts; a finished reply in a single-course chat can be saved to revision (`/api/local/revision-notes`).
 
-## 采集范围
+## What is collected
 
-- **Canvas：** `scripts/sources/canvas/collect.mjs`（旧入口 `canvas-background.mjs`）用已登录浏览器（Edge、Chrome 或专用浏览器，经浏览器桥）的同源请求读取活动课程、作业分组、作业和本人提交，所有地址都是设置里的 Canvas 地址加固定的 Canvas REST 路径，按 Link 分页且只跟同一地址、同一路径。不读大纲、测验、公告或作业正文。
-- **Ed：** `scripts/sources/ed/collect.mjs`（旧入口 `collect-ed-course.mjs`）用独立的 `edstem` CLI 读取课程目录、最多 50 个成绩候选和有限的介绍；`scripts/sources/ed/scores.mjs` 读取本人最终提交成绩，接口地址按 CLI 登录的区域（`au`/`us`/`eu`）。设置了明确区域而和 CLI 不一致时不发任何 Ed 请求，这门课的 Ed 记为未读取。接口可能返回 403，不能当作零分。
-- **Handbook（只有墨大）：** `scripts/institutions/unimelb/handbook-collect.mjs`（旧入口 `collect-handbook.mjs`）在浏览器后台读取对应年份的考核页面。
+- **Canvas:** `scripts/sources/canvas/collect.mjs` uses same-origin requests in the signed-in browser (Edge, Chrome or the dedicated browser, through the browser bridge) to read active courses, assignment groups, assignments and your own submissions. Every address is the configured Canvas address plus a fixed Canvas REST path; Link pagination is followed only on the same address and path. It does not read syllabi, quizzes, announcements or assignment bodies.
+- **Ed:** `scripts/sources/ed/collect.mjs` uses the separate `edstem` CLI to read the course's lesson list, at most 50 grade candidates and a few introduction pages; `scripts/sources/ed/scores.mjs` reads your final submission scores from the API of the CLI's sign-in region (`au`/`us`/`eu`). If the settings name an explicit region that differs from the CLI's, no Ed request is sent and that course's Ed data is recorded as not read. The API can return 403; that is not a score of zero.
+- **Handbook (UniMelb only):** `scripts/institutions/unimelb/handbook-collect.mjs` reads the assessment page for the right year in a background browser tab.
+- **Browser bridge:** on macOS, Apple Events scripts drive Edge or Chrome (`scripts/browser/applescript.mjs`). On Windows and Linux a dedicated browser is used (`cdp-chrome`, `cdp-edge`; experimental, not run on those systems): the local server starts the installed Chrome or Edge with its own profile directory `.local/browser/<browser>` (mode 700) and `--remote-debugging-pipe` (no debugging port), on demand, and keeps it across collections and syncs until you close the window, change the browser setting or the server exits (`Browser.close`, forced after 5 seconds). `POST /api/local/browser/open` ("Open dedicated browser" in settings) opens the Canvas address in it so you can sign in. Collector processes ask the server over Node IPC to open, inspect, read and close tabs; the server checks each request against the collector's address allow-list and sends only allow-listed CDP commands (`Target.createTarget`/`attachToTarget`/`getTargetInfo`/`closeTarget`, `Runtime.evaluate` with fixed expressions only, `Browser.close`). A collector that exits closes only its own tabs. If the dedicated browser's sign-in has expired, the Canvas collector exits with code 77 and the stage fails with 「Canvas：请在专用浏览器里登录后继续同步。」 ("Canvas: sign in in the dedicated browser, then continue the sync"); after signing in you can continue the last sync, which collects that course again.
 
-- **浏览器桥：** macOS 上用 Apple 事件脚本控制 Edge 或 Chrome（`scripts/browser/applescript.mjs`）。Windows 和 Linux 用专用浏览器（`cdp-chrome`、`cdp-edge`，实验性，未在这两个系统上验证）：本地服务用单独的配置目录 `.local/browser/<浏览器>`（700）和 `--remote-debugging-pipe` 启动已安装的 Chrome 或 Edge（不开调试端口），按需启动、跨采集和跨同步保持，你关窗口、改浏览器设置或服务退出时才关（`Browser.close`，5 秒后强制结束）；`POST /api/local/browser/open`（设置里的「打开专用浏览器」）在其中打开 Canvas 地址让你自己登录。采集子进程经 Node IPC 请服务代为开、查、读、关标签页，服务按采集器的地址白名单检查，只发白名单里的 CDP 命令（`Target.createTarget`/`attachToTarget`/`getTargetInfo`/`closeTarget`、只带固定表达式的 `Runtime.evaluate`、`Browser.close`）；采集器退出时只关它自己的标签页。专用浏览器里登录失效时，Canvas 采集以退出码 77 结束，这一步记为失败（「Canvas：请在专用浏览器里登录后继续同步。」），登录后可以继续上次同步，重新采集这门课。
+No course files are downloaded and nothing is submitted. Coverage is not guaranteed to be complete; site changes need re-checking.
 
-不下载课程文件，不提交作业。采集范围不保证完整；站点改版需要重新核对。
+## Code map
 
-## 代码入口
-
-| 位置 | 作用 |
+| Location | Purpose |
 | --- | --- |
-| `web/src/App.tsx`、`web/src/SourceSettings.tsx` | 外壳、侧边栏、同步弹窗、设置（模型、数据来源、外观、背景） |
-| `web/src/LocalPlanning.tsx` | 课程页（成绩、考核、复习）和周视图 / 月历（排期、需要你处理、任务用时） |
-| `web/src/Agent.tsx`、`agent-request.ts` | 对话页；其他页面带课程和预设提示词打开新对话 |
-| `web/src/palette.ts`、`background.ts`、`BackgroundLayer.tsx`、`motion.ts` | 配色、背景、动画 |
-| `server/main.ts`、`server/app.ts`、`server/routes/` | 本地接口服务：启动、访问检查后的路由表、每个 `/api/local/*` 路由一个文件 |
-| `server/guard.ts`、`server/proxy.ts` | 访问检查（回环、令牌、Host、Origin）；Vite 的 `/api/local` 代理 |
-| `scripts/dev.mjs` | `npm run dev`：生成令牌，先启动接口服务再启动 Vite |
-| `vite.config.ts` | 只有页面、端口和代理 |
-| `scripts/lib/sync-pipeline.mjs`、`scripts/lib/sync-stages.mjs` | 分阶段编排（采集 → 分析 → 校验 → 合并）、检查点与续跑、模型调用、取消与中断、保存、用量和变更记录 |
-| `scripts/lib/sync-store.mjs`、`scripts/lib/rate-limit.mjs`、`scripts/lib/server-lock.mjs` | 同步数据库（任务、阶段检查点、课程快照）、限速与重试、单实例锁 |
-| `shared/course-tools.ts`、`scripts/lib/chat-tool-loop.mjs` | 对话用的只读课程工具和工具调用循环 |
-| `scripts/institutions/`、`scripts/sources/`、`scripts/browser/` | 学校插件（`unimelb` 放全部墨大特有内容，`generic` 适用任何 Canvas）、采集来源（Canvas、Ed）和浏览器桥；`test/no-institution-literals.test.ts` 保证其他代码里没有墨大字样 |
-| `scripts/lib/source-settings.mjs`、`server/routes/source-settings.ts` | 数据来源设置的校验、读写和接口 |
-| `scripts/mcp-server.mjs`、`scripts/lib/course-mcp.mjs` | `npm run mcp`：把同一组只读工具经 stdio 提供给 MCP 客户端（如 Claude Code） |
-| `scripts/lib/` | 模型设置与适配器、对话存储与上下文、复习笔记存储、课程读取、修正存储、变更记录 |
-| `shared/` | 课程 JSON 契约、成绩计算、排期、修正合并、变更比较 |
-| `test/` | vitest 单元测试（只用合成数据） |
+| `web/src/App.tsx`, `web/src/SourceSettings.tsx` | Shell, sidebar, sync dialog, settings (model, data sources, appearance, background) |
+| `web/src/LocalPlanning.tsx` | Course page (grades, assessments, revision) and week / month views (plan, needs you, time spent) |
+| `web/src/Agent.tsx`, `agent-request.ts` | Chat page; other pages open a new chat with a course and a preset prompt |
+| `web/src/palette.ts`, `background.ts`, `BackgroundLayer.tsx`, `motion.ts` | Palettes, background, animation |
+| `server/main.ts`, `server/app.ts`, `server/routes/` | Local API server: start-up, the route table behind the access checks, one file per `/api/local/*` route |
+| `server/guard.ts`, `server/proxy.ts` | Access checks (loopback, token, Host, Origin); Vite's `/api/local` proxy |
+| `vite.config.ts` | Page, ports and proxy only |
+| `shared/` | Course JSON contract, grade calculation, weekly plan, correction merge, change comparison, course tools |
+| `test/` | vitest unit tests (synthetic data only); `test/no-institution-literals.test.ts` keeps UniMelb literals out of generic code |
 
-## 数据位置
+### Scripts (`scripts/`)
 
-| 内容 | 位置 |
+Entry points are `npm run dev` (`dev.mjs`) and `npm run sync:courses` (collects the course list only). The `.d.mts` files are TypeScript declarations for the modules next to them. The old top-level entries `canvas-background.mjs`, `collect-ed-course.mjs`, `collect-handbook.mjs` and `edstem-scores.mjs` only forward to their new locations so old commands keep working.
+
+| Script | Purpose |
 | --- | --- |
-| 课程候选、采集快照、同步记录与用量 | `.local/lms/` |
-| 同步任务、阶段检查点、课程快照（SQLite，权限 600） | `.local/studyorbit.db` |
-| 本地服务单实例锁（服务退出时删除） | `.local/server.lock` |
-| 截止时间和权重的变更记录（每行 `{ at, runId, courseId, assessmentId, name, field, before, after }`，权限 600，可随时删除） | `.local/lms/changes.jsonl` |
-| 修正、手动考核、排序、合并基准和未处理冲突（每门课一个文件，权限 600，目录 700） | `.local/corrections/<课程 ID>.json` |
-| 模型设置（权限 600，密钥只写） | `.local/config/llm.json` |
-| 数据来源设置（权限 600，目录 700；删掉即回到墨大 + Edge） | `.local/config/sources.json` |
-| 对话、复习笔记 | `.local/chat/`、`.local/revision/notes.json` |
-| 每门课的课程 JSON | 墨大 `~/Desktop/墨尔本大学 <年份> S<学期>/<课程代码>/分数结构*.json`，其他学校 `~/Desktop/StudyOrbit <学期>/<课程代码>/分数结构*.json`（新文件不覆盖旧文件，读最新的有效文件） |
-| 选课、任务、可用时间、目标档、外观、变更已读标记（`coursework.course-changes-seen.v1`）；迁移前的修正（迁移后只作备份） | 浏览器 localStorage（按浏览器和端口隔离，键名沿用 `coursework.` 前缀以保留已有数据） |
-| 背景图片 | 浏览器 IndexedDB `coursework` |
+| `dev.mjs` | `npm run dev`: generates the launch token, starts `server/main.ts`, starts Vite after the listening line, forwards Ctrl-C, stops one process when the other exits |
+| `sources/canvas/collect.mjs` | Reads the configured Canvas through the browser bridge: the course list (recording `canvasOrigin` and the institution) or one course's assignment groups, assignments and your submissions, following Link pagination |
+| `sources/canvas/preflight.mjs` | Pre-sync check: one same-origin request to Canvas `/api/v1/users/self` through the bridge, looking only at the HTTP status (browser window, Apple Events JavaScript, Canvas sign-in); prints and stores nothing from the reply |
+| `sources/ed/preflight.mjs` | Pre-sync check: runs only `edstem auth status --json`; not being signed in is a warning |
+| `sources/ed/collect.mjs`, `sources/ed/scores.mjs`, `sources/ed/regions.mjs` | Ed lesson list, some grades and selected introductions through the `edstem` CLI; your final submission scores (read-only, region-aware); the Ed region table (`au`/`us`/`eu`, copied from the CLI) and course link format |
+| `sources/registry.mjs`, `sources/config.mjs`, `sources/collector-io.mjs` | Source registry (Canvas, Ed, the institution's framework source), command assembly and collector configuration (`STUDYORBIT_SOURCE_CONFIG`; UniMelb + Edge when absent); shared collector I/O |
+| `institutions/` | Institution plugins: `unimelb` holds every UniMelb specific (course codes, semesters, Desktop folders, time zone, wording, the Handbook source; `handbook-collect.mjs` reads the Handbook page); `generic.mjs` works with any Canvas (course-code rule, `StudyOrbit <semester>/<code>` folders, configured time zone, neutral wording, no framework source) |
+| `browser/bridge.mjs`, `browser/applescript.mjs` | Browser bridge: can only open allowed addresses, check status, read in fixed ways and close; Edge or Chrome via AppleScript on macOS |
+| `browser/cdp-pipe.mjs`, `cdp-launch.mjs`, `cdp-host.mjs`, `cdp.mjs` | Dedicated browser (CDP, experimental): pipe transport (NUL-separated JSON) and command allow-list; finding the program and launching with its own profile and `--remote-debugging-pipe`, closing (`Browser.close`, forced after 5 seconds); the long-lived browser held by the server; the collector-side bridge over Node IPC |
+| `eval-course-analysis.mjs`, `lib/eval-score.mjs` | Course analysis evaluation and its pure scoring ([details](eval-course-analysis.md)) |
+| `eval-chat-qa.mjs`, `lib/qa-grade.mjs` | Chat Q&A evaluation and its pure grader ([details](eval-chat-qa.md)) |
+| `mcp-server.mjs`, `lib/course-mcp.mjs` | Local stdio MCP server (`--project`, `--desktop`, `--courses` or `STUDYORBIT_COURSES`; writes nothing, calls no model, no network); one MCP tool per course tool, re-reading course files on every call ([setup](../README.md#use-from-an-mcp-client)) |
+| `lib/course-list.mjs` | Canvas course JSON parsing and course-code filtering |
+| `lib/course-analysis.mjs`, `lib/course-validation.mjs`, `lib/course-refs.mjs`, `lib/course-quotes.mjs`, `lib/normalise-text.mjs` | Analysis prompt and output schema; validation and the repair round; platform references and Handbook component parsing; quote verification; text normalisation |
+| `lib/course-reports.mjs` | Reads the selected courses and each course folder's newest valid course JSON |
+| `lib/llm-config.mjs`, `lib/llm-providers.mjs` | Model settings (`.local/config/llm.json`) and the four provider adapters |
+| `lib/chat-store.mjs`, `lib/chat-context.mjs`, `lib/chat-replies.mjs`, `lib/chat-reply.mjs`, `lib/chat-tool-loop.mjs`, `lib/chat-tools-prompt.mjs` | Chat storage, context-mode prompt, in-flight replies, one reply end to end, the bounded tool loop, the tool-mode prompt |
+| `lib/corrections-store.mjs`, `lib/course-changes-log.mjs`, `lib/revision-store.mjs`, `lib/source-settings.mjs` | Corrections store, change log, revision notes (`.local/revision/notes.json`), data source settings (`.local/config/sources.json`, atomic write, mode 600) |
+| `lib/local-origin.mjs`, `lib/server-lock.mjs`, `lib/sync-store.mjs` | Same-origin check; single-instance lock (`.local/server.lock`); sync database (`.local/studyorbit.db`: jobs, stage checkpoints, course snapshots) |
+| `lib/sync-pipeline.mjs`, `lib/sync-stages.mjs` | Staged sync per course (collect → analyse → validate → merge) with checkpoints, resume after failure, cancellation or interruption, usage records |
+| `lib/rate-limit.mjs`, `lib/collector-exit.mjs` | Per-platform limits and bounded retries (one collector at a time, at most 4 per model provider, at most 3 tries for HTTP 429/5xx and network errors); the collector's transient-failure exit code 75 |
 
-`.local/` 和 `.local-backups/` 被 Git 忽略，但含个人数据。
+## Where data lives
 
-存储只在本机；分析和对话时，课程数据会发给你选择的模型服务商（`scripts/lib/llm-config.mjs` 决定发给谁）。
+| What | Where |
+| --- | --- |
+| Course candidates, collected snapshots, sync records and usage | `.local/lms/` |
+| Sync jobs, stage checkpoints, course snapshots (SQLite, mode 600) | `.local/studyorbit.db` |
+| Local server lock (removed on exit) | `.local/server.lock` |
+| Deadline and weight change log (one line per change: `{ at, runId, courseId, assessmentId, name, field, before, after }`; mode 600; safe to delete) | `.local/lms/changes.jsonl` |
+| Corrections, manual assessments, ordering, merge base and open conflicts (one file per course; file mode 600, folder 700) | `.local/corrections/<courseId>.json` |
+| Model settings (mode 600, keys write-only) | `.local/config/llm.json` |
+| Data source settings (mode 600, folder 700; delete to return to UniMelb + Edge) | `.local/config/sources.json` |
+| Chats, revision notes | `.local/chat/`, `.local/revision/notes.json` |
+| Each course's course JSON | UniMelb `~/Desktop/墨尔本大学 <year> S<semester>/<code>/分数结构*.json`; other institutions `~/Desktop/StudyOrbit <semester>/<code>/分数结构*.json` (new files never overwrite old ones; the newest valid file is read) |
+| Course selection, tasks, availability, target band, appearance, seen-change markers (`coursework.course-changes-seen.v1`); corrections from before the move (backup only) | Browser localStorage (per browser and port; keys keep the `coursework.` prefix so existing data survives) |
+| Background image | Browser IndexedDB `coursework` |
 
-## 当前边界
+`.local/` and `.local-backups/` are ignored by Git but contain personal data.
 
-Node.js 24+；只在 macOS + Edge + 墨大 Canvas 上实际跑过。macOS Chrome、其他学校的 Canvas、Ed 美区和欧区都只有合成数据测试，未实测；Windows 和 Linux 的专用浏览器（CDP）是实验性的，只有单元测试，没有在这两个系统上跑过。「今天」和截止日期按学校时区计算（墨大是墨尔本时间，通用学校按设置）。`edstem` 和模型密钥属于外部依赖。同步状态存在数据库里，Vite 或本地服务重启不会丢；服务退出时正在跑的同步标为「已中断」，可以继续。分阶段同步还没有跑过真实同步（只用假采集器和假模型测过）；对话工具模式只用 DeepSeek 实测过 3 次请求，其他模型的真实调用在 v2 并入后还没有重新验证；MCP 没有从 Claude Code / Claude Desktop 实际连接过。
+Storage stays on this machine; during analysis and chat, course data is sent to the model provider you chose (`scripts/lib/llm-config.mjs` decides which).
+
+## Current limits
+
+Node.js 24+. Only macOS + Edge + UniMelb Canvas has been run for real. macOS Chrome, other institutions' Canvas and the Ed US and EU regions have synthetic tests only; the Windows and Linux dedicated browser (CDP) is experimental with unit tests only. "Today" and deadlines use the institution's time zone (Melbourne for UniMelb, the configured zone for a generic institution). `edstem` and model keys are external dependencies. Sync state lives in the database, so restarting Vite or the server loses nothing; a sync running when the server exits is marked interrupted and can be continued. The staged sync has not been run against real courses (only fake collectors and a fake model); the chat's tool mode has been tried for real only with DeepSeek; other providers' real calls have not been re-verified since v2; MCP has not been connected from Claude Code or Claude Desktop.

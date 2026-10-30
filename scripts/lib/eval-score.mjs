@@ -1,4 +1,4 @@
-// Pure scoring for the course-analysis evaluation harness (docs/eval-format.md).
+// Pure scoring for the course-analysis evaluation harness (docs/eval-course-analysis.md).
 // Compares validated model documents with a gold course document; no I/O.
 import { platformIdentities, slug } from './course-refs.mjs';
 
