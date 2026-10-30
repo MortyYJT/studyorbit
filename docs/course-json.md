@@ -55,7 +55,7 @@ Handbook collection stores page text only. `parseHandbookComponents` (`scripts/l
 
 ## Stored document
 
-`CourseDocumentSchema` accepts `version: 1` and `version: 2`; any other version is invalid. Version 2 adds `refs`, `weightQuote`, `ruleQuote` and `unsourced` to every version 1 assessment field, and `legacyIds` at the top level:
+`CourseDocumentSchema` accepts `version: 1` and `version: 2`; any other version is invalid. Version 2 adds `refs`, `weightQuote`, `ruleQuote` and `unsourced` to the fields of every version 1 assessment, and `legacyIds` at the top level:
 
 | Field | Source |
 | --- | --- |
