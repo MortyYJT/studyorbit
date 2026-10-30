@@ -4,11 +4,11 @@
 Course data comes from sources behind one interface (Canvas, Ed and the institution's framework source), resolved from the source settings and run by the collect stage of the staged sync.
 ## Requirements
 ### Requirement: Course sources behind one interface
-The system SHALL collect course data only through `CourseSource` implementations, each with an `id`, a `label`, the reference platforms it provides, whether it uses the browser, its limiter key, a function that returns the collector command for a course (or none when the source does not apply), a discovery command for sources that discover courses, and its `unavailable` placeholder. Collectors SHALL keep running as separate processes through the pipeline's existing collector runner, with its cancellation, time limit and exit code 75 for retryable failures. Collectors SHALL receive their configuration in the environment variable `STUDYORBIT_SOURCE_CONFIG` as validated JSON that contains no credential; the pipeline's collector runner SHALL pass the command's environment to the child. A collector started without the variable SHALL use the `unimelb` institution, the UniMelb Canvas origin, Ed region `auto` and `edge-applescript`, and off macOS SHALL exit 1 with 「请通过 StudyOrbit 启动，或设置 STUDYORBIT_SOURCE_CONFIG」; an invalid variable SHALL be an error.
+The system SHALL collect course data only through `CourseSource` implementations, each with an `id`, a `label`, the reference platforms it provides, whether it uses the browser, its limiter key, a function that returns the collector command for a course (or none when the source does not apply), a discovery command for sources that discover courses, an optional preflight check (a command and whether its failure blocks the job; Canvas: blocking `sources/canvas/preflight.mjs`; Ed: non-blocking `sources/ed/preflight.mjs`), and its `unavailable` placeholder. Collectors SHALL keep running as separate processes through the pipeline's existing collector runner, with its cancellation, time limit and exit code 75 for retryable failures. Collectors SHALL receive their configuration in the environment variable `STUDYORBIT_SOURCE_CONFIG` as validated JSON that contains no credential; the pipeline's collector runner SHALL pass the command's environment to the child. A collector started without the variable SHALL use the `unimelb` institution, the UniMelb Canvas origin, Ed region `auto` and `edge-applescript`, and off macOS SHALL exit 1 with 「请通过 StudyOrbit 启动，或设置 STUDYORBIT_SOURCE_CONFIG」; an invalid variable SHALL be an error.
 
 #### Scenario: Placeholder on failure
 - **WHEN** the Ed collector exits with code 1
-- **THEN** the collect stage writes the Ed source's placeholder, identical to today's, and the course is at most `partial` with today's reason
+- **THEN** the collect stage writes the Ed source's placeholder with the collector's sanitised cause as its reason, and the course is at most `partial`
 
 #### Scenario: Old command still works
 - **WHEN** the owner runs `node scripts/canvas-background.mjs discover <out>` on macOS without `STUDYORBIT_SOURCE_CONFIG`
@@ -31,7 +31,7 @@ The collect stage SHALL run the sources returned by `resolveSources(settings, in
 
 #### Scenario: UniMelb setup unchanged
 - **WHEN** the synthetic course is synced with no settings file using fake collectors
-- **THEN** the collector arguments, the run-directory files, the prompt and the course reasons are byte-identical to those recorded before the change
+- **THEN** the collector arguments and the prompt are byte-identical to those recorded before the change; the run-directory placeholders, the course reasons and the collect and validate input hashes differ only as the sync-incomplete change recorded (decision #486)
 
 ### Requirement: Canvas source for any instance
 The Canvas source SHALL build every URL from the configured Canvas origin and fixed Canvas REST API paths, SHALL follow pagination only to the same origin and path, and SHALL build course links on that origin. The origin SHALL be `https`, without user information, path, query or fragment, and not an IP address literal. Discovery SHALL record `canvasOrigin` and `institution` in `.local/lms/courses.json`. Sync and the course reports SHALL refuse a course list whose origin differs from the current setting with `409 COURSE_LIST_STALE` and 「Canvas 地址已更改，请重新获取课程」; a list without `canvasOrigin` SHALL be read as the UniMelb origin.

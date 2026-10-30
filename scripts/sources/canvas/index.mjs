@@ -11,5 +11,7 @@ export const canvasSource = Object.freeze({
   discover: (ctx, out) => ({ script: 'sources/canvas/collect.mjs', args: ['discover', out], env: { ...ctx.env } }),
   /** `<courseId> <out>`. */
   collect: (course, ctx, out) => ({ script: 'sources/canvas/collect.mjs', args: [course.id, out], env: { ...ctx.env } }),
+  /** `preflight`: one authenticated same-origin request (`/api/v1/users/self`); a failure stops the job. */
+  preflight: Object.freeze({ blocking: true, command: ctx => ({ script: 'sources/canvas/preflight.mjs', args: [], env: { ...ctx.env } }) }),
   placeholder: (reason = 'Canvas 采集不可用') => ({ status: 'unavailable', reason }),
 });

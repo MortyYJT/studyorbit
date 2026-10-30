@@ -147,6 +147,28 @@ describe('validateAnalysis: references', () => {
     expect(result.issues).toEqual(['assessments.0.refs: 「Item a」没有任何引用，也没有子项']);
   });
 
+  it('allows a leaf with no references only when no framework component is available (decision #482)', () => {
+    const exam = item('exam', { name: 'Final exam', kind: 'test', refs: [], weight: null });
+    for (const missing of [{ status: 'unavailable', reason: 'synthetic' }, { ...handbook, text: 'Assessment\nNo table here' }]) {
+      const result = check(documentWith([item('a'), exam]), { ...data, handbook: missing });
+      expect(result.issues).toEqual([]);
+      expect(result.valid).toBe(true);
+    }
+    // Without any framework source (an institution with none) the rule is unchanged.
+    expect(validateAnalysis(raw(documentWith([exam])), { course, ...data, framework: null }).issues).toEqual(['assessments.0.refs: 「Final exam」没有任何引用，也没有子项']);
+  });
+
+  it('keeps such a course at most partial, clears an unverified weight and names the leaf item:<slug>', () => {
+    const collected = { ...data, handbook: { status: 'unavailable', reason: 'synthetic' } };
+    const text = raw(documentWith([item('a', { weight: null }), item('exam', { name: 'Final exam', kind: 'test', refs: [], weight: 65 })]));
+    const validation = validateAnalysis(text, { course, ...collected });
+    const settled = settleCourse({ result: { exitCode: 0, lastMessage: text, usage: null }, validation, collection: { handbook: { failed: true } }, data: collected, previous: null });
+    expect(settled.status).toBe('partial');
+    expect(settled.reason).toBe('Handbook 数据未能读取（synthetic）；1 项考核没有来源引用；1 项权重或规则无出处');
+    const exam = settled.document!.assessments.find(entry => entry.name === 'Final exam')!;
+    expect(exam).toMatchObject({ id: 'item:final-exam', refs: [], sources: [], weight: null, unsourced: ['weight'] });
+  });
+
   it('rejects duplicate final IDs and asks for distinct names', () => {
     const result = check(documentWith([
       item('a', { name: 'Exam', refs: [{ platform: 'handbook', id: 'Final exam' }] }),

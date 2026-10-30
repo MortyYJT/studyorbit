@@ -10,9 +10,10 @@ import { closeDialog, durations, easeOut, openDialog, reducedMotion, useSlidingI
 import { palettes, parsePalette, type Palette } from './palette.js';
 import { fetchSourceSettings, SourceSettingsSection, type SourceSettingsReply } from './SourceSettings.js';
 import type { LlmProvider, PublicLlmConfig } from '../../scripts/lib/llm-config.mjs';
+import { translateReason } from '../../shared/sync-reasons.js';
 
 type Panel = 'status' | 'settings';
-type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; phase?: string; file?: string; stage?: string | null; reused?: boolean }[]; error: string | null; jobId?: string | null; resumedFrom?: string | null; resumable?: boolean };
+type CourseRun = { running: boolean; courses: { id: string; code: string; status: string; reason: string; phase?: string; file?: string; stage?: string | null; reused?: boolean }[]; error: string | null; warnings?: string[]; jobId?: string | null; resumedFrom?: string | null; resumable?: boolean };
 type TokenUsage = { input: number | null; output: number | null; cached: number | null; reasoning: number | null };
 type SyncUsage = { type: string; runId: string; at: string; course: string; courses: { code: string; status: string }[]; model: string; status: string; durationMs: number | null; coordinator: TokenUsage | null; subagents: TokenUsage | null; recovered: boolean };
 type SyncBatch = { id: string; at: string; durationMs: number | null; ended: boolean; legacy: boolean; recovered: boolean; selected: { code: string; status: string }[]; courses: SyncUsage[] };
@@ -288,8 +289,9 @@ export function App() {
         {modal === 'discovery' && <p>{language === 'zh' ? '正在获取课程列表…' : 'Fetching course list…'}</p>}
         {modal === 'starting' && <p>{language === 'zh' ? '正在启动课程同步…' : 'Starting course sync…'}</p>}
         {modal === 'stopping' && <p>{language === 'zh' ? '正在中止，请稍候…' : 'Stopping…'}</p>}
-        {courseRun && courseRun.courses.length > 0 && <><p>{language === 'zh' ? '已处理' : 'Processed'} {courseRun.courses.filter(course => ['completed', 'partial', 'failed'].includes(course.status)).length} / {courseRun.courses.length}</p>{courseRun.courses.map(course => <div className="sync-course" key={course.id}><b>{course.code}</b><span>{['failed', 'cancelled', 'interrupted'].includes(course.status) && <i className="signal" aria-hidden="true" />}{({ pending: language === 'zh' ? '等待' : 'Waiting', running: course.phase === 'canvas' ? (language === 'zh' ? '获取 LMS 信息中' : 'Fetching LMS data') : course.phase === 'ed' ? (language === 'zh' ? '获取 Ed 信息中' : 'Fetching Ed data') : course.phase === 'waiting_analysis' ? (language === 'zh' ? '等待 Agent 分析' : 'Waiting for agent') : course.phase === 'handbook' ? (language === 'zh' ? `获取 ${frameworkLabel ?? '考核框架'} 信息中` : `Fetching ${frameworkLabel ?? 'framework'} data`) : course.phase === 'analysis' ? (language === 'zh' ? 'Agent 分析中' : 'Agent analysing') : course.phase === 'saving' ? (language === 'zh' ? '校验与保存中' : 'Validating and saving') : (language === 'zh' ? '准备中' : 'Starting'), completed: language === 'zh' ? '已完成' : 'Completed', partial: language === 'zh' ? '部分完成' : 'Partial', failed: language === 'zh' ? '未完成' : 'Failed', cancelled: language === 'zh' ? '已中止' : 'Stopped', interrupted: language === 'zh' ? '已中断' : 'Interrupted' } as Record<string,string>)[course.status] ?? course.status}</span>{course.reused && <small className="muted">{language === 'zh' ? '沿用上次结果' : 'Reused from the last sync'}</small>}{course.status === 'failed' && course.reason && <small>{course.reason}</small>}</div>)}</>}
-        {(localSyncError || courseRunError || courseRun?.error) && <p role="alert">{localSyncError || courseRunError || courseRun?.error}</p>}
+        {courseRun && courseRun.courses.length > 0 && <><p>{language === 'zh' ? '已处理' : 'Processed'} {courseRun.courses.filter(course => ['completed', 'partial', 'incomplete', 'failed'].includes(course.status)).length} / {courseRun.courses.length}</p>{courseRun.courses.map(course => <div className="sync-course" key={course.id}><b>{course.code}</b><span>{['failed', 'incomplete', 'cancelled', 'interrupted'].includes(course.status) && <i className="signal" aria-hidden="true" />}{({ pending: language === 'zh' ? '等待' : 'Waiting', running: course.phase === 'canvas' ? (language === 'zh' ? '获取 LMS 信息中' : 'Fetching LMS data') : course.phase === 'ed' ? (language === 'zh' ? '获取 Ed 信息中' : 'Fetching Ed data') : course.phase === 'waiting_analysis' ? (language === 'zh' ? '等待 Agent 分析' : 'Waiting for agent') : course.phase === 'handbook' ? (language === 'zh' ? `获取 ${frameworkLabel ?? '考核框架'} 信息中` : `Fetching ${frameworkLabel ?? 'framework'} data`) : course.phase === 'analysis' ? (language === 'zh' ? 'Agent 分析中' : 'Agent analysing') : course.phase === 'saving' ? (language === 'zh' ? '校验与保存中' : 'Validating and saving') : (language === 'zh' ? '准备中' : 'Starting'), completed: language === 'zh' ? '已完成' : 'Completed', partial: language === 'zh' ? '部分完成' : 'Partial', incomplete: language === 'zh' ? '不完整' : 'Incomplete', failed: language === 'zh' ? '未完成' : 'Failed', cancelled: language === 'zh' ? '已中止' : 'Stopped', interrupted: language === 'zh' ? '已中断' : 'Interrupted' } as Record<string,string>)[course.status] ?? course.status}</span>{course.reused && <small className="muted">{language === 'zh' ? '沿用上次结果' : 'Reused from the last sync'}</small>}{['failed', 'incomplete', 'partial'].includes(course.status) && course.reason && <small>{course.status === 'incomplete' ? (language === 'zh' ? `本次同步不完整，仍显示上次的结果：${course.reason}` : `Incomplete; the previous result is still shown: ${translateReason(course.reason, 'en')}`) : translateReason(course.reason, language)}</small>}</div>)}</>}
+        {(localSyncError || courseRunError || courseRun?.error) && <p role="alert">{localSyncError || courseRunError || translateReason(courseRun?.error ?? '', language)}</p>}
+        {courseRun?.warnings?.map(warning => <p className="muted" role="status" key={warning}>{translateReason(warning, language)}</p>)}
       </>}
       {modal === 'finished' ? <div className="sync-actions">{courseRun?.resumable && courseRun.jobId && <button onClick={() => void resumeSync()}>{resumeLabel}</button>}<button className={courseRun?.resumable ? 'ghost' : undefined} onClick={() => setSyncModal(undefined)}>{language === 'zh' ? '关闭' : 'Close'}</button></div> : <button disabled={modal === 'stopping'} onClick={() => void stopSync()}>{language === 'zh' ? '中止同步' : 'Stop sync'}</button>}
     </dialog>
@@ -371,19 +373,21 @@ function duration(ms: number | null, zh: boolean, approximate = false): string {
   const text = minutes ? (zh ? `${minutes} 分 ${rest} 秒` : `${minutes} min ${rest} s`) : (zh ? `${(ms / 1000).toFixed(1)} 秒` : `${(ms / 1000).toFixed(1)} s`);
   return approximate ? (zh ? `约 ${text}` : `~${text}`) : text;
 }
-const statusNames: Record<string, [string, string]> = { completed: ['完成', 'Completed'], partial: ['部分完成', 'Partial'], failed: ['未完成', 'Failed'], cancelled: ['已中止', 'Stopped'], interrupted: ['已中断', 'Interrupted'] };
-const problemStatus = (status: string) => status === 'failed' || status === 'cancelled' || status === 'interrupted';
+const statusNames: Record<string, [string, string]> = { completed: ['完成', 'Completed'], partial: ['部分完成', 'Partial'], incomplete: ['不完整', 'Incomplete'], failed: ['未完成', 'Failed'], cancelled: ['已中止', 'Stopped'], interrupted: ['已中断', 'Interrupted'] };
+const problemStatus = (status: string) => status === 'failed' || status === 'incomplete' || status === 'cancelled' || status === 'interrupted';
 /** One result per run: a single course names its status; several courses count how many finished. */
 function batchResult(batch: SyncBatch, zh: boolean): { text: string; problem: boolean } {
   const { entries } = batchSummary(batch);
   if (!batch.ended && !batch.legacy) return { text: zh ? '未结束' : 'Did not finish', problem: true };
   if (entries.length === 1) { const status = entries[0]!.status; return { text: statusNames[status]?.[zh ? 0 : 1] ?? status, problem: problemStatus(status) }; }
   const done = entries.filter(entry => entry.status === 'completed').length, partial = entries.filter(entry => entry.status === 'partial').length;
-  const failed = entries.length - done - partial;
+  const incomplete = entries.filter(entry => entry.status === 'incomplete').length;
+  const failed = entries.length - done - partial - incomplete;
   const parts = [zh ? `${done}/${entries.length} 门完成` : `${done} of ${entries.length} completed`];
   if (partial) parts.push(zh ? `${partial} 门部分完成` : `${partial} partial`);
+  if (incomplete) parts.push(zh ? `${incomplete} 门不完整` : `${incomplete} incomplete`);
   if (failed) parts.push(zh ? `${failed} 门未完成` : `${failed} failed`);
-  return { text: parts.join(' · '), problem: failed > 0 };
+  return { text: parts.join(' · '), problem: failed > 0 || incomplete > 0 };
 }
 function batchWhen(batch: SyncBatch, language: Language): string {
   return batch.at && !Number.isNaN(Date.parse(batch.at)) ? new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(batch.at)) : '—';

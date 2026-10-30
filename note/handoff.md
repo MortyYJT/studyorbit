@@ -2,7 +2,8 @@
 
 > 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。决定看 `note/decisions.md`。
 
-- **最后更新：** 2026-10-30 早上，Claude（夜间按桌面「2026-10-29-StudyOrbit待办.md」连续执行）。
+- **最后更新：** 2026-10-30，Claude（第一次真实同步后的修复，分支 `claude/sync-incomplete`）。
+- **进行中：** 第一次真实同步（任务 e3df1ee7）暴露的三个问题的修复 PR：采集失败写明原因（没窗口、登录失效等）；同步前先检查浏览器窗口和 Canvas 登录，不通过就整批停下、不调模型；有上一份文件时采集不全记「不完整」，不替换桌面文件、不记变更；没有 Handbook 考核项时允许没有引用的考试项（`item:<slug>`）。决定 #480–#489。只有合成数据测试，没有真实同步验证。
 - **主线：** `main` 含 PR #253–#283，本地 `npm run check` 65 个文件、862 个测试通过，CI 绿色。没有打开的 PR。
 - **项目是什么：** StudyOrbit（`MortyYJT/studyorbit`），本地优先的课业助手。已登录浏览器读 Canvas / Ed / Handbook → 分阶段同步（采集 → 分析 → 校验 → 合并，检查点存 `node:sqlite`）→ 课程 JSON v2 → 网页（独立本地服务 + Vite 代理）展示成绩、计划、复习、工具调用式对话；同一套只读工具也作为 MCP 服务开放。
 - **OpenSpec：** 没有进行中的 change。本轮 5 个 change 都已实现并归档：`course-contract-v2`、`local-corrections-merge`、`chat-tools-mcp`、`local-server-sync-pipeline`、`generic-adapters`。现行规格在 `openspec/specs/`（19 份）。
@@ -18,7 +19,7 @@
 
 ## 未验证（重要）
 
-- **没有跑过任何一次真实同步。** 新的 v2 分析提示词、引文核对、分阶段同步、断点续跑、变更记录、三方合并都只在合成数据和假模型上测过。
+- **只跑过一次真实同步（2026-10-30，Edge 没窗口、Canvas 登录过期，结果不完整）；上面的修复还没在真实同步里验证。** 新的 v2 分析提示词、引文核对、分阶段同步、断点续跑、变更记录、三方合并都只在合成数据和假模型上测过。
 - 真实 v1 → v2 键迁移、你浏览器里的修正迁移（你目前没有修正）。
 - OpenAI 兼容和 Anthropic 的真实工具调用；DeepSeek「把推理放回下一轮」的路径；经代理的真实流式对话。
 - MCP 从 Claude Code / Claude Desktop 实际接入（会改你的配置，没做）。

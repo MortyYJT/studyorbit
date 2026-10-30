@@ -49,7 +49,7 @@
   ],
   "runFiles": {
     "900001/canvas.json": "<fixture 2200 bytes>",
-    "900001/ed.json": "{\"status\":\"unavailable\",\"lessons\":[],\"scores\":[],\"reason\":\"Ed 采集不可用\"}",
+    "900001/ed.json": "{\"status\":\"unavailable\",\"lessons\":[],\"scores\":[],\"reason\":\"Ed 采集失败：synthetic exit 1\"}",
     "900001/handbook.json": "<fixture 674 bytes>",
     "900002/canvas.json": "<fixture 2200 bytes>",
     "900002/ed.json": "<fixture 1646 bytes>",
@@ -71,7 +71,7 @@
       "id": "900001",
       "code": "SYNT10001",
       "status": "failed",
-      "reason": "课程数据校验失败：assessments.3.refs.1: 「Assignment 1」引用的 ed 3001 不是采集到的 Ed lesson ID；assessments.4.refs.0: 「Bonus Challenge」引用的 ed 3003 不是采集到的 Ed lesson ID"
+      "reason": "Ed 数据未能读取（Ed 采集失败：synthetic exit 1）；课程数据校验失败：assessments.3.refs.1: 「Assignment 1」引用的 ed 3001 不是采集到的 Ed lesson ID；assessments.4.refs.0: 「Bonus Challenge」引用的 ed 3003 不是采集到的 Ed lesson ID"
     },
     {
       "id": "900002",

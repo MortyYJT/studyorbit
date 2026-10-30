@@ -94,7 +94,15 @@ describe('generateIds', () => {
       item('c', [{ platform: 'handbook', id: 'Exam' }, { platform: 'canvas-group', id: '300' }]),
       item('d', [{ platform: 'handbook', id: 'Final Examination (3 hours)' }]),
       item('e', [], { name: 'Weekly Quizzes' }),
-    ])).toEqual(['canvas:5551', 'ed:78', 'canvas-group:300', 'handbook:final-examination-3-hours', 'group:weekly-quizzes']);
+      item('f', [{ platform: 'canvas', id: '5552' }], { parentKey: 'e' }),
+    ])).toEqual(['canvas:5551', 'ed:78', 'canvas-group:300', 'handbook:final-examination-3-hours', 'group:weekly-quizzes', 'canvas:5552']);
+  });
+
+  it('names a leaf without references item:<slug>, never suffixed (decision #483)', () => {
+    expect(ids([item('a', [], { name: 'Final Exam' }), item('b', [], { name: 'Quizzes' }), item('c', [{ platform: 'canvas', id: '1' }], { parentKey: 'b' })]))
+      .toEqual(['item:final-exam', 'group:quizzes', 'canvas:1']);
+    // Two such leaves with one name keep one ID, which validation reports as a duplicate.
+    expect(ids([item('a', [], { name: 'Labs' }), item('b', [], { name: 'labs!' })])).toEqual(['item:labs', 'item:labs']);
   });
 
   it('uses the smallest ID on a platform, so the order of references does not matter', () => {
@@ -119,9 +127,11 @@ describe('generateIds', () => {
       item('e', [], { name: 'Labs' }),
       item('f', [], { name: 'labs!' }),
       item('g', [{ platform: 'handbook', id: 'Project' }], { name: 'Project' }),
+      item('h', [{ platform: 'canvas', id: '1' }], { parentKey: 'e' }),
+      item('i', [{ platform: 'canvas', id: '2' }], { parentKey: 'f' }),
     ])).toEqual([
       'handbook:examination:final-exam', 'handbook:examination:final-exam-alternative',
-      'canvas-group:300:quizzes', 'canvas-group:300:quiz-hurdle', 'group:labs:labs', 'group:labs:labs', 'handbook:project',
+      'canvas-group:300:quizzes', 'canvas-group:300:quiz-hurdle', 'group:labs:labs', 'group:labs:labs', 'handbook:project', 'canvas:1', 'canvas:2',
     ]);
   });
 

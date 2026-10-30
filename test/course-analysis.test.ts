@@ -55,4 +55,13 @@ describe('buildAnalysisPrompt', () => {
     expect(parsed.handbookComponents).toEqual([]);
     expect(parsed.canvas).toEqual({ status: 'unavailable' });
   });
+
+  it('lets a leaf go without refs only when no framework component is available (decision #482)', () => {
+    const relaxed = '本次 handbookComponents 为空，其他数据里没有对应作业或 lesson 的考核项（如考试）也可以没有 refs';
+    expect(prompt).not.toContain(relaxed);
+    expect(prompt).toContain('只有拥有子项的纯分组可以没有 refs。');
+    for (const missing of [{ status: 'unavailable' }, { ...handbook, text: 'No table' }]) {
+      expect(buildAnalysisPrompt({ course, term: '2026 Semester 2', canvas, ed: { lessons: [], scores: [] }, handbook: missing })).toContain(relaxed);
+    }
+  });
 });

@@ -115,7 +115,8 @@ describe('a sync through the four stages', () => {
     const collect = db.getStage('run-1', '900001', 'collect')!;
     expect(collect).toMatchObject({ status: 'succeeded', checkpoint: { sources: { ed: { exitCode: 1 } } } });
     const ed = (collect.checkpoint as { sources: { ed: { file: string } } }).sources.ed.file;
-    expect(await readFile(ed, 'utf8')).toBe(JSON.stringify({ status: 'unavailable', lessons: [], scores: [], reason: 'Ed 采集不可用' }));
+    // The placeholder carries the cause taken from the collector's stderr (decision #481).
+    expect(await readFile(ed, 'utf8')).toBe(JSON.stringify({ status: 'unavailable', lessons: [], scores: [], reason: 'Ed 采集失败：synthetic exit 1' }));
     // The synthetic model output cites Ed lessons that were not collected, so validation rejects it.
     expect(['partial', 'failed']).toContain(status.courses[0]!.status);
   });

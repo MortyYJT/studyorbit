@@ -41,6 +41,10 @@ After the sync runner saves a course file, it SHALL diff the newest valid earlie
 - **WHEN** a course is synced for the first time
 - **THEN** nothing is appended
 
+#### Scenario: Incomplete sync
+- **WHEN** a re-sync of a course is `incomplete` because a source could not be collected
+- **THEN** no course file is saved and nothing is appended, so a missing source never shows up as a changed deadline or weight
+
 #### Scenario: Log cannot be written
 - **WHEN** appending to the change log fails after the course file was saved
 - **THEN** the course keeps its status and its reason ends with 「变更记录写入失败。」

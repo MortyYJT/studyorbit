@@ -17,7 +17,7 @@ import { createLimiter, systemClock } from './rate-limit.mjs';
 import { LINEAGE_ANCESTORS } from './sync-store.mjs';
 import { LEGACY_SOURCE_IDS, resolveSourceSetup } from '../sources/registry.mjs';
 import {
-  analyseStage, captureEarlierDocument, collectStage, mergeStage, REASONS, spawnCollector, STAGES, StageFailure, validateStage,
+  analyseStage, captureEarlierDocument, collectReusable, collectStage, mergeStage, REASONS, runPreflight, spawnCollector, STAGES, StageFailure, validateStage,
 } from './sync-stages.mjs';
 
 export const RESUME_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -188,7 +188,7 @@ export function createSyncPipeline(deps) {
         ...(course.phase ? { phase: course.phase } : {}), ...(course.file ? { file: course.file } : {}),
         stage: latestStage(job.id, course.courseId), reused: course.reused,
       })),
-      error: job.error, jobId: job.id, resumedFrom: job.resumedFrom, resumable: !running && !current && !reserving && resumeProblem(job) === null,
+      error: job.error, warnings: job.warnings ?? [], jobId: job.id, resumedFrom: job.resumedFrom, resumable: !running && !current && !reserving && resumeProblem(job) === null,
     };
   }
   function jobs() {
@@ -320,8 +320,24 @@ export function createSyncPipeline(deps) {
     };
     const stored = rawStore.getJob(jobId);
     const tasks = [];
-    let failure = null;
+    let failure = null, blocked = null;
     try {
+      // Preflight (decision #484): only when some course will run a collector; a blocking failure stops every such
+      // course before any collector or model call, so nothing reaches the Desktop or the change log.
+      const fresh = new Set();
+      for (const [index, row] of stored.courses.entries()) {
+        if (selected[index] && !courseDone(jobId, row.courseId) && !(await collectReusable(ctx, selected[index]))) fresh.add(row.courseId);
+      }
+      if (fresh.size && !job.stop && !halted) {
+        try {
+          const checked = await runPreflight(ctx);
+          blocked = checked.blocked;
+          if (checked.warnings.length) store.updateJob(jobId, { warnings: checked.warnings });
+        } catch (error) {
+          if (halted) return;
+          if (!job.stop) throw error;
+        }
+      }
       for (const [index, row] of stored.courses.entries()) {
         if (halted) break;
         const course = selected[index];
@@ -339,6 +355,10 @@ export function createSyncPipeline(deps) {
           continue;
         }
         const started = clock.now();
+        if (blocked && fresh.has(course.id)) {
+          await courseStopped(ctx, course, new StageFailure({ stage: 'collect', status: 'failed', code: 'PREFLIGHT', reason: blocked }), started, { phases: {}, reused: [], stage: 'collect' });
+          continue;
+        }
         store.updateCourse(jobId, course.id, { status: 'running', phase: 'starting' });
         let collected;
         try {
@@ -356,7 +376,7 @@ export function createSyncPipeline(deps) {
     }
     await Promise.allSettled(tasks);
     if (halted) return;
-    await finish(job, startedAt, failure);
+    await finish(job, startedAt, failure, blocked);
   }
 
   function markStopped(job, courseId) {
@@ -369,7 +389,7 @@ export function createSyncPipeline(deps) {
   async function copyDone(ctx, row, merged) {
     const source = rawStore.getJob(merged.jobId).courses.find(course => course.courseId === row.courseId);
     let outcome = { status: source?.status, reason: source?.reason ?? '', file: source?.file ?? null };
-    if (!['completed', 'partial', 'failed'].includes(outcome.status)) {
+    if (!['completed', 'partial', 'incomplete', 'failed'].includes(outcome.status)) {
       // The server died between the merge commit and the course row update: take the result from the checkpoint.
       const checkpoint = merged.checkpoint;
       const validated = typeof checkpoint.status === 'string' ? checkpoint : JSON.parse(rawStore.getArtifact(checkpoint.validateArtifact));
@@ -426,9 +446,10 @@ export function createSyncPipeline(deps) {
     }
   }
 
-  async function finish(job, startedAt, failure) {
+  /** `blocked`: the reason a blocking preflight failed, kept as the job's error so the page shows it once. */
+  async function finish(job, startedAt, failure, blocked = null) {
     const jobId = job.jobId;
-    let error = failure ? '同步任务异常中断，请检查本地环境。' : null;
+    let error = failure ? '同步任务异常中断，请检查本地环境。' : blocked;
     safely(() => {
       for (const course of rawStore.getJob(jobId).courses) {
         if (course.status === 'pending' || course.status === 'running') store.updateCourse(jobId, course.courseId, { status: job.stop ?? 'failed' });

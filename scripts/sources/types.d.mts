@@ -25,6 +25,11 @@ export interface CourseSource {
   discover?(ctx: SourceContext, out: string): CollectorCommand;
   /** Null when the source does not apply to the course. */
   collect(course: CourseCandidate, ctx: SourceContext, out: string): CollectorCommand | null;
+  /**
+   * A cheap check run once per job before any collection (sync-incomplete fix 2): exit 0 when the source can be
+   * collected. A `blocking` failure stops the job before any collector or model call; otherwise it is a warning.
+   */
+  preflight?: { blocking: boolean; command(ctx: SourceContext): CollectorCommand };
   /** The `unavailable` object written when the collector fails, unchanged from before the move. */
   placeholder(reason?: string): object;
 }

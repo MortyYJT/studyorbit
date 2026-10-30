@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 
 export type JobStatus = 'running' | 'finished' | 'failed' | 'cancelled' | 'interrupted';
-export type CourseStatus = 'pending' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled' | 'interrupted';
+export type CourseStatus = 'pending' | 'running' | 'completed' | 'partial' | 'incomplete' | 'failed' | 'cancelled' | 'interrupted';
 export type StageName = 'collect' | 'analyse' | 'validate' | 'merge';
 export type StageStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
 
@@ -13,6 +13,8 @@ export type JobCourse = {
 export type Job = {
   id: string; kind: 'course-sync'; status: JobStatus; provider: string | null; model: string | null;
   resumedFrom: string | null; sources: string[] | null; createdAt: string; startedAt: string | null; finishedAt: string | null; error: string | null;
+  /** Non-blocking preflight problems (empty before migration 3). */
+  warnings: string[];
   courses: JobCourse[];
 };
 export type StageRow = {
@@ -25,7 +27,7 @@ export type Snapshot = {
   status: string | null; reason: string | null; file: string | null; createdAt: string;
 };
 
-export type JobPatch = Partial<Pick<Job, 'status' | 'provider' | 'model' | 'startedAt' | 'finishedAt' | 'error'>>;
+export type JobPatch = Partial<Pick<Job, 'status' | 'provider' | 'model' | 'startedAt' | 'finishedAt' | 'error' | 'warnings'>>;
 export type CoursePatch = Partial<Pick<JobCourse, 'previous' | 'code' | 'term' | 'status' | 'phase' | 'reason' | 'file' | 'stoppedStage' | 'reused'>>;
 export type StagePatch = Partial<Omit<StageRow, 'jobId' | 'courseId' | 'stage'>>;
 export type StageInput = { jobId: string; courseId: string; stage: StageName; inputHash: string } & StagePatch;
