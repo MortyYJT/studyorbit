@@ -1,7 +1,7 @@
 # weekly-plan Specification
 
 ## Purpose
-TBD - created by archiving change finish-course-page-and-weekly-plan. Update Purpose after archive.
+The deterministic weekly plan: daily availability, manual tasks, earliest-deadline-first scheduling, overflow that is listed rather than dropped, deadlines on the week and month views, actual time and done state, and the needs-you strip.
 ## Requirements
 ### Requirement: Daily availability
 The owner SHALL be able to set available study minutes for each weekday (Monday to Sunday, 0–1440 each, default 120), stored in browser storage. Invalid stored values fall back to the default.

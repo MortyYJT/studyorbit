@@ -1,7 +1,7 @@
 # course-analysis Specification
 
 ## Purpose
-TBD - created by archiving change course-contract-v2. Update Purpose after archive.
+How the model turns one course's collected Canvas, Ed and framework data into a course document: the version 2 output (platform references, grouping, weights and rules with quotes), references checked against the collected data, deterministic IDs, facts filled in from the collected data, the verified source required for weights and rules, and how evaluation matches assessments.
 ## Requirements
 ### Requirement: Model output version 2
 The system SHALL send the model a JSON Schema whose `document` contains `version: 2`, `course`, `materials` and `assessments`, where each assessment has only `key`, `parentKey`, `refs`, `name`, `kind`, `nature`, `scoring`, `weight`, `weightQuote`, `rule` and `ruleQuote`. The schema MUST reject `id`, `parentId`, `due`, `score`, `maxScore`, `status` and `sources` on an assessment. The prompt SHALL give the parsed Handbook components and each Canvas group's rendered rule text, and SHALL tell the model to cite platform IDs as collected, to cite Handbook components only by a listed name, to copy quotes exactly (a Handbook row with its cells separated by single spaces), and that facts are filled by code.

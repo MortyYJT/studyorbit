@@ -121,11 +121,11 @@ claude mcp add studyorbit -- node <仓库绝对路径>/scripts/mcp-server.mjs
 - `npm run check`：类型检查加 `test/` 下的 vitest 测试，与 CI 相同。成绩、「期末需要」和排期是 `shared/` 里的纯函数，测试只用合成数据。
 - `npm run build`：构建静态资源。**静态构建不包含同步、对话和复习笔记接口**，它们在本地接口服务（`server/`）里，只有 `npm run dev` 会把页面和它连起来。
 - 代码结构见 [项目结构和数据流](docs/overview.md)，脚本见 [scripts/README.md](scripts/README.md)；课程 JSON 契约见 [docs/course-json.md](docs/course-json.md)，分析提示词见 [docs/course-sync-prompt.md](docs/course-sync-prompt.md)，评测见 [docs/eval-format.md](docs/eval-format.md)；现行规格在 `openspec/specs/`。
-- 开发规则见 [CLAUDE.md](CLAUDE.md)；决定记录在 `note/decisions.md`，进度见 [路线图](note/product/roadmap.md)，当前交接在 [note/handoff.md](note/handoff.md)。
+- 开发规则见 [CLAUDE.md](CLAUDE.md)；决定记录在 `note/decisions.md`，产品定位和以后的想法见 [note/product.md](note/product.md)，当前交接在 [note/handoff.md](note/handoff.md)。
 
 ## 实验记录
 
-[第一版试跑](docs/first-sync-run-20261029.md)、[同步用量](docs/sync-measurements.md)、[同步优化](docs/sync-optimization.md) 记录了真实运行的耗时和 token 用量；[四门课采集快照](docs/collection-snapshot.md) 只记录各来源读到了多少条目。它们只代表当时那几门课，不等同于普遍结论。个人成绩已从这些记录中移除；含成绩的模型对比与混合同步实验只保存在本机。
+[第一版试跑](docs/first-sync-run-20261029.md)、[同步用量](docs/sync-measurements.md)、[同步优化](docs/sync-optimization.md) 记录了真实运行的耗时和 token 用量。它们只代表当时那几门课，不等同于普遍结论。个人成绩已从这些记录中移除；含成绩的模型对比与混合同步实验只保存在本机。
 
 ## 仓库历史
 
