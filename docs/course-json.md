@@ -1,115 +1,126 @@
-# 课程 JSON 契约 v2
+# Course JSON contract v2
 
-字段定义和本地校验以 `shared/course-data.ts` 为准；设计细节见 `openspec/changes/course-contract-v2/design.md`。每门课程每次同步写一份 `分数结构*.json` 到桌面课程文件夹；字段未知使用 `null`，不要用 0 代替未知。
+Field definitions and local validation live in `shared/course-data.ts`; the requirements are in `openspec/specs/course-contract/` and `openspec/specs/course-analysis/`, and the design in `openspec/changes/archive/2026-10-29-course-contract-v2/design.md`. Every sync writes one `分数结构*.json` per course into its Desktop course folder. Unknown values are `null`, never `0`.
 
-契约分两层：**模型输出**只写判断（分组、分类、权重、规则和它们的引文、引用了哪些平台条目）；**存盘文档**由代码在模型输出上补齐 ID、截止时间、分数、状态和来源链接，再核对引文。日期、分数和状态从不由模型填写（决定 #208）。
+The contract has two layers. The **model output** contains only judgements: grouping, kind, weights, rules and their quotes, and which platform items they rest on. The **stored document** is built by code from that output: code adds IDs, deadlines, scores, status and source links, then verifies the quotes. Dates, scores and status are never filled in by the model (decision #208).
 
-## 模型输出
+## How analysis works
 
-模型返回外层 `{ status, reason, document }`：状态为 `completed`、`partial` 或 `failed`；`reason` 简短说明关键缺失，无缺失时为空字符串；`failed` 的 `document` 为 `null`。`document` 符合 `CourseModelOutputSchema`：
+The sync collects Canvas, Ed and the institution's framework source (the Handbook of the matching year for UniMelb) first; analysis receives only the collected data and never drives a browser. Every model gets the same prompt, data and output contract; the actual prompt and schema are built by `scripts/lib/course-analysis.mjs`.
 
-- `version: 2`；`course`（ID、代码、名称、学期，ID 与代码必须与输入一致）；`materials`（资料名称和链接，不下载文件）。
-- `assessments[]` 每项只有下表字段。Schema 是严格的：写了 `id`、`parentId`、`due`、`score`、`maxScore`、`status` 或 `sources` 就校验失败，进入一次修复。
+- **Sources:** the Handbook gives the assessment framework, weights and hurdles for that year and semester; Canvas gives the concrete assessments, deadlines and submissions; Ed adds rules and released grades. A missing source does not stop analysis, and no source may be invented.
+- **Judgement, not hard-coding:** the model identifies the same assessment across platforms, weights, parent–child structure and rules from context, and fills in a value only when the evidence supports it. Code checks the hierarchy and the rules it can decide, without special cases for course codes or names.
+- **Shape:** at most two levels; a group and its items are never both counted; bonus, alternative exams and hurdles are handled separately.
+- **Schema is not enough:** native schema or JSON mode only constrains the format. Local validation still checks the course identity, that references exist in the collected data, and the parent–child rules. On failure the original output and the errors go back to the model for one repair, so analysis makes at most two calls.
+- **Privacy:** the data includes personal courses and grades and goes only to the configured model provider. Raw responses and errors are kept in the ignored `.local/` folder.
+- The same prompt does not make different providers equivalent: models, tool environments, output-constraint support and billing differ, so experiments must name each of them.
 
-| 字段 | 含义 |
+## Model output
+
+The model returns `{ status, reason, document }`. `status` is `completed`, `partial` or `failed`; `reason` briefly names what is missing (empty when nothing is); `document` is `null` when `failed`. `document` follows `CourseModelOutputSchema`:
+
+- `version: 2`; `course` (ID, code, name, semester; ID and code must equal the input); `materials` (names and links of materials; no files are downloaded).
+- Each item in `assessments[]` has only the fields below. The schema is strict: an `id`, `parentId`, `due`, `score`, `maxScore`, `status` or `sources` field fails validation and triggers the repair.
+
+| Field | Meaning |
 | --- | --- |
-| `key` | 本次输出内唯一的任意字符串 |
-| `parentKey` | 顶层为 `null`；子项指向顶层项的 `key`，最多两级 |
-| `refs` | 依据：`{ platform, id }`，`canvas` 填 Canvas 作业 ID，`canvas-group` 填作业分组 ID，`ed` 填 Ed lesson ID，`handbook` 只能填提示里 `handbookComponents` 列出的考核项名 |
-| `name` | 名称 |
-| `kind` | `quiz`、`assignment`、`test`、`presentation`、`participation`、`hurdle` 或 `other` |
-| `nature` | 普通 `regular`、不计分 `ungraded`、加分 `bonus` 或替代版本 `alternative` |
-| `scoring` | 父项按分数合计 `points`、按明确权重合计 `weighted`，或不自动合计 `none`；子项为 `none` |
-| `weight`、`weightQuote` | 占课程总分的百分比（不是原始分），以及证明它的逐字原文 |
-| `rule`、`ruleQuote` | 简短的计分或通过规则，以及证明它的逐字原文 |
+| `key` | Any string, unique within this output |
+| `parentKey` | `null` for top-level items; a child points to a top-level `key`; at most two levels |
+| `refs` | Evidence: `{ platform, id }`. `canvas` takes a Canvas assignment ID, `canvas-group` an assignment group ID, `ed` an Ed lesson ID, `handbook` only a component name listed in the prompt's `handbookComponents` |
+| `name` | Name |
+| `kind` | `quiz`, `assignment`, `test`, `presentation`, `participation`, `hurdle` or `other` |
+| `nature` | `regular`, `ungraded`, `bonus` or `alternative` |
+| `scoring` | For a parent: `points` (sum of raw marks), `weighted` (explicit weights) or `none` (no automatic total); children are `none` |
+| `weight`, `weightQuote` | Percentage of the course total (not raw marks) and the verbatim text that proves it |
+| `rule`, `ruleQuote` | A short scoring or pass rule and the verbatim text that proves it |
 
-提示里另给两样由代码算出的数据：Handbook 考核表解析出的 `handbookComponents: [{ name, percent }]`，以及每个 Canvas 分组的 `rulesText`（把数值规则写成 `drop lowest 2`、`drop highest 1`、`never drop <作业名>`，多条用 `; ` 连接）。
+The prompt also carries two things computed by code: `handbookComponents: [{ name, percent }]` parsed from the Handbook assessment table, and each Canvas group's `rulesText` (numeric rules written as `drop lowest 2`, `drop highest 1`, `never drop <assignment name>`, joined with `; `).
 
-## 引用校验
+## Reference validation
 
-`validateAnalysis`（`scripts/lib/course-validation.mjs`）在 Schema 之外检查下列问题，任何一条都算校验失败，使用唯一一次修复；修复后仍失败则不保存：
+`validateAnalysis` (`scripts/lib/course-validation.mjs`) checks the following beyond the schema. Any one of them fails validation and uses the single repair; if the repair still fails, nothing is saved.
 
-- 引用必须存在于采集数据：Canvas 作业 ID、分组 ID、Ed lesson ID 按字符串比较；Handbook 名称规范化（见「引文核对」）后必须与某个解析出的考核项名完全相等，存盘时改用规范名称。某个来源没采集到时，引用它一律无效。
-- 同一 Canvas 作业或 Ed lesson 只能被一个考核项引用；分组和 Handbook 引用可以重复。
-- 没有任何引用的考核项必须有子项（纯分组）。
-- `key` 唯一；`parentKey` 存在、不成环、只有一层。
-- `points`/`weighted` 只用于有计分子项的顶层父项；`weighted` 要求每个计分子项都有正权重。
-- 生成的 ID 不重复，且不超过 500 字符。
+- References must exist in the collected data: Canvas assignment IDs, group IDs and Ed lesson IDs are compared as strings; a Handbook name, after normalisation (see [Quote verification](#quote-verification)), must equal a parsed component name exactly, and the stored document uses the canonical name. References to a source that was not collected are invalid.
+- One Canvas assignment or Ed lesson can be referenced by only one assessment; group and Handbook references may repeat.
+- An assessment without any reference must have children (a pure group).
+- `key` is unique; `parentKey` exists, has no cycle and only one level.
+- `points` and `weighted` are only for top-level parents with scored children; `weighted` requires a positive weight on every scored child.
+- Generated IDs are unique and at most 500 characters.
 
-问题写成 `assessments.<序号>.refs.<序号>: 「名称」引用的 ...`，修复提示能直接指到出错的项。
+Problems are written as `assessments.<index>.refs.<index>: 「<name>」引用的 <platform> <id> ...` ("<name> references …") so the repair prompt points at the faulty item.
 
-## Handbook 考核项
+## Handbook components
 
-Handbook 采集只保存页面文字。`parseHandbookComponents`（`scripts/lib/course-refs.mjs`）按行读取：一行按制表符分格；最后一格是百分比（如 `30%`）或 `N/A`、`Nil`、`-`、`—` 的行是一行考核的结尾；含 `Percentage` 格的是表头。一行考核从上一行结尾或表头之后开始，到结尾行为止，所以多行描述会并在一起。名称取第一格的第一行，`percent` 取最后一格的数字（没有则为 `null`），行原文把制表符和换行折成单个空格。按学期重复出现、名称和百分比都相同的行合并为一项；名称相同、百分比不同的依次加 ` (2)`、` (3)`。Handbook 已采集但一项也解析不出时，Handbook 引用全部无效，课程最多 `partial`，原因注明「Handbook 考核表未能解析」。
+Handbook collection stores page text only. `parseHandbookComponents` (`scripts/lib/course-refs.mjs`) reads it line by line. A line is split into cells by tabs. A line whose last cell is a percentage (such as `30%`) or `N/A`, `Nil`, `-`, `—` ends an assessment row; a line with a `Percentage` cell is the header. A row starts after the previous row's end or the header and runs to its end line, so multi-line descriptions are joined. The name is the first line of the first cell, `percent` is the number in the last cell (`null` if none), and the row text collapses tabs and newlines to single spaces. Rows repeated per semester with the same name and percentage are merged; same name with different percentages become ` (2)`, ` (3)` in order. If the Handbook was collected but no component can be parsed, every Handbook reference is invalid, the course is at most `partial`, and the reason says 「Handbook 考核表未能解析」 ("the Handbook assessment table could not be parsed").
 
-## 存盘文档
+## Stored document
 
-`CourseDocumentSchema` 接受 `version: 1` 和 `version: 2`，其他版本无效。v2 在 v1 每个考核的字段上增加 `refs`、`weightQuote`、`ruleQuote`、`unsourced`，顶层增加 `legacyIds`：
+`CourseDocumentSchema` accepts `version: 1` and `version: 2`; any other version is invalid. Version 2 adds `refs`, `weightQuote`, `ruleQuote` and `unsourced` to the fields of every version 1 assessment, and `legacyIds` at the top level:
 
-| 字段 | 来源 |
+| Field | Source |
 | --- | --- |
-| `id` | 代码生成，见下节 |
-| `parentId` | `parentKey` 对应项的最终 ID |
-| `name`、`kind`、`nature`、`scoring` | 模型输出（`scoring` 可能被引文核对降为 `none`） |
-| `weight`、`rule` | 模型输出，核对不通过时清为 `null` |
-| `due`、`score`、`maxScore`、`status` | 代码从主 Canvas 作业和主 Ed lesson 回填 |
-| `sources` | 代码按 `refs` 生成：Canvas 作业链接、Ed lesson 链接、Handbook 页面链接；Canvas 分组记为 `platform: 'canvas'`、`url: null`；`evidence` 一律为 `null` |
-| `refs` | 规范化、去重后的引用 |
-| `weightQuote`、`ruleQuote` | 只保留核对通过的引文，否则为 `null` |
-| `unsourced` | 被引文核对清空的字段名：`weight`、`rule` |
-| `legacyIds`（顶层） | 上一份文档的旧 ID → 新 ID |
+| `id` | Generated by code, see [ID generation](#id-generation) |
+| `parentId` | Final ID of the item named by `parentKey` |
+| `name`, `kind`, `nature`, `scoring` | Model output (`scoring` may be lowered to `none` by quote verification) |
+| `weight`, `rule` | Model output, cleared to `null` when verification fails |
+| `due`, `score`, `maxScore`, `status` | Filled by code from the main Canvas assignment and main Ed lesson |
+| `sources` | Generated from `refs`: Canvas assignment links, Ed lesson links, the Handbook page link; a Canvas group is `platform: 'canvas'`, `url: null`; `evidence` is always `null` |
+| `refs` | Normalised, de-duplicated references |
+| `weightQuote`, `ruleQuote` | Kept only when verified, otherwise `null` |
+| `unsourced` | Field names cleared by quote verification: `weight`, `rule` |
+| `legacyIds` (top level) | Previous document's IDs → new IDs |
 
-v1 的约束对 v2 同样成立：ID 唯一、得分不超过满分、父项存在且只有一层、不成环。另外：同一项的 `refs` 和 `unsourced` 不重复；列入 `unsourced` 的字段及其引文必须为 `null`；字段为 `null` 时引文也必须为 `null`。
+The version 1 rules hold for version 2: unique IDs, score not above maximum, parent exists with one level only, no cycles. Also: an item's `refs` and `unsourced` have no duplicates; a field listed in `unsourced` and its quote are `null`; when a field is `null` its quote is `null`.
 
-### ID 生成
+### ID generation
 
-取 `refs` 中优先级最高的平台：Canvas 作业 → Ed lesson → Canvas 分组 → Handbook → 无。
+The highest-priority platform among `refs` decides: Canvas assignment → Ed lesson → Canvas group → Handbook → none.
 
-| 依据 | ID |
+| Basis | ID |
 | --- | --- |
-| Canvas 作业 | `canvas:<id>` |
+| Canvas assignment | `canvas:<id>` |
 | Ed lesson | `ed:<id>` |
-| Canvas 分组 | `canvas-group:<id>` |
-| Handbook 考核项 | `handbook:<slug(规范名称)>` |
-| 无引用（纯分组） | `group:<slug(名称)>` |
+| Canvas group | `canvas-group:<id>` |
+| Handbook component | `handbook:<slug(canonical name)>` |
+| No reference (pure group) | `group:<slug(name)>` |
 
-`slug` = NFKC、小写、每段非字母数字字符换成一个 `-`、去掉首尾 `-`，空则为 `item`。同一平台有多个引用时取 ID 最小的（纯数字排在前面并按数值，其余按码点），所以 ID 不随模型列出的顺序变化。Canvas 分组、Handbook 和纯分组的 ID 可能被多项共用；共用时每一项都改为 `<基础 ID>:<slug(名称)>`。
+`slug` = NFKC, lower case, each run of non-alphanumeric characters replaced by one `-`, leading and trailing `-` removed, `item` if empty. With several references on the same platform the smallest ID wins (all-digit IDs first, numerically; others by code point), so IDs do not depend on the order the model lists them. Canvas group, Handbook and pure-group IDs can be shared; when shared, each item becomes `<base ID>:<slug(name)>`.
 
-### 事实回填
+### Filled-in facts
 
-- `due`：Canvas `due_at`，否则 Ed lesson `due`，否则 `null`。
-- `score`/`maxScore` 成对取自同一来源：Canvas 已出分 → Canvas 得分和 `points_possible`；否则 Ed 已出分 → Ed 得分和满分；都没出分 → 得分 `null`、满分取 Canvas `points_possible`。得分超过满分（额外加分）时保留得分、满分置 `null`。
-- `status`：各来源中最靠前的一个，`graded` > `submitted` > `not_started` > `unknown`。Canvas：`graded`→已出分，`submitted`/`pending_review`→已提交，`unsubmitted` 且无提交时间→未开始；Ed：`graded`→已出分，`not_available` 且有提交时间→已提交，`no_final_submission`→未开始。代码不产生 `in_progress`（v1 文件里可能有）。
-- 只引用 Canvas 分组、Handbook 或没有引用的项：截止、得分、满分为 `null`，状态 `unknown`；父项成绩仍由页面按子项计算。
+- `due`: Canvas `due_at`, else the Ed lesson's `due`, else `null`.
+- `score`/`maxScore` come as a pair from one source: graded on Canvas → Canvas score and `points_possible`; else graded on Ed → Ed score and maximum; graded nowhere → score `null`, maximum from Canvas `points_possible`. A score above the maximum (extra credit) keeps the score and sets the maximum to `null`.
+- `status`: the earliest of the sources' statuses in `graded` > `submitted` > `not_started` > `unknown`. Canvas: `graded` → graded; `submitted`/`pending_review` → submitted; `unsubmitted` with no submission time → not started. Ed: `graded` → graded; `not_available` with a submission time → submitted; `no_final_submission` → not started. Code never produces `in_progress` (version 1 files may contain it).
+- Items that reference only a Canvas group, the Handbook or nothing: deadline, score and maximum are `null` and status is `unknown`; the page still computes a parent's grade from its children.
 
-### 引文核对
+### Quote verification
 
-`verifyQuotes`（`scripts/lib/course-quotes.mjs`）在校验与修复之后、保存之前运行，不触发修复（决定 #247）。
+`verifyQuotes` (`scripts/lib/course-quotes.mjs`) runs after validation and repair and before saving; it never triggers a repair (decision #247).
 
-- **规范化**（引文和语料相同）：去 HTML 标签，解码 `&amp; &lt; &gt; &quot; &#39; &nbsp;` 和数字实体，NFKC，小写，弯引号统一为直引号，各种横线统一为 `-`，所有空白（含制表符、换行）折成一个空格。
-- **语料单元**：Handbook 考核表每一行（行原文）、Handbook 其余每个非空行、每段 Ed context 文本、每个 Canvas 分组名和分组规则文本。Canvas 作业名、Ed lesson 标题、链接、ID 不在语料里。引文必须落在单个单元内，规范化后长 6–500 字符。
-- **权重**有出处的条件，满足任一即可：所引 Canvas 分组的 `group_weight` 等于权重（保留两位小数比较）；所引 Handbook 考核项的百分比等于权重；引文落在某个单元里，且含有与权重相等的独立数字（不与其他数字或小数点相连），后跟 `%`、`per cent` 或 `percent`——引文落在 Handbook 考核行里时还必须包含该行的考核项名。只有第三种情况保留 `weightQuote`。
-- **规则**有出处的条件：引文落在某个单元里。
-- **失败**：字段和引文置 `null`，字段名写进 `unsourced`，文档其余部分照常保存。清空子项权重后，若 `weighted` 父项有计分子项缺正权重，父项 `scoring` 改为 `none`。课程状态不变，`reason` 追加「N 项权重或规则无出处」。
+- **Normalisation** (same for quotes and corpus): strip HTML tags; decode `&amp; &lt; &gt; &quot; &#39; &nbsp;` and numeric entities; NFKC; lower case; curly quotes to straight quotes; all dashes to `-`; every run of whitespace (including tabs and newlines) to one space.
+- **Corpus units:** each Handbook assessment table row (the row text), every other non-empty Handbook line, each Ed context text, each Canvas group name and each group's rule text. Canvas assignment names, Ed lesson titles, links and IDs are not in the corpus. A quote must fall inside a single unit and be 6–500 characters after normalisation.
+- **A weight is sourced** when any of these holds: the referenced Canvas group's `group_weight` equals it (compared to two decimals); the referenced Handbook component's percentage equals it; or the quote falls inside a unit and contains a standalone number equal to the weight (not touching other digits or a decimal point) followed by `%`, `per cent` or `percent`, and, when the quote is inside a Handbook table row, also contains that row's component name. Only the third case keeps `weightQuote`.
+- **A rule is sourced** when its quote falls inside a unit.
+- **On failure:** the field and its quote become `null` and the field name goes into `unsourced`; the rest of the document is saved as usual. If clearing a child's weight leaves a `weighted` parent with a scored child without a positive weight, the parent's `scoring` becomes `none`. The course status is unchanged and `reason` gains 「N 项权重或规则无出处」 ("N weights or rules unsourced").
 
-页面在权重和规则旁显示「无出处」，对话上下文写作「权重无出处」「规则无出处」；你保存了修正值时页面改用修正值并不再显示该标记。
+The page shows 「无出处」 ("unsourced") next to such weights and rules, and the chat context writes 「权重无出处」 / 「规则无出处」. When you save a corrected value, the page uses it and drops the tag.
 
-### 旧 ID 映射 `legacyIds`
+### Legacy ID map `legacyIds`
 
-v2 的 ID 与 v1 不同，而浏览器里的修正、手动考核的归属、学习任务和排序都按 ID 记录。同步保存前，`buildLegacyIds` 把同一课程上一份有效文档（v1 或 v2，按与页面相同的「最新有效文件」规则选取）与新文档配对：
+Version 2 IDs differ from version 1, while the browser's corrections, manual assessments' parents, study tasks and ordering are keyed by ID. Before a sync saves, `buildLegacyIds` pairs the course's previous valid document (version 1 or 2, chosen by the page's "newest valid file" rule) with the new one:
 
-1. ID 相同的先配对（不写映射），并排除在后续步骤外；
-2. 按平台身份：v2 用 `canvas`/`ed` 引用；v1 从 `sources` 链接解析 Canvas 作业 ID（`/courses/<课程>/assignments/<id>`）和 Ed lesson ID（`/lessons/<id>`），以及形如 `<数字>`、`canvas-<数字>`、`canvas:<数字>`、`ed-<数字>`、`ed:<数字>` 的 ID（纯数字先按 Canvas、再按 Ed）；
-3. 找不到任何平台身份候选的，按两边都唯一的名称 slug 配对；
-4. 只保留一一对应的配对；
-5. 上一份是 v2 时接续它的 `legacyIds` 并合成（`a → b`、`b → c` 得 `a → c`），目标已不存在的条目丢弃。
+1. Equal IDs pair first (no entry is written) and are excluded from later steps.
+2. Platform identity: version 2 uses `canvas`/`ed` references; version 1 uses Canvas assignment IDs parsed from `sources` links (`/courses/<course>/assignments/<id>`), Ed lesson IDs (`/lessons/<id>`) and IDs shaped like `<digits>`, `canvas-<digits>`, `canvas:<digits>`, `ed-<digits>`, `ed:<digits>` (all-digit IDs are tried as Canvas first, then Ed).
+3. Items without any platform-identity candidate pair by a name slug that is unique on both sides.
+4. Only one-to-one pairs are kept.
+5. When the previous document is version 2, its `legacyIds` are carried and composed (`a → b` and `b → c` give `a → c`); entries whose target no longer exists are dropped.
 
-页面每次读取课程数据时，用 `shared/local-keys.ts` 的 `migrateLocalKeys` 把本机数据迁到新键（可重复执行，第二次不再变化）：修正的条目键 `<课程>:<id>` 和分组键 `<课程>:group:<课程>:<id>`、修正里的 `parent`/`mergeInto`、手动考核的 `parent`、学习任务键和排序列表。新键已有修正时保留新键的，旧修正原样留下不用；学习任务的新键已被占用时旧任务保留旧键；排序列表改写后去重。无法映射的旧数据（没有平台身份且名称不唯一、合并或拆分方式不同、已消失的考核、找不到上一份文档）原样保留，不再显示。
+Every time the page reads course data, `migrateLocalKeys` in `shared/local-keys.ts` moves local data to the new keys (idempotent): correction keys `<course>:<id>` and group keys `<course>:group:<course>:<id>`, `parent`/`mergeInto` inside corrections, manual assessments' `parent`, study task keys and ordering lists. If the new key already has a correction, the new one wins and the old one is left unused; if a study task's new key is taken, the old task keeps its old key; ordering lists are de-duplicated after rewriting. Old data that cannot be mapped (no platform identity and a non-unique name, a different merge or split, a vanished assessment, no previous document) is kept as is and no longer shown.
 
-## v1 兼容
+## Version 1 compatibility
 
-v1 文件不改写，照常读取。所有读取方（课程报告接口、课程页、对话上下文）都经 `toDisplayDocument` 转成同一种显示格式：v1 考核得到空 `refs`、`null` 引文、空 `unsourced`，v1 文档得到空 `legacyIds`，因此 v1 课程不会出现「无出处」。同一文件夹里有 v1 和 v2 时，仍按修改时间取最新的有效文件。
+Version 1 files are never rewritten and are read as before. Every reader (course reports API, course page, chat context) converts through `toDisplayDocument` into one display shape: version 1 assessments get empty `refs`, `null` quotes and empty `unsourced`, and version 1 documents get empty `legacyIds`, so version 1 courses never show 「无出处」. When a folder holds both versions, the newest valid file by modification time is still used.
 
-## 其他约定
+## Other conventions
 
-权重只对有依据的考核填写，不用差额推算；子项和汇总项不得重复计入课程总分。已发布的提交得分是实际得分；不可读取不等于未提交或零分。用户编辑存于独立覆盖层，不由模型改写。
+Weights are filled in only for assessments with evidence, never derived as a remainder; children and their group are never both counted towards the course total. A released submission score is the actual score; unreadable is not the same as not submitted or zero. User edits live in a separate overlay and are never rewritten by the model.

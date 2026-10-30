@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Evaluate course analysis against gold course documents (docs/eval-format.md).
+// Evaluate course analysis against gold course documents (docs/eval-course-analysis.md).
 // Reads already-collected data only: it never runs a collector and never writes into the desktop course folders.
 // Usage: node scripts/eval-course-analysis.mjs --fixture test/fixtures/synthetic-course
 //        node scripts/eval-course-analysis.mjs --run .local/lms/runs/<runId> --gold <goldDir> [--n 5]

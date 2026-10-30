@@ -2,135 +2,137 @@
 
 **UniMelb coursework assistant** · 墨大课业助手
 
-本地优先的墨大课业助手。它从你已登录的 Canvas、Ed 和 Handbook 读取课程信息，由你选择的模型整理成结构化的课程 JSON，经代码校验后在网页里展示成绩、算出期末还需要多少分、自动排出每周计划、帮你复习，并能就你的课程回答问题。存储只在本机；分析和对话时，课程数据会发给你选择的模型服务商。
+A local-first coursework assistant for University of Melbourne students. It reads your courses from the Canvas, Ed and Handbook sessions you are already signed in to, has a model of your choice turn them into one structured course JSON per course, validates that JSON in code, and then shows your grades, the average you still need for a target grade, an automatic weekly plan, revision help, and a chat that answers questions about your courses. Everything is stored on your machine; during analysis and chat, course data is sent to the model provider you choose.
 
-> 仍是原型：只在 macOS + Microsoft Edge + 墨大 Canvas 上实际跑过，其他组合见下面的「支持的环境」。一次同步的结果需要人工核对，不要当作必然正确。
+> Still a prototype. It has only been run for real on macOS + Microsoft Edge + UniMelb Canvas; see [Supported setups](#supported-setups). Check the result of a sync by hand; do not treat it as correct by default.
 
-## 支持的环境
+The interface is in Chinese. Below, interface labels are given in English with the Chinese label in brackets.
 
-在「设置 → 数据来源」里选择学校、Canvas 地址、浏览器和 Ed 区域；不改设置就是下表第一行（和以前完全一样）。
+## Supported setups
 
-| 组合 | 状态 |
+Choose the institution, Canvas address, browser and Ed region in Settings → Data sources (「设置 → 数据来源」). With no changes you get the first row.
+
+| Setup | Status |
 | --- | --- |
-| macOS + Microsoft Edge + 墨尔本大学（Canvas、Ed 澳区、Handbook） | 已实测 |
-| macOS + Google Chrome（同一套 Apple 事件脚本） | 未实测：只核对过脚本字典，没有用真实 Chrome 跑过 |
-| 其他学校的 Canvas（学校选「其他学校（通用 Canvas）」） | 未实测：只用另一个 Canvas 地址的合成接口响应测过；没有 Handbook 这类官方考核框架，分析只用 Canvas 和 Ed |
-| Ed 美区、欧区（`us`、`eu`） | 未实测：接口地址照抄 `edstem` CLI 的区域表，课程链接格式只在澳区确认过 |
-| Windows、Linux（专用浏览器，CDP） | 实验性，未实测：只有单元测试（假管道、假文件系统、假浏览器）；没有在 Windows 或 Linux 上跑过，也没确认单点登录在专用浏览器里能保持多久 |
+| macOS + Microsoft Edge + University of Melbourne (Canvas, Ed Australia, Handbook) | Run for real |
+| macOS + Google Chrome (same Apple Events script) | Not run: only the script dictionary was checked |
+| Another institution's Canvas (institution "Other (generic Canvas)" 「其他学校（通用 Canvas）」) | Not run: tested only with synthetic API responses for another Canvas address; there is no official assessment framework like the Handbook, so analysis uses Canvas and Ed only |
+| Ed US and EU regions (`us`, `eu`) | Not run: API addresses copied from the `edstem` CLI's region table; the course link format is confirmed only for Australia |
+| Windows, Linux (dedicated browser over CDP) | Experimental, not run: unit tests only (fake pipe, fake file system, fake browser); never run on Windows or Linux, and how long single sign-on lasts in the dedicated browser is unknown |
 
-## 功能
+## Features
 
-- **同步课程：** 从 Canvas 发现课程，你勾选后依次采集 Canvas（作业、分组、本人提交）、Ed（`edstem` CLI）和 Handbook（考核结构），再由模型合并成一份课程 JSON；格式或关系不对时自动修复一次，结果按课程保存在桌面课程文件夹。
-- **成绩：** 课程页显示已得分、当前平均、已出分占比和各项权重；选目标档（H1 80 / H2A 75 / H2B 70 / H3 65 / P 50）后显示剩余未出分部分平均要拿多少，已稳或已无法达到会直接说明。
-- **考核：** 一行一项，带子项的可以展开；可以手动修正、合并、新增或隐藏，修正保存在本机 `.local/corrections/`，不改同步原件；重新同步后你的修正都保留，同步和你都改了同一字段时在课程页顶部「同步冲突」里选用哪个。
-- **每周计划：** 设置每天可用时间后，按「截止最早先排」把任务分到截止前的几天（同样的输入总得到同样的结果）；截止前放不下的、已过截止的，列在顶部「需要你处理」，同时列出 7 天内截止却还没安排的计分考核、同步失败的课程，以及重新同步后变了的截止时间和权重（点「知道了」后不再显示）。周视图和月历显示同步来的截止日期；可以添加课程之外的任务，记录实际用时并和预计对比。
-- **复习：** 课程页「复习」分页列出考试的日期、权重和规则；一键让 Agent 带你复习、出练习题或整理笔记；单门课对话里已完成的回复可以「存到复习」，下次打开还在。
-- **Agent 对话：** 根据已选课程的同步数据回答问题，例如解释权重、算期末需要的分数、排本周计划、出复习题。只做讲解和规划，**不代写、不代做、不提交任何作业**。
-- **MCP：** 本机 stdio MCP 服务把对话用的只读课程工具（课程列表、考核、成绩、期末需要、近期截止、排期）开放给 Claude Code、Claude Desktop 等客户端，见 [在 MCP 客户端里使用](#在-mcp-客户端里使用)。
-- **选择模型：** 在「设置 → 分析模型」选择 DeepSeek、OpenAI 兼容接口（OpenAI、通义、Kimi、本地 Ollama 等）、Anthropic Claude 或 Codex CLI；同步分析和对话共用这份设置。
-- **外观：** 浅色 / 深色 / 跟随系统；五套配色；背景可选渐变、纯色或上传的图片（可调可见度、模糊和卡片不透明度）；系统开启「减少动态效果」时动画自动关闭。
+- **Course sync:** discovers your Canvas courses; after you tick the ones you want, it collects Canvas (assignments, groups, your submissions), Ed (via the `edstem` CLI) and the Handbook (assessment structure) one course at a time, then a model merges them into one course JSON. If the format or relationships are wrong it repairs once. Results are saved per course in a course folder on your Desktop.
+- **Grades:** the course page shows marks earned, the current average, the share of the course already marked and each item's weight. Pick a target band (H1 80 / H2A 75 / H2B 70 / H3 65 / P 50) to see the average you need on what is still unmarked; it says so when the target is already secured or out of reach.
+- **Assessments:** one row per item, with expandable sub-items. You can correct, merge, add or hide items. Corrections are saved in `.local/corrections/` and never change the synced file. Your corrections survive a resync; when both the sync and you changed the same field, you choose which value to keep under "Sync conflicts" (「同步冲突」) at the top of the course page.
+- **Weekly plan:** after you set the hours you have each day, tasks are spread over the days before their deadlines, earliest deadline first (the same input always gives the same plan). Work that does not fit, overdue work, graded items due within 7 days that are not planned yet, courses whose sync failed, and deadlines or weights that changed in a resync are listed under "Needs you" (「需要你处理」) at the top; "Got it" (「知道了」) hides a change. Week and month views show synced deadlines. You can add tasks outside your courses and record actual time against the estimate.
+- **Revision:** the course page's revision tab lists exam dates, weights and rules; one click asks the agent to revise with you, write practice questions or summarise notes. A finished reply in a single-course chat can be saved to revision and is still there next time.
+- **Agent chat:** answers questions from the synced data of the selected courses, for example explaining weights, working out what you need in the final, planning this week or writing revision questions. It explains and plans only. **It never writes, completes or submits any assessment.**
+- **MCP:** a local stdio MCP server exposes the chat's read-only course tools (course list, assessments, grades, final needed, upcoming deadlines, schedule) to clients such as Claude Code and Claude Desktop; see [Use from an MCP client](#use-from-an-mcp-client).
+- **Model choice:** in Settings → Analysis model (「设置 → 分析模型」) pick DeepSeek, an OpenAI-compatible API (OpenAI, Qwen, Kimi, local Ollama and others), Anthropic Claude or the Codex CLI. Sync analysis and chat share this setting.
+- **Appearance:** light, dark or system; five palettes; a gradient, solid colour or uploaded image as background (visibility, blur and card opacity adjustable); animations turn off when the system asks for reduced motion.
 
-## 启动
+## Getting started
 
-需要 Node.js **24 或更新版本**。在项目目录运行：
+Requires Node.js **24 or later**. In the project folder:
 
 ```bash
 npm ci
 npm run dev
 ```
 
-打开 `http://localhost:5173/`。`npm run dev` 会先启动本地接口服务（`127.0.0.1:5190`），再启动页面（`localhost:5173`）；两个端口可用 `STUDYORBIT_API_PORT`、`STUDYORBIT_WEB_PORT` 修改，端口被占时直接报错，不会换端口。只看已同步的数据不需要额外准备；要同步课程还需要：
+Open `http://localhost:5173/`. `npm run dev` starts the local API server (`127.0.0.1:5190`) first and then the page (`localhost:5173`). Change the ports with `STUDYORBIT_API_PORT` and `STUDYORBIT_WEB_PORT`; a port that is already in use is an error, not a reason to pick another one. Viewing data you have already synced needs nothing else. To sync courses you also need:
 
-1. 在 **macOS Microsoft Edge** 中登录 Canvas（默认是墨大 Canvas），并保留一个浏览器窗口。Canvas 和 Handbook 采集依赖 Edge 的 Apple Events JavaScript 和系统自动化权限。采集前浏览器必须已经打开；没打开时会报「请先打开 Microsoft Edge 并登录」，不会替你启动。
-   - **改用 macOS Google Chrome（未实测）：** 在「设置 → 数据来源」把浏览器改成 Google Chrome 并保存（第 2 部分的临时环境变量 `STUDYORBIT_BROWSER` 已去掉）。Chrome 需要在菜单 View → Developer → Allow JavaScript from Apple Events（中文界面在「显示 → 开发者」里）勾选，第一次采集时 macOS 会另外询问是否允许终端控制「Google Chrome」。Chrome 和 Edge 的脚本字典相同，但还没有用真实 Chrome 跑过。
-   - **Windows、Linux：专用浏览器（实验性，未在 Windows 和 Linux 上验证）：** 在「设置 → 数据来源」选「Google Chrome（专用浏览器）」或「Microsoft Edge（专用浏览器）」（这两个系统上默认就是 Chrome 专用浏览器）。StudyOrbit 找已安装的 Chrome 或 Edge（Windows 在 Program Files、Program Files (x86) 和本机 AppData 下找，Linux 在 `PATH` 里找 `google-chrome`、`chromium`、`microsoft-edge` 等；找不到时在设置里填程序完整路径），用单独的配置目录 `.local/browser/<浏览器>`（只有你能读）和 `--remote-debugging-pipe` 启动它：不开调试端口，不碰你平时用的浏览器配置。点设置里的「打开专用浏览器」，在弹出的窗口里登录 Canvas（单点登录、两步验证都在这里自己完成，StudyOrbit 不输入任何密码）；同步期间不要关这个窗口。本地服务一直持有这个浏览器，跨课程、跨同步复用，所以只关浏览器才会丢掉登录；你关掉窗口、换浏览器设置或停止服务时它才关闭。采集时只能打开 Canvas 地址和学校框架来源的地址，只读页面正文或同源 JSON，不读 cookie、本地存储或密码。同步中遇到登录失效会报「Canvas：请在专用浏览器里登录后继续同步。」，登录后点「继续上次同步」。同一个配置目录已有专用浏览器在运行（例如上次服务异常退出后留下的）会报「StudyOrbit 专用浏览器已在运行，请先关闭它」。删掉 `.local/browser/` 就等于退出登录。
-   - **其他学校（未实测）：** 学校选「其他学校（通用 Canvas）」，填你学校的 Canvas 地址（只要 `https://` 加域名）和时区，按需填一个只带一个括号的课程代码正则（例如 `^([A-Z]+\d+)_`，括号里的部分就是课程代码）。改了学校或 Canvas 地址后要重新「立即同步」获取课程；旧课程列表来自另一个 Canvas 时，同步和课程页会提示「Canvas 地址已更改，请重新获取课程」。
-2. 安装并登录 `edstem` CLI（Ed 使用它自己的登录，不复用浏览器；墨大在澳区）。Ed 区域默认「自动」，跟随 CLI 的登录区域读取成绩，课程链接按澳区生成；在美区或欧区请在设置里直接选 `us` 或 `eu`，设置和 CLI 登录的区域不一致时这门课的 Ed 数据记为未读取。
-3. 在「设置 → 分析模型」选择模型并填写密钥，点「测试连接」确认可用。也可以沿用环境变量（`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`，或 `COURSE_ANALYSIS_PROVIDER` / `_MODEL` / `_URL` / `_API_KEY`）；优先级是设置 > 环境变量 > 默认（DeepSeek `deepseek-flash`）。
+1. **Microsoft Edge on macOS**, signed in to Canvas (UniMelb Canvas by default), with a browser window open. Canvas and Handbook collection rely on Edge's "Allow JavaScript from Apple Events" and the system automation permission. The browser must already be open; otherwise you get "Please open Microsoft Edge and sign in first" (「请先打开 Microsoft Edge 并登录」) and StudyOrbit does not start it for you.
+   - **Google Chrome on macOS (not run):** in Settings → Data sources choose Google Chrome and save. In Chrome, tick View → Developer → Allow JavaScript from Apple Events; on the first collection macOS also asks whether the terminal may control "Google Chrome". Chrome uses the same script dictionary as Edge, but no real Chrome run has been done.
+   - **Windows, Linux: dedicated browser (experimental, not run on Windows or Linux):** in Settings → Data sources choose "Google Chrome (dedicated browser)" or "Microsoft Edge (dedicated browser)" (Chrome is the default on these systems). StudyOrbit looks for an installed Chrome or Edge (on Windows under Program Files, Program Files (x86) and the local AppData; on Linux `google-chrome`, `chromium`, `microsoft-edge` and similar on `PATH`; otherwise enter the full program path in settings) and starts it with its own profile directory `.local/browser/<browser>` (readable only by you) and `--remote-debugging-pipe`: no debugging port is opened and your everyday browser profile is not touched. Click "Open dedicated browser" (「打开专用浏览器」) in settings and sign in to Canvas in that window (single sign-on and two-factor authentication are done by you; StudyOrbit never types a password). Keep the window open during a sync. The local server holds this browser across courses and syncs, so you only lose the sign-in when the browser closes: when you close the window, change the browser setting or stop the server. Collection may open only the Canvas address and the institution's framework source, and reads only page text or same-origin JSON, never cookies, local storage or passwords. If the sign-in expires during a sync you see "Canvas: sign in in the dedicated browser, then continue the sync" (「Canvas：请在专用浏览器里登录后继续同步。」); sign in and click "Continue last sync" (「继续上次同步」). If a dedicated browser is already running on the same profile directory (for example after the server crashed) you see "The StudyOrbit dedicated browser is already running; close it first" (「StudyOrbit 专用浏览器已在运行，请先关闭它」). Deleting `.local/browser/` signs you out.
+   - **Other institutions (not run):** choose "Other (generic Canvas)", enter your Canvas address (`https://` plus the domain) and time zone, and if needed a course-code regular expression with exactly one capture group (for example `^([A-Z]+\d+)_`; the group is the course code). After changing the institution or Canvas address, click "Sync now" (「立即同步」) again to fetch your courses; while the course list still comes from another Canvas, sync and the course page say "Canvas address changed, fetch your courses again" (「Canvas 地址已更改，请重新获取课程」).
+2. **The `edstem` CLI**, installed and signed in (Ed uses its own sign-in, not the browser's; UniMelb is in the Australian region). The Ed region defaults to "Auto": grades follow the CLI's sign-in region and course links use the Australian format. In the US or EU region choose `us` or `eu` in settings; if the setting and the CLI's region differ, Ed data for that course is recorded as not read.
+3. **A model:** in Settings → Analysis model choose a model, enter its key and click "Test connection" (「测试连接」). Environment variables also work (`DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, or `COURSE_ANALYSIS_PROVIDER` / `_MODEL` / `_URL` / `_API_KEY`); settings win over environment variables, which win over the default (DeepSeek `deepseek-flash`).
 
-然后在页面点「立即同步」，勾选课程并保存。**保存选课会立刻开始同步**，会用到浏览器（Edge、Chrome 或专用浏览器）、Ed 和模型额度；复习页的预设按钮和对话也会用模型额度。只采集课程列表可以运行 `npm run sync:courses`。
+Then click "Sync now", tick your courses and save. **Saving the course selection starts a sync at once**, which uses the browser, Ed and model credit; the revision presets and the chat also use model credit. To collect only the course list, run `npm run sync:courses`.
 
-## 不用墨大账号试跑
+## Try it without a UniMelb account
 
-仓库带一门合成课程（`test/fixtures/synthetic-course/`，课程代码 `SYNT10001`，数据全是编的），可以不登录、不用模型密钥，走一遍「模型输出 → 本地校验 → 拦截与修复 → 和标准答案对比打分」：
+The repository ships a synthetic course (`test/fixtures/synthetic-course/`, course code `SYNT10001`, all data made up). Without signing in or a model key you can run the whole path "model output → local validation → rejection and repair → scoring against the gold answer":
 
 ```bash
 node scripts/eval-course-analysis.mjs --fixture test/fixtures/synthetic-course
 ```
 
-第一份固定输出把 Ed 的得分配上了 Canvas 的满分，会被校验拦下并触发一次修复；另一份能通过校验但漏了一个 hurdle，只有对比标准答案才发现。终端会打印准确率、一致性和拦截次数，完整结果存在 `.local/eval/results/`。加 `--live` 改为调用你设置的模型。标准答案格式、指标定义和用真实采集数据评测的方法见 [课程分析评测](docs/eval-format.md)。
+The first fixed output cites a Canvas assignment that does not exist, so validation rejects it and triggers one repair; a later one passes validation but misses a hurdle and has a wrong type, which only the comparison with the gold answer catches. The terminal prints accuracy, consistency and rejection counts; full results go to `.local/eval/results/`. Add `--live` to call your configured model instead. The gold format, the metrics and how to evaluate real collected data are in [Course analysis evaluation](docs/eval-course-analysis.md).
 
-## 在 MCP 客户端里使用
+## Use from an MCP client
 
-`scripts/mcp-server.mjs` 是一个本机 stdio MCP 服务（服务名 `studyorbit`），提供和 Agent 对话相同的 6 个只读工具：`list_courses`、`get_assessments`、`calculate_grades`、`final_needed`、`upcoming_deadlines`、`plan_schedule`。同样的数据和参数，它和页面里的对话得到相同的结果。
+`scripts/mcp-server.mjs` is a local stdio MCP server (name `studyorbit`) with the same 6 read-only tools as the Agent chat: `list_courses`, `get_assessments`, `calculate_grades`, `final_needed`, `upcoming_deadlines`, `plan_schedule`. Given the same data and arguments it returns the same results as the chat in the page.
 
-- **只读、只在本机：** 每次调用重新读取 `.local/lms/courses.json` 和桌面课程文件夹里最新的有效课程 JSON（和页面同一份数据，同步后不用重启）；不同步、不写任何文件、不调用模型、不读模型设置和密钥、不联网。不应用你在页面里做的修正。
-- **没有计划数据：** 每周计划的任务存在页面里，MCP 读不到；`plan_schedule` 只在对话中把任务作为参数传入时可用。
-- **需要 Node.js 24 或更新版本：** 客户端启动的 `node` 必须是 24+。客户端（尤其是 Claude Desktop）找不到正确的 `node` 时，把下面的 `node` 换成它的绝对路径（终端里 `which node` 可查）。
-- **要用 `node` 直接启动，不要用 `npm run mcp`：** npm 会往标准输出打印一行标题，破坏协议。`npm run --silent mcp` 只适合手动试运行。
+- **Read-only and local:** every call re-reads `.local/lms/courses.json` and the newest valid course JSON in the Desktop course folders (the same data as the page, so no restart is needed after a sync). It does not sync, write files, call a model, read model settings or keys, or use the network. It does not apply the corrections you made in the page.
+- **No planning data:** weekly-plan tasks live in the page and MCP cannot read them; `plan_schedule` is useful only when the tasks are passed in as arguments, as the chat does.
+- **Node.js 24 or later:** the `node` your client starts must be 24+. If a client (especially Claude Desktop) does not find the right `node`, replace `node` below with its absolute path (`which node`).
+- **Start it with `node`, not `npm run mcp`:** npm prints a header line on standard output, which breaks the protocol. `npm run --silent mcp` is fine for trying it by hand.
 
-下面的 `<仓库绝对路径>` 换成本仓库在你电脑上的绝对路径。
+Replace `<repo>` below with the absolute path of this repository on your machine.
 
-**Claude Code：**
+**Claude Code:**
 
 ```bash
-claude mcp add studyorbit -- node <仓库绝对路径>/scripts/mcp-server.mjs
+claude mcp add studyorbit -- node <repo>/scripts/mcp-server.mjs
 ```
 
-**Claude Desktop：** 编辑 `claude_desktop_config.json`（macOS 在 `~/Library/Application Support/Claude/`，也可从「设置 → 开发者 → 编辑配置」打开），加入后重启 Claude Desktop：
+**Claude Desktop:** edit `claude_desktop_config.json` (on macOS in `~/Library/Application Support/Claude/`, or via Settings → Developer → Edit Config), add the server and restart Claude Desktop:
 
 ```json
 {
   "mcpServers": {
     "studyorbit": {
       "command": "node",
-      "args": ["<仓库绝对路径>/scripts/mcp-server.mjs"]
+      "args": ["<repo>/scripts/mcp-server.mjs"]
     }
   }
 }
 ```
 
-**其他 MCP 客户端：** 配置一个 stdio 服务，命令 `node`，参数 `["<仓库绝对路径>/scripts/mcp-server.mjs"]`，不需要任何密钥或环境变量。
+**Other MCP clients:** configure a stdio server with command `node` and arguments `["<repo>/scripts/mcp-server.mjs"]`. No key or environment variable is needed.
 
-**可选参数：**
+**Optional arguments:**
 
-| 参数 | 作用 |
+| Argument | Effect |
 | --- | --- |
-| `--courses <课程ID,课程ID>` 或环境变量 `STUDYORBIT_COURSES` | 只开放这些课程（Canvas 课程 ID，可先不加筛选调用 `list_courses` 查看）；两者都给时以 `--courses` 为准，不在课程列表里的 ID 会被忽略 |
-| `--project <目录>` | 读取哪个项目的 `.local/`，默认是脚本所在的仓库 |
-| `--desktop <目录>` | 课程文件夹所在的目录，默认 `~/Desktop`（与页面相同） |
+| `--courses <id,id>` or the `STUDYORBIT_COURSES` environment variable | Expose only these courses (Canvas course IDs; call `list_courses` without a filter to see them). `--courses` wins when both are given; IDs not in the course list are ignored |
+| `--project <dir>` | Which project's `.local/` to read; defaults to the repository the script is in |
+| `--desktop <dir>` | Where the course folders are; defaults to `~/Desktop`, like the page |
 
-例如在 Claude Code 里只开放两门课：`claude mcp add --env STUDYORBIT_COURSES=<课程ID>,<课程ID> studyorbit -- node <仓库绝对路径>/scripts/mcp-server.mjs`；Claude Desktop 则在上面的配置里加 `"env": { "STUDYORBIT_COURSES": "<课程ID>,<课程ID>" }`。
+For example, to expose two courses in Claude Code: `claude mcp add --env STUDYORBIT_COURSES=<id>,<id> studyorbit -- node <repo>/scripts/mcp-server.mjs`; in Claude Desktop add `"env": { "STUDYORBIT_COURSES": "<id>,<id>" }` to the configuration above.
 
-> **数据流向：** 工具结果包含你的成绩和考核信息，会发给你在该客户端里使用的模型（例如 Claude Desktop / Claude Code 发给 Anthropic），按那家服务商的条款处理。不想开放某门课时用 `--courses` 限定。诊断信息（课程数量、读取失败的原因）只写到标准错误输出，在客户端的 MCP 日志里能看到，不含课程内容。
+> **Where data goes:** tool results contain your grades and assessments and are sent to the model you use in that client (Claude Desktop and Claude Code send them to Anthropic), under that provider's terms. Use `--courses` to keep a course out. Diagnostics (course counts, why a read failed) go to standard error only and show up in the client's MCP log; they contain no course content.
 
-## 数据与隐私
+## Data and privacy
 
-| 内容 | 位置 |
+| What | Where |
 | --- | --- |
-| 采集快照、同步记录与用量、截止和权重变更记录、修正、模型设置、数据来源设置（`.local/config/sources.json`）、对话、复习笔记 | 项目内 `.local/`（被 Git 忽略；设置文件权限 600，密钥只写不回显） |
-| 每门课的课程 JSON | 墨大：`~/Desktop/墨尔本大学 <年份> S<学期>/<课程代码>/`；其他学校：`~/Desktop/StudyOrbit <学期>/<课程代码>/`（只保留字母、数字、空格、点、下划线和连字符） |
-| 选课、任务与用时、每天可用时间、外观设置、变更已读标记、背景图片（迁移前的修正留作备份） | 浏览器 localStorage / IndexedDB（背景图片不会上传） |
+| Collected snapshots, sync records and usage, the deadline and weight change log, corrections, model settings, data source settings (`.local/config/sources.json`), chats, revision notes | `.local/` in the project (ignored by Git; settings files have mode 600 and keys are write-only) |
+| Each course's course JSON | UniMelb: `~/Desktop/墨尔本大学 <year> S<semester>/<course code>/`; other institutions: `~/Desktop/StudyOrbit <semester>/<course code>/` (only letters, digits, spaces, dots, underscores and hyphens are kept) |
+| Course selection, tasks and time spent, daily availability, appearance, seen-change markers, background image (corrections from before the move are kept as a backup) | Browser localStorage and IndexedDB (the background image is never uploaded) |
 
-- 存储只在本机；分析和对话时，课程数据（含成绩）会发给你选择的模型服务商，按该服务商的条款处理，模型调用可能产生费用。接口地址指向本机模型（例如 Ollama）时，数据不出本机。
-- 本地接口只接受本机、同源、带本次启动令牌的请求：令牌由 `npm run dev` 每次随机生成，只由页面服务器的代理加上，不发给浏览器；其他网站、本机其他端口的页面和局域网设备都读不到你的数据。
-- 不使用自签 Canvas token（学校禁止）；登录和多因素认证始终由你自己完成，模型看不到密码。
+- Storage stays on your machine. During analysis and chat, course data (including grades) is sent to the model provider you chose, under that provider's terms, and model calls may cost money. If the API address points to a local model (for example Ollama), the data stays on your machine.
+- The local API accepts only same-machine, same-origin requests that carry this launch's token. `npm run dev` generates a random token on every start and only the page server's proxy adds it; it is never sent to the browser. Other websites, pages on other local ports and devices on your network cannot read your data.
+- No self-issued Canvas token is used (the university does not allow it). You always sign in and complete multi-factor authentication yourself; the model never sees a password.
 
-## 开发
+## Development
 
-- `npm run check`：类型检查加 `test/` 下的 vitest 测试，与 CI 相同。成绩、「期末需要」和排期是 `shared/` 里的纯函数，测试只用合成数据。
-- `npm run build`：构建静态资源。**静态构建不包含同步、对话和复习笔记接口**，它们在本地接口服务（`server/`）里，只有 `npm run dev` 会把页面和它连起来。
-- 代码结构见 [项目结构和数据流](docs/overview.md)，脚本见 [scripts/README.md](scripts/README.md)；课程 JSON 契约见 [docs/course-json.md](docs/course-json.md)，分析提示词见 [docs/course-sync-prompt.md](docs/course-sync-prompt.md)，评测见 [docs/eval-format.md](docs/eval-format.md)；现行规格在 `openspec/specs/`。
-- 开发规则见 [CLAUDE.md](CLAUDE.md)；决定记录在 `note/decisions.md`，产品定位和以后的想法见 [note/product.md](note/product.md)，当前交接在 [note/handoff.md](note/handoff.md)。
+- `npm run check`: type check plus the vitest tests under `test/`, the same as CI. Grades, the final-needed target and the weekly plan are pure functions in `shared/`; tests use synthetic data only.
+- `npm run build`: builds the static assets. **The static build has no sync, chat or revision-note API**: those live in the local API server (`server/`), and only `npm run dev` connects the page to it.
+- Code structure, data flow and every script: [Overview](docs/overview.md). Course JSON contract and what the model fills in versus code: [docs/course-json.md](docs/course-json.md). Evaluations: [course analysis](docs/eval-course-analysis.md) and [chat Q&A](docs/eval-chat-qa.md). Current specifications: `openspec/specs/`.
+- Working rules: [CLAUDE.md](CLAUDE.md). Decisions: `note/decisions.md`; product positioning and future ideas: [note/product.md](note/product.md); current handoff: [note/handoff.md](note/handoff.md) (these notes are in Chinese).
 
-## 实验记录
+## Measurements
 
-[第一版试跑](docs/first-sync-run-20261029.md)、[同步用量](docs/sync-measurements.md)、[同步优化](docs/sync-optimization.md) 记录了真实运行的耗时和 token 用量。它们只代表当时那几门课，不等同于普遍结论。个人成绩已从这些记录中移除；含成绩的模型对比与混合同步实验只保存在本机。
+[Sync optimisation](docs/sync-optimization.md) records the time and tokens of real sync runs, with the raw run records in its appendix. They describe those four courses at that time only, not a general result. Personal grades have been removed from these records; model comparisons and hybrid-sync experiments that contain grades are kept only on the owner's machine.
 
-## 仓库历史
+## Repository history
 
-2026-10-29 起，本仓库以本地原型 v2 为准：v2 的开发历史已在去掉个人成绩后并入主线。早先的 v1 实现（Codex 读页面、`coursework` CLI、SQLite 存储、v1 的 OpenSpec 规格）已从主线移除，仍可在 Git 历史中查看。
+Since 2026-10-29 this repository follows the local prototype v2; the v2 development history was merged into the main branch after removing personal grades. The earlier v1 implementation (Codex reading pages, the `coursework` CLI, SQLite storage, the v1 OpenSpec specs) was removed from the main branch and remains in the Git history.
 
-## 许可证
+## Licence
 
-[MIT](LICENSE) © 2026 MortyYJT。依赖各自的许可证；外部命令 `edstem` CLI 不随本仓库分发。
+[MIT](LICENSE) © 2026 MortyYJT. Dependencies keep their own licences; the external `edstem` CLI is not distributed with this repository.
