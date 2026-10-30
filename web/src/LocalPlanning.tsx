@@ -9,6 +9,7 @@ import { parseAvailability, schedulePlan } from '../../shared/planning.js';
 import { applyChoiceToSlice, importCourse, migrateStoredKeys, migrationPlan, storageKeys, writeCourseSlice, type CorrectionsRequest, type CourseSlice } from './local-stores.js';
 import type { Conflict, CorrectionsView } from '../../shared/corrections.js';
 import { CHANGES_SEEN_KEY, CourseChangeSchema, courseDismissAt, newestAt, unseenChanges, type CourseChange } from '../../shared/course-changes.js';
+import { translateReason } from '../../shared/sync-reasons.js';
 
 type RecordValue = Record<string, unknown>;
 type Course = { id: string; name: string; subjectCode: string; term?: string };
@@ -196,6 +197,9 @@ function WeightBreakdown({ assessments, parents, zh }: { assessments: Assessment
 
 export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersion, courseId, onCourse, onBack, onCourses, onAsk, syncIssues }: { language: Language; timeZone: string; frameworkLabel: string | null; refreshVersion: number; courseId?: string; onCourse: (id: string) => void; onBack: () => void; onCourses?: (courses: SidebarCourse[]) => void; onAsk?: (courseId: string, prompt?: string) => void; syncIssues: { id: string; status: string; reason: string }[] }) {
   const zh = language === 'zh';
+  // An incomplete sync kept the previous document (decision #480): say so, with the cause.
+  const brief = (text: string) => (text.length > 160 ? `${text.slice(0, 159)}…` : text);
+  const incompleteText = (reason: string) => zh ? `本次同步不完整，仍显示上次的结果${reason ? `（原因：${brief(reason)}）` : ''}` : `This sync was incomplete; the previous result is still shown${reason ? ` (cause: ${brief(translateReason(reason, 'en'))})` : ''}`;
   const [courses, setCourses] = useState<CourseData[]>([]);
   const [error, setError] = useState('');
   const [work, setWork] = useState<Work[]>(readWork);
@@ -531,6 +535,7 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
         {onAsk && <button className="small ask-agent" onClick={() => onAsk(selected.course.id)}>{zh ? '问 Agent' : 'Ask Agent'}</button>}</div>
       {!selected.available && <p className="needs">{zh ? '这门课尚无可用的同步结果。' : 'No sync result is available for this course yet.'}</p>}
       {syncIssues.filter(item => item.id === selected.course.id && item.status === 'failed').map(item => <p className="needs" key={item.id}>{zh ? '最近一次同步未完成，正在显示已保存的课程信息。' : 'The latest sync failed. Showing saved course information.'}</p>)}
+      {syncIssues.filter(item => item.id === selected.course.id && item.status === 'incomplete').map(item => <p className="needs" key={item.id}>{incompleteText(item.reason)}</p>)}
       {courseChanges.length > 0 && <section className="course-changes card" aria-label={zh ? '课程变更' : 'Course changes'}>
         <div className="course-changes-head"><h2>{zh ? '课程变更' : 'Course changes'}</h2>
           {courseDismissAt(unseen, selected.course.id) !== null && <button className="small ghost" type="button" onClick={() => dismissChanges(courseDismissAt(unseen, selected.course.id))}>{zh ? '知道了' : 'Got it'}</button>}</div>
@@ -750,7 +755,8 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
         ? (entry.minutes > 0 ? (zh ? `已过截止 · ${codeOfWork(task)} · ${task.title}：还剩 ${entry.minutes} 分钟` : `Overdue · ${codeOfWork(task)} · ${task.title}: ${entry.minutes} min left`)
           : (zh ? `已过截止 · ${codeOfWork(task)} · ${task.title}：预计时间已用完，还没标完成` : `Overdue · ${codeOfWork(task)} · ${task.title}: estimate used up, not marked done`))
         : (zh ? `排不下 · ${codeOfWork(task)} · ${task.title}：${shortDate(task.due)} 截止前还差 ${entry.minutes} 分钟` : `Does not fit · ${codeOfWork(task)} · ${task.title}: ${entry.minutes} min short before ${shortDate(task.due)}`) }]; }),
-    ...syncIssues.filter(item => item.status === 'failed').map(item => ({ key: `sync:${item.id}`, courseId: item.id, text: zh ? `${codeOf(item.id)} 最近一次同步未完成` : `${codeOf(item.id)}: the latest sync failed` })),
+    ...syncIssues.filter(item => item.status === 'failed').map(item => ({ key: `sync:${item.id}`, courseId: item.id, text: zh ? `${codeOf(item.id)} 最近一次同步未完成${item.reason ? `（原因：${brief(item.reason)}）` : ''}` : `${codeOf(item.id)}: the latest sync failed${item.reason ? ` (cause: ${brief(translateReason(item.reason, 'en'))})` : ''}` })),
+    ...syncIssues.filter(item => item.status === 'incomplete').map(item => ({ key: `sync:${item.id}`, courseId: item.id, text: `${codeOf(item.id)}${zh ? '：' : ': '}${incompleteText(item.reason)}` })),
     ...courses.flatMap(({ course }) => { const count = conflicts[course.id]?.length ?? 0;
       return count ? [{ key: `conflicts:${course.id}`, courseId: course.id, text: zh ? `${course.subjectCode}：${count} 项修正和同步结果不一致` : `${course.subjectCode}: ${count} ${count === 1 ? 'correction differs' : 'corrections differ'} from the latest sync` }] : []; }),
     ...unseen.map((entry, index) => ({ key: `change:${entry.at}:${entry.courseId}:${entry.assessmentId}:${entry.field}:${index}`, courseId: entry.courseId, text: changeText(entry, codeOf(entry.courseId)) })),

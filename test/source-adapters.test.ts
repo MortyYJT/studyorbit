@@ -317,8 +317,10 @@ describe('collect stage over the job\'s sources', () => {
     const pipeline = pipelineFor(project, store, { runCollector: async request => { requests.push(request); return fakes.runCollector(request); }, callModel: fakeModel(courses).callModel });
     await pipeline.start(['900001']);
     await pipeline.idle();
-    expect(requests.map(request => [request.source, request.script])).toEqual([
-      ['canvas', 'sources/canvas/collect.mjs'], ['ed', 'sources/ed/collect.mjs'], ['handbook', 'institutions/unimelb/handbook-collect.mjs'],
+    // The preflight checks (Canvas sign-in, Ed login) run first, once per job, with the same configuration.
+    expect(requests.map(request => [request.source, request.script, request.preflight === true])).toEqual([
+      ['canvas', 'sources/canvas/preflight.mjs', true], ['ed', 'sources/ed/preflight.mjs', true],
+      ['canvas', 'sources/canvas/collect.mjs', false], ['ed', 'sources/ed/collect.mjs', false], ['handbook', 'institutions/unimelb/handbook-collect.mjs', false],
     ]);
     for (const request of requests) expect(JSON.parse(request.env![SOURCE_CONFIG_ENV]!)).toEqual(DEFAULT_SOURCE_CONFIG);
     expect(store.getJob(pipeline.status().jobId!)!.sources).toEqual(['canvas', 'ed', 'handbook']);

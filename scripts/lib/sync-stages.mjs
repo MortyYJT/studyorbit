@@ -14,13 +14,16 @@ import { analyseWithRepair, settleCourse, validateAnalysis } from './course-vali
 import { CDP_SIGN_IN } from '../browser/cdp.mjs';
 import { EX_SIGN_IN, EX_TEMPFAIL } from './collector-exit.mjs';
 import { isTemporaryFailure } from './llm-providers.mjs';
+import { collectorFailureReason, reasonText } from '../../shared/sync-reasons.ts';
 import { DEFAULT_INSTITUTION } from '../institutions/registry.mjs';
 
 /** Bump a stage's version whenever its code changes meaning: older checkpoints then stop matching. */
 /** 2: the collect inputs gained the institution, Canvas origin, Ed region and source ids (generic-adapters PR 3). */
-export const COLLECT_VERSION = 2;
+/** 3: entries mark a source that does not apply as `skipped`, and placeholders carry the failure's cause (sync-incomplete). */
+export const COLLECT_VERSION = 3;
 export const ANALYSE_VERSION = 1;
-export const VALIDATE_VERSION = 1;
+/** 2: an incomplete collection with an earlier document gives `incomplete`; failed collectors' causes in reasons. */
+export const VALIDATE_VERSION = 2;
 export const MERGE_VERSION = 1;
 export const STAGES = Object.freeze(['collect', 'analyse', 'validate', 'merge']);
 // The job's sources (openspec change generic-adapters, design §1) come in `ctx.sources`: source objects in collection
@@ -104,7 +107,7 @@ export async function reusableSources(store, jobId, courseId, inputHash, ids) {
   for (const source of ids) {
     for (const row of rows) {
       const entry = row.checkpoint?.sources?.[source];
-      if (await verifySource(entry)) { found[source] = { entry: { file: entry.file, sha256: entry.sha256, exitCode: entry.exitCode }, jobId: row.jobId }; break; }
+      if (await verifySource(entry)) { found[source] = { entry: sourceEntry(entry), jobId: row.jobId }; break; }
     }
   }
   return found;
@@ -118,6 +121,9 @@ export function reusableCheckpoint(store, jobId, courseId, stage, inputHash) {
   return content === null ? null : { row, artifact: JSON.parse(content) };
 }
 
+/** The kept fields of a checkpoint source entry; `skipped` marks a source that does not apply to the course. */
+const sourceEntry = entry => ({ file: entry.file, sha256: entry.sha256, exitCode: entry.exitCode, ...(entry.skipped ? { skipped: true } : {}) });
+
 /** The collected data of every source in the checkpoint entries `{ [id]: { file } }`, by source id. */
 export async function readCollected(sources) {
   const entries = await Promise.all(Object.entries(sources).map(async ([id, entry]) => [id, JSON.parse(await readFile(entry.file, 'utf8'))]));
@@ -126,12 +132,26 @@ export async function readCollected(sources) {
 
 /**
  * Per-source collection flags for `settleCourse`: the collector failed or wrote an `unavailable` result itself (as the
- * Ed collector does on a region mismatch), its data is partial, or its pagination was not verified.
+ * Ed collector does on a region mismatch), its data is partial, or its pagination was not verified. `skipped`: the
+ * source does not apply to the course (no collector ran), so its absence never makes a sync incomplete.
  */
 export function sourceFlags(sources, data) {
   return Object.fromEntries(Object.entries(sources).map(([id, entry]) => [id, {
     failed: entry.exitCode !== 0 || data[id]?.status === 'unavailable', partial: data[id]?.status === 'partial', unpaginated: data[id]?.paginationVerified === false,
+    skipped: entry.skipped === true,
   }]));
+}
+
+/**
+ * Sources whose failure makes the sync of a course incomplete (decision #480): a collector that failed or wrote an
+ * `unavailable` result, unless the source does not apply to the course. Ed `not_found` and `partial` are not failures.
+ * Returns `[{ id, label, reason }]` in source order.
+ */
+export function incompleteSources(sources, flags, data) {
+  return sources.filter(source => flags[source.id]?.failed && !flags[source.id]?.skipped).map(source => ({
+    id: source.id, label: source.label,
+    reason: typeof data?.[source.id]?.reason === 'string' && data[source.id].reason ? data[source.id].reason : `${source.label} 采集不可用`,
+  }));
 }
 
 /**
@@ -239,15 +259,19 @@ export function spawnCollector({ script, args, env = {}, cwd, registerStop, uses
     const stdio = client ? ['ignore', 'ignore', 'pipe', 'ipc'] : ['ignore', 'ignore', 'pipe'];
     const proc = spawn(process.execPath, [join(cwd, 'scripts', script), ...args], { cwd, env: { ...process.env, ...env }, stdio, detached: process.platform !== 'win32' });
     if (client) browserHost.attach(proc, client);
-    let stderr = '', done = false, escalation;
+    let stderr = '', done = false, escalation, timedOut = false;
     proc.stderr.on('data', chunk => { if (stderr.length < 4000) stderr += chunk.toString().slice(0, 4000 - stderr.length); });
     const stop = () => {
       try { if (process.platform === 'win32') spawn('taskkill', ['/pid', String(proc.pid), '/t', '/f'], { stdio: 'ignore' }); else if (proc.pid) process.kill(-proc.pid, 'SIGTERM'); } catch { /* Already exited. */ }
       if (!escalation) escalation = setTimeout(() => { try { if (proc.pid && process.platform !== 'win32') process.kill(-proc.pid, 'SIGKILL'); } catch { /* Already exited. */ } }, 5000);
     };
     const untrack = registerStop(stop);
-    const timer = setTimeout(stop, 120000);
-    const finish = code => { if (done) return; done = true; clearTimeout(timer); untrack(); resolveTask({ code, error: stderr.trim().slice(0, 500) }); };
+    const timer = setTimeout(() => { timedOut = true; stop(); }, 120000);
+    const finish = code => {
+      if (done) return;
+      done = true; clearTimeout(timer); untrack();
+      resolveTask({ code, error: stderr.trim().slice(0, 4000), ...(timedOut ? { timedOut: true } : {}) });
+    };
     proc.on('error', () => finish(null));
     proc.on('close', finish);
   });
@@ -255,6 +279,48 @@ export function spawnCollector({ script, args, env = {}, cwd, registerStop, uses
 
 /** The limiter key of a source: every source that uses the browser shares the browser limiter. */
 export const limiterKey = source => (source.usesBrowser ? 'browser' : source.limiter);
+
+/** The collect input hash of a course under the job's setup. */
+function courseCollectHash(ctx, course) {
+  const { settings } = ctx.sourceContext;
+  return collectInputHash({ courseId: course.id, code: course.subjectCode, term: courseTerm(course),
+    institution: settings.institution, canvasOrigin: settings.canvasOrigin, edRegion: settings.edRegion, sources: ctx.sources.map(source => source.id) });
+}
+
+/** Whether every source of the course can be reused from the lineage, so its collect stage runs no collector. */
+export async function collectReusable(ctx, course) {
+  const ids = ctx.sources.map(source => source.id);
+  const found = await reusableSources(ctx.store, ctx.jobId, course.id, courseCollectHash(ctx, course), ids);
+  return ids.every(id => found[id]);
+}
+
+/**
+ * Preflight (sync-incomplete fix 2, decision #484): each source's `preflight` command once, in source order, through
+ * its collector limiter (a temporary failure is retried as for collection). Returns the first blocking failure's
+ * reason (`blocked`, null when none) and a warning per non-blocking failure. Runs no course collector and no model.
+ */
+export async function runPreflight(ctx) {
+  const warnings = [];
+  const { settings } = ctx.sourceContext;
+  for (const source of ctx.sources) {
+    if (!source.preflight) continue;
+    const command = source.preflight.command(ctx.sourceContext);
+    const outcome = await ctx.limiters.collect(limiterKey(source)).run(async () => {
+      ctx.assertAlive();
+      const result = await ctx.runCollector({ source: source.id, script: command.script, args: command.args, env: command.env, usesBrowser: source.usesBrowser,
+        cwd: ctx.projectDir, registerStop: ctx.registerStop, signal: ctx.signal, preflight: true });
+      if (result.code === 0) return { ok: true, value: result };
+      return { ok: false, retryable: result.code === EX_TEMPFAIL && !ctx.stopStatus(), error: result.error, code: result.code, timedOut: result.timedOut === true };
+    }, { signal: ctx.signal, budget: { waitedMs: 0 } });
+    if (ctx.stopStatus()) throw Object.assign(new Error('stopped'), { name: 'AbortError' });
+    if (outcome.ok) continue;
+    const reason = outcome.code === EX_SIGN_IN ? `${source.label}：${CDP_SIGN_IN}。`
+      : collectorFailureReason({ source: source.id, label: source.label, browser: settings.browser, code: outcome.code, error: outcome.error, timedOut: outcome.timedOut });
+    if (source.preflight.blocking) return { blocked: reason, warnings };
+    warnings.push(reasonText('preflightWarning', { s: source.label, d: reason }));
+  }
+  return { blocked: null, warnings };
+}
 
 /**
  * Collect: the job's sources (`ctx.sources`) in order into the job's run directory, through the platform limiters.
@@ -265,8 +331,7 @@ export const limiterKey = source => (source.usesBrowser ? 'browser' : source.lim
 export async function collectStage(ctx, course) {
   const ids = ctx.sources.map(source => source.id);
   const { settings } = ctx.sourceContext;
-  const inputHash = collectInputHash({ courseId: course.id, code: course.subjectCode, term: courseTerm(course),
-    institution: settings.institution, canvasOrigin: settings.canvasOrigin, edRegion: settings.edRegion, sources: ids });
+  const inputHash = courseCollectHash(ctx, course);
   const runDir = join(ctx.projectDir, '.local', 'lms', 'runs', ctx.jobId, course.id);
   let found = {};
   return runStage(ctx, course.id, 'collect', inputHash, {
@@ -288,15 +353,16 @@ export async function collectStage(ctx, course) {
         const file = join(runDir, `${id}.json`);
         await ctx.io.mkdir(runDir, { recursive: true, mode: 0o700 });
         const command = source.collect(course, ctx.sourceContext, file);
-        let code = null;
+        let code = null, failure = null;
         if (command) {
           const outcome = await ctx.limiters.collect(limiterKey(source)).run(async () => {
             ctx.assertAlive();
             attempts++;
             const result = await ctx.runCollector({ source: id, script: command.script, args: command.args, env: command.env, usesBrowser: source.usesBrowser, cwd: ctx.projectDir, registerStop: ctx.registerStop, signal: ctx.signal });
             if (result.code === 0) return { ok: true, value: result };
-            return { ok: false, retryable: result.code === EX_TEMPFAIL && !ctx.stopStatus(), error: result.error, code: result.code };
+            return { ok: false, retryable: result.code === EX_TEMPFAIL && !ctx.stopStatus(), error: result.error, code: result.code, timedOut: result.timedOut === true };
           }, { signal: ctx.signal, budget });
+          failure = outcome.ok ? null : outcome;
           phases[`${id}Ms`] = ctx.now() - started;
           if (ctx.stopStatus()) throw Object.assign(new Error('stopped'), { phases, attempts });
           code = outcome.ok ? 0 : outcome.code;
@@ -306,8 +372,13 @@ export async function collectStage(ctx, course) {
           // The dedicated browser (CDP) is signed out: no placeholder, so a resume collects the source again.
           if (code === EX_SIGN_IN) throw new StageError('COLLECT_SIGN_IN', `${source.label}：${CDP_SIGN_IN}。`, { phases, attempts });
         } else phases[`${id}Ms`] = ctx.now() - started;
-        if (code !== 0) await ctx.io.writeFile(file, JSON.stringify(source.placeholder()), { mode: 0o600 });
-        sources[id] = { file, sha256: await fileHash(file), exitCode: code };
+        // A failed collector's placeholder carries the cause from its exit code and stderr (decision #481); a source that
+        // does not apply to the course keeps the default placeholder and is marked `skipped`.
+        if (code !== 0) {
+          const reason = command ? collectorFailureReason({ source: id, label: source.label, browser: settings.browser, code, error: failure?.error, timedOut: failure?.timedOut }) : undefined;
+          await ctx.io.writeFile(file, JSON.stringify(source.placeholder(reason)), { mode: 0o600 });
+        }
+        sources[id] = { file, sha256: await fileHash(file), exitCode: code, ...(command ? {} : { skipped: true }) };
         if (sources[id].sha256 === null) throw new Error('COLLECTED_FILE_MISSING');
         ctx.store.updateStage(ctx.jobId, course.id, 'collect', { checkpoint: { sources } });
       }
@@ -392,7 +463,9 @@ export async function analyseStage(ctx, course, collected) {
 
 /**
  * Validate: `validateAnalysis` on the final reply, then `settleCourse` (quote verification included) with the
- * collection flags and the captured earlier document. Writes the diagnostic file as before.
+ * collection flags and the captured earlier document. Writes the diagnostic file as before. When a source failed and
+ * the course has an earlier document, the result is `incomplete` (decision #480): the analysed outcome is kept only as
+ * a diagnostic (`analysed`), the artifact has no document to save, and the reason names the failed sources' causes.
  */
 export async function validateStage(ctx, course, collected, analysed, previousHash) {
   const inputHash = validateInputHash({ analyseArtifact: analysed.artifactHash, sources: collected.sources, previous: previousHash });
@@ -409,20 +482,32 @@ export async function validateStage(ctx, course, collected, analysed, previousHa
       const { framework } = ctx.institution;
       const validation = validateAnalysis(final.lastMessage, { course, ...data, framework });
       const result = { exitCode: final.exitCode, lastMessage: final.lastMessage, usage, error: final.error ?? undefined, threadId: final.threadId, issues: validation.issues };
-      const settled = settleCourse({ result, validation, collection: sourceFlags(collected.sources, data), sources: ctx.sources, data, previous, framework });
+      const flags = sourceFlags(collected.sources, data);
+      const settled = settleCourse({ result, validation, collection: flags, sources: ctx.sources, data, previous, framework });
       if (settled.diagnostic) await ctx.writeDiagnostic(`${ctx.jobId}-${course.id}.json`, settled.diagnostic);
-      const artifact = { accepted: settled.accepted, status: settled.status, reason: settled.reason, document: settled.document, diagnostic: settled.diagnostic, previous: previousHash ?? null };
+      const missing = previous ? incompleteSources(ctx.sources, flags, data) : [];
+      const artifact = missing.length
+        ? { accepted: settled.accepted, status: 'incomplete', reason: incompleteReason(missing), document: null, missing,
+          analysed: { status: settled.status, reason: settled.reason, document: settled.document }, diagnostic: settled.diagnostic, previous: previousHash ?? null }
+        : { accepted: settled.accepted, status: settled.status, reason: settled.reason, document: settled.document, diagnostic: settled.diagnostic, previous: previousHash ?? null };
       const hash = ctx.store.putArtifact(JSON.stringify(artifact));
       return { checkpoint: { artifact: hash }, outputHash: hash, result: { artifactHash: hash, artifact } };
     },
   });
 }
 
+/** The reason of an incomplete course: the distinct causes of its failed sources, at most 500 characters. */
+export function incompleteReason(missing) {
+  return [...new Set(missing.map(item => item.reason))].join('；').slice(0, 500);
+}
+
 /**
  * Merge (write-ahead, decision #353): consult every merge row of the lineage for this course; complete from a row
  * whose file was written, write to a planned path whose file is missing, or fail `MERGE_TARGET_CHANGED`; otherwise
  * record `{ plannedPath, contentHash }` before writing with exclusive create. Then the snapshot and the change log
- * (skipped when a line of this course from any lineage job exists). A result without a document only records it.
+ * (skipped when a line of this course from any lineage job exists). A result without a document only records it. An
+ * `incomplete` result writes nothing to the Desktop or the change log: its analysed document goes to the snapshot
+ * (status `incomplete`, no file) and, with the failed sources, to `sync-errors/<runId>-<courseId>-incomplete.json`.
  */
 export async function mergeStage(ctx, course, validated, previousHash) {
   const courseDir = courseFolder(ctx.desktopDir, course, ctx.institution);
@@ -431,6 +516,16 @@ export async function mergeStage(ctx, course, validated, previousHash) {
     async work() {
       ctx.setCourse(course.id, { phase: 'saving' });
       const outcome = validated.artifact;
+      if (outcome.status === 'incomplete') {
+        const analysed = outcome.analysed ?? {};
+        await ctx.writeDiagnostic(`${ctx.jobId}-${course.id}-incomplete.json`, { status: 'incomplete', reason: outcome.reason, missing: outcome.missing ?? [], analysed });
+        if (analysed.document) {
+          ctx.store.putSnapshot({ jobId: ctx.jobId, courseId: course.id, document: `${JSON.stringify(analysed.document, null, 2)}\n`, version: analysed.document.version ?? null,
+            status: 'incomplete', reason: outcome.reason, file: null });
+        }
+        return { checkpoint: { plannedPath: null, contentHash: null, validateArtifact: validated.artifactHash, changeLog: false, status: 'incomplete', reason: outcome.reason, incomplete: true },
+          result: { status: 'incomplete', reason: outcome.reason, file: null } };
+      }
       if (!outcome.document) {
         return { checkpoint: { plannedPath: null, contentHash: null, validateArtifact: validated.artifactHash, changeLog: false, status: outcome.status, reason: outcome.reason },
           result: { status: outcome.status, reason: outcome.reason, file: null } };

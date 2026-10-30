@@ -151,7 +151,8 @@ describe('staged sync with the generic institution', () => {
     await sync.idle();
     expect(reads).toBe(1);
     expect(collectors.calls).toEqual(['900001:canvas', '900001:ed']);
-    expect(envs.map(env => JSON.parse(env.STUDYORBIT_SOURCE_CONFIG!))).toEqual(Array(2).fill({
+    // Two preflight checks (Canvas, Ed) and two collectors, all with the generic configuration.
+    expect(envs.map(env => JSON.parse(env.STUDYORBIT_SOURCE_CONFIG!))).toEqual(Array(4).fill({
       version: 1, institution: 'generic', canvasOrigin: ORIGIN, browser: 'cdp-chrome', browserPath: null, edRegion: 'auto', profileDir: null,
     }));
     expect(Object.keys((db.getStage('run-g', '900001', 'collect')!.checkpoint as { sources: object }).sources)).toEqual(['canvas', 'ed']);

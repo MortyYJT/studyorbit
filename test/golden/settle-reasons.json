@@ -306,7 +306,7 @@
     "handbook": "unparsable",
     "flags": [],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -314,7 +314,7 @@
       "canvasFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -322,7 +322,7 @@
       "canvasUnpaginated"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 分页未验证；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -331,7 +331,7 @@
       "canvasUnpaginated"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -339,7 +339,7 @@
       "edFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Ed 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -348,7 +348,7 @@
       "edFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -357,7 +357,7 @@
       "edFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 分页未验证；Ed 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -367,7 +367,7 @@
       "edFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -375,7 +375,7 @@
       "edPartial"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "部分 Ed 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -384,7 +384,7 @@
       "edPartial"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；部分 Ed 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -393,7 +393,7 @@
       "edPartial"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 分页未验证；部分 Ed 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -403,7 +403,7 @@
       "edPartial"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；部分 Ed 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -412,7 +412,7 @@
       "edPartial"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Ed 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -422,7 +422,7 @@
       "edPartial"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -432,7 +432,7 @@
       "edPartial"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 分页未验证；Ed 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -443,7 +443,7 @@
       "edPartial"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；Handbook 考核表未能解析；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -451,7 +451,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -460,7 +460,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -469,7 +469,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 分页未验证；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -479,7 +479,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -488,7 +488,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Ed 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -498,7 +498,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -508,7 +508,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 分页未验证；Ed 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -519,7 +519,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -528,7 +528,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "部分 Ed 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -538,7 +538,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；部分 Ed 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -548,7 +548,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 分页未验证；部分 Ed 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -559,7 +559,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；部分 Ed 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -569,7 +569,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Ed 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -580,7 +580,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -591,7 +591,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 分页未验证；Ed 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "handbook": "unparsable",
@@ -603,7 +603,7 @@
       "handbookFailed"
     ],
     "status": "failed",
-    "reason": "课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
+    "reason": "Canvas 数据未能读取；Ed 数据未能读取；Handbook 数据未能读取；课程数据校验失败：assessments.0.refs.1: 「Weekly quizzes」引用的 handbook Weekly online quizzes 不是 Handbook 考核表中列出的考核项名称；assessments.3.refs.2: 「Assignment 1」引用的 handbook Assignment 1 不是 Handbook 考核表中列出的考核项名称；assessments.5.refs.1: 「Final Exam」引用的 handbook Final examination 不是 Handbook 考核表中列出的考核项名称"
   },
   {
     "case": "model exit 1",

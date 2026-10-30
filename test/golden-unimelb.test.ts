@@ -55,6 +55,8 @@ describe('UniMelb golden: prompts and wording', () => {
 });
 
 describe('UniMelb golden: reasons, folders and hashes', () => {
+  // Re-recorded on purpose by the sync-incomplete change (decision #486): a rejected reply's reason now starts with the
+  // collection notes, as an accepted one's does. Accepted rows are unchanged.
   it('settle reasons for every collection-flag combination, with a parsable and an unparsable Handbook', async () => {
     const { course, canvas, ed, handbook } = await collected();
     const text = JSON.stringify(await fixture('outputs/2.json'));
@@ -88,8 +90,9 @@ describe('UniMelb golden: reasons, folders and hashes', () => {
 
   it('collect and validate input hashes', async () => {
     const sources = { canvas: { file: '/r/canvas.json', sha256: 'c', exitCode: 0 }, ed: { file: '/r/ed.json', sha256: 'e', exitCode: 1 }, handbook: { file: '/r/handbook.json', sha256: 'h', exitCode: 0 } };
-    // The collect hash is the one recorded value that changed on purpose: generic-adapters PR 3 added the setup to the
-    // collect inputs and bumped COLLECT_VERSION (design §1, decision #464). The validate hash is unchanged.
+    // Both hashes changed on purpose: generic-adapters PR 3 added the setup to the collect inputs and bumped
+    // COLLECT_VERSION (design §1, decision #464); the sync-incomplete change bumped COLLECT_VERSION to 3 and
+    // VALIDATE_VERSION to 2 (decision #486).
     await expect(json({
       collect: collectInputHash({ courseId: '900001', code: 'SYNT10001', term: '2026 Semester 2', institution: 'unimelb', canvasOrigin: CANVAS, edRegion: 'auto', sources: ['canvas', 'ed', 'handbook'] }),
       validate: validateInputHash({ analyseArtifact: 'a', sources, previous: null }),
@@ -258,8 +261,9 @@ describe('UniMelb golden: collect stage', () => {
     const fakes = fakeCollectors(courses, { '900001:ed': { exit: [1] } });
     const requests: unknown[] = [];
     const dir = project.projectDir;
+    // The preflight checks the sync-incomplete change added are left out: this records the course collectors.
     const runCollector = async (request: CollectorRequest) => {
-      requests.push({ source: request.source, args: request.args.map(arg => (arg.startsWith(dir) ? relative(dir, arg) : arg)) });
+      if (!request.preflight) requests.push({ source: request.source, args: request.args.map(arg => (arg.startsWith(dir) ? relative(dir, arg) : arg)) });
       return fakes.runCollector(request);
     };
     const prompts: string[] = [];

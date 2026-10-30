@@ -8,14 +8,18 @@ import type { CourseSource, SourceId } from '../sources/types.d.mts';
 
 /** A source id (the checkpoint key and run-directory file name). */
 export type Source = SourceId;
-export type SourceEntry = { file: string; sha256: string; exitCode: number | null; reusedFrom?: string };
+export type SourceEntry = { file: string; sha256: string; exitCode: number | null; reusedFrom?: string; skipped?: true };
 /** Checkpoint entries of the job's sources, by source id. */
 export type Sources = Record<Source, SourceEntry>;
 export type SyncCourse = { id: string; subjectCode: string; term?: unknown; name?: unknown; [key: string]: unknown };
 export type CollectorRequest = {
   source: Source; script: string; args: string[]; env?: Record<string, string>; usesBrowser?: boolean; cwd: string; registerStop(stop: () => void): () => void; signal: AbortSignal;
+  /** True for a source's preflight check (no course, no output file). */
+  preflight?: boolean;
 };
-export type CollectorRunner = (request: CollectorRequest) => Promise<{ code: number | null; error?: string }>;
+/** `timedOut`: the collector was stopped after its time limit. */
+export type CollectorResult = { code: number | null; error?: string; timedOut?: boolean };
+export type CollectorRunner = (request: CollectorRequest) => Promise<CollectorResult>;
 export type ModelCaller = (config: AnalysisConfig, prompt: string, options: { schema: unknown; schemaPath: string; cwd: string; registerStop(stop: () => void): () => void; onPhase?(phase: string): void }) => Promise<AnalysisResult>;
 export type SyncLimiters = { collect(key: string): Limiter; model(provider: string): Limiter };
 export type MergePlan = { kind: 'complete' | 'conflict'; row: StageRow } | { kind: 'write'; path: string } | { kind: 'new' };
@@ -43,12 +47,15 @@ export function verifySource(entry: unknown): Promise<boolean>;
 export function reusableSources(store: SyncStore, jobId: string, courseId: string, inputHash: string, ids: readonly Source[]): Promise<Partial<Record<Source, { entry: SourceEntry; jobId: string }>>>;
 export function reusableCheckpoint(store: SyncStore, jobId: string, courseId: string, stage: StageName, inputHash: string): { row: StageRow; artifact: any } | null;
 export function readCollected(sources: Sources): Promise<Record<Source, any>>;
-export type SourceFlags = { failed: boolean; partial: boolean; unpaginated: boolean };
+export type SourceFlags = { failed: boolean; partial: boolean; unpaginated: boolean; skipped?: boolean };
 export function sourceFlags(sources: Sources, data: Record<Source, any>): Record<Source, SourceFlags>;
+export type MissingSource = { id: Source; label: string; reason: string };
+export function incompleteSources(sources: readonly Pick<CourseSource, 'id' | 'label'>[], flags: Record<Source, SourceFlags>, data: Record<Source, any>): MissingSource[];
+export function incompleteReason(missing: readonly MissingSource[]): string;
 export function planMerge(rows: StageRow[], inputHash: string): Promise<MergePlan>;
 export function chooseCoursePath(courseDir: string, jobId: string): Promise<string>;
 export function limiterKey(source: Pick<CourseSource, 'usesBrowser' | 'limiter'>): string;
-export function spawnCollector(request: CollectorRequest & { browserHost?: CdpHost }): Promise<{ code: number | null; error?: string }>;
+export function spawnCollector(request: CollectorRequest & { browserHost?: CdpHost }): Promise<CollectorResult>;
 export class StageError extends Error { code: string; reason: string; constructor(code: string, reason: string, extra?: Record<string, unknown>); }
 export class StageFailure extends Error {
   stage: StageName; status: 'failed' | 'cancelled' | 'interrupted'; code: string; reason: string; usage: unknown; phases: Record<string, number>;

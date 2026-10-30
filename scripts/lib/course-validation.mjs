@@ -13,20 +13,34 @@ const PLATFORM_LABELS = { canvas: 'Canvas 作业 ID', 'canvas-group': 'Canvas �
 // Checks one model output (contract v2): JSON shape, the model output schema, references against the collected data,
 // keys and parents, semantic rules the schema cannot express, generated IDs, and that the document belongs to `course`.
 // `framework` is the institution's framework source (default the default institution's; null when it has none). Also
-// returns the framework components parsed from the collected framework text.
+// returns the framework components parsed from the collected framework text. When the institution has a framework
+// source but none of its components are available (not collected or not parsable), a leaf without references is
+// allowed (decision #482): an exam the framework would have listed has nothing else to cite.
 export function validateAnalysis(raw, { course, canvas, ed, handbook, framework = DEFAULT_INSTITUTION.framework }) {
   let report;
   try { report = JSON.parse(raw); } catch { report = null; }
   const index = indexCollected({ canvas, ed, handbook }, framework);
   const parsed = CourseModelOutputSchema.safeParse(report?.document);
   const issues = parsed.success ? [] : parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`);
-  if (parsed.success) issues.push(...referenceIssues(parsed.data, index, framework), ...structureIssues(parsed.data));
+  const allowUnreferenced = unreferencedLeavesAllowed(index, framework);
+  if (parsed.success) issues.push(...referenceIssues(parsed.data, index, framework), ...structureIssues(parsed.data, allowUnreferenced));
   if (parsed.success && !issues.length) issues.push(...idIssues(parsed.data, index));
   const valid = Boolean(report) && typeof report.reason === 'string' && REPORT_STATUSES.includes(report.status)
     && (report.status === 'failed' ? report.document === null
       : parsed.success && issues.length === 0 && parsed.data.course.id === course.id && parsed.data.course.code === course.subjectCode);
   if (!valid && !issues.length) issues.push('结果格式或课程身份不匹配');
   return { report, parsed, issues, valid, components: index.components };
+}
+
+/** Whether a leaf may have no references: the institution has a framework source and no component of it is available. */
+export function unreferencedLeavesAllowed(index, framework) {
+  return Boolean(framework) && index.components.length === 0;
+}
+
+/** Leaves (items without children) that have no references. */
+export function unreferencedLeaves(assessments) {
+  const parents = new Set(assessments.map(item => item.parentKey).filter(key => key !== null));
+  return assessments.filter(item => !item.refs.length && !parents.has(item.key));
 }
 
 // Every reference must exist in the collected data; a Canvas assignment or Ed lesson belongs to one item only. A
@@ -52,8 +66,9 @@ function referenceIssues(document, index, framework) {
   return issues;
 }
 
-// Keys are unique; parents exist, are acyclic and one level deep; a leaf needs a reference; scoring rules on parents.
-function structureIssues(document) {
+// Keys are unique; parents exist, are acyclic and one level deep; a leaf needs a reference (unless `allowUnreferenced`);
+// scoring rules on parents.
+function structureIssues(document, allowUnreferenced = false) {
   const issues = [];
   const items = document.assessments;
   const byKey = new Map();
@@ -71,7 +86,7 @@ function structureIssues(document) {
     if (broken) issues.push(`assessments.${index}.parentKey: parentKey 指向的考核项不存在或成环`);
     else if (item.parentKey !== null && byKey.get(item.parentKey).parentKey !== null) issues.push(`assessments.${index}.parentKey: 只支持一层父子`);
     const children = items.filter(child => child.parentKey === item.key && child !== item);
-    if (!item.refs.length && !children.length) issues.push(`assessments.${index}.refs: 「${item.name}」没有任何引用，也没有子项`);
+    if (!item.refs.length && !children.length && !allowUnreferenced) issues.push(`assessments.${index}.refs: 「${item.name}」没有任何引用，也没有子项`);
     const scoringChildren = children.filter(child => child.nature === 'regular');
     if (item.scoring !== 'none' && (item.parentKey !== null || scoringChildren.length === 0)) issues.push(`assessments.${index}.scoring: 只有有计分子项的顶层父项可使用 points 或 weighted`);
     if (item.scoring === 'weighted' && scoringChildren.some(child => child.weight === null || child.weight <= 0)) issues.push(`assessments.${index}.scoring: weighted 要求每个计分子项有明确正权重`);
@@ -133,17 +148,13 @@ export function settleCourse({ result, validation, collection, sources = DEFAULT
   if (result.exitCode === 0 && validation.valid) {
     let status = report.status;
     let reason = report.reason.slice(0, 500);
-    const notes = sources.map(source => {
-      const flags = collection[source.id] ?? {};
-      if (flags.failed) return `${source.label} 数据未能读取；`;
-      if (flags.unpaginated) return `${source.label} 分页未验证；`;
-      if (flags.partial) return `部分 ${source.label} 数据未能读取；`;
-      if (framework && source.id === framework.id && data?.[source.id]?.status === 'available' && validation.components.length === 0) return `${source.label} 考核表未能解析；`;
-      return '';
-    }).join('');
-    if (notes) {
+    const notes = collectionNotes({ sources, collection, data, framework, components: validation.components });
+    // A leaf without references (allowed only without framework components) keeps the course at most partial.
+    const unreferenced = parsed.success ? unreferencedLeaves(parsed.data.assessments).length : 0;
+    const allNotes = `${notes}${unreferenced ? `${unreferenced} 项考核没有来源引用；` : ''}`;
+    if (allNotes) {
       if (status === 'completed') status = 'partial';
-      reason = `${notes}${reason}`;
+      reason = `${allNotes}${reason}`;
     }
     let document = null;
     if (report.status !== 'failed' && parsed.success) {
@@ -156,10 +167,31 @@ export function settleCourse({ result, validation, collection, sources = DEFAULT
       diagnostic: report.status === 'failed' ? { raw: result.lastMessage, issues: [] } : null,
     };
   }
+  // A rejected reply names the sources that could not be read first: their absence is usually why it was rejected.
+  const notes = result.exitCode !== 0 ? '' : collectionNotes({ sources, collection, data, framework, components: validation.components ?? [] });
   return {
     accepted: false, status: 'failed', document: null,
     diagnostic: { raw: result.lastMessage, issues },
     reason: result.exitCode !== 0 ? result.error || '模型任务未正常完成，请检查模型配置及连接。'
-      : issues.length ? `课程数据校验失败：${issues.slice(0, 3).join('；')}` : '课程结果缺失或课程身份不匹配。',
+      : `${notes}${issues.length ? `课程数据校验失败：${issues.slice(0, 3).join('；')}` : '课程结果缺失或课程身份不匹配。'}`,
   };
+}
+
+/**
+ * The collection notes of a course, one per source in order: not read (with the cause a failed collector left in its
+ * placeholder, decision #481), pagination not verified, partly read, or a framework table that could not be parsed.
+ */
+function collectionNotes({ sources, collection, data, framework, components }) {
+  return sources.map(source => {
+    const flags = collection[source.id] ?? {};
+    if (flags.failed) {
+      const cause = data?.[source.id]?.reason;
+      const detail = typeof cause === 'string' && cause && cause !== `${source.label} 采集不可用` ? `（${cause.slice(0, 300)}）` : '';
+      return `${source.label} 数据未能读取${detail}；`;
+    }
+    if (flags.unpaginated) return `${source.label} 分页未验证；`;
+    if (flags.partial) return `部分 ${source.label} 数据未能读取；`;
+    if (framework && source.id === framework.id && data?.[source.id]?.status === 'available' && components.length === 0) return `${source.label} 考核表未能解析；`;
+    return '';
+  }).join('');
 }

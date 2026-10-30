@@ -47,6 +47,10 @@ The store SHALL keep an ordered list of migrations and SHALL record the number a
 - **WHEN** a migration fails partway
 - **THEN** the transaction is rolled back and `user_version` keeps its previous value
 
+#### Scenario: Migration 3
+- **WHEN** a version 2 database is opened
+- **THEN** `job_courses` accepts the status `incomplete`, `jobs` has a `warnings` column (a JSON array, empty for older jobs), every existing job, course and stage row is kept, and deleting a job still deletes its courses and stages
+
 #### Scenario: Backup before upgrade
 - **WHEN** a version 1 database is opened by code with two migrations
 - **THEN** `.local/studyorbit.db.v1.bak` exists before migration 2 runs

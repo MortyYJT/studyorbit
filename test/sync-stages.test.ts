@@ -29,7 +29,7 @@ describe('input hashes', () => {
     for (const change of [{ institution: 'generic' }, { canvasOrigin: 'https://canvas.other.edu' }, { edRegion: 'us' }, { sources: ['canvas', 'ed'] }]) {
       expect(collectInputHash({ ...collect, ...change }), JSON.stringify(change)).not.toBe(collectInputHash(collect));
     }
-    expect(COLLECT_VERSION).toBe(2);
+    expect(COLLECT_VERSION).toBe(3);
     expect(ANALYSE_VERSION).toBeGreaterThan(0);
   });
 

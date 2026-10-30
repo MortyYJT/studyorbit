@@ -103,6 +103,37 @@ describe('migrations', () => {
     expect(() => store.createJob({ id: 'job-bad', sources: [1 as unknown as string], courses: [] })).toThrow('INVALID_FIELD: sources');
   });
 
+  it('migration 3 allows the course status incomplete and job warnings, keeping rows and the stage cascade', async () => {
+    const old = await open({ migrations: MIGRATIONS.slice(0, 2) });
+    old.createJob({ id: 'job-1', sources: ['canvas'], courses: [{ courseId: 'SYN-1' }, { courseId: 'SYN-2' }] });
+    old.updateCourse('job-1', 'SYN-1', { status: 'partial', reason: 'synthetic' });
+    old.saveStage({ jobId: 'job-1', courseId: 'SYN-1', stage: 'collect', inputHash: 'h', status: 'succeeded', checkpoint: { sources: {} } });
+    expect(() => old.updateCourse('job-1', 'SYN-2', { status: 'incomplete' })).toThrow();
+    opened.pop()!.close();
+
+    const store = await open();
+    expect(store.getJob('job-1')).toMatchObject({ sources: ['canvas'], warnings: [], courses: [{ courseId: 'SYN-1', status: 'partial', reason: 'synthetic' }, { courseId: 'SYN-2', status: 'interrupted' }] });
+    expect(store.getStage('job-1', 'SYN-1', 'collect')).toMatchObject({ status: 'succeeded', checkpoint: { sources: {} } });
+    store.updateCourse('job-1', 'SYN-2', { status: 'incomplete', reason: 'Canvas 登录已失效' });
+    store.updateJob('job-1', { warnings: ['Ed 检查未通过'] });
+    expect(store.getJob('job-1')).toMatchObject({ warnings: ['Ed 检查未通过'], courses: [{}, { status: 'incomplete' }] });
+    expect(() => store.updateCourse('job-1', 'SYN-2', { status: 'unknown' as 'failed' })).toThrow();
+    store.close();
+    opened.pop();
+    const raw = new DatabaseSync(dbFile());
+    try {
+      raw.exec('PRAGMA foreign_keys = ON');
+      const schema = raw.prepare("SELECT sql FROM sqlite_schema WHERE name = 'stages'").get() as { sql: string };
+      expect(schema.sql).toMatch(/REFERENCES "?job_courses"? \(job_id, course_id\)/);
+      expect(raw.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+      expect(raw.prepare("SELECT name FROM sqlite_schema WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(row => (row as { name: string }).name))
+        .toEqual(['job_courses_previous', 'jobs_created', 'stages_checkpoint', 'stages_output']);
+      raw.exec("DELETE FROM jobs WHERE id = 'job-1'");
+      expect(raw.prepare('SELECT COUNT(*) AS n FROM stages').get()).toEqual({ n: 0 });
+      expect(raw.prepare('SELECT COUNT(*) AS n FROM job_courses').get()).toEqual({ n: 0 });
+    } finally { raw.close(); }
+  });
+
   it('backs up a version 1 database to .local/studyorbit.db.v1.bak (0600) before migration 2 runs', async () => {
     (await open({ migrations: MIGRATIONS.slice(0, 1) })).createJob({ id: 'job-1', courses: [{ courseId: 'SYN-1' }] });
     opened.pop()!.close();

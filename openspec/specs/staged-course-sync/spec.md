@@ -20,7 +20,52 @@ The sync SHALL process each selected course through the stages collect, analyse,
 
 #### Scenario: Collector failure becomes a placeholder
 - **WHEN** the Ed collector exits with code 1
-- **THEN** collect writes the Ed `unavailable` placeholder, collect succeeds, and the course is at most `partial` with today's reason
+- **THEN** collect writes the Ed `unavailable` placeholder with the cause taken from the collector's stderr, collect succeeds, and the course is at most `partial` (or `incomplete` when it has an earlier document)
+
+### Requirement: Collector failures name their cause
+When a collector fails (a non-zero exit other than 75 and 77, no exit code, or the sync's time limit), the sync SHALL turn its exit code and stderr into one short Chinese reason and SHALL store it as the `reason` of the source's `unavailable` placeholder and in the course reason. The stderr SHALL be sanitised before it is kept: URLs reduced to origin and path (no query or fragment), absolute paths, cookie, token, authorization, session, password and key values and long opaque strings replaced, whitespace collapsed, and the detail capped at 160 characters. Known causes SHALL get fixed texts: no browser window (「<浏览器> 没有打开窗口，请打开一个 <浏览器> 窗口后重试」, Edge and Chrome), the browser not running, Apple Events JavaScript turned off (the hint every AppleScript collector appends is not a cause), Canvas HTTP 401 or 403 or a sign-in redirect (「Canvas 登录已失效，请在 <浏览器> 里重新登录 Canvas」), Ed signed out, the `edstem` command missing, and a timeout; any other failure SHALL read 「<来源> 采集失败：<detail>」 or, without stderr, 「<来源> 采集失败（退出码 N）」. A source that does not apply to the course (no collector command) SHALL keep its default placeholder and be marked `skipped` in the collect checkpoint. A rejected model reply's reason SHALL start with the same collection notes as an accepted one's. The page SHALL show the reason of `failed`, `partial` and `incomplete` courses and translate the known phrases when the page is in English.
+
+#### Scenario: Browser without a window
+- **WHEN** the Canvas collector fails with `EDGE_WINDOW_MISSING` in its stderr
+- **THEN** the Canvas placeholder and the course reason say 「Edge 没有打开窗口，请打开一个 Edge 窗口后重试」
+
+#### Scenario: Canvas signed out
+- **WHEN** the Canvas collector fails with `Canvas HTTP 401`
+- **THEN** the reason is 「Canvas 登录已失效，请在 Edge 里重新登录 Canvas」
+
+#### Scenario: Secrets in stderr
+- **WHEN** a collector's stderr contains a local path, a URL with a query string and a cookie value
+- **THEN** the stored reason keeps the URL's origin and path only, replaces the path with `<path>` and hides the cookie value
+
+### Requirement: Preflight before collecting
+At the start of a job, before any collector or model call, the sync SHALL run each source's preflight check once, in source order, through that source's collector limiter, but only when at least one course of the job will run a collector (a course whose merge succeeded in the lineage or whose every source can be reused is not counted). The Canvas preflight SHALL make one authenticated same-origin request to the configured Canvas origin's `/api/v1/users/self` through the configured browser bridge, reading only the HTTP status and never printing, writing or keeping the body or any cookie; it checks the browser window, Apple Events JavaScript and the Canvas sign-in at once. A failed Canvas preflight SHALL be blocking: every course that would run a collector SHALL become `failed` at `stopped_stage: 'collect'` with the preflight's reason (built as for a collector failure; exit 77 gives 「Canvas：请在专用浏览器里登录后继续同步。」), the job SHALL end `failed` with that reason as its error and stay resumable, and no collector, model call, Desktop file or change-log line SHALL follow. The Ed preflight SHALL run only `edstem auth status --json`; its failure SHALL NOT block: the job SHALL store the warning 「Ed 检查未通过（<原因>），Ed 数据可能缺失，同步照常进行」 in its `warnings` and continue. The status API SHALL return the newest job's `warnings`.
+
+#### Scenario: Edge without a window
+- **WHEN** a sync of two courses starts while Edge runs without a window
+- **THEN** both courses fail with 「Edge 没有打开窗口，请打开一个 Edge 窗口后重试」, no course collector or model runs, the Desktop and the change log are unchanged, and the job can be resumed after opening a window
+
+#### Scenario: Ed signed out
+- **WHEN** `edstem auth status` reports that the CLI is not signed in
+- **THEN** the job has the Ed warning and the courses are collected as usual
+
+#### Scenario: Resume with reusable data
+- **WHEN** a job that failed in analyse is resumed and every source of the remaining course can be reused
+- **THEN** no preflight check runs
+
+### Requirement: Incomplete syncs keep the previous document
+When a course's collection failed for Canvas, for the framework source, or for Ed outright (a collector failure or a collector-written `unavailable` result; Ed `not_found` and `partial` data are not failures; a source that does not apply is not a failure) and the course has a captured earlier document, validate SHALL give the course the status `incomplete` (「不完整」, "Incomplete") with the distinct causes of the failed sources as its reason, whatever the analysed outcome. Merge SHALL then write nothing to the Desktop and append no change-log line; it SHALL write `.local/lms/sync-errors/<runId>-<courseId>-incomplete.json` with the reason, the failed sources and the analysed outcome, and, when the analysis produced a document, record it as the course snapshot with status `incomplete` and no file. The corrections base is untouched because no course file changes. The page SHALL keep showing the previous document and SHALL list 「<课程>：本次同步不完整，仍显示上次的结果（原因：…）」 under 「需要你处理」 and on the course page. Without an earlier document (a first sync) the result SHALL be saved as before, at most `partial`. An `incomplete` course has no stopped stage, so it does not make its job `failed`; when its job is resumed for other courses it SHALL be copied as done with status `incomplete`.
+
+#### Scenario: Canvas signed out on a re-sync
+- **WHEN** a course with an earlier document is re-synced and the Canvas collector fails with HTTP 401
+- **THEN** the course is `incomplete` with 「Canvas 登录已失效，请在 Edge 里重新登录 Canvas」, no new course file is written, no change-log line is appended, and the diagnostic file exists
+
+#### Scenario: First sync without the framework source
+- **WHEN** a course without an earlier document is synced and the framework collector fails
+- **THEN** the result is saved as `partial` with a reason naming the cause
+
+#### Scenario: Resume after an incomplete course
+- **WHEN** a job with one `incomplete` course and one course that failed in analyse is resumed
+- **THEN** the `incomplete` course is copied as done with its reason and makes no model call, and the other course runs
 
 ### Requirement: Stage failures stop only the affected course
 A stage SHALL fail only on an exception, a timeout, an I/O error, a temporary collector or model failure left after retries, a model call that ended with a non-zero exit after retries, cancellation or interruption. A failed stage SHALL record its error code, SHALL mark the course `failed` with a reason (the provider's error text for model failures, as today) and `stopped_stage`, and SHALL NOT stop other courses. A job stopped by cancellation SHALL end `cancelled`; otherwise a job with any stopped course SHALL end `failed`, and a job whose courses all reached a result SHALL end `finished`.

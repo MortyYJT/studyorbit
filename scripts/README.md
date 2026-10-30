@@ -6,6 +6,8 @@
 | --- | --- |
 | `dev.mjs` | `npm run dev` 的启动脚本：生成本次令牌，先启动 `server/main.ts`（端口 5190），看到监听行再启动 Vite（端口 5173），转发 Ctrl-C，一个退出就停另一个 |
 | `sources/canvas/collect.mjs` | 通过浏览器桥在已登录的 Edge 或 Chrome 里读取设置里那个 Canvas 的课程（课程列表记下 `canvasOrigin` 和学校），或单课的作业分组、作业和本人提交；按 Link 分页（旧入口 `canvas-background.mjs` 仍可用） |
+| `sources/canvas/preflight.mjs` | 同步开始前的检查：经浏览器桥对 Canvas 的 `/api/v1/users/self` 发一次同源请求，只看 HTTP 状态（浏览器窗口、Apple 事件 JavaScript、Canvas 登录），不输出也不保存返回内容 |
+| `sources/ed/preflight.mjs` | 同步开始前的检查：只运行 `edstem auth status --json`，没登录只算提醒 |
 | `sources/ed/collect.mjs` | 通过 `edstem` CLI 获取 Ed 目录、部分成绩和选定介绍（旧入口 `collect-ed-course.mjs` 仍可用） |
 | `sources/ed/scores.mjs` | 只读获取本人最终提交成绩，供 Ed 采集器使用；接口地址按 CLI 的登录区域（旧入口 `edstem-scores.mjs` 仍可用） |
 | `sources/ed/regions.mjs` | Ed 区域表（`au`/`us`/`eu`，照抄 `edstem` CLI）和课程链接格式 |

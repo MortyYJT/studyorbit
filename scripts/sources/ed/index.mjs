@@ -9,5 +9,7 @@ export const edSource = Object.freeze({
   platforms: Object.freeze(['ed']),
   /** `<CODE> <term> <out>`. */
   collect: (course, ctx, out) => ({ script: 'sources/ed/collect.mjs', args: [course.subjectCode, typeof course.term === 'string' ? course.term : '', out], env: { ...ctx.env } }),
+  /** `preflight`: `edstem auth status`; a failure is only a warning (a course without Ed data is partial or incomplete). */
+  preflight: Object.freeze({ blocking: false, command: ctx => ({ script: 'sources/ed/preflight.mjs', args: [], env: { ...ctx.env } }) }),
   placeholder: (reason = 'Ed 采集不可用') => ({ status: 'unavailable', lessons: [], scores: [], reason }),
 });

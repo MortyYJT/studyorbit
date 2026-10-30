@@ -87,13 +87,62 @@ export const MIGRATIONS = Object.freeze([
   // The job's resolved course source ids as a JSON array (openspec change generic-adapters, design §1), so a resume
   // runs the same sources. NULL for jobs created before: they ran the default institution's three sources.
   'ALTER TABLE jobs ADD COLUMN sources TEXT;',
+  // Course status `incomplete` (decision #480) and job warnings (a JSON array of reasons, decision #485). SQLite cannot
+  // change a CHECK constraint, so `job_courses` is rebuilt; `stages` references it and is rebuilt too, first pointing
+  // at the new table, so dropping the old ones cascades nothing. Renaming the new table rewrites that reference.
+  `CREATE TABLE job_courses_new (
+     job_id TEXT NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
+     course_id TEXT NOT NULL,
+     position INTEGER NOT NULL,
+     previous TEXT REFERENCES artifacts (hash),
+     code TEXT,
+     term TEXT,
+     status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'partial', 'incomplete', 'failed', 'cancelled', 'interrupted')),
+     phase TEXT,
+     reason TEXT,
+     file TEXT,
+     stopped_stage TEXT CHECK (stopped_stage IN ('collect', 'analyse', 'validate', 'merge')),
+     reused INTEGER NOT NULL DEFAULT 0 CHECK (reused IN (0, 1)),
+     PRIMARY KEY (job_id, course_id)
+   );
+   INSERT INTO job_courses_new (job_id, course_id, position, previous, code, term, status, phase, reason, file, stopped_stage, reused)
+     SELECT job_id, course_id, position, previous, code, term, status, phase, reason, file, stopped_stage, reused FROM job_courses;
+   CREATE TABLE stages_new (
+     job_id TEXT NOT NULL,
+     course_id TEXT NOT NULL,
+     stage TEXT NOT NULL CHECK (stage IN ('collect', 'analyse', 'validate', 'merge')),
+     input_hash TEXT NOT NULL,
+     status TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'failed', 'cancelled', 'interrupted')),
+     checkpoint TEXT,
+     output_hash TEXT REFERENCES artifacts (hash),
+     reused_from TEXT,
+     attempts INTEGER NOT NULL DEFAULT 0,
+     usage TEXT,
+     started_at TEXT,
+     finished_at TEXT,
+     duration_ms INTEGER,
+     error_code TEXT,
+     error TEXT,
+     PRIMARY KEY (job_id, course_id, stage),
+     FOREIGN KEY (job_id, course_id) REFERENCES job_courses_new (job_id, course_id) ON DELETE CASCADE
+   );
+   INSERT INTO stages_new (job_id, course_id, stage, input_hash, status, checkpoint, output_hash, reused_from, attempts, usage, started_at, finished_at, duration_ms, error_code, error)
+     SELECT job_id, course_id, stage, input_hash, status, checkpoint, output_hash, reused_from, attempts, usage, started_at, finished_at, duration_ms, error_code, error FROM stages;
+   DROP TABLE stages;
+   DROP TABLE job_courses;
+   ALTER TABLE job_courses_new RENAME TO job_courses;
+   ALTER TABLE stages_new RENAME TO stages;
+   CREATE INDEX stages_checkpoint ON stages (course_id, stage, input_hash) WHERE status = 'succeeded';
+   CREATE INDEX stages_output ON stages (output_hash);
+   CREATE INDEX job_courses_previous ON job_courses (previous);
+   ALTER TABLE jobs ADD COLUMN warnings TEXT;`,
 ]);
 
 export const sha256 = text => createHash('sha256').update(text, 'utf8').digest('hex');
 export const storePath = projectDir => join(projectDir, '.local', STORE_FILE);
 
 // Patchable fields: API name → column. Anything else is refused, so a typo cannot silently drop an update.
-const JOB_FIELDS = { status: 'status', provider: 'provider', model: 'model', startedAt: 'started_at', finishedAt: 'finished_at', error: 'error' };
+const JOB_FIELDS = { status: 'status', provider: 'provider', model: 'model', startedAt: 'started_at', finishedAt: 'finished_at', error: 'error', warnings: 'warnings' };
 const COURSE_FIELDS = {
   previous: 'previous', code: 'code', term: 'term', status: 'status', phase: 'phase', reason: 'reason', file: 'file',
   stoppedStage: 'stopped_stage', reused: 'reused',
@@ -103,7 +152,7 @@ const STAGE_FIELDS = {
   attempts: 'attempts', usage: 'usage', startedAt: 'started_at', finishedAt: 'finished_at', durationMs: 'duration_ms',
   errorCode: 'error_code', error: 'error',
 };
-const JSON_COLUMNS = new Set(['checkpoint', 'usage']);
+const JSON_COLUMNS = new Set(['checkpoint', 'usage', 'warnings']);
 
 function toColumnValue(column, value) {
   if (value === undefined || value === null) return null;
@@ -125,7 +174,8 @@ function assignments(fields, patch) {
 const parseJson = text => (text === null ? null : JSON.parse(text));
 const jobFrom = (row, courses) => ({
   id: row.id, kind: row.kind, status: row.status, provider: row.provider, model: row.model, resumedFrom: row.resumed_from,
-  sources: parseJson(row.sources ?? null), createdAt: row.created_at, startedAt: row.started_at, finishedAt: row.finished_at, error: row.error, courses,
+  sources: parseJson(row.sources ?? null), createdAt: row.created_at, startedAt: row.started_at, finishedAt: row.finished_at, error: row.error,
+  warnings: parseJson(row.warnings ?? null) ?? [], courses,
 });
 const courseFrom = row => ({
   courseId: row.course_id, position: row.position, previous: row.previous, code: row.code, term: row.term, status: row.status,

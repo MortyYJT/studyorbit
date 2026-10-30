@@ -51,21 +51,24 @@ export async function writeEarlierDocument(desktopDir: string, course: Synthetic
   await utimes(join(folder, '分数结构.json'), old, old);
 }
 
-type CollectorScript = { exit?: number[]; hang?: boolean; partial?: boolean };
+type CollectorScript = { exit?: number[]; hang?: boolean; partial?: boolean; error?: string; timedOut?: boolean };
 /**
  * Fake collectors: write the course's fixture to the output path (the last argument) and exit 0, or follow a script
  * per `<courseId>:<source>`: a list of exit codes for successive calls (1 → no file, 75 → temporary failure), a
- * fixture marked `partial`, or hang until stopped. `calls` lists every invocation; `active` tracks overlap.
+ * fixture marked `partial`, or hang until stopped; `error` replaces the failure's stderr. A preflight request (no course)
+ * follows the script of `preflight:<source>` (default exit 0) and is listed in `preflights`, not in `calls`. `calls`
+ * lists every course invocation; `active` tracks overlap.
  */
 export function fakeCollectors(courses: SyntheticCourse[], scripts: Record<string, CollectorScript> = {}) {
   const calls: string[] = [];
   const overlaps: string[] = [];
   let active: string | null = null;
   const counts = new Map<string, number>();
-  const runCollector = async ({ source, args, registerStop, signal }: CollectorRequest) => {
-    const course = courses.find(item => args.includes(item.id) || args.includes(item.code))!;
-    const key = `${course.id}:${source}`;
-    calls.push(key);
+  const preflights: string[] = [];
+  const runCollector = async ({ source, args, registerStop, signal, preflight }: CollectorRequest) => {
+    const course = preflight ? null : courses.find(item => args.includes(item.id) || args.includes(item.code))!;
+    const key = course ? `${course.id}:${source}` : `preflight:${source}`;
+    if (course) calls.push(key); else preflights.push(key);
     if (active) overlaps.push(`${active}+${key}`);
     active = key;
     try {
@@ -77,18 +80,19 @@ export function fakeCollectors(courses: SyntheticCourse[], scripts: Record<strin
         return { code: null, error: 'stopped' };
       }
       const code = script.exit?.[index] ?? script.exit?.at(-1) ?? 0;
-      if (code !== 0) return { code, error: `synthetic exit ${code}` };
+      if (code !== 0) return { code, error: script.error ?? `synthetic exit ${code}`, ...(script.timedOut ? { timedOut: true } : {}) };
       if (signal.aborted) return { code: null, error: 'stopped' };
+      if (!course) return { code: 0 };
       const data = JSON.parse(rename(await fixtureText(`${source}.json`), course));
       if (script.partial) data.status = 'partial';
       await writeFile(args.at(-1)!, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
       return { code: 0 };
     } finally { active = null; }
   };
-  return { runCollector, calls, overlaps, count: (filter: (key: string) => boolean = () => true) => calls.filter(filter).length };
+  return { runCollector, calls, preflights, overlaps, count: (filter: (key: string) => boolean = () => true) => calls.filter(filter).length };
 }
 
-type ModelReply = { status?: number; retryAfterMs?: number; hang?: boolean; invalid?: boolean; exitCode?: number; error?: string };
+type ModelReply = { status?: number; retryAfterMs?: number; hang?: boolean; invalid?: boolean; exitCode?: number; error?: string; edit?: (output: any) => void };
 const usageOf = (prompt: string, reply: string) => ({ input: Math.ceil(prompt.length / 4), cached: 0, output: Math.ceil(reply.length / 4), reasoning: 0 });
 /**
  * Fake model: the fixture output for the course named in the prompt, with deterministic usage (prompt length ÷ 4 and
@@ -115,7 +119,8 @@ export function fakeModel(courses: SyntheticCourse[], scripts: Record<string, Mo
       await new Promise(resolve => setImmediate(resolve));
       if (reply.status) return { exitCode: 1, lastMessage: '', usage: null, error: `DeepSeek 接口返回 HTTP ${reply.status}。`, httpStatus: reply.status, retryAfterMs: reply.retryAfterMs ?? null };
       if (reply.exitCode) return { exitCode: reply.exitCode, lastMessage: '', usage: null, error: reply.error };
-      const text = reply.invalid ? '{"status":"completed","reason":"","document":{}}' : rename(await fixtureText(join('outputs', '2.json')), course);
+      let text = reply.invalid ? '{"status":"completed","reason":"","document":{}}' : rename(await fixtureText(join('outputs', '2.json')), course);
+      if (reply.edit) { const output = JSON.parse(text); reply.edit(output); text = JSON.stringify(output); }
       const counted = usageOf(prompt, text);
       for (const key of ['input', 'output'] as const) usage[key] += counted[key];
       return { exitCode: 0, lastMessage: text, usage: counted, threadId: null, httpStatus: 200 };

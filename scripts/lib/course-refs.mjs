@@ -35,13 +35,17 @@ export function primaryRef(refs, platform) {
 
 const ID_PLATFORMS = [['canvas', id => `canvas:${id}`], ['ed', id => `ed:${id}`], ['canvas-group', id => `canvas-group:${id}`], ['handbook', id => `handbook:${slug(id)}`]];
 
-/** Base ID from the highest-priority platform, and whether that base ID may be shared by several items. */
-function baseId(item) {
+/**
+ * Base ID from the highest-priority platform, and whether that base ID may be shared by several items. Without
+ * references: a parent is `group:<slug(name)>`; a leaf (allowed only when no framework component was available,
+ * decision #483) is `item:<slug(name)>`, never repeatable, so two such leaves with the same name are a validation issue.
+ */
+function baseId(item, isParent) {
   for (const [platform, format] of ID_PLATFORMS) {
     const id = primaryRef(item.refs, platform);
     if (id !== null) return { id: format(id), repeatable: platform === 'canvas-group' || platform === 'handbook' };
   }
-  return { id: `group:${slug(item.name)}`, repeatable: true };
+  return isParent ? { id: `group:${slug(item.name)}`, repeatable: true } : { id: `item:${slug(item.name)}`, repeatable: false };
 }
 
 /**
@@ -51,7 +55,8 @@ function baseId(item) {
  * IDs may still repeat; the caller reports that as a validation issue.
  */
 export function generateIds(assessments) {
-  const bases = assessments.map(baseId);
+  const parents = new Set(assessments.map(item => item.parentKey).filter(key => key !== null && key !== undefined));
+  const bases = assessments.map(item => baseId(item, parents.has(item.key)));
   const counts = new Map();
   for (const base of bases) counts.set(base.id, (counts.get(base.id) ?? 0) + 1);
   const ids = bases.map((base, index) => (base.repeatable && counts.get(base.id) > 1 ? `${base.id}:${slug(assessments[index].name)}` : base.id));

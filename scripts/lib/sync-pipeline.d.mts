@@ -11,6 +11,8 @@ export type CourseSyncRow = {
 };
 export type CourseSyncState = {
   running: boolean; courses: CourseSyncRow[]; error: string | null; jobId: string | null; resumedFrom?: string | null; resumable: boolean;
+  /** Non-blocking preflight problems of the newest job (absent without a job). */
+  warnings?: string[];
 };
 export type SyncJobSummary = {
   id: string; status: JobStatus; createdAt: string; finishedAt: string | null; resumedFrom: string | null; resumable: boolean;

@@ -42,7 +42,7 @@ The system SHALL parse Handbook components from the collected Handbook text: a r
 - **THEN** no components are parsed, Handbook references are invalid and the reason includes 「Handbook 考核表未能解析」
 
 ### Requirement: References must exist in the collected data
-The system SHALL treat each of the following as a validation issue, handled by the existing one-repair loop: a `canvas` reference whose ID is not a collected Canvas assignment ID; a `canvas-group` reference that is not a collected assignment group ID; an `ed` reference that is not a collected Ed lesson ID; a `handbook` reference whose normalised name is not equal to the normalised name of a parsed Handbook component; any reference to a source that was not collected; a `canvas` or `ed` reference used by more than one assessment; an assessment with no references and no children; a duplicate `key`; a `parentKey` that is missing, cyclic or more than one level deep; and duplicate final IDs. A valid Handbook reference SHALL be stored with the canonical component name.
+The system SHALL treat each of the following as a validation issue, handled by the existing one-repair loop: a `canvas` reference whose ID is not a collected Canvas assignment ID; a `canvas-group` reference that is not a collected assignment group ID; an `ed` reference that is not a collected Ed lesson ID; a `handbook` reference whose normalised name is not equal to the normalised name of a parsed Handbook component; any reference to a source that was not collected; a `canvas` or `ed` reference used by more than one assessment; an assessment with no references and no children, unless the institution has a framework source and none of its components is available (not collected or not parsable); a duplicate `key`; a `parentKey` that is missing, cyclic or more than one level deep; and duplicate final IDs. A valid Handbook reference SHALL be stored with the canonical component name.
 
 #### Scenario: Invented Canvas ID
 - **WHEN** the model cites `{ platform: 'canvas', id: '999' }` and no collected assignment has ID 999
@@ -61,15 +61,19 @@ The system SHALL treat each of the following as a validation issue, handled by t
 - **THEN** validation fails for that reference
 
 #### Scenario: Leaf without a source
-- **WHEN** an assessment has no references and no other assessment names it as `parentKey`
+- **WHEN** an assessment has no references, no other assessment names it as `parentKey`, and Handbook components are available
 - **THEN** validation fails
+
+#### Scenario: Leaf without a source and no Handbook components
+- **WHEN** the Handbook collection is unavailable and the final exam has no Canvas assignment, so the model gives it no references
+- **THEN** validation accepts the leaf, its weight and rule still need a verified quote or are cleared as 「无出处」, the course is at most `partial` with 「1 项考核没有来源引用；」 in its reason, and only in this case the prompt's rule 3 tells the model that such a leaf may go without refs
 
 #### Scenario: Failure after repair
 - **WHEN** the repaired output still cites a missing reference
 - **THEN** nothing is saved and the course fails with the issues, as for any other validation failure
 
 ### Requirement: Deterministic assessment IDs
-The system SHALL generate each assessment's base ID from its references with priority Canvas assignment, Ed lesson, Canvas group, Handbook component, none: `canvas:<id>`, `ed:<id>`, `canvas-group:<id>`, `handbook:<slug of the canonical name>` or `group:<slug of the assessment name>`. The slug MUST be NFKC, lowercase, with each run of non-alphanumeric characters replaced by one `-` and leading and trailing `-` trimmed. When several references share the chosen platform, the smallest ID (numeric order for digit IDs, otherwise code-point order) SHALL be used. When two or more assessments share a base ID from a Canvas group, Handbook component or no reference, each of them SHALL get the ID `<base ID>:<slug of its name>`. `parentId` SHALL be the final ID of the assessment named by `parentKey`.
+The system SHALL generate each assessment's base ID from its references with priority Canvas assignment, Ed lesson, Canvas group, Handbook component, none: `canvas:<id>`, `ed:<id>`, `canvas-group:<id>`, `handbook:<slug of the canonical name>`, or without references `group:<slug of the assessment name>` for an assessment with children and `item:<slug of the assessment name>` for a leaf (allowed only without framework components). The slug MUST be NFKC, lowercase, with each run of non-alphanumeric characters replaced by one `-` and leading and trailing `-` trimmed. When several references share the chosen platform, the smallest ID (numeric order for digit IDs, otherwise code-point order) SHALL be used. When two or more assessments share a base ID from a Canvas group, Handbook component or `group:` base, each of them SHALL get the ID `<base ID>:<slug of its name>`; an `item:` base is never suffixed, so two such leaves with one name are a duplicate-ID issue. `parentId` SHALL be the final ID of the assessment named by `parentKey`.
 
 #### Scenario: Canvas beats Ed
 - **WHEN** an assessment cites Ed lesson `77` and Canvas assignment `5551`
@@ -82,6 +86,10 @@ The system SHALL generate each assessment's base ID from its references with pri
 #### Scenario: Model-only group
 - **WHEN** an assessment named "Weekly Quizzes" has no references and has children
 - **THEN** its ID is `group:weekly-quizzes`
+
+#### Scenario: Leaf without references
+- **WHEN** a leaf named "Final Exam" has no references because no Handbook component was available
+- **THEN** its ID is `item:final-exam`; a later sync that cites the Handbook component maps it through `legacyIds` by its unique name slug, so corrections keyed `<courseId>:item:final-exam` move to the new ID
 
 #### Scenario: Order of references does not matter
 - **WHEN** two runs cite Canvas assignments `12` and `9` on the same assessment in different orders
