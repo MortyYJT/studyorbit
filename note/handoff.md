@@ -4,9 +4,9 @@
 
 - **最后更新：** 2026-10-30，Claude。
 - **项目是什么：** StudyOrbit（`MortyYJT/studyorbit`），本地优先的课业助手。已登录浏览器读 Canvas / Ed / Handbook → 分阶段同步（采集 → 分析 → 校验 → 合并，检查点存 `node:sqlite`）→ 课程 JSON v2 → 网页（独立本地服务 + Vite 代理）展示成绩、计划、复习、工具调用式对话；同一套只读工具也作为 MCP 服务开放。
-- **主线：** `main` 含到 #287。本地 `npm run check` 68 个文件、887 个测试通过，CI 绿色。没有打开的 PR，没有进行中的 OpenSpec change（现行规格 `openspec/specs/`，19 份）。
+- **主线：** `main` 含到 #288。本地 `npm run check` 68 个文件、887 个测试通过，CI 绿色。没有打开的 PR，没有进行中的 OpenSpec change（现行规格 `openspec/specs/`，19 份）。
 - **任务清单：** 用户桌面「2026-10-29-StudyOrbit待办」。除 edstem-cli 两条外全部打勾（上游 `bunizao/edstem-cli` PR #18 未合并）。
-- **最近：** #285 同步失败写明原因、同步前检查浏览器和 Canvas 登录、采集不全不覆盖旧文件；#286 修了 `dev-launcher` 测试的偶发失败（替身脚本先装信号处理再写就绪文件）；#287 删除 `.claude` 钩子（用户决定以后不用钩子）。
+- **最近：** #285 同步失败写明原因、同步前检查浏览器和 Canvas 登录、采集不全不覆盖旧文件；#286 修了 `dev-launcher` 测试的偶发失败（替身脚本先装信号处理再写就绪文件）；#287 删除 `.claude` 钩子（用户决定以后不用钩子）；#288 删除学习用笔记 `note/interview/` 和 `note/resume-draft.md`（用户决定，git 历史里可找回）。
 
 ## 未验证（重要）
 
