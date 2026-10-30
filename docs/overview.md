@@ -1,6 +1,6 @@
 # Overview: structure and data flow
 
-Updated 2026-10-30. StudyOrbit is a local prototype. `npm run dev` starts two processes: the local API server (`server/`) and the Vite dev server that serves the React page. A static build has no local API.
+Updated 2026-10-31. StudyOrbit is a local prototype. `npm run dev` starts two processes: the local API server (`server/`) and the Vite dev server that serves the React page. A static build has no local API. Installing, browsers, models and environment variables: [Setup](setup.md).
 
 ## Processes, ports and token
 
@@ -46,6 +46,7 @@ No course files are downloaded and nothing is submitted. Coverage is not guarant
 | `web/src/LocalPlanning.tsx` | Course page (grades, assessments, revision) and week / month views (plan, needs you, time spent) |
 | `web/src/Agent.tsx`, `agent-request.ts` | Chat page; other pages open a new chat with a course and a preset prompt |
 | `web/src/palette.ts`, `background.ts`, `BackgroundLayer.tsx`, `motion.ts` | Palettes, background, animation |
+| `web/index.html`, `web/public/` | Page entry (applies the saved theme before the app mounts); tab icons: `favicon.svg` (the header mark redrawn for 16px), a 32px PNG fallback and the Apple touch icon |
 | `server/main.ts`, `server/app.ts`, `server/routes/` | Local API server: start-up, the route table behind the access checks, one file per `/api/local/*` route |
 | `server/guard.ts`, `server/proxy.ts` | Access checks (loopback, token, Host, Origin); Vite's `/api/local` proxy |
 | `vite.config.ts` | Page, ports and proxy only |
