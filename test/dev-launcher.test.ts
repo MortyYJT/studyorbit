@@ -13,13 +13,14 @@ afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 const LISTENING = 'StudyOrbit local API listening on http://127.0.0.1:5190';
 const env = { PATH: process.env.PATH, NODE_DEBUG: '', STUDYORBIT_API_TOKEN: 'd4'.repeat(32), STUDYORBIT_API_PORT: '5190', STUDYORBIT_WEB_PORT: '5173' };
 
-/** Writes a stub script; `body` runs after it records its environment and the signals it receives. */
+/** Writes a stub script; `body` runs after it starts recording the signals it receives and records its environment. */
 async function stub(name: string, body: string) {
   const path = join(dir, `${name}.mjs`);
   await writeFile(path, `import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 const out = ${JSON.stringify(join(dir, name))};
-writeFileSync(out + '.env', JSON.stringify({ token: process.env.STUDYORBIT_API_TOKEN, api: process.env.STUDYORBIT_API_PORT, web: process.env.STUDYORBIT_WEB_PORT, marker: existsSync(${JSON.stringify(join(dir, 'marker'))}) }));
+// Install the handlers before writing the .env file: the tests signal as soon as that file exists.
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { appendFileSync(out + '.signals', signal + '\\n'); process.exit(0); });
+writeFileSync(out + '.env', JSON.stringify({ token: process.env.STUDYORBIT_API_TOKEN, api: process.env.STUDYORBIT_API_PORT, web: process.env.STUDYORBIT_WEB_PORT, marker: existsSync(${JSON.stringify(join(dir, 'marker'))}) }));
 ${body}
 `);
   return { command: process.execPath, args: [path] };
@@ -63,7 +64,8 @@ describe('dev launcher', () => {
   });
 
   it('stops Vite when the server exits and exits with the server\'s code', async () => {
-    const server = await stub('server', `console.log(${JSON.stringify(LISTENING)}); setTimeout(() => process.exit(4), 300);`);
+    // Exit only once the web stub has written its .env file, so its signal handlers are installed.
+    const server = await stub('server', `console.log(${JSON.stringify(LISTENING)}); setInterval(() => { if (existsSync(${JSON.stringify(join(dir, 'web.env'))})) process.exit(4); }, 20);`);
     const launcher = startLauncher({ server, web: await stub('web', keepAlive), env, out: capture().out, log: () => {} });
     expect(await launcher.done).toBe(4);
     expect(await signals('web')).toEqual(['SIGTERM']);
