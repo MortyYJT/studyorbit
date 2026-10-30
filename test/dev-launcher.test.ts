@@ -64,7 +64,8 @@ describe('dev launcher', () => {
   });
 
   it('stops Vite when the server exits and exits with the server\'s code', async () => {
-    const server = await stub('server', `console.log(${JSON.stringify(LISTENING)}); setTimeout(() => process.exit(4), 300);`);
+    // Exit only once the web stub has written its .env file, so its signal handlers are installed.
+    const server = await stub('server', `console.log(${JSON.stringify(LISTENING)}); setInterval(() => { if (existsSync(${JSON.stringify(join(dir, 'web.env'))})) process.exit(4); }, 20);`);
     const launcher = startLauncher({ server, web: await stub('web', keepAlive), env, out: capture().out, log: () => {} });
     expect(await launcher.done).toBe(4);
     expect(await signals('web')).toEqual(['SIGTERM']);
