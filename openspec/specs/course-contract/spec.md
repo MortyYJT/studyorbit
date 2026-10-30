@@ -1,7 +1,7 @@
 # course-contract Specification
 
 ## Purpose
-TBD - created by archiving change course-contract-v2. Update Purpose after archive.
+The stored course document: version 2 fields (platform references, verified quotes, unsourced fields, legacy IDs), the rules every stored document must satisfy, how version 1 documents stay readable, how unsourced fields are shown, the legacy ID map, and how local stores move to the new IDs.
 ## Requirements
 ### Requirement: Stored course document version 2
 The system SHALL store each synced course as a version 2 document whose assessments carry every version 1 field plus `refs` (platform references `{ platform: 'canvas' | 'canvas-group' | 'ed' | 'handbook', id }`), `weightQuote` and `ruleQuote` (verified verbatim quotes or `null`) and `unsourced` (a list of `weight` and `rule` naming fields cleared by quote verification), and whose top level carries `legacyIds` (a map from earlier assessment IDs to current IDs, possibly empty). The version 1 rules on unique IDs, score not above maximum, one parent level and no cycles MUST also hold for version 2.

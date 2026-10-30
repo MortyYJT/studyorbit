@@ -1,7 +1,7 @@
 # revision Specification
 
 ## Purpose
-TBD - created by archiving change finish-course-page-and-weekly-plan. Update Purpose after archive.
+The course page's revision tab: exam information, preset revision prompts that open the Agent page, and revision notes saved from agent replies and kept locally.
 ## Requirements
 ### Requirement: Revision tab shows exams
 The Revision tab SHALL list the course's visible exam assessments (after the owner's corrections) with name, date, weight and rule, and SHALL say so when the course has no identified exam. Course materials stay listed below.

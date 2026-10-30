@@ -1,7 +1,7 @@
 # grade-target Specification
 
 ## Purpose
-TBD - created by archiving change finish-course-page-and-weekly-plan. Update Purpose after archive.
+The final-needed calculation: the average the student needs on the remaining weight to reach a chosen grade band, and how the course page shows it.
 ## Requirements
 ### Requirement: Final-needed average across remaining weight
 The system SHALL compute, for a target band, the average percentage the owner still needs across all course weight that has no mark yet, as `(target − earned) / (100 − gradedWeight) × 100`, where `earned` and `gradedWeight` come from the existing grade calculation. Bands are H1 80, H2A 75, H2B 70, H3 65 and P 50.
