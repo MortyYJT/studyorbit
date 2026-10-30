@@ -5,7 +5,7 @@
 - **最后更新：** 2026-10-31，Claude。
 - **项目是什么：** StudyOrbit（`MortyYJT/studyorbit`），本地优先的课业助手。已登录浏览器读 Canvas / Ed / Handbook → 分阶段同步（采集 → 分析 → 校验 → 合并，检查点存 `node:sqlite`）→ 课程 JSON v2 → 网页（独立本地服务 + Vite 代理）展示成绩、计划、复习、工具调用式对话；同一套只读工具也作为 MCP 服务开放。
 - **主线：** `main` 含到 #292。没有进行中的 OpenSpec change（现行规格 `openspec/specs/`，19 份）。
-- **待你看的 PR：** 分支 `claude/readme-favicon`（PR 编号见 `gh pr list`），没合并：① 标签页图标（`web/public/`，决定 #496）；② README 全英文重写，长的安装说明移到新文档 `docs/setup.md`，加了两张合成数据截图 `docs/images/course-page.webp`、`weekly-plan.webp`（决定 #497–#499）。只改文档和静态图标，不改功能。
+- **待你看的 PR：** #293（分支 `claude/readme-favicon`），没合并：① 标签页图标（`web/public/`，决定 #496）；② README 全英文重写，长的安装说明移到新文档 `docs/setup.md`，加了两张合成数据截图 `docs/images/course-page.webp`、`weekly-plan.webp`（决定 #497–#499）。只改文档和静态图标，不改功能。
 - **任务清单：** 用户桌面「2026-10-29-StudyOrbit待办」。除 edstem-cli 两条外全部打勾（上游 `bunizao/edstem-cli` PR #18 未合并）。
 - **最近：** #285 同步失败写明原因、同步前检查浏览器和 Canvas 登录、采集不全不覆盖旧文件；#286 修了 `dev-launcher` 测试的偶发失败（替身脚本先装信号处理再写就绪文件）；#287 删除 `.claude` 钩子（用户决定以后不用钩子）；#288 删除学习用笔记 `note/interview/` 和 `note/resume-draft.md`（用户决定，git 历史里可找回）。
 - **去掉旧名字（#291，决定 #495）：** 浏览器存储键名前缀改为 `studyorbit.`，页面加载时自动搬旧键和背景图；本机文件夹改为 `~/Documents/studyorbit`（合并后改，之后在新文件夹打开会话）。迁移代码里保留了旧前缀，确认你的浏览器搬完后可以删掉 `web/src/storage-prefix.ts` 里的迁移。v1 留在 `.local/` 的旧库、备份和旧浏览器配置（约 1 GB）已挪进 `archive/v1-local/`。
