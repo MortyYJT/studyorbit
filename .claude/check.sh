@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Use the same verification command locally, in hooks, and in CI.
+# Use the same verification command locally and in CI.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 exec npm run check

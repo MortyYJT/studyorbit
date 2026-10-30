@@ -1,63 +1,49 @@
 # 交接
 
-> 单文件，只写当前状态，覆盖不追加。信任之前先对照 `git status`、`git log`、`gh pr list`。决定看 `note/decisions.md`。
+> 单文件，只写当前状态，每次任务结束整份重写。信任之前先对照 `git status`、`git log`、`gh pr list`。历史看 git，决定看 `note/decisions.md`。
 
-- **最后更新：** 2026-10-30，Claude（第一次真实同步后的修复，分支 `claude/sync-incomplete`）。
-- **进行中：** 第一次真实同步（任务 e3df1ee7）暴露的三个问题的修复 PR：采集失败写明原因（没窗口、登录失效等）；同步前先检查浏览器窗口和 Canvas 登录，不通过就整批停下、不调模型；有上一份文件时采集不全记「不完整」，不替换桌面文件、不记变更；没有 Handbook 考核项时允许没有引用的考试项（`item:<slug>`）。决定 #480–#489。只有合成数据测试，没有真实同步验证。
-- **主线：** `main` 含 PR #253–#283，本地 `npm run check` 65 个文件、862 个测试通过，CI 绿色。没有打开的 PR。
+- **最后更新：** 2026-10-30，Claude。
 - **项目是什么：** StudyOrbit（`MortyYJT/studyorbit`），本地优先的课业助手。已登录浏览器读 Canvas / Ed / Handbook → 分阶段同步（采集 → 分析 → 校验 → 合并，检查点存 `node:sqlite`）→ 课程 JSON v2 → 网页（独立本地服务 + Vite 代理）展示成绩、计划、复习、工具调用式对话；同一套只读工具也作为 MCP 服务开放。
-- **OpenSpec：** 没有进行中的 change。本轮 5 个 change 都已实现并归档：`course-contract-v2`、`local-corrections-merge`、`chat-tools-mcp`、`local-server-sync-pipeline`、`generic-adapters`。现行规格在 `openspec/specs/`（19 份）。
-- **任务清单：** 桌面清单 P0、P1、P2 除两条外全部打勾，每条有 PR 号和「注：」。没做的两条是 edstem-cli（上游 `bunizao/edstem-cli` PR #18 仍未合并，按规则跳过）。
-
-## 本轮完成（详见清单各条「注：」）
-
-- **P0：** MIT 许可证、11 条决定入档（#242–#252，另加授权记录 #253）；第 0 阶段记录、机器信息、隐私说法；校验抽成纯函数并按 11 种情况写测试（#253–#255）。
-- **P1 评估：** 评估格式、评估脚本、合成示例课程（#257）；标准答案（浏览器里没有修正，所以 = 桌面 JSON 原样）；基线和 v2 前后对比（#258、#268）：同一计分下字段准确率 83.9% → 87.0%，重跑单元格一致 55.6% → 84.5%，「无出处」0 条。
-- **P1 契约 v2：** 平台引用 + 代码生成 ID + 事实回填 + 引文核对 +「无出处」显示 + v1 兼容 + 本地键迁移（#256、#259、#262、#265、#266）。
-- **P1 修正：** 修正存 `.local/corrections/`、一次性迁移、三方合并与冲突选择、变更记录与提醒（#260、#269、#271、#274）。
-- **P2：** 独立本地服务（#263、#275、#278）；`node:sqlite` 存储（#272）；分阶段同步、断点续跑、故障注入（#277、#279，测量全是假模型）；工具调用式对话 + 问答评估（上下文方式 78.1% → 工具调用 100%，#261、#264、#267、#273）；MCP 服务（#270）；通用化：来源接口、macOS Chrome、学校插件与设置页、Windows/Linux 实验性 CDP（#276、#280–#283）。
+- **主线：** `main` 含到 #287。本地 `npm run check` 68 个文件、887 个测试通过，CI 绿色。没有打开的 PR，没有进行中的 OpenSpec change（现行规格 `openspec/specs/`，19 份）。
+- **任务清单：** 用户桌面「2026-10-29-StudyOrbit待办」。除 edstem-cli 两条外全部打勾（上游 `bunizao/edstem-cli` PR #18 未合并）。
+- **最近：** #285 同步失败写明原因、同步前检查浏览器和 Canvas 登录、采集不全不覆盖旧文件；#286 修了 `dev-launcher` 测试的偶发失败（替身脚本先装信号处理再写就绪文件）；#287 删除 `.claude` 钩子（用户决定以后不用钩子）。
 
 ## 未验证（重要）
 
-- **只跑过一次真实同步（2026-10-30，Edge 没窗口、Canvas 登录过期，结果不完整）；上面的修复还没在真实同步里验证。** 新的 v2 分析提示词、引文核对、分阶段同步、断点续跑、变更记录、三方合并都只在合成数据和假模型上测过。
-- 真实 v1 → v2 键迁移、你浏览器里的修正迁移（你目前没有修正）。
-- OpenAI 兼容和 Anthropic 的真实工具调用；DeepSeek「把推理放回下一轮」的路径；经代理的真实流式对话。
-- MCP 从 Claude Code / Claude Desktop 实际接入（会改你的配置，没做）。
+- **新版同步只在合成数据和假模型上测过。** 唯一一次真实同步（2026-10-30）因为 Edge 没窗口、Canvas 登录过期而不完整；#285 的修复还没在真实同步里跑过。v2 提示词、引文核对、断点续跑、变更记录、三方合并同样没有真实验证。
+- 评估的「准确率」是和一份未经核对的早先模型输出比，不是真值（`docs/eval-results.md`「局限」）。
+- 真实 v1 → v2 键迁移、浏览器里的修正迁移（目前没有修正）。
+- OpenAI 兼容和 Anthropic 的真实工具调用；DeepSeek「把推理放回下一轮」；经代理的真实流式对话。
+- MCP 从 Claude Code / Claude Desktop 实际接入。
 - Chrome 实机采集、其他学校 Canvas、Ed 美区/欧区、Windows/Linux。
-- 评估的「准确率」是和上一次未经核对的模型输出比，不是真值。
 
 ## 下一步
 
-1. **你：** 拉代码后先 `npm ci`（新增依赖 `@modelcontextprotocol/sdk`；`engines` 要求 Node ≥ 24.15）。`npm run dev` 现在同时启动页面（5173）和本地接口（5190）。
-2. **你：** 打开页面确认 4 门课正常显示；然后做一次真实同步（会用 Edge、Ed 和 DeepSeek 额度），看新文件是不是 v2、有没有「无出处」、变更记录提醒是否合理。有问题从 `.local/lms/sync-errors/` 和页面「需要你处理」开始查。
-3. **你：** 在页面上改几条考核（修正），之后重新导出标准答案再跑评估，才能得到真正的准确率。
-4. **你：** 复核本轮 Claude 自主决定 #254–#479（`note/decisions.md`，标「Claude 自主（待 MortyYJT 复核）」）。重点：#263 评估输入选择、#297 对话不接入修正、#313 `docs/course-json.md` 用中文（与你「工程文档用英文」的全局规则不一致）、#330 MCP SDK 是否迁 v2、#350 断点续跑只用假模型测量、#420 课程发现的「取消」现在会真的停掉脚本、#445 浏览器没开时报错不自动启动。
-5. edstem-cli PR #18 合并后：做清单里剩下两条。
+1. **用户：** 拉代码后 `npm ci`（Node ≥ 24.15）；`npm run dev` 打开页面确认 4 门课正常显示。
+2. **用户：** 开好 Edge、登录 Canvas 后做一次真实同步（会用 Edge、Ed 和 DeepSeek 额度），看新文件是不是 v2、「无出处」和变更提醒是否合理。出问题先看 `.local/lms/sync-errors/` 和页面「需要你处理」。
+3. **用户：** 在页面上修正几条考核，再导出标准答案重跑评估，才有真正的准确率。
+4. **用户：** 复核 Claude 自主决定 #254–#489（`note/decisions.md` 标「Claude 自主（待 MortyYJT 复核）」）。重点：#263 评估输入、#297 对话不接入修正、#313 `docs/course-json.md` 用中文、#330 MCP SDK 版本、#350 断点续跑只用假模型测、#420 取消会真的停掉脚本、#445 浏览器没开时报错不自动启动。
+5. edstem-cli PR #18 合并后做清单剩下两条。
 
 ## 等用户决定
 
-- 对话是否要包含页面上的修正（决定 #297 暂定不包含）。
-- 问答评估这次用了约 138 万 token（工具模式多轮请求），以后评估的额度上限。
-
-## 本轮过程里出过的问题
-
-- PR #276（纯文档）在 CI 失败时被我合并了：脚本没有用 CI 结果卡住合并。失败原因是 #275 引入的不稳定测试（启动后才装信号处理器），已由 #278 修复，main 随即恢复绿色。之后所有合并都改为 `gh pr checks N && gh pr merge N`；这条规则已加进通用模板 `repo-template/CONTRIBUTING.md`。
-- #266（OpenSpec 工具生成的归档）没有单独派审查。
-- 夜里子代理一度撞到会话额度上限（约 04:00–04:40），两个任务中断后续上，没有丢工作。
+- 对话是否包含页面上的修正（#297 暂定不包含）。
+- 以后评估的额度上限（问答评估一次约 138 万 token）。
+- GitHub 上 `main` 没开分支保护；删掉钩子后，「不直接推 main」只靠规则。
 
 ## 运行与验证
 
-- `npm ci`；`npm run check`；`npm run dev`（页面端口 5173，你的浏览器数据在这个端口，不要换；本地接口 `127.0.0.1:5190`）。第二套开发服务器用 `STUDYORBIT_WEB_PORT=5181 STUDYORBIT_API_PORT=5191 npm run dev`，不要用 `--port`。
+- `npm ci`；`bash .claude/check.sh`（= `npm run check`，与 CI 相同）；`npm run dev`（页面 5173，你的浏览器数据在这个端口，不要换；本地接口 `127.0.0.1:5190`）。第二套开发服务器：`STUDYORBIT_WEB_PORT=5181 STUDYORBIT_API_PORT=5191 npm run dev`，不要用 `--port`。
 - **不要随手点「立即同步」或保存选课**：会真用 Edge、Ed 和模型额度。复习页的预设按钮也会发消息、用额度。
-- 截图验证用独立临时浏览器（taste-skill `scripts/lib/cdp.mjs`），写入 `coursework.canonical-reset-v1=done` 和 `coursework.selected-course-ids`；要验证对话入口时拦截 `/api/local/chats` 的 POST。
+- 截图验证用独立临时浏览器（taste-skill `scripts/lib/cdp.mjs`），写入 `coursework.canonical-reset-v1=done` 和 `coursework.selected-course-ids`；验证对话入口时拦截 `/api/local/chats` 的 POST。
+- 合并：`gh pr checks N && gh pr merge N --squash --delete-branch`，CI 没过不能合。
 
 ## 陷阱
 
 - 仓库公开：个人成绩、Cookie、密钥、本机路径不能入库。推送前扫「数字/数字」分数写法。
+- 本机 shell 设了 `NODE_DEBUG=http,https,net,tls`，测试输出会混进大量 `NET ...` 日志；跑测试和服务器前加 `NODE_DEBUG=`。
+- `.agents/`（给 Codex 的技能链接）没有提交，按用户决定保持不提交。
 - git worktree 里给 `node_modules`、`.local` 建符号链接时，`.gitignore` 的目录规则不匹配链接，提交只按文件名暂存。
-- 本机 shell 设了 `NODE_DEBUG=http,...`，跑测试和服务器时用 `NODE_DEBUG=`。
 - `sync-usage` 靠 `.local/lms/runs/*` 目录创建时间：移动数据用 `mv`，不要 `cp`。
-- 5174 端口被本机别的进程占用，第二个开发服务器用别的端口。
-- 直接跑 `vite` / `npx vite` 会报「请用 npm run dev 启动（需要本地接口服务）」：没有令牌就没有接口。同一项目只能跑一个本地服务（`.local/server.lock`）。
-- 规则以 `CLAUDE.md` 为准（#241）：Claude 开发并合并；大改动先写 OpenSpec；逻辑用 TDD；合并前新上下文审查；只有设计选择先问用户。
-- 下一阶段任务清单在用户桌面「2026-10-29-StudyOrbit待办」，做完一条勾一条。
+- 5174 端口被本机别的进程占用。
+- 直接跑 `vite` 会报「请用 npm run dev 启动」：没有令牌就没有接口。同一项目只能跑一个本地服务（`.local/server.lock`）。
