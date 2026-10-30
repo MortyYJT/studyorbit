@@ -45,7 +45,7 @@
 
 - 仓库公开：个人成绩、Cookie、密钥、本机路径不能入库。推送前扫「数字/数字」分数写法。
 - 本机 shell 设了 `NODE_DEBUG=http,https,net,tls`，测试输出会混进大量 `NET ...` 日志；跑测试和服务器前加 `NODE_DEBUG=`。
-- `.agents/`（给 Codex 的技能链接）没有提交，按用户决定保持不提交。
+- `.agents/`（`openspec init` 给 Codex 生成的技能副本）按用户决定不提交，10-31 起写进了 `.gitignore`。
 - git worktree 里给 `node_modules`、`.local` 建符号链接时，`.gitignore` 的目录规则不匹配链接，提交只按文件名暂存。
 - `sync-usage` 靠 `.local/lms/runs/*` 目录创建时间：移动数据用 `mv`，不要 `cp`。
 - 5174 端口被本机别的进程占用。
