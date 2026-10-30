@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="referrer" content="no-referrer" />
     <title>StudyOrbit</title>
+    <!-- Tab icon (the header mark redrawn for 16px); the 32px PNG is for browsers without SVG favicons
+         (SVG last so browsers that support it pick it). -->
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script>
       // Apply the saved theme and palette before the app mounts so the first paint is already right; App.tsx owns later changes.
       // The `coursework.` fallbacks cover the first load after the key rename; main.tsx then moves those keys (storage-prefix.ts).
