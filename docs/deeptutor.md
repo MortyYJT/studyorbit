@@ -1,6 +1,6 @@
 # The assistant: DeepTutor next to StudyOrbit
 
-Written 2026-11-24. The Agent page no longer runs StudyOrbit's own chat. It shows [DeepTutor](https://github.com/HKUDS/DeepTutor) (Apache-2.0), which does the chatting, tool calling, memory and question generation; StudyOrbit gives it course data and keeps the model key. The self-built chat is still in the repository behind the "Old chat" button until this path has been validated; it will be removed in a later change. Installing and starting: [Setup](setup.md#assistant-deeptutor).
+Written 2026-11-24. The Agent page shows [DeepTutor](https://github.com/HKUDS/DeepTutor) (Apache-2.0), which does the chatting, tool calling, memory and question generation; StudyOrbit gives it course data and keeps the model key. StudyOrbit's own chat, which this replaced, has been deleted (its measured record: [Chat Q&A evaluation](eval-chat-qa.md)). Installing and starting: [Setup](setup.md#assistant-deeptutor).
 
 Everything marked "measured" was run on 2026-11-24 on one Mac with DeepTutor 1.7.4, two synthetic courses and the real `deepseek-flash` model.
 
@@ -58,7 +58,7 @@ DeepTutor's page loaded in the frame and showed a streaming reply with the guard
 
 Not covered: a program running as the same user can call DeepTutor's API (it needs no token) and can send any headers; DeepTutor's web port serves its HTML and scripts to any `Host` (they contain no data). DeepTutor's own login was not used: it switches the installation to its multi-user layout.
 
-The guard answers two things itself: `/studyorbit-guard/instance`, and an empty knowledge-base list when DeepTutor has no such route (see the validation below for why).
+The guard answers two things itself: `/studyorbit-guard/instance`, and an empty knowledge-base list when DeepTutor has no such route (see the validation below for why). Whether the route exists is read from DeepTutor's own route table, once, at the first such request; with the knowledge module installed DeepTutor answers and nothing is changed.
 
 ## Course data
 
@@ -101,10 +101,10 @@ This is a prompt rule, not an enforcement. Two other things back it: DeepTutor's
 
 ## The Agent page
 
-- The page shows DeepTutor's chat in a frame, with "Open in a new tab" and "Old chat". The frame is sandboxed (`allow-scripts allow-same-origin allow-forms allow-popups`) and is given clipboard writing only: no microphone, no downloads, no navigation of the StudyOrbit page. Measured with the sandbox: the page loaded and a preset session streamed. DeepTutor's voice input and file downloads were not tried in the frame; use the new tab for them. DeepTutor sends no `X-Frame-Options` or `Content-Security-Policy`, so framing needs no change on its side.
+- The page shows DeepTutor's chat in a frame, with "Open in a new tab". The frame is sandboxed (`allow-scripts allow-same-origin allow-forms allow-popups`) and is given clipboard writing only: no microphone, no downloads, no navigation of the StudyOrbit page. Measured with the sandbox: the page loaded and a preset session streamed. DeepTutor's voice input and file downloads were not tried in the frame; use the new tab for them. DeepTutor sends no `X-Frame-Options` or `Content-Security-Policy`, so framing needs no change on its side.
 - "Ask Agent" on a course saves the context with that course in focus and opens a new conversation. Nothing is sent to the model.
 - A revision preset (including "10 practice questions") starts one DeepTutor chat session with the prompt through `POST /api/local/deeptutor/turns` and the frame opens that session. Measured: the session id came back at once, the frame showed the reply streaming, and the turn finished after StudyOrbit had closed its own connection. The presets use plain chat: DeepTutor's `deep_question` capability produced two questions only after seven protocol retries and one schema repair with `deepseek-flash` (120,846 tokens).
-- A request from another page is acted on once, by whichever Agent page takes it first: moving between DeepTutor and the old chat does not send the prompt again (measured in the browser: one hand-over across two round trips).
+- A request from another page is acted on once: leaving the Agent page and coming back does not send the prompt again.
 - The frame is created only while the Agent page is showing. Opening DeepTutor's chat page makes it ask the model for input suggestions (measured: two calls, 1,858 tokens).
 - DeepTutor's page follows the system's light or dark setting, not a theme picked in StudyOrbit's settings. Its interface language is its own setting (English by default).
 - DeepTutor's page still shows "Solve" and "Research" shortcuts although those modules are not installed. Not tried.
@@ -113,7 +113,7 @@ This is a prompt rule, not an enforcement. Two other things back it: DeepTutor's
 
 Run after the integration was merged, from a fresh worktree of `main`, on the test ports with two synthetic courses and the real `deepseek-flash`. Every message below was typed into DeepTutor's page inside the frame on the StudyOrbit page by a headless Chrome (real mouse and text-input events) and sent with the page's own Send button; the replies were read back through DeepTutor's API.
 
-**The first attempt failed, and that is the one defect this validation found.** A typed message was never sent: DeepTutor 1.7.4's page asks for `/api/knowledge-bases/list` before it sends, the route belongs to the knowledge module, which is not installed here, and the page gives up on the 404 without saying anything. Sessions started by StudyOrbit (presets) had worked because the server starts those turns. The same happened with the page opened in its own tab and with the frame's sandbox removed, so neither the frame nor the guard was the cause. Fix: the guard answers an empty list when, and only when, DeepTutor itself answers 404 for that one route (`_empty_list_when_missing` in `guard_app.py`); with the knowledge module installed nothing changes. Installing the module instead would have added 55 packages (llama-index, faiss, litellm, boto3) for a feature that cannot be used without an embedding service. Everything below was run with the fix.
+**The first attempt failed, and that is the one defect this validation found.** A typed message was never sent: DeepTutor 1.7.4's page asks for `/api/knowledge-bases/list` before it sends, the route belongs to the knowledge module, which is not installed here, and the page gives up on the 404 without saying anything. Sessions started by StudyOrbit (presets) had worked because the server starts those turns. The same happened with the page opened in its own tab and with the frame's sandbox removed, so neither the frame nor the guard was the cause. Fix: the guard answers an empty list for that one route when DeepTutor has no such route (`KB_LIST_PATH` in `guard_app.py`); with the knowledge module installed nothing changes. Installing the module instead would have added 55 packages (llama-index, faiss, litellm, boto3) for a feature that cannot be used without an embedding service. Everything below was run with the fix.
 
 | # | Typed or clicked | Session | Result | Calls | Tokens |
 | --- | --- | --- | --- | --- | --- |
@@ -140,9 +140,22 @@ Also seen:
 
 **The owner's instance** (main checkout, page port 5173): `npm run dev`'s launcher brought StudyOrbit and DeepTutor up in about 4 s on 5175, 5195 and 5197, all on `127.0.0.1`; health ready, the MCP server registered for the main checkout and connected with six tools, `exec`, web search and the update check off, the rules installed, a foreign `Origin` refused, no port reachable from the LAN address. No page was opened and no model was called (no usage ledger was created); the data directory `.local/deeptutor` holds no session. Stopped with SIGTERM to the launcher: all five ports closed and the process record was removed. The Desktop shortcut was not run: its script passes `zsh -n`, and a zsh started with an empty environment plus the shortcut's own nvm lines gets Node 24 and `DEEPSEEK_API_KEY`, finds the installed DeepTutor 1.7.4 and resolves DeepSeek with a key. `uv` is not on that shell's `PATH`, which does not matter: the launcher runs the virtual environment's programs by path.
 
+## After the old chat was deleted (2026-11-24)
+
+Run on the branch that removed StudyOrbit's own chat, same set-up as the validation above, English interface:
+
+| Step | Result | Tokens |
+| --- | --- | --- |
+| Sidebar "Agent" | The frame with DeepTutor; the bar has "Open in a new tab" and nothing else | |
+| "Ask Agent" on SYNT10001, then typed: current average, and what is needed for an H1 (no course named) | Answered for SYNT10001: 74.8% on 45% graded, 33.66 points | 54,364 |
+| Revision preset "Revision notes" | A new session opened in the frame. DeepTutor did not write notes at once: it asked where the course content should come from, because StudyOrbit holds the assessment structure only | 35,240 |
+| Input suggestions and titles | | 2,342 |
+
+12 calls, 91,946 tokens. `GET /api/local/chats` answers 404; the revision tab says where new notes are kept. Screenshots were taken at 1440 and at 390, light and dark; at 390 the StudyOrbit page had no horizontal overflow.
+
 ## Token use
 
-One question costs several times what StudyOrbit's own tool-mode chat did: DeepTutor's prompt and tool list are about 6,500 to 8,500 input tokens per model call and each tool round resends the conversation. Measured totals per question are in the tables above (34,635 to 57,390 for a grade or revision question, most of it cache hits); the old tool-mode chat averaged 6,748 input tokens per question on its own question set ([Chat Q&A evaluation](eval-chat-qa.md)). The two were not run on the same questions. All real calls for this change: 54 calls and 403,882 tokens for the first trial (the provider's usage figures), 43 calls and 376,379 tokens for the validation above, and 39 calls and 278,562 tokens while building and reviewing the integration (5 calls counted from the provider's figures, 34 from DeepTutor's usage ledger, which includes the calls that belong to no chat turn: input suggestions and titles).
+One question costs several times what StudyOrbit's own tool-mode chat did: DeepTutor's prompt and tool list are about 6,500 to 8,500 input tokens per model call and each tool round resends the conversation. Measured totals per question are in the tables above (34,635 to 57,390 for a grade or revision question, most of it cache hits); the old tool-mode chat averaged 6,748 input tokens per question on its own question set ([Chat Q&A evaluation](eval-chat-qa.md)). The two were not run on the same questions. All real calls for this change: 54 calls and 403,882 tokens for the first trial (the provider's usage figures), 43 calls and 376,379 tokens for the validation above, 12 calls and 91,946 tokens for the check after the deletion, and 39 calls and 278,562 tokens while building and reviewing the integration (5 calls counted from the provider's figures, 34 from DeepTutor's usage ledger, which includes the calls that belong to no chat turn: input suggestions and titles).
 
 ## Not verified
 

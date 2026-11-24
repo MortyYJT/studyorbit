@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { Language } from './i18n.js';
 import { drawArc, durations, reducedMotion, useReveal, useSlidingIndicator } from './motion.js';
-import { RichText } from './Agent.js';
+import { RichText } from './RichText.js';
 import type { RevisionNote } from '../../scripts/lib/revision-store.mjs';
 import { CourseDocumentSchema, toDisplayDocument } from '../../shared/course-data.js';
 import { bandTargets, calculateGrades, finalNeeded, parentGrade, type Band } from '../../shared/course-calculations.js';
@@ -676,7 +676,7 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
           {onAsk && <div className="revision-actions">{prompts.map(item => <button key={item.label} className="small" onClick={() => onAsk(selected.course.id, item.prompt)} title={zh ? '打开对话页并发送，会使用模型额度' : 'Opens the Agent page and sends; uses model credit'}>{item.label}</button>)}</div>}
           <h2>{zh ? '复习笔记' : 'Revision notes'}</h2>
           {notesError && <p className="muted">{zh ? '无法读取复习笔记（仅在本地开发服务器中可用）。' : 'Could not load revision notes (dev server only).'}</p>}
-          {notes?.length === 0 && !notesError && <p className="muted">{zh ? '还没有笔记。在对话页里，单门课对话的回复下方点「存到复习」即可保存到这里。' : 'No notes yet. In a single-course chat, use "Save to revision" under a reply.'}</p>}
+          {!notesError && notes && <p className="muted">{zh ? (notes.length ? '这些是以前从对话里存下来的笔记。新的笔记请存在 DeepTutor 自己的 Notebook 里。' : '这里没有笔记。新的笔记请存在 DeepTutor 自己的 Notebook 里（Agent 页左侧）。') : (notes.length ? 'These notes were saved from earlier chats. Keep new notes in DeepTutor\'s own Notebook.' : 'No notes here. Keep new notes in DeepTutor\'s own Notebook (left side of the Agent page).')}</p>}
           {notes?.map(note => <details className="revision-note" key={note.id}><summary><i className="chevron" aria-hidden="true" /><span>{note.title || (zh ? '笔记' : 'Note')}</span>
             <small className="muted">{new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(note.savedAt))}</small></summary>
             <div className="revision-note-body"><RichText text={note.content} /><button type="button" className="link-button muted" onClick={() => void removeNote(note)}>{zh ? '删除' : 'Delete'}</button></div></details>)}
@@ -853,5 +853,5 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
   </>;
 }
 
-// The Agent page sends the same planning inputs with each chat message (decision #322).
+// The Agent page saves the same planning inputs for the assistant's MCP server (decisions #322, #546).
 export { readAvailability, readTargets, readWork };

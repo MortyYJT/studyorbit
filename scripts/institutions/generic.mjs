@@ -79,10 +79,6 @@ export function createGenericInstitution({ codePattern = null, timeZone = null }
     /** Without a session in the term, an Ed unit matches by code and year alone. */
     edSessionMatches: (_session, key) => key.session === null,
     wording: Object.freeze({
-      assistantIntro: Object.freeze({
-        zh: '你是一名大学生的学习助手，运行在他自己的课程管理工具里。',
-        en: 'You are a study assistant for one university student, inside their personal coursework tool.',
-      }),
       timeLabel: Object.freeze({ zh: '本地时间', en: 'local' }),
       sourcesRule: 'Canvas 提供具体考核、分组和权重；Ed 补充考核说明。某来源缺失时使用其他来源，不捏造缺失来源。',
     }),

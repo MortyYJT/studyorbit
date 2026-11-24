@@ -1,6 +1,6 @@
 # StudyOrbit
 
-**A local-first coursework assistant for University of Melbourne students:** it reads your courses from the Canvas, Ed and Handbook sessions you are already signed in to, turns them into one validated course file per course, and shows your grades, what you still need, a weekly plan and a chat that can answer questions about them.
+**A local-first coursework assistant for University of Melbourne students:** it reads your courses from the Canvas, Ed and Handbook sessions you are already signed in to, turns them into one validated course file per course, and shows your grades, what you still need, a weekly plan and an assistant that can answer questions about them.
 
 [![CI](https://github.com/MortyYJT/studyorbit/actions/workflows/ci.yml/badge.svg)](https://github.com/MortyYJT/studyorbit/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
@@ -30,6 +30,11 @@ The interface defaults to Chinese; an English version can be chosen under Settin
   <img alt="Weekly plan with synthetic tasks: a &quot;Needs you&quot; list (an overdue task, work that does not fit before its deadline, an unplanned deadline) above a Monday-to-Sunday plan" src="docs/images/weekly-plan.webp">
 </picture>
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/agent-page-dark.webp">
+  <img alt="Agent page with DeepTutor in a frame beside the StudyOrbit sidebar: opened from the synthetic course SYNT10001, the end of an answer about the current average and the H1 target, with the token count under it" src="docs/images/agent-page.webp" width="1280">
+</picture>
+
 ## How it works
 
 ```mermaid
@@ -57,10 +62,11 @@ flowchart LR
     analyse <--> provider["Model provider<br/>DeepSeek, OpenAI-compatible,<br/>Anthropic, Codex CLI"]
     merge --> files["Course JSON v2<br/>one file per course"]
     files --> tools["6 read-only<br/>course tools"]
-    files --> web["Web UI<br/>grades, plan,<br/>revision, chat"]
+    files --> web["Web UI<br/>grades, plan,<br/>revision"]
     tools --> web
     tools --> mcp["MCP server (stdio)<br/>Claude Code,<br/>Claude Desktop"]
-    web -- chat --> provider
+    tools --> assistant["DeepTutor<br/>(Agent page)"]
+    assistant -- model proxy --> provider
 ```
 
 - **Code collects, the model only judges.** Collectors read Canvas through same-origin API calls in the browser you are signed in to, Ed through the `edstem` CLI and the Handbook as page text. The model receives only the collected data and returns judgements: grouping, kind, weights and rules, each with the platform items it rests on. Deadlines, scores and status are filled in by code from platform data, never by the model ([course JSON contract](docs/course-json.md)).
@@ -74,7 +80,7 @@ Measured on one student's four courses unless stated otherwise. Each number link
 
 - **Sync from 21 minutes to about 2 minutes.** A full sync of four courses took 21 min with the original design (33 agent jobs reading pages) and **116.5 s** with code collection plus one structured model call per course, about 10.8× faster; model input fell from 8,817,416 to **44,269 tokens** (about 199× fewer than the first v2 version). One run per stage, and the 21-minute baseline did not read Canvas for any course, so it did not produce complete data: the comparison is about finishing a sync, not getting the same data ([sync optimisation](docs/sync-optimization.md)).
 - **More consistent course analysis.** Moving to contract v2 (the model gives judgements with references, code fills in facts) raised cell consistency across five repeated runs from **55.6% to 84.5%**. This compares runs with each other, not with ground truth: the reference answers are an earlier, unverified model output ([course analysis evaluation](docs/eval-course-analysis.md)).
-- **Chat numbers computed by tools.** On 32 synthetic questions run 5 times each, answers with the course tools were right in **160/160** chats against **125/160** when the whole course data was put in the prompt. Most of the difference is data the old mode did not have and definitions that now match the course page, not arithmetic; tool mode used about 7.3× the input tokens. One model (`deepseek-flash`) only ([chat Q&A evaluation](docs/eval-chat-qa.md)).
+- **An assistant that is not rebuilt here.** Chat, tool calling, memory and question generation come from DeepTutor; StudyOrbit adds what it alone has: the course tools over MCP, the page's planning data, a loopback proxy that keeps the model key out of DeepTutor's files, and a guard that refuses requests from other web pages. Typed into the framed page with two synthetic courses, the average, the what-if target and the weekly plan matched the course page and the tools; one question costs 30,000 to 60,000 tokens ([Assistant](docs/deeptutor.md)). The built-in chat it replaced is recorded in the [chat Q&A evaluation](docs/eval-chat-qa.md).
 - **Resume without redoing work.** With a fake model and synthetic courses, a sync crashed at each stage boundary and resumed produced byte-identical results to an uninterrupted run, with no finished collection or model call repeated. Resume has not yet been exercised in a real sync ([resume versus restart](docs/sync-optimization.md#resume-versus-restart-fake-model-synthetic-data)).
 - **Tested on synthetic data only.** Grades, the final-needed target and the weekly plan are pure functions; `npm run check` (type check plus vitest, the same as CI) uses synthetic fixtures and never touches real course data.
 
@@ -118,7 +124,7 @@ The first fixed output cites a Canvas assignment that does not exist, so validat
 
 ## Use from an MCP client
 
-`scripts/mcp-server.mjs` is a local stdio MCP server (name `studyorbit`) with the same 6 read-only tools as the chat: `list_courses`, `get_assessments`, `calculate_grades`, `final_needed`, `upcoming_deadlines`, `plan_schedule`. Given the same data and arguments it returns the same results as the chat in the page.
+`scripts/mcp-server.mjs` is a local stdio MCP server (name `studyorbit`) with 6 read-only tools: `list_courses`, `get_assessments`, `calculate_grades`, `final_needed`, `upcoming_deadlines`, `plan_schedule`. They run the same code as the course page and the weekly plan, and they are what the assistant on the Agent page calls.
 
 Replace `<repo>` with the absolute path of this repository. The `node` your client starts must be 24 or later; if a client (especially Claude Desktop) does not find the right one, use the absolute path from `which node`.
 
@@ -159,11 +165,11 @@ For example, `claude mcp add --env STUDYORBIT_COURSES=<id>,<id> studyorbit -- no
 
 | What | Where |
 | --- | --- |
-| Collected snapshots, sync records and checkpoints, change log, corrections, model and data-source settings, chats, revision notes | `.local/` in the project, ignored by Git; settings files have mode 600 and keys are write-only |
+| Collected snapshots, sync records and checkpoints, change log, corrections, model and data-source settings, the assistant's sessions and memory, revision notes | `.local/` in the project, ignored by Git; settings files have mode 600 and keys are write-only |
 | Each course's course JSON | A per-semester course folder on your Desktop ([exact paths](docs/overview.md#where-data-lives)) |
 | Course selection, tasks and time spent, daily hours, appearance, background image | Browser localStorage and IndexedDB; the background image is never uploaded |
 
-- **Storage stays on your machine.** During analysis and chat, course data, including grades, is sent to the model provider you chose, under that provider's terms, and model calls may cost money. With a local model (for example Ollama) the data stays on your machine.
+- **Storage stays on your machine.** During analysis and when you ask the assistant, course data, including grades, is sent to the model provider you chose, under that provider's terms, and model calls may cost money. With a local model (for example Ollama) the data stays on your machine.
 - **Only this page can reach the local API.** It accepts same-machine, same-origin requests carrying the per-launch token; other websites, other local ports and other devices on your network cannot read your data.
 - **No passwords, no personal Canvas token.** You sign in and complete multi-factor authentication yourself; collectors never read cookies or passwords, and the model never sees them.
 
@@ -183,7 +189,7 @@ Only **macOS + Microsoft Edge + University of Melbourne** (Canvas, Ed Australia,
 | [Sync optimisation](docs/sync-optimization.md) | Measured time and tokens of real syncs, resume versus restart, raw records |
 | [Course analysis evaluation](docs/eval-course-analysis.md) | Method and results of the repeated-run evaluation |
 | [Assistant](docs/deeptutor.md) | How DeepTutor runs next to StudyOrbit: key handling, the guard in front of its API, course context, measured turns and tokens |
-| [Chat Q&A evaluation](docs/eval-chat-qa.md) | The self-built chat's context mode versus tool mode on a synthetic question set |
+| [Chat Q&A evaluation](docs/eval-chat-qa.md) | Record of the built-in chat that DeepTutor replaced: context mode versus tool mode on a synthetic question set |
 
 Requirements live in `openspec/specs/`. Working rules are in [CLAUDE.md](CLAUDE.md); the handoff, decisions and product notes in `note/` are written in Chinese.
 

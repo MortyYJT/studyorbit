@@ -16,8 +16,8 @@ function selectedCourseIds(): string[] {
 
 const json = { 'Content-Type': 'application/json' };
 
-export function AgentFrame({ language, courses, request, onOpenSettings, onOldChat }:
-  { language: Language; courses: SidebarCourse[]; request?: AgentRequest; onOpenSettings: () => void; onOldChat: () => void }) {
+export function AgentFrame({ language, courses, request, onOpenSettings }:
+  { language: Language; courses: SidebarCourse[]; request?: AgentRequest; onOpenSettings: () => void }) {
   const zh = language === 'zh';
   const [status, setStatus] = useState<AssistantStatus | null>(null);
   // The session a preset started, per request; `failed` when DeepTutor did not take the prompt.
@@ -66,7 +66,7 @@ export function AgentFrame({ language, courses, request, onOpenSettings, onOldCh
 
   const notice = describeStatus(status, language);
   // Waiting: the prompt is about to be handed over (not claimed yet) or its session id has not come back. A request
-  // that was claimed before this mount (by the old chat, or before a remount) is not waited for and not sent again.
+  // that was claimed before this mount (the page was left and opened again) is not waited for and not sent again.
   const mine = turn?.nonce === request?.nonce;
   const waitingForTurn = !!request?.prompt && up && (mine ? !turn!.sessionId && !turn!.failed : !agentRequestClaimed(request.nonce));
   const reveal = useReveal(!(notice?.busy || waitingForTurn));
@@ -84,7 +84,6 @@ export function AgentFrame({ language, courses, request, onOpenSettings, onOldCh
         {up && status.warning === 'version' && <> · {zh ? 'DeepTutor 的版本和这里验证过的 1.7.4 不同' : 'This DeepTutor is not the 1.7.4 release this page was tried with'}</>}
       </span>
       {src && <a className="agent-frame-link" href={src} target="_blank" rel="noreferrer">{zh ? '在新标签页打开' : 'Open in a new tab'}</a>}
-      <button className="small ghost" onClick={onOldChat}>{zh ? '旧版对话' : 'Old chat'}</button>
     </div>
     {src
       ? <iframe className="agent-frame" title="DeepTutor" src={src} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" allow="clipboard-write" referrerPolicy="no-referrer" />

@@ -234,67 +234,9 @@ button.due:is(:hover,:active):enabled { background:linear-gradient(var(--hover),
 .agent-frame-detail { color:var(--signal); font-size:13px; }
 .agent-frame-command { margin:8px 0 0; padding:8px 10px; max-width:100%; overflow:auto; border:1px solid var(--rule); border-radius:var(--radius-control); font-size:12px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; user-select:all; }
 .agent-frame-wait { padding:56px 24px; }
-.old-chat-note { margin:0 0 8px; }
 .agent-frame-starting { margin:8px 0 0; color:var(--muted); font-size:13px; }
 @media (max-width:760px) { .agent-frame-page { height:calc(100dvh - 150px); } .agent-frame-bar { flex-wrap:wrap; gap:4px 12px; } .agent-frame-notice { padding:32px 16px; } }
 
-/* Old chat (kept until the DeepTutor path is validated): the list beside the open conversation. */
-.agent-page { display:grid; grid-template-columns:240px minmax(0,1fr); height:calc(100dvh - 140px); min-height:480px; padding:0; overflow:hidden; }
-.chat-list { display:flex; flex-direction:column; gap:2px; border-right:1px solid var(--border); padding:10px; overflow:auto; }
-.chat-list p { margin:8px 10px; font-size:13px; }
-.chat-list button { display:grid; grid-template-columns:minmax(0,1fr); justify-content:stretch; justify-items:start; gap:1px; flex-shrink:0; min-width:0; min-height:44px; padding:6px 10px; border:0; background:none; text-align:left; white-space:normal; }
-.chat-list button span { width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.chat-list .chat-entry[aria-current="true"] { background:var(--active); }
-.chat-list .new-chat { min-height:32px; margin-bottom:6px; color:var(--text); border:1px solid var(--border); justify-items:center; }
-.conversation { display:flex; flex-direction:column; min-height:0; min-width:0; }
-.conversation-head { padding:12px 20px; border-bottom:1px solid var(--rule); display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; min-height:52px; }
-.conversation-head b { font-weight:600; overflow-wrap:anywhere; }
-.chat-messages { flex:1; overflow:auto; padding:24px 20px; display:grid; gap:14px; align-content:start; width:100%; max-width:760px; margin:0 auto; overflow-wrap:anywhere; }
-.msg { max-width:85%; white-space:pre-wrap; line-height:1.6; }
-.msg.me { justify-self:end; padding:8px 13px; border-radius:12px; background:var(--raised); }
-.msg.ag { justify-self:start; }
-.msg-note { font-size:12px; color:var(--muted); justify-self:end; margin-top:-8px; }
-.msg-note.left { justify-self:start; margin:0; }
-.step { border:1px solid var(--border); border-radius:var(--radius); padding:8px 12px; display:grid; gap:4px; justify-items:start; min-width:0; }
-.step.error { border-style:dashed; }
-.step.error small { color:var(--muted); font-style:italic; }
-.chat-form { border-top:1px solid var(--rule); padding:12px 20px; display:flex; gap:8px; width:100%; max-width:800px; margin:0 auto; }
-.chat-form input { flex:1; min-height:36px; border-radius:18px; padding:6px 14px; }
-.chat-form button { min-height:36px; border-radius:18px; padding:0 16px; }
-.chat-error { margin:0; padding:0 20px 12px; font-size:13px; }
-.chat-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; flex-shrink:0; border-radius:var(--radius-control); }
-.chat-row:hover { background:var(--hover); }
-/* The row carries the fill; the buttons inside it add none. */
-.chat-list :is(.chat-entry,.chat-delete):is(:hover,:active):enabled { background:none; }
-.chat-list .chat-delete:is(:hover,:active):enabled { color:var(--text); }
-.chat-row:has(.chat-entry[aria-current="true"]) { background:var(--active); }
-.chat-list .chat-entry[aria-current="true"] { background:none; }
-.chat-list .chat-delete { display:inline-flex; justify-content:center; width:28px; min-height:28px; padding:0; margin-right:4px; color:var(--muted); opacity:0; }
-.chat-row:hover .chat-delete,.chat-delete:focus-visible { opacity:1; }
-@media (hover:none) { .chat-list .chat-delete { opacity:1; } }
-.conversation-head .muted { font-size:13px; }
-.msg.ag { white-space:normal; }
-.msg.ag p,.msg.ag ul,.msg.ag ol { margin:0 0 .6em; }
-.msg.ag > :last-child { margin-bottom:0; }
-.msg.ag ul,.msg.ag ol { padding-left:1.3em; }
-.chat-empty { display:grid; gap:12px; justify-items:start; padding-top:8vh; }
-.chat-empty p { margin:0; }
-.suggestions { display:flex; flex-wrap:wrap; gap:8px; }
-.suggestions button { border-radius:16px; color:var(--muted); }
-.suggestions button:is(:hover,:active):enabled { color:var(--text); }
-.chat-form { align-items:flex-end; }
-.chat-form textarea { flex:1; min-height:36px; max-height:160px; field-sizing:content; resize:none; border-radius:18px; padding:7px 14px; line-height:1.45; }
-.chat-error { display:flex; flex-wrap:wrap; align-items:center; gap:8px; width:100%; max-width:800px; margin:0 auto; }
-.chat-note { margin:0 auto; padding:0 20px 12px; font-size:12px; text-align:center; max-width:800px; }
-/* Tool calls behind a reply (decision #327): collapsed above the text, results scroll inside their own box. */
-.tool-steps { margin:0 0 .6em; font-size:13px; }
-.tool-steps summary { cursor:pointer; color:var(--muted); width:max-content; max-width:100%; }
-.tool-steps summary:hover { color:var(--text); }
-.tool-steps ol { margin:6px 0 0; padding-left:1.3em; display:grid; gap:8px; }
-.tool-steps li { display:grid; gap:2px; min-width:0; }
-.tool-steps li.failed b { text-decoration:underline dashed var(--muted); }
-.tool-steps pre { margin:0; max-height:220px; overflow:auto; padding:6px 8px; border:1px solid var(--rule); border-radius:var(--radius-control); font-size:12px; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
-.msg .tool-running { display:block; }
 .chead .ask-agent { margin-left:auto; align-self:center; }
 
 /* Course page: score block, tabs, then the assessment list. */
@@ -734,12 +676,6 @@ dialog.closing::backdrop { animation:fade-out var(--dur-1) var(--ease-in-out) fo
     transition:block-size var(--dur-2) var(--ease-out), content-visibility var(--dur-2) allow-discrete; }
   :is(.assessment-parent,.no-marks,.assessment-edit)[open]::details-content { block-size:auto; }
 }
-
-/* Agent chat: new messages rise in; a caret blinks at the end of a streaming reply. */
-.msg.enter { animation:msg-in var(--dur-2) var(--ease-out) backwards; }
-@keyframes msg-in { from { opacity:0; transform:translateY(8px); } }
-.msg.streaming > p:last-child::after,.msg.streaming > :is(ul,ol):last-child > li:last-child::after { content:""; display:inline-block; width:2px; height:1.05em; margin-left:2px; vertical-align:-.17em; background:currentColor; animation:caret 1s steps(1) infinite; }
-@keyframes caret { 50% { opacity:0; } }
 
 /* Reduced motion: nothing animates and nothing transitions; every end state applies at once. The helpers in motion.ts
    take the same decision in script (no fade, no exit animation). */

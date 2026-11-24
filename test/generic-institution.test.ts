@@ -9,8 +9,6 @@ import { toDisplayDocument } from '../shared/course-data.ts';
 import { generic, createGenericInstitution } from '../scripts/institutions/generic.mjs';
 import { DEFAULT_INSTITUTION } from '../scripts/institutions/registry.mjs';
 import { buildAnalysisPrompt } from '../scripts/lib/course-analysis.mjs';
-import { buildChatContext, chatSystemPrompt } from '../scripts/lib/chat-context.mjs';
-import { buildCourseIndex } from '../scripts/lib/chat-tools-prompt.mjs';
 import { filterSubjects } from '../scripts/lib/course-list.mjs';
 import { courseContextLoader } from '../scripts/lib/course-mcp.mjs';
 import { saveSourceSettings } from '../scripts/lib/source-settings.mjs';
@@ -73,17 +71,7 @@ describe('prompts and validation with the generic institution', () => {
   });
 });
 
-describe('chat wording and time zone with the generic institution', () => {
-  it('takes the assistant introduction and the time label from the institution', () => {
-    for (const language of ['zh', 'en'] as const) {
-      expect(chatSystemPrompt(language, 'context', generic).split('\n')[0]).toBe(generic.wording.assistantIntro[language]);
-      expect(chatSystemPrompt(language, 'tools', generic).split('\n')[0]).toBe(generic.wording.assistantIntro[language]);
-      expect(chatSystemPrompt(language, 'context', generic)).not.toMatch(/Melbourne|墨尔本/);
-    }
-    expect(buildCourseIndex({ documents: [], courses: [], scope: [], today: '2026-10-29', planning: null, institution: generic })).toContain('今天：2026-10-29（本地时间）。');
-    expect(buildChatContext([], { today: '2026-10-29', institution: generic, timeZone: 'America/New_York' })).toContain('今天：2026-10-29（本地时间）。');
-  });
-
+describe('tool wording and time zone with the generic institution', () => {
   it('names the time zone in tool descriptions with the English time label; the default institution keeps its own', () => {
     const descriptions = toolDefinitions(courseToolsFor(generic.wording.timeLabel.en)).map(tool => tool.description).join('\n');
     expect(descriptions).not.toContain('Melbourne');

@@ -35,9 +35,7 @@ export interface Institution {
   courseFolder(course: { term?: unknown; subjectCode: string }): string[];
   edSessionMatches(session: unknown, key: TermKey): boolean;
   wording: {
-    /** The first line of both chat system prompts. */
-    assistantIntro: { zh: string; en: string };
-    /** The time zone's name in prompts (zh) and chat tool descriptions (en). */
+    /** The time zone's name: `en` is used in the course tools' descriptions; `zh` is kept for wording in Chinese. */
     timeLabel: { zh: string; en: string };
     /** Rule 1 of the analysis prompt. */
     sourcesRule: string;

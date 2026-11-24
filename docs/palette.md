@@ -25,7 +25,7 @@ Each token is written once as `light-dark(light, dark)`. Translucent values are 
 | `--surface` | Cards and panels on the workspace | `#ffffff` | `#181818` | `--color-surface-card` |
 | `--float` | Dialogs, the drawer, menus | `#ffffff` | `#282828` | `--color-surface-card` / `--color-surface-tertiary` (what Codex's settings dialog uses) |
 | `--field` | Inputs and selects | `#ffffff` | `#2d2d2d` | `--color-background-control-opaque` |
-| `--raised` | Quiet fill that stays: plan blocks, the deadline band, the weight strip, the sent chat message | ink 4.7% | white 5.1% | `--color-background-secondary-soft` |
+| `--raised` | Quiet fill that stays: plan blocks, the deadline band, the weight strip | ink 4.7% | white 5.1% | `--color-background-secondary-soft` |
 | `--hover` | Hovered and pressed rows and buttons | ink 5.5% | white 7.8% | `--color-token-list-hover-background` |
 | `--active` | Current row, the segmented track, a hovered plan block | ink 12% | `#dfdfdf` 16% | `--color-background-secondary-ghost-active` |
 | `--rule` | Row separators, the sidebar edge | ink 7.8% | white 8.2% | `--color-token-border-default` |

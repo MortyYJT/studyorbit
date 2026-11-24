@@ -15,7 +15,6 @@ import type { Env, RouteContext, RouteHandler } from './context.ts';
 import { checkRequest } from './guard.ts';
 import { agentContextRoute } from './routes/agent-context.ts';
 import { browserRoute } from './routes/browser.ts';
-import { chatsRoute } from './routes/chats.ts';
 import { correctionsRoute } from './routes/corrections.ts';
 import { courseCandidatesRoute } from './routes/course-candidates.ts';
 import { courseChangesRoute } from './routes/course-changes.ts';
@@ -104,7 +103,6 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
     ['corrections', correctionsRoute(context)],
     ['course-changes', courseChangesRoute(context)],
     ['revision-notes', revisionNotesRoute(context)],
-    ['chats', chatsRoute(context)],
     ['agent-context', agentContextRoute(context)],
     ['deeptutor', deeptutorRoute(options.assistant)],
     ['course-sync', courseSyncRoute(pipeline)],

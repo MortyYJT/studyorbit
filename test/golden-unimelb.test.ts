@@ -8,8 +8,6 @@ import { join, relative } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { toolDefinitions } from '../shared/course-tools.ts';
 import { buildAnalysisPrompt } from '../scripts/lib/course-analysis.mjs';
-import { chatSystemPrompt } from '../scripts/lib/chat-context.mjs';
-import { toolSystemPrompt } from '../scripts/lib/chat-tools-prompt.mjs';
 import { filterSubjects, normalizeCourses } from '../scripts/lib/course-list.mjs';
 import { repairPrompt, settleCourse, validateAnalysis } from '../scripts/lib/course-validation.mjs';
 import { collectInputHash, courseFolder, termLabel, validateInputHash } from '../scripts/lib/sync-stages.mjs';
@@ -45,11 +43,7 @@ describe('UniMelb golden: prompts and wording', () => {
     await expect(json({ issues: validation.issues, repair: repairPrompt(validation.issues, text) })).toMatchFileSnapshot(golden('repair-prompt.json'));
   });
 
-  it('chat system prompts in both languages and modes, and chat tool descriptions', async () => {
-    const prompts = Object.fromEntries((['zh', 'en'] as const).flatMap(language => [
-      [`context-${language}`, chatSystemPrompt(language, 'context')], [`tools-${language}`, toolSystemPrompt(language)],
-    ]));
-    await expect(json(prompts)).toMatchFileSnapshot(golden('chat-system-prompts.json'));
+  it('course tool descriptions', async () => {
     await expect(json(toolDefinitions().map(({ name, title, description }) => ({ name, title, description })))).toMatchFileSnapshot(golden('chat-tool-descriptions.json'));
   });
 });

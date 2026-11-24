@@ -343,7 +343,7 @@ describe('the motion rules in style.css', () => {
 
   it('use no View Transition: its picture of the page takes every click while it is shown', () => {
     expect(css.includes('view-transition')).toBe(false);
-    for (const file of ['App.tsx', 'LocalPlanning.tsx', 'Agent.tsx', 'motion.ts', 'BackgroundLayer.tsx']) {
+    for (const file of ['App.tsx', 'LocalPlanning.tsx', 'AgentFrame.tsx', 'motion.ts', 'BackgroundLayer.tsx']) {
       const source = readFileSync(new URL(`../web/src/${file}`, import.meta.url), 'utf8');
       expect(source.includes('startViewTransition('), file).toBe(false);
     }

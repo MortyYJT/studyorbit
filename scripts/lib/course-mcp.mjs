@@ -42,7 +42,7 @@ export function createCourseMcpServer({ loadContext, version, onLoadError, timeL
   return server;
 }
 
-/** YYYY-MM-DD of `date` in `timeZone`, as the chat route computes it. */
+/** YYYY-MM-DD of `date` in `timeZone`. */
 function dayIn(date, timeZone) {
   return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
 }

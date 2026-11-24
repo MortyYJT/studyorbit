@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CDP_NEEDS_SERVER } from '../scripts/browser/cdp.mjs';
-import { chatSystemPrompt } from '../scripts/lib/chat-context.mjs';
 import { buildAnalysisPrompt } from '../scripts/lib/course-analysis.mjs';
 import { filterSubjects, normalizeCourses } from '../scripts/lib/course-list.mjs';
 import { parseHandbookComponents as fromParse } from '../scripts/institutions/unimelb/handbook-parse.mjs';
@@ -107,8 +106,6 @@ describe('the unimelb institution', () => {
     expect(prompt).toContain(`1. ${unimelb.wording.sourcesRule}\n`);
     expect(prompt).toContain(handbookSource.promptRules.refs);
     expect(prompt).toContain(handbookSource.promptRules.quote);
-    expect(chatSystemPrompt('zh').split('\n')[0]).toBe(unimelb.wording.assistantIntro.zh);
-    expect(chatSystemPrompt('en').split('\n')[0]).toBe(unimelb.wording.assistantIntro.en);
     expect(unimelb.framework).toBe(handbookSource);
     expect(handbookSource.parseComponents).toBe(fromParse);
     expect(handbookSource.parseComponents('Project report\tWeek 10\t30%')).toEqual([{ name: 'Project report', percent: 30, rowTexts: ['Project report Week 10 30%'] }]);

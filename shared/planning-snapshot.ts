@@ -1,5 +1,6 @@
-// Planning snapshot sent with each Agent chat message (decision #322). Tasks, availability and target bands live in
-// browser localStorage (#290), so the page builds the snapshot and the server validates it. Pure module: no I/O.
+// Planning snapshot (decision #322). Tasks, availability and target bands live in browser localStorage (#290), so the
+// Agent page builds the snapshot and the server validates it before storing it for the MCP server (decision #546).
+// Pure module: no I/O.
 import { z } from 'zod';
 import { bandTargets, type Band } from './course-calculations.ts';
 import type { PlanningSnapshot } from './course-tools.ts';
