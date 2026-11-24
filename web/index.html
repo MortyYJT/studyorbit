@@ -14,10 +14,14 @@
       // Apply the saved theme and palette before the app mounts so the first paint is already right; App.tsx owns later changes.
       // The `coursework.` fallbacks cover the first load after the key rename; main.tsx then moves those keys (storage-prefix.ts).
       // Keep the palette ids in step with web/src/palette.ts (test/palette.test.ts checks this).
+      // Theme: the same rule as resolveTheme in web/src/theme.ts (test/theme.test.ts runs this script against it). Only a
+      // pick made in Settings is stored (`studyorbit.theme.v2`); a `light` under the older keys was the old default.
       try {
-        var theme = localStorage.getItem('studyorbit.theme') || localStorage.getItem('coursework.theme');
+        var choice = localStorage.getItem('studyorbit.theme.v2');
+        var previous = localStorage.getItem('studyorbit.theme');
+        if (previous === null) previous = localStorage.getItem('coursework.theme');
         var palette = localStorage.getItem('studyorbit.palette') || localStorage.getItem('coursework.palette');
-        document.documentElement.dataset.theme = theme === 'system' || theme === 'dark' ? theme : 'light';
+        document.documentElement.dataset.theme = choice === 'system' || choice === 'light' || choice === 'dark' ? choice : previous === 'dark' ? 'dark' : 'system';
         document.documentElement.dataset.palette = ['mono', 'mist', 'pine', 'stone', 'morty'].indexOf(palette) >= 0 ? palette : 'mono';
       } catch (error) { /* Storage may be blocked; the app falls back to its defaults. */ }
       // Background mode and card opacity (web/src/background.ts parses the same JSON; the image itself loads after mount).
