@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Language } from './i18n.js';
+import { useReveal } from './motion.js';
 
 type Course = { id: string; name: string; subjectCode: string; term?: string | null };
 const key = 'studyorbit.selected-course-ids';
@@ -17,6 +18,7 @@ export function LocalCourseSelect({ language, refreshVersion, onSaved }: { langu
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const zh = language === 'zh';
+  const reveal = useReveal(courses !== undefined || error !== '');
 
   async function load() {
     setError('');
@@ -52,7 +54,10 @@ export function LocalCourseSelect({ language, refreshVersion, onSaved }: { langu
       : error === 'stale' ? (zh ? 'Canvas 地址已更改，请点击“立即同步”重新获取课程。' : 'The Canvas address changed. Click “Sync now” to fetch the courses again.')
       : error === 'save' ? (zh ? '保存失败，请检查浏览器存储是否可用。' : 'Could not save your selection in this browser.')
       : (zh ? '无法读取课程列表，请确认开发服务器正在运行并刷新列表。' : 'Could not load the course list. Check the development server and refresh.')}</p>}
-    {courses && (courses.length ? <>
+    {/* While the list loads, the rows already selected and the button keep their place. */}
+    {!courses && !error && <div className={`course-select-pending pending${reveal === 'placeholder' ? ' late' : ''}`} aria-busy="true">
+      <div className="course-select">{Array.from({ length: Math.max(selected.length, 1) }, (_, index) => <div className="check-row" key={index}><i className="skeleton" /></div>)}</div><div className="button-space" /></div>}
+    {courses && (courses.length ? <div className={reveal === 'faded' ? 'fill-in' : undefined}>
       <fieldset className="course-select"><legend className="visually-hidden">{zh ? '课程列表' : 'Courses'}</legend>
         {courses.map(course => <label key={course.id} className="check-row">
           <input type="checkbox" checked={selected.includes(course.id)} onChange={event => {
@@ -62,6 +67,6 @@ export function LocalCourseSelect({ language, refreshVersion, onSaved }: { langu
         </label>)}
       </fieldset>
       <button className="primary" onClick={save} disabled={saving}>{zh ? '保存选择' : 'Save selection'}</button>
-    </> : <p>{zh ? '没有符合课程代码规则的候选项。' : 'No candidates match the subject-code rule.'}</p>)}
+    </div> : <p>{zh ? '没有符合课程代码规则的候选项。' : 'No candidates match the subject-code rule.'}</p>)}
   </section>;
 }

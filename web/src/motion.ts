@@ -1,40 +1,105 @@
-// Motion helpers. Every helper honours prefers-reduced-motion: it then applies the end state at once.
-import { useLayoutEffect, useState, type DependencyList, type RefObject } from 'react';
-import { flushSync } from 'react-dom';
+// Motion helpers. One small rule set, shared with the motion section of style.css:
+//   - a page switch replaces the page in the click's own frame and fades it in, by opacity only, from a visible start;
+//     nothing animates out, so the switch is never slowed and a second click simply restarts the fade;
+//   - data that is not there yet shows a placeholder only after `placeholderDelay`, and only what replaces a painted
+//     placeholder fades in; data that arrives sooner is painted as it is;
+//   - one indicator slides to the current item; dialogs and the drawer fade or slide in and leave faster;
+//   - the one thing that performs on arrival is the earned arc of a course's grade ring, which draws in;
+//   - a theme or background change fades every colour together; there is no View Transition anywhere, because the
+//     page under one takes no clicks while it runs.
+// Every helper honours prefers-reduced-motion: it then applies the end state at once. Loading states still show.
+import { useEffect, useLayoutEffect, useState, type DependencyList, type RefObject } from 'react';
 
 /** Shared with style.css (--ease-out, --dur-*) so JS-driven and CSS motion feel the same. */
 export const easeOut = 'cubic-bezier(.2,.8,.2,1)';
-export const durations = { short: 150, medium: 250, long: 420 } as const;
+export const durations = { short: 150, medium: 250, arc: 700 } as const;
 
 export function reducedMotion(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-let transitionToken = 0;
+/** The opacity a page starts its fade at: above zero, so the first frame after the click already shows the page. */
+export const pageFadeFrom = 0.4;
+const pageFades = new WeakMap<object, Animation>();
 /**
- * Runs a state update inside a View Transition when the browser supports it. `page` slides the main canvas only;
- * `theme` crossfades the whole window. Without support, `theme` falls back to short colour transitions in CSS.
- * Returns true when a View Transition handled the change.
+ * Fades the page that has just replaced another one in `element`. Opacity only: a transform on the canvas would
+ * re-anchor the fixed drawer, toast and phone menu inside it. A fade still running is cancelled first, so quick
+ * switches never queue. Returns the animation, or null when nothing was started (reduced motion, no element, or a
+ * browser without the Web Animations API).
  */
-export function viewTransition(kind: 'page' | 'theme', update: () => void): boolean {
+export function pageFade(element: HTMLElement | null | undefined): Animation | null {
+  if (!element) return null;
+  pageFades.get(element)?.cancel();
+  pageFades.delete(element);
+  if (reducedMotion() || typeof element.animate !== 'function') return null;
+  const animation = element.animate([{ opacity: pageFadeFrom }, { opacity: 1 }], { duration: durations.short, easing: easeOut });
+  pageFades.set(element, animation);
+  return animation;
+}
+
+/**
+ * Draws the earned arc of the grade ring in, from an empty ring (`from`, the ring's full dash length) to the arc the
+ * course has earned (`to`). The figure inside the ring and every other number are final from the first frame; only the
+ * arc moves. Returns null when nothing was started (reduced motion: the arc is simply there).
+ */
+export function drawArc(arc: SVGElement | null | undefined, from: number, to: number): Animation | null {
+  if (!arc || reducedMotion() || typeof arc.animate !== 'function') return null;
+  return arc.animate([{ strokeDashoffset: from }, { strokeDashoffset: to }], { duration: durations.arc, easing: easeOut });
+}
+
+/** How long data may take before its placeholder is painted. Shorter waits show nothing, then the data itself. */
+export const placeholderDelay = 150;
+/**
+ * What stands in the place of data that may still be on its way.
+ * `waiting`: the space is reserved and nothing is painted yet. `placeholder`: the wait outlasted the delay.
+ * `shown`: the data, painted at once. `faded`: the data replacing a placeholder that was painted, so it fades in;
+ * when the fade is `done` it is `shown` again, so the fade cannot replay if the element is put back later.
+ */
+export type Reveal = 'waiting' | 'placeholder' | 'shown' | 'faded';
+export function nextReveal(state: Reveal, event: 'ready' | 'delay' | 'done' | 'reset'): Reveal {
+  if (event === 'reset') return 'waiting';
+  if (event === 'delay') return state === 'waiting' ? 'placeholder' : state;
+  if (event === 'done') return state === 'faded' ? 'shown' : state;
+  return state === 'waiting' ? 'shown' : state === 'placeholder' ? 'faded' : state;
+}
+/** The state for this render: the data as soon as it is ready, and waiting again when it has gone away. */
+export function revealFor(state: Reveal, ready: boolean): Reveal {
+  const settled = state === 'shown' || state === 'faded';
+  return ready && !settled ? nextReveal(state, 'ready') : !ready && settled ? nextReveal(state, 'reset') : state;
+}
+/** The one timer a state needs: the placeholder delay while waiting, the end of the fade while fading. */
+export function revealTimer(state: Reveal): { event: 'delay' | 'done'; ms: number } | null {
+  return state === 'waiting' ? { event: 'delay', ms: placeholderDelay } : state === 'faded' ? { event: 'done', ms: durations.short + 50 } : null;
+}
+/** Follows `ready` through `nextReveal`, with its timers. `ready` true on mount means `shown`: no placeholder, no fade. */
+export function useReveal(ready: boolean): Reveal {
+  const [state, setState] = useState<Reveal>(ready ? 'shown' : 'waiting');
+  // Derived during render, so the data is never held back for a frame behind its placeholder.
+  const current = revealFor(state, ready);
+  if (current !== state) setState(current);
+  useEffect(() => {
+    const timing = revealTimer(current);
+    if (!timing) return;
+    const timer = window.setTimeout(() => setState(value => nextReveal(value, timing.event)), timing.ms);
+    return () => window.clearTimeout(timer);
+  }, [current]);
+  return current;
+}
+
+let themingTimer: number | undefined;
+/**
+ * Applies a theme or background change while every colour on the page fades to its new value together (style.css,
+ * `data-theming`): the mark is set, `update` runs in the same call, and the mark is cleared when the fade has had its
+ * time. A newer call keeps the mark for its own fade. Not a View Transition: that shows a picture of the page, and the
+ * page under a picture takes no clicks for as long as it is shown.
+ */
+export function themeTransition(update: () => void): void {
+  if (reducedMotion()) { update(); return; }
   const root = document.documentElement;
-  if (reducedMotion()) { update(); return false; }
-  if (typeof document.startViewTransition !== 'function') {
-    if (kind === 'theme') {
-      root.dataset.theming = '';
-      window.setTimeout(() => { delete root.dataset.theming; }, 350);
-    }
-    update();
-    return false;
-  }
-  const token = ++transitionToken;
-  root.dataset.vt = kind;
-  const transition = document.startViewTransition(() => flushSync(update));
-  // A failing update rejects these promises; the error already surfaced through flushSync, so only tidy up here.
-  transition.ready.catch(() => {});
-  transition.updateCallbackDone.catch(() => {});
-  transition.finished.catch(() => {}).finally(() => { if (token === transitionToken) delete root.dataset.vt; });
-  return true;
+  root.dataset.theming = '';
+  window.clearTimeout(themingTimer);
+  themingTimer = window.setTimeout(() => { delete root.dataset.theming; }, durations.medium + 50);
+  update();
 }
 
 /** Animates a modal dialog out (see `dialog.closing` in style.css) before closing it. */
@@ -52,8 +117,8 @@ export function closeDialog(dialog: HTMLDialogElement | null | undefined): void 
   const finish = () => { stop(); if (dialog.open) dialog.close(); };
   const onEnd = (event: AnimationEvent) => { if (event.target === dialog) finish(); };
   dialog.addEventListener('animationend', onEnd);
-  // The animation is 150 ms; the timer guarantees the close if animationend never fires (hidden tab, no animation).
-  const timer = window.setTimeout(finish, 200);
+  // The timer guarantees the close if animationend never fires (hidden tab, no animation).
+  const timer = window.setTimeout(finish, durations.short + 50);
   pendingCloses.set(dialog, stop);
 }
 
@@ -113,25 +178,4 @@ export function useSlidingIndicator(container: RefObject<HTMLElement | null>, in
     mutations.observe(box, { childList: true, subtree: true, characterData: true });
     return () => { resize.disconnect(); mutations.disconnect(); };
   }, deps);
-}
-
-/**
- * Counts from 0 up to `value` over ~700 ms with an ease-out whenever `animateKey` changes. Later value changes
- * (edits) show at once. The final text is exactly `format(value)`.
- */
-export function useCountUp(value: number | undefined, format: (value: number) => string, animateKey: string): string {
-  const [progress, setProgress] = useState(() => reducedMotion() ? 1 : 0);
-  useLayoutEffect(() => {
-    if (value === undefined || reducedMotion()) { setProgress(1); return; }
-    setProgress(0);
-    const start = performance.now();
-    let frame = requestAnimationFrame(function tick(now) {
-      const t = Math.min(1, (now - start) / 700);
-      setProgress(t);
-      if (t < 1) frame = requestAnimationFrame(tick);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [animateKey]);
-  if (value === undefined) return '—';
-  return progress >= 1 ? format(value) : format(value * (1 - (1 - progress) ** 3));
 }

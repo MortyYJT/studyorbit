@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Language } from './i18n.js';
+import { replyGuard } from './fresh.js';
+import { useReveal } from './motion.js';
 
 /** The reply of GET/PUT /api/local/source-settings (server/routes/source-settings.ts). */
 export type SourceSettingsReply = {
@@ -40,28 +42,40 @@ const fieldNames: Record<string, [string, string]> = {
   edRegion: ['Ed 区域', 'Ed region'], timeZone: ['时区', 'Time zone'], codePattern: ['课程代码正则', 'Course code pattern'],
 };
 
+/** Reserves the place of a settings form that is still loading: a note line, `rows` label-and-field rows, the actions. */
+export function SettingsPlaceholder({ rows }: { rows: number }) {
+  return <div className="settings-placeholder" aria-hidden="true"><i className="skeleton" />{Array.from({ length: rows }, (_, index) => <div key={index}><i className="skeleton" /><i className="skeleton" /></div>)}<i className="skeleton" /></div>;
+}
+
 /**
  * 「数据来源」 (generic-adapters design §8, decision #447): institution, Canvas address, browser, Ed region and, for the
  * generic institution, time zone and course-code pattern. One form, one Save; saving is refused while a sync runs.
+ * `known` is the reply the page already has: the form starts from it instead of a loading line, and the fresh reply
+ * replaces it unless the form was edited meanwhile.
  */
-export function SourceSettingsSection({ language, onSaved }: { language: Language; onSaved: (reply: SourceSettingsReply) => void }) {
+export function SourceSettingsSection({ language, known, onSaved }: { language: Language; known?: SourceSettingsReply; onSaved: (reply: SourceSettingsReply) => void }) {
   const zh = language === 'zh';
   const pick = (pair: [string, string]) => pair[zh ? 0 : 1];
-  const [reply, setReply] = useState<SourceSettingsReply>();
-  const [form, setForm] = useState<Form>();
+  const [reply, setReply] = useState<SourceSettingsReply | undefined>(known);
+  const [form, setForm] = useState<Form | undefined>(() => known && formFrom(known));
   const [loadError, setLoadError] = useState(false);
+  const touched = useRef(false);
+  // The read made on mount is dropped if a save succeeds before it answers: it would put the older settings back.
+  const replies = useRef(replyGuard());
+  const reveal = useReveal(reply !== undefined || loadError);
   const [busy, setBusy] = useState(false);
   const [opening, setOpening] = useState(false);
   const [fieldError, setFieldError] = useState<{ field: string | null; reason: string }>();
   const [status, setStatus] = useState<{ problem: boolean; text: string }>();
   useEffect(() => {
     let live = true;
-    void fetchSourceSettings().then(data => { if (!live) return; if (data) { setReply(data); setForm(formFrom(data)); } else setLoadError(true); });
+    const started = replies.current.begin();
+    void fetchSourceSettings().then(data => { if (!live || touched.current || !replies.current.accepts(started)) return; if (data) { setReply(data); setForm(formFrom(data)); } else if (!known) setLoadError(true); });
     return () => { live = false; };
   }, []);
   const title = <h3 id="source-settings-title">{zh ? '数据来源' : 'Data sources'}</h3>;
   if (loadError) return <section className="model-settings" aria-labelledby="source-settings-title">{title}<p className="muted">{zh ? '无法读取数据来源设置（仅在本地服务中可用）。' : 'Could not read the data-source settings (local server only).'}</p></section>;
-  if (!reply || !form) return <section className="model-settings" aria-labelledby="source-settings-title">{title}<p className="muted">{zh ? '加载中…' : 'Loading…'}</p></section>;
+  if (!reply || !form) return <section className={`model-settings source-pending pending${reveal === 'placeholder' ? ' late' : ''}`} aria-labelledby="source-settings-title" aria-busy="true">{title}<SettingsPlaceholder rows={4} /></section>;
 
   const institution = reply.available.institutions.find(item => item.id === form.institution);
   const generic = !institution?.fixedTimeZone;
@@ -69,7 +83,7 @@ export function SourceSettingsSection({ language, onSaved }: { language: Languag
   const chosenBrowser = reply.available.browsers.find(item => item.id === form.browser);
   const initial = formFrom(reply);
   const dirty = (Object.keys(form) as (keyof Form)[]).some(key => form[key] !== initial[key]);
-  const update = (patch: Partial<Form>) => { setForm({ ...form, ...patch }); setStatus(undefined); setFieldError(undefined); };
+  const update = (patch: Partial<Form>) => { touched.current = true; setForm({ ...form, ...patch }); setStatus(undefined); setFieldError(undefined); };
   const changeInstitution = (id: string) => {
     const next = reply.available.institutions.find(item => item.id === id);
     // The default institution has a fixed Canvas: fill it in; another institution starts with the owner's address.
@@ -112,6 +126,7 @@ export function SourceSettingsSection({ language, onSaved }: { language: Languag
       if (!response.ok) throw new Error();
       const next = data as SourceSettingsReply;
       const moved = next.settings.institution !== reply.settings.institution || next.settings.canvasOrigin !== reply.settings.canvasOrigin;
+      replies.current.saved(); touched.current = false;
       setReply(next); setForm(formFrom(next)); onSaved(next);
       setStatus({ problem: moved, text: moved
         ? (zh ? '已保存。学校或 Canvas 地址已更改，请点击“立即同步”重新获取课程。' : 'Saved. The institution or Canvas address changed: click “Sync now” to fetch the courses again.')
@@ -120,7 +135,7 @@ export function SourceSettingsSection({ language, onSaved }: { language: Languag
     finally { setBusy(false); }
   }
 
-  return <section className="model-settings source-settings" aria-labelledby="source-settings-title">
+  return <section className={`model-settings source-settings${reveal === 'faded' ? ' fill-in' : ''}`} aria-labelledby="source-settings-title">
     {title}
     <p className="muted model-note">{zh ? '从哪里获取课程：学校、Canvas 地址、用哪个浏览器读取 Canvas，以及 Ed 的区域。不改设置就和以前一样。' : 'Where courses come from: institution, Canvas address, the browser that reads Canvas, and the Ed region. Nothing changes until you save.'}
       {!reply.saved && (zh ? ' 现在使用默认设置。' : ' Using the defaults now.')}</p>

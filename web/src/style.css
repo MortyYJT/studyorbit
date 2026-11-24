@@ -15,8 +15,8 @@
    segmented track and a hovered plan block, none of which carries faint or alert text. */
 :root { color-scheme:light;
   --radius:8px; --radius-control:6px; --gap:16px;
-  /* Motion: transform and opacity only; durations short / medium / long. */
-  --ease-out:cubic-bezier(.2,.8,.2,1); --ease-in-out:cubic-bezier(.65,0,.35,1); --dur-1:150ms; --dur-2:250ms; --dur-3:420ms;
+  /* Motion: the two durations and the easing, shared with motion.ts. The rules are in the Motion section below. */
+  --ease-out:cubic-bezier(.2,.8,.2,1); --ease-in-out:cubic-bezier(.65,0,.35,1); --dur-1:150ms; --dur-2:250ms;
   --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Segoe UI","Microsoft YaHei",sans-serif; }
 :root[data-theme="dark"] { color-scheme:dark; }
 @media(prefers-color-scheme:dark) { :root:not([data-theme="light"]):not([data-theme="dark"]) { color-scheme:dark; } }
@@ -94,7 +94,9 @@ button { cursor:pointer; display:inline-flex; align-items:center; justify-conten
   transition:background-color var(--dur-1), border-color var(--dur-1), color var(--dur-1), box-shadow var(--dur-1), opacity var(--dur-1), transform var(--dur-1) var(--ease-out); }
 /* A press does not darken further: the darker fill would put secondary and alert text under 4.5:1. */
 button:is(:hover,:active):enabled { background:var(--hover); }
-button:disabled { opacity:.45; cursor:default; }
+button:disabled,button[aria-disabled="true"] { opacity:.45; cursor:default; }
+/* Busy but still focusable (the Refresh button while it loads): it takes no hover fill and no press. */
+button[aria-disabled="true"]:is(:hover,:active):enabled { background:transparent; transform:none; }
 button.primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
 button.primary:is(:hover,:active):enabled { background:var(--accent-hover); border-color:var(--accent-hover); }
 button.ghost { border-color:transparent; background:transparent; color:var(--muted); }
@@ -150,7 +152,8 @@ legend { padding:0; margin-bottom:8px; font-size:13px; font-weight:500; }
 .canvas { min-width:0; padding:32px 40px 72px; }
 .canvas > * { max-width:1240px; }
 .page-heading,.dialog-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.page-heading { margin-bottom:20px; }
+/* As tall as its button, so the title sits at the same height on a page without one (the Agent page). */
+.page-heading { min-height:32px; margin-bottom:20px; }
 .error-line { display:flex; align-items:center; gap:8px; margin:0 0 12px; font-size:13px; }
 .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; }
 .empty { padding:56px 24px; display:grid; justify-items:start; gap:4px; }
@@ -377,7 +380,6 @@ dialog.drawer h3 { font-size:13px; margin:24px 0 6px; }
   .chat-messages { padding:16px; } .chat-form,.conversation-head { padding:10px 14px; } .msg { max-width:92%; }
   .week-toolbar { gap:8px; }
 }
-@media(prefers-reduced-motion:reduce) { * { transition:none !important; } }
 
 /* ---- v2 local prototype: sync dialog, usage, local week, assessment editing, weights ---- */
 .avatar { overflow:hidden; }
@@ -405,7 +407,7 @@ dialog.drawer h3 { font-size:13px; margin:24px 0 6px; }
 
 .local-course-select { margin-bottom:20px; }
 .local-course-select .row-heading h2 { margin:0; }
-.save-toast { position:fixed; z-index:20; left:50%; bottom:28px; transform:translateX(-50%); padding:10px 18px; border-radius:var(--radius); background:var(--accent); color:var(--on-accent); font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,.16); animation:toast-appear .25s ease-out, toast-disappear .3s ease-in 2.7s forwards; }
+.save-toast { position:fixed; z-index:20; left:50%; bottom:28px; transform:translateX(-50%); padding:10px 18px; border-radius:var(--radius); background:var(--accent); color:var(--on-accent); font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,.16); animation:toast-appear var(--dur-2) var(--ease-out), toast-disappear var(--dur-2) var(--ease-in-out) 2.7s forwards; }
 @keyframes toast-appear { from { opacity:0; transform:translate(-50%, 12px); } to { opacity:1; transform:translate(-50%, 0); } }
 @keyframes toast-disappear { to { opacity:0; transform:translate(-50%, 8px); } }
 
@@ -458,13 +460,13 @@ dialog.drawer h3 { font-size:13px; margin:24px 0 6px; }
 .course-page .donut .track { stroke:var(--track); stroke-width:16; }
 
 .linked { font-size:13px; }
-.local-drawer-overlay { position:fixed; inset:0; z-index:30; background:var(--scrim); display:flex; justify-content:flex-end; animation:scrim-in .25s ease; }
-.local-drawer { width:min(480px,100vw); height:100dvh; overflow:auto; padding:0 24px 24px; background:var(--float); border-left:1px solid var(--border); box-shadow:-16px 0 48px rgba(0,0,0,.1); animation:drawer-in .35s cubic-bezier(.2,.8,.2,1); }
+/* The scrim is its own layer so that it can fade by opacity while the drawer slides. */
+.local-drawer-overlay { position:fixed; inset:0; z-index:30; display:flex; justify-content:flex-end; }
+.local-drawer-overlay::before { content:""; position:absolute; inset:0; background:var(--scrim); animation:fade-in var(--dur-2) var(--ease-out); }
+.local-drawer { position:relative; width:min(480px,100vw); height:100dvh; overflow:auto; padding:0 24px 24px; background:var(--float); border-left:1px solid var(--border); box-shadow:-16px 0 48px rgba(0,0,0,.1); animation:drawer-in var(--dur-2) var(--ease-out); }
 .local-drawer h2 { margin:0; }
 .local-drawer h3 { font-size:13px; margin:24px 0 6px; }
 .local-drawer form { margin-top:12px; }
-@keyframes scrim-in { from { background:rgba(0,0,0,0); } }
-@keyframes drawer-in { from { transform:translateX(104%); } }
 
 @media(max-width:760px) {
   .local-week-grid { grid-template-columns:1fr; }
@@ -475,10 +477,9 @@ dialog.drawer h3 { font-size:13px; margin:24px 0 6px; }
   .course-summary .weight-breakdown { padding:12px 16px 14px; }
   .assessment-children { margin-left:0; padding-left:10px; }
 }
-@media (prefers-reduced-motion:reduce) { .save-toast,.sync-indeterminate span,.local-drawer-overlay,.local-drawer { animation:none; } }
 
 /* ---- Round 2: prototype-style assessment list, readable sync history, course selection in settings ---- */
-.chevron { display:inline-block; width:0; height:0; margin-right:8px; border-style:solid; border-width:4px 0 4px 6px; border-color:transparent transparent transparent var(--muted); transition:transform .15s ease; vertical-align:1px; flex:none; }
+.chevron { display:inline-block; width:0; height:0; margin-right:8px; border-style:solid; border-width:4px 0 4px 6px; border-color:transparent transparent transparent var(--muted); transition:transform var(--dur-1) var(--ease-out); vertical-align:1px; flex:none; }
 details[open] > summary .chevron,[aria-expanded="true"] .chevron { transform:rotate(90deg); }
 .list-tools { display:flex; justify-content:flex-end; padding:10px 0 6px; }
 .course-page .arow { grid-template-columns:minmax(0,1fr) 80px 96px 88px; min-height:46px; }
@@ -508,7 +509,7 @@ details[open] > summary .chevron,[aria-expanded="true"] .chevron { transform:rot
 .local-drawer .assessment-edit { border-top:1px solid var(--rule); }
 .local-drawer .assessment-edit > summary { display:flex; align-items:center; min-height:40px; margin:0; color:var(--text); list-style:none; }
 .local-drawer .assessment-edit > summary::-webkit-details-marker { display:none; }
-.local-drawer .assessment-edit > summary::after { content:""; margin-left:auto; border-style:solid; border-width:4px 0 4px 6px; border-color:transparent transparent transparent var(--muted); transition:transform .15s ease; }
+.local-drawer .assessment-edit > summary::after { content:""; margin-left:auto; border-style:solid; border-width:4px 0 4px 6px; border-color:transparent transparent transparent var(--muted); transition:transform var(--dur-1) var(--ease-out); }
 .local-drawer .assessment-edit[open] > summary::after { transform:rotate(90deg); }
 .local-drawer .local-confirm { margin-top:0; }
 
@@ -555,7 +556,6 @@ button.sync-tr:is(:hover,:active):enabled { background:var(--hover); }
   .sync-latest-facts > div { padding:0 10px; }
   .plan-form { grid-template-columns:1fr; }
 }
-@media (prefers-reduced-motion:reduce) { .chevron,.local-drawer .assessment-edit > summary::after { transition:none; } }
 .assessment-children .kind:not(.exam) { display:none; }
 .select-note { display:flex; align-items:center; gap:8px; margin:4px 0 6px; font-size:12px; color:var(--muted); }
 @media(max-width:760px) {
@@ -597,9 +597,8 @@ button.sync-tr:is(:hover,:active):enabled { background:var(--hover); }
     radial-gradient(1100px 640px at 88% -12%, var(--tint), transparent 70%),
     linear-gradient(160deg, transparent 30%, var(--tint) 100%),
     var(--ground); }
-.backdrop-image { position:absolute; inset:0; background-size:cover; background-position:center; animation:fade-in var(--dur-3) var(--ease-out); }
+.backdrop-image { position:absolute; inset:0; background-size:cover; background-position:center; animation:fade-in var(--dur-2) var(--ease-out); }
 .backdrop-scrim { position:absolute; inset:0; background:var(--ground); }
-@keyframes fade-in { from { opacity:0; } }
 /* Over an image, every place text sits becomes a panel at the card opacity (never below 70%): the sidebar, the
    canvas, cards, menus, the drawer and dialogs. Below 100% the fixed or small panels (sidebar, dialogs, drawer,
    menus) also frost what is behind them; the page-sized canvas does not, so scrolling stays cheap. The sidebar and
@@ -644,23 +643,55 @@ button.sync-tr:is(:hover,:active):enabled { background:var(--hover); }
   :root[data-glass] .sidebar.open .sidebar-body { -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
 }
 
-/* ---- Motion. Purposeful, transform and opacity only, and off under prefers-reduced-motion (end of file). ---- */
+/* ---- Motion. One rule set (motion.ts has the helpers; docs/motion.md has the measurements). ----
+   - Feedback (hover, press, colour) takes --dur-1.
+   - A page switch replaces the page in the click's own frame and fades it in over --dur-1, by opacity only, from 40%
+     (motion.ts pageFade). Nothing animates out and no row, column or number makes its own entrance, so the page can
+     be read in its first frame and a second click is never held up. The one exception is the earned arc of a
+     course's grade ring, which draws in (motion.ts drawArc); the figure inside it is final from the start.
+   - Data that is not there yet: its space is reserved, a placeholder is painted only after 150 ms (motion.ts
+     useReveal), and only what replaces a painted placeholder fades in (.fill-in, --dur-1).
+   - What moves between two places slides over --dur-2: the sidebar and tab indicators, the drawer, a folding row.
+     Dialogs and the phone menu fade in; whatever leaves takes --dur-1.
+   - Keyframes change opacity and transform only (test/motion.test.ts).
+   - A theme or background change fades every colour together over --dur-2. No View Transition is used anywhere:
+     the page under one takes no clicks while it runs.
+   - Reduced Motion switches all of it off in the one block at the end of this section; loading states still show. */
 /* Press feedback; wide rows and tabs only change colour. */
 button:active:enabled:not(.arow,.sync-tr,.nav-item,.tabs button,.blk,.chat-entry,.due) { transform:scale(.97); }
 
-/* Theme and background switches crossfade the window (View Transition, motion.ts); without it, the major
-   surfaces fade their colours. */
-:root[data-vt="theme"]::view-transition-old(root),:root[data-vt="theme"]::view-transition-new(root) { animation-duration:300ms; animation-timing-function:var(--ease-in-out); }
-:root[data-theming] :is(body,.sidebar,.canvas,.card,dialog,.local-week-grid,.nav-item,button,.nav-indicator) { transition:background-color 300ms, color 300ms, border-color 300ms !important; }
+/* A theme or background change (motion.ts themeTransition): every colour fades to its new value together, so text
+   and its ground never sit in different themes for a frame. This replaces each control's own shorter transition
+   while it runs. */
+:root[data-theming] *,:root[data-theming] *::before,:root[data-theming] *::after { transition:background-color var(--dur-2) var(--ease-in-out), color var(--dur-2) var(--ease-in-out), border-color var(--dur-2) var(--ease-in-out), fill var(--dur-2) var(--ease-in-out), stroke var(--dur-2) var(--ease-in-out) !important; }
 
-/* Page change: only the canvas moves (crossfade with an 8px rise); the sidebar stays live so its indicator slides. */
-:root[data-vt="page"] .canvas { view-transition-name:page; }
-:root[data-vt="page"]::view-transition-old(root),:root[data-vt="page"]::view-transition-new(root) { animation:none; }
-:root[data-vt="page"]::view-transition-group(page) { animation-duration:var(--dur-2); animation-timing-function:var(--ease-out); }
-:root[data-vt="page"]::view-transition-old(page) { animation:page-out var(--dur-1) var(--ease-in-out) both; }
-:root[data-vt="page"]::view-transition-new(page) { animation:page-in var(--dur-2) var(--ease-out) both; }
-@keyframes page-out { to { opacity:0; } }
-@keyframes page-in { from { opacity:0; transform:translateY(8px); } }
+/* Placeholders: flat bars in the place the data will take. They are invisible until the delay has passed. */
+.skeleton { display:block; height:12px; border-radius:4px; background:var(--raised); }
+.pending .skeleton { opacity:0; }
+.pending.late .skeleton { opacity:1; transition:opacity var(--dur-1) var(--ease-out); }
+/* The page body (week plan, or a course page that has no data yet). */
+.page-placeholder { display:grid; gap:14px; padding:8px 0; }
+.page-placeholder .skeleton:nth-child(1) { width:38%; } .page-placeholder .skeleton:nth-child(2) { width:72%; } .page-placeholder .skeleton:nth-child(3) { width:55%; }
+/* Sidebar: one reserved row for each selected course, the size of a course row. */
+.course-placeholders { display:grid; gap:2px; }
+.course-placeholder { display:grid; align-content:center; gap:8px; height:44px; padding:0 10px; }
+.course-placeholder .skeleton { height:10px; width:44%; } .course-placeholder .skeleton + .skeleton { width:72%; }
+/* Settings forms: a note, label-and-field rows and the actions, the height of the form that loads. */
+.model-pending { min-height:266px; } .source-pending { min-height:392px; }
+.settings-placeholder { display:grid; gap:0; }
+.settings-placeholder > .skeleton { width:72%; margin:6px 0 14px; }
+.settings-placeholder > .skeleton:last-child { width:96px; height:28px; margin:10px 0 0; border-radius:var(--radius-control); }
+.settings-placeholder > div { display:grid; grid-template-columns:96px minmax(0,1fr); gap:12px; align-items:center; height:60px; }
+.settings-placeholder > div > .skeleton:first-child { width:56px; } .settings-placeholder > div > .skeleton:last-child { height:32px; border-radius:var(--radius-control); }
+/* The course list in "Edit courses": the rows already selected and the Save button keep their place. */
+.course-select-pending .check-row .skeleton { width:60%; }
+.course-select-pending .button-space { height:32px; }
+/* A loading line that is text: held back like the bars. */
+.pending .skeleton-text { opacity:0; }
+.pending.late .skeleton-text { opacity:1; transition:opacity var(--dur-1) var(--ease-out); }
+/* What replaces a placeholder that was painted. */
+.fill-in { animation:fade-in var(--dur-1) var(--ease-out); }
+@keyframes fade-in { from { opacity:0; } }
 
 /* Dialogs: fade and scale in over a fading backdrop; motion.ts closeDialog adds .closing before close(). */
 dialog[open] { animation:dialog-in var(--dur-2) var(--ease-out); }
@@ -670,37 +701,36 @@ dialog.closing::backdrop { animation:fade-out var(--dur-1) var(--ease-in-out) fo
 @keyframes dialog-in { from { opacity:0; transform:scale(.97); } }
 @keyframes dialog-out { to { opacity:0; transform:scale(.97); } }
 @keyframes fade-out { to { opacity:0; } }
-.local-drawer-overlay.closing { animation:scrim-out var(--dur-1) var(--ease-in-out) forwards; }
+.local-drawer-overlay.closing::before { animation:fade-out var(--dur-1) var(--ease-in-out) forwards; }
 /* The overlay keeps blocking the page while the drawer leaves; the drawer itself takes no more input. */
-.local-drawer-overlay.closing .local-drawer { pointer-events:none; }
-.local-drawer-overlay.closing .local-drawer { animation:drawer-out var(--dur-1) var(--ease-in-out) forwards; }
-@keyframes scrim-out { to { background:rgba(0,0,0,0); } }
+.local-drawer-overlay.closing .local-drawer { pointer-events:none; animation:drawer-out var(--dur-1) var(--ease-in-out) forwards; }
+@keyframes drawer-in { from { transform:translateX(104%); } }
 @keyframes drawer-out { to { transform:translateX(104%); } }
+/* Phone: the menu sheet fades in over the page, from a visible start like a page switch, and closes at once, so the
+   page chosen in it is not held up. */
+@media(max-width:760px) { .sidebar.open .sidebar-body { animation:sheet-in var(--dur-1) var(--ease-out); } }
+@keyframes sheet-in { from { opacity:.4; } }
 
-/* Course page: weight segments grow from the left in turn. */
-.weight-segment { transform-origin:left center; animation:grow-x var(--dur-3) var(--ease-out) backwards; animation-delay:calc(var(--i, 0) * 40ms); }
-@keyframes grow-x { from { transform:scaleX(0); } }
-
-/* Folding rows open and close smoothly where the browser can animate details content (progressive). */
+/* Folding rows open and close smoothly where the browser can animate details content (progressive). The rows below
+   move with it, frame by frame, instead of jumping once. */
 @supports selector(::details-content) {
   :is(.assessment-parent,.no-marks,.assessment-edit)::details-content { block-size:0; overflow-y:clip;
     transition:block-size var(--dur-2) var(--ease-out), content-visibility var(--dur-2) allow-discrete; }
   :is(.assessment-parent,.no-marks,.assessment-edit)[open]::details-content { block-size:auto; }
 }
 
-/* Week: the seven days rise in on mount and when the week changes (they are keyed by date). */
-.local-week-day { animation:rise-in var(--dur-2) var(--ease-out) backwards; animation-delay:calc(var(--i, 0) * 30ms); }
-@keyframes rise-in { from { opacity:0; transform:translateY(8px); } }
-
 /* Agent chat: new messages rise in; a caret blinks at the end of a streaming reply. */
-.msg.enter { animation:rise-in var(--dur-2) var(--ease-out) backwards; }
+.msg.enter { animation:msg-in var(--dur-2) var(--ease-out) backwards; }
+@keyframes msg-in { from { opacity:0; transform:translateY(8px); } }
 .msg.streaming > p:last-child::after,.msg.streaming > :is(ul,ol):last-child > li:last-child::after { content:""; display:inline-block; width:2px; height:1.05em; margin-left:2px; vertical-align:-.17em; background:currentColor; animation:caret 1s steps(1) infinite; }
 @keyframes caret { 50% { opacity:0; } }
 
+/* Reduced motion: nothing animates and nothing transitions; every end state applies at once. The helpers in motion.ts
+   take the same decision in script (no fade, no exit animation). */
 @media (prefers-reduced-motion:reduce) {
-  dialog[open],dialog[open]::backdrop,dialog.closing,dialog.closing::backdrop,.weight-segment,.local-week-day,.msg.enter,.msg.streaming *::after,.backdrop-image { animation:none !important; }
-  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*) { animation:none !important; }
-  :is(.assessment-parent,.no-marks,.assessment-edit)::details-content { transition:none !important; }
+  *,*::before,*::after,::backdrop { animation:none !important; transition:none !important; }
+  /* On its own line: a browser that does not know this pseudo-element would drop a rule that lists it. */
+  ::details-content { transition:none !important; }
   button:active:enabled { transform:none !important; }
 }
 /* Text-style action inside notes and lists (save to revision, delete note). */

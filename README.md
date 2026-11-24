@@ -178,6 +178,7 @@ Only **macOS + Microsoft Edge + University of Melbourne** (Canvas, Ed Australia,
 | [Setup](docs/setup.md) | Requirements, browsers and platforms, other institutions, the `edstem` CLI, models, environment variables |
 | [Overview](docs/overview.md) | Processes, data flow, what is collected, code map, every script, where data lives |
 | [Colours](docs/palette.md) | Where each colour comes from, measured contrast in light and dark, the six weight colours |
+| [Motion](docs/motion.md) | The rules for page switches, loading and dialogs, and what was measured before and after them |
 | [Course JSON](docs/course-json.md) | The v2 contract: what the model fills in, what code fills in, validation and quote checks |
 | [Sync optimisation](docs/sync-optimization.md) | Measured time and tokens of real syncs, resume versus restart, raw records |
 | [Course analysis evaluation](docs/eval-course-analysis.md) | Method and results of the repeated-run evaluation |
