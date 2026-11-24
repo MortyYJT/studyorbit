@@ -7,7 +7,10 @@ upgrades whose Host (or the Host that DeepTutor's web server forwards) is not a 
 origin, or that the browser marks `Sec-Fetch-Site: cross-site`. Other programs running as the same user are not
 stopped by this (they send whatever headers they like).
 
-Run by `scripts/dev.mjs` with DeepTutor's own interpreter:
+It also answers two things itself: `/studyorbit-guard/instance` (which checkout this DeepTutor belongs to) and, only
+when DeepTutor has no such route, an empty knowledge-base list (see `_empty_list_when_missing`).
+
+Run by the local API server with DeepTutor's own interpreter:
     python -m uvicorn guard_app:app --app-dir <this directory> --host 127.0.0.1 --port <api port>
 Configuration (environment): STUDYORBIT_GUARD_PORTS (comma-separated ports accepted in Host),
 STUDYORBIT_GUARD_ORIGINS (comma-separated exact origins) and STUDYORBIT_GUARD_INSTANCE (the id of the checkout that
@@ -52,6 +55,33 @@ def allowed(headers: dict[str, str], hosts: frozenset[str], origins: frozenset[s
 INSTANCE_PATH = "/studyorbit-guard/instance"
 
 
+KB_LIST_PATH = "/api/knowledge-bases/list"
+
+
+def _empty_list_when_missing(send):
+    """Turns DeepTutor's 404 for the knowledge-base list into an empty list; any other answer passes unchanged.
+
+    DeepTutor 1.7.4's web page asks for this list before it sends a chat message and gives up when the request fails.
+    The route belongs to the knowledge module, which StudyOrbit does not install (there is no embedding service), so
+    without this a message typed into the page is never sent. With the module installed DeepTutor answers 200 and
+    nothing is changed.
+    """
+    replaced = False
+
+    async def wrapped(message):
+        nonlocal replaced
+        if message["type"] == "http.response.start" and message["status"] == 404:
+            replaced = True
+            await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json"), (b"cache-control", b"no-store"), (b"content-length", b"2")]})
+            await send({"type": "http.response.body", "body": b"[]"})
+            return
+        if replaced:
+            return
+        await send(message)
+
+    return wrapped
+
+
 def guard(inner, hosts: frozenset[str], origins: frozenset[str], instance: str = ""):
     async def app(scope, receive, send):
         if scope["type"] not in ("http", "websocket"):
@@ -72,6 +102,9 @@ def guard(inner, hosts: frozenset[str], origins: frozenset[str], instance: str =
             body = json.dumps({"instance": instance}).encode()
             await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json"), (b"cache-control", b"no-store"), (b"content-length", str(len(body)).encode())]})
             await send({"type": "http.response.body", "body": body})
+            return
+        if reason is None and scope["type"] == "http" and scope.get("path") == KB_LIST_PATH and scope.get("method") == "GET":
+            await inner(scope, receive, _empty_list_when_missing(send))
             return
         if reason is None:
             await inner(scope, receive, send)

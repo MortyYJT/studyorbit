@@ -156,7 +156,8 @@ describe('configuration', () => {
   });
 });
 
-describe('lifecycle', () => {
+// Each case starts several real processes (the stand-ins); under a loaded machine the default 5 s is not enough.
+describe('lifecycle', { timeout: 30000 }, () => {
   it('reports not-installed and unsupported-provider without starting anything', async () => {
     const missing = await assistant({ STUDYORBIT_DEEPTUTOR_BIN: join(root, 'none', 'deeptutor') });
     await missing.instance.start();
@@ -419,11 +420,34 @@ out["asgi"] = {
   "instance": asyncio.run(drive("http", [(b"host", b"127.0.0.1:5196")], "/studyorbit-guard/instance")),
   "instance-evil": asyncio.run(drive("http", [(b"host", b"127.0.0.1:5196"), (b"origin", b"https://evil.example")], "/studyorbit-guard/instance")),
 }
+async def answer(status, path, query=b"", method="GET", headers=None):
+    # What a caller gets when DeepTutor itself answers this status for this path.
+    sent = []
+    async def inner(scope, receive, send):
+        await send({"type": "http.response.start", "status": status, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": b'{"detail":"Not Found"}' if status == 404 else b'[{"name":"kb"}]'})
+    async def send(message): sent.append(message)
+    await g.guard(inner, hosts, origins, INSTANCE)({"type": "http", "path": path, "query_string": query, "method": method, "headers": headers or [(b"host", b"127.0.0.1:5196")]}, None, send)
+    return [sent[0]["status"], b"".join(m.get("body", b"") for m in sent).decode()]
+out["kb"] = {
+  "missing-module": asyncio.run(answer(404, "/api/knowledge-bases/list")),
+  "missing-module-query": asyncio.run(answer(404, "/api/knowledge-bases/list", b"dt_workspace=")),
+  "module-present": asyncio.run(answer(200, "/api/knowledge-bases/list")),
+  "other-404": asyncio.run(answer(404, "/api/knowledge-bases/rag-providers")),
+  "post-404": asyncio.run(answer(404, "/api/knowledge-bases/list", method="POST")),
+  "evil": asyncio.run(answer(404, "/api/knowledge-bases/list", headers=[(b"host", b"127.0.0.1:5196"), (b"origin", b"https://evil.example")])),
+}
 print(json.dumps(out))
 `;
     const dir = fileURLToPath(new URL('../scripts/deeptutor/', import.meta.url));
     const out = JSON.parse(execFileSync('python3', ['-B', '-c', script, dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim().split('\n').at(-1)!);
-    const { asgi, ...checks } = out;
+    const { asgi, kb, ...checks } = out;
+    // DeepTutor's page lists the knowledge bases before it sends a message and gives up when that route is missing,
+    // which it is without the knowledge module. The guard answers an empty list in exactly that case.
+    expect(kb).toEqual({
+      'missing-module': [200, '[]'], 'missing-module-query': [200, '[]'], 'module-present': [200, '[{"name":"kb"}]'],
+      'other-404': [404, '{"detail":"Not Found"}'], 'post-404': [404, '{"detail":"Not Found"}'], evil: [403, ''],
+    });
     expect(checks).toEqual({
       ok: null, 'ok-web-host': null, 'ok-ipv6': null, 'ok-origin': null, 'ok-forwarded': null,
       'no-host': 'host', 'evil-host': 'host', 'wrong-port': 'host', 'bare-host': 'host', 'evil-origin': 'origin', 'null-origin': 'origin', 'cross-site': 'cross-site',

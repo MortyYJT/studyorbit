@@ -23,10 +23,12 @@
 
 ## 2. Real validation (after the integration PR is merged)
 
-- [ ] 2.1 Synthetic instance and DeepTutor on the test ports: "Ask Agent" from a course page carries the course; several rounds with the real model (grades, what-if, final needed, deadlines, weekly plan from the snapshot, revision quiz, three "write my assignment" refusals); numbers compared with the course page
-- [ ] 2.2 Memory across turns and sessions as DeepTutor provides it; DeepTutor stopped in the middle of a session
-- [ ] 2.3 Token table per call in `docs/deeptutor.md`
-- [ ] 2.4 The owner's instance: real ports, real home, MCP pointing at the main checkout; `npm run dev` brings both up; health checks only, no page opened, no model call; stop by PID; the Desktop shortcut read and dry-run
+- [x] 2.1 Synthetic instance and DeepTutor on the test ports: "Ask Agent" from a course page carries the course; several rounds with the real model (grades, what-if, final needed, deadlines, weekly plan from the snapshot, revision quiz, three "write my assignment" refusals); numbers compared with the course page
+- [x] 2.2 Memory across turns and sessions as DeepTutor provides it; DeepTutor stopped in the middle of a session
+- [x] 2.3 Token table per call in `docs/deeptutor.md`
+- [x] 2.4 The owner's instance: real ports, real home, MCP pointing at the main checkout; `npm run dev` brings both up; health checks only, no page opened, no model call; stop by PID; the Desktop shortcut read and dry-run
+
+- [x] 2.5 Found in 2.1 and fixed before going on: a typed message was never sent because DeepTutor's page needs the knowledge-base list route; the guard now answers an empty list when that route is missing
 
 ## 3. Deletion PR (`claude/remove-own-agent`)
 

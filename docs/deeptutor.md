@@ -58,6 +58,8 @@ DeepTutor's page loaded in the frame and showed a streaming reply with the guard
 
 Not covered: a program running as the same user can call DeepTutor's API (it needs no token) and can send any headers; DeepTutor's web port serves its HTML and scripts to any `Host` (they contain no data). DeepTutor's own login was not used: it switches the installation to its multi-user layout.
 
+The guard answers two things itself: `/studyorbit-guard/instance`, and an empty knowledge-base list when DeepTutor has no such route (see the validation below for why).
+
 ## Course data
 
 DeepTutor calls StudyOrbit's six read-only tools through MCP (`mcp_studyorbit_list_courses` and so on, after its `load_tools` step). Grades, targets, deadlines and the plan are still computed by `shared/course-tools.ts`.
@@ -107,14 +109,45 @@ This is a prompt rule, not an enforcement. Two other things back it: DeepTutor's
 - DeepTutor's page follows the system's light or dark setting, not a theme picked in StudyOrbit's settings. Its interface language is its own setting (English by default).
 - DeepTutor's page still shows "Solve" and "Research" shortcuts although those modules are not installed. Not tried.
 
+## Validation on merged main (2026-11-24)
+
+Run after the integration was merged, from a fresh worktree of `main`, on the test ports with two synthetic courses and the real `deepseek-flash`. Every message below was typed into DeepTutor's page inside the frame on the StudyOrbit page by a headless Chrome (real mouse and text-input events) and sent with the page's own Send button; the replies were read back through DeepTutor's API.
+
+**The first attempt failed, and that is the one defect this validation found.** A typed message was never sent: DeepTutor 1.7.4's page asks for `/api/knowledge-bases/list` before it sends, the route belongs to the knowledge module, which is not installed here, and the page gives up on the 404 without saying anything. Sessions started by StudyOrbit (presets) had worked because the server starts those turns. The same happened with the page opened in its own tab and with the frame's sandbox removed, so neither the frame nor the guard was the cause. Fix: the guard answers an empty list when, and only when, DeepTutor itself answers 404 for that one route (`_empty_list_when_missing` in `guard_app.py`); with the knowledge module installed nothing changes. Installing the module instead would have added 55 packages (llama-index, faiss, litellm, boto3) for a feature that cannot be used without an embedding service. Everything below was run with the fix.
+
+| # | Typed or clicked | Session | Result | Calls | Tokens |
+| --- | --- | --- | --- | --- | --- |
+| 1 | "Ask Agent" on SYNT10001, then: what is my average in this course and how much is graded? (no course named) | A | Answered for SYNT10001: 74.8% on 45% graded, 33.66 points. The course page shows 74.8%, 45% and 33.7 | 6 | 59,909 |
+| 2 | Follow-up: if Assignment 2 gets 85%, what do I need on the rest for an H1? | A, second turn | 83.63% on the remaining 30%, 54.91 earned: equal to `final_needed` with that `whatIf` called directly | 2 | 29,992 |
+| 3 | Deadlines of all courses in the next two weeks | A | The three deadlines the tool returns (25 Nov reflection 10%, 27 Nov Assignment 2 25%, 4 Dec essay 30%) | 2 | 32,124 |
+| 4 | Weekly plan from my StudyOrbit tasks | A | The page's five tasks and daily hours, the overflow the tool returned, and the snapshot's save time | 2 | 34,242 |
+| 5 | Remember: no study on Wednesday evenings | A | Saved to DeepTutor's memory; it also said that the hours on the StudyOrbit page are not changed by this | 2 | 36,373 |
+| 6 | New conversation: which evening did I say is not for study? | B | Wednesday evenings: remembered across sessions | 2 | 14,927 |
+| 7 | Write Assignment 2 in full, I will submit it tonight | B | Declined ("评分作业，整份或部分代写都不行"), offered to break the task down, explain, review a draft, set practice questions | 4 | 36,408 |
+| 8 | Revision preset "10 practice questions" on SYNT10001 | C (new) | Ten questions with answers and explanations in the frame. It said first that StudyOrbit holds the assessment structure only, not the syllabus, so the topics are the standard ones for the course name | 7 | 82,243 |
+| 9 | A message in session C, then DeepTutor's API process stopped | C | Within 5 s the frame was replaced by "DeepTutor is not running" with the reason and the command; the course page kept working | 1 | 30,053 |
+| | One diagnostic message ("reply with one word") | | Confirmed the fix | 1 | 9,232 |
+| | Input suggestions and titles (asked for by the page each time it was opened) | | | 14 | 10,876 |
+
+Total: 43 calls, 376,379 tokens (278,784 of the input were cache hits), from DeepTutor's own usage ledger.
+
+Also seen:
+
+- Tool round trips inside one session work: turns 2 to 5 each needed one tool round and one answer, on top of the tools loaded in turn 1.
+- The reply language follows DeepTutor's own interface language, not the language typed: session A answered Chinese questions in English, session B in Chinese.
+- Pressing Enter after programmatic text input did not send; the Send button did. Not tried with a physical keyboard.
+- DeepTutor's page logs 404s for routes of modules that are not installed (`/api/reading/…`, `/api/partners`); they did not get in the way of anything tried here.
+
+**The owner's instance** (main checkout, page port 5173): `npm run dev`'s launcher brought StudyOrbit and DeepTutor up in about 4 s on 5175, 5195 and 5197, all on `127.0.0.1`; health ready, the MCP server registered for the main checkout and connected with six tools, `exec`, web search and the update check off, the rules installed, a foreign `Origin` refused, no port reachable from the LAN address. No page was opened and no model was called (no usage ledger was created); the data directory `.local/deeptutor` holds no session. Stopped with SIGTERM to the launcher: all five ports closed and the process record was removed. The Desktop shortcut was not run: its script passes `zsh -n`, and a zsh started with an empty environment plus the shortcut's own nvm lines gets Node 24 and `DEEPSEEK_API_KEY`, finds the installed DeepTutor 1.7.4 and resolves DeepSeek with a key. `uv` is not on that shell's `PATH`, which does not matter: the launcher runs the virtual environment's programs by path.
+
 ## Token use
 
-One question costs several times what StudyOrbit's own tool-mode chat did: DeepTutor's prompt and tool list are about 6,500 to 8,500 input tokens per model call and each tool round resends the conversation. Measured totals per question are in the tables above (34,635 to 57,390 for a grade or revision question, most of it cache hits); the old tool-mode chat averaged 6,748 input tokens per question on its own question set ([Chat Q&A evaluation](eval-chat-qa.md)). The two were not run on the same questions. All real calls for this change: 54 calls and 403,882 tokens for the first trial (the provider's usage figures), then 39 calls and 278,562 tokens while building and reviewing the integration (5 calls counted from the provider's figures, 34 from DeepTutor's usage ledger, which includes the calls that belong to no chat turn: input suggestions and titles).
+One question costs several times what StudyOrbit's own tool-mode chat did: DeepTutor's prompt and tool list are about 6,500 to 8,500 input tokens per model call and each tool round resends the conversation. Measured totals per question are in the tables above (34,635 to 57,390 for a grade or revision question, most of it cache hits); the old tool-mode chat averaged 6,748 input tokens per question on its own question set ([Chat Q&A evaluation](eval-chat-qa.md)). The two were not run on the same questions. All real calls for this change: 54 calls and 403,882 tokens for the first trial (the provider's usage figures), 43 calls and 376,379 tokens for the validation above, and 39 calls and 278,562 tokens while building and reviewing the integration (5 calls counted from the provider's figures, 34 from DeepTutor's usage ledger, which includes the calls that belong to no chat turn: input suggestions and titles).
 
 ## Not verified
 
-- A message typed by hand into the framed page (only sessions started through StudyOrbit's route and through DeepTutor's WebSocket were run; the page was seen rendering them).
-- DeepTutor's memory across sessions; a second question in the same session.
+- A message typed on a physical keyboard by a person (the validation used a headless browser's input events and the Send button).
+- DeepTutor's memory beyond one remembered fact across two sessions.
 - OpenAI-compatible and Anthropic providers; any machine other than this one; Windows and Linux.
 - Upgrading DeepTutor: `prepare_web.py` calls a private helper of 1.7.4, and the settings files and WebSocket protocol may change.
 - Packages were installed from a PyPI mirror; the `uv` binary and the `deeptutor` wheel matched pypi.org's SHA-256, the other 112 packages were not compared.
