@@ -114,6 +114,10 @@ DeepTutor's API SHALL run behind a guard owned by StudyOrbit that refuses, with 
 - **WHEN** a request arrives with a `Host` that is not a loopback name, directly or through DeepTutor's web server
 - **THEN** it is refused with 403
 
+#### Scenario: Typed message without the knowledge module
+- **WHEN** the owner types a message into DeepTutor's page and DeepTutor has no knowledge-base route
+- **THEN** the guard answers the page's knowledge-base list request with an empty list and the message is sent
+
 #### Scenario: The assistant's own traffic
 - **WHEN** DeepTutor's page runs in the frame on the StudyOrbit page, or the StudyOrbit server starts a session
 - **THEN** those requests are served
