@@ -195,6 +195,8 @@ describe('the pre-mount script in index.html', () => {
 
 // "Follow the system" is pure CSS: every explicit dark rule has a twin inside `prefers-color-scheme: dark` that applies
 // whenever <html> is neither light nor dark. The twins must stay identical, or the two dark modes drift apart.
+// Since decision #512 the colours are written once as `light-dark(light, dark)`, so the only such rule left is the one
+// that sets `color-scheme`; test/palette.test.ts checks that no colour token is declared a second time.
 describe('the system-dark rules in style.css', () => {
   const css = readFileSync(new URL('../web/src/style.css', import.meta.url), 'utf8');
   const followsSystem = ':root:not([data-theme="light"]):not([data-theme="dark"])';
@@ -205,7 +207,7 @@ describe('the system-dark rules in style.css', () => {
       .map(match => [squash(match[1]!.replace(/(?::root)?\[data-theme="dark"\]/g, followsSystem)), squash(match[2]!)]);
     const system = [...css.matchAll(/^@media\(prefers-color-scheme:dark\) \{ ([^{]*)\{([^}]*)\} \}/gm)]
       .map(match => [squash(match[1]!), squash(match[2]!)]);
-    expect(explicit.length).toBeGreaterThan(1);
+    expect(explicit.length).toBeGreaterThan(0);
     expect(system).toEqual(explicit);
     // A pair written in a form the two patterns above do not match (indented, or the media query on its own line)
     // must not slip through: every `prefers-color-scheme: dark` in the file is a matched twin, and every explicit
@@ -215,5 +217,14 @@ describe('the system-dark rules in style.css', () => {
     expect(css.match(/(?<!:not\()\[data-theme="dark"\]/g)?.length).toBe(explicitSelectors);
     // No dark rule hides elsewhere in the file in a form the pattern above does not see.
     expect(css.match(/\[data-theme="dark"\]/g)?.length).toBe(css.match(/:not\(\[data-theme="dark"\]\)/g)!.length * 2);
+  });
+
+  it('switch the colour scheme and nothing else, so every light-dark() token follows', () => {
+    const declarations = (pattern: RegExp) => [...css.matchAll(pattern)].map(match => squash(match[1]!));
+    expect(declarations(/^:root\[data-theme="dark"\] \{([^}]*)\}/gm)).toEqual(['color-scheme:dark;']);
+    expect(declarations(/^@media\(prefers-color-scheme:dark\) \{ [^{]*\{([^}]*)\} \}/gm)).toEqual(['color-scheme:dark;']);
+    expect(css).toMatch(/^:root \{ color-scheme:light;/m);
+    // An explicit light pick must win over a dark system: the system rule excludes it, and :root says light.
+    expect(css.match(/\[data-theme="light"\]/g)?.length).toBe(css.match(/:not\(\[data-theme="light"\]\)/g)!.length);
   });
 });

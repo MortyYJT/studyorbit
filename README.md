@@ -6,9 +6,12 @@
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 [![Node.js 24.15+](https://img.shields.io/badge/node-%E2%89%A5%2024.15-339933.svg)](package.json)
 
-![Course page of the synthetic course SYNT10001: earned grade ring, current average, graded weight, the average needed on the rest for an H2B, assessment weights with one unsourced weight flagged, and the assessment list](docs/images/course-page.webp)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/course-page-dark.webp">
+  <img alt="Course page of the synthetic course SYNT10001: earned grade ring, current average, graded weight, the average needed on the rest for an H2B, assessment weights with one unsourced weight flagged, and the assessment list" src="docs/images/course-page.webp">
+</picture>
 
-<sub>All screenshots use made-up data (the synthetic course `SYNT10001` from `test/fixtures/`).</sub>
+<sub>All screenshots use made-up data (the synthetic course `SYNT10001` from `test/fixtures/`). They follow your GitHub theme: the page has a light and a dark version.</sub>
 
 ## What it does
 
@@ -20,9 +23,12 @@
 - **Use it from other AI clients.** A local MCP server exposes the same read-only course tools to Claude Code, Claude Desktop and other MCP clients.
 - **Choose the model.** DeepSeek, any OpenAI-compatible API (including a local Ollama), Anthropic Claude or the Codex CLI.
 
-The interface defaults to Chinese; an English version can be chosen under Settings → Language. Light or dark follows the system unless you pick one under Settings → Theme.
+The interface defaults to Chinese; an English version can be chosen under Settings → Language. Light or dark follows the system unless you pick one under Settings → Theme. Both use the colours of the Codex desktop app; text contrast is checked by a test in each mode ([Colours](docs/palette.md)).
 
-![Weekly plan with synthetic tasks: a "Needs you" list (an overdue task, work that does not fit before its deadline, an unplanned deadline) above a Monday-to-Sunday plan](docs/images/weekly-plan.webp)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/weekly-plan-dark.webp">
+  <img alt="Weekly plan with synthetic tasks: a &quot;Needs you&quot; list (an overdue task, work that does not fit before its deadline, an unplanned deadline) above a Monday-to-Sunday plan" src="docs/images/weekly-plan.webp">
+</picture>
 
 ## How it works
 
@@ -171,6 +177,7 @@ Only **macOS + Microsoft Edge + University of Melbourne** (Canvas, Ed Australia,
 | --- | --- |
 | [Setup](docs/setup.md) | Requirements, browsers and platforms, other institutions, the `edstem` CLI, models, environment variables |
 | [Overview](docs/overview.md) | Processes, data flow, what is collected, code map, every script, where data lives |
+| [Colours](docs/palette.md) | Where each colour comes from, measured contrast in light and dark, the six weight colours |
 | [Course JSON](docs/course-json.md) | The v2 contract: what the model fills in, what code fills in, validation and quote checks |
 | [Sync optimisation](docs/sync-optimization.md) | Measured time and tokens of real syncs, resume versus restart, raw records |
 | [Course analysis evaluation](docs/eval-course-analysis.md) | Method and results of the repeated-run evaluation |

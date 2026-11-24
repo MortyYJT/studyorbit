@@ -1,4 +1,4 @@
-// Page background: one fixed layer behind the shell, plus its settings section (gradient, solid colour or an image).
+// Page background: one fixed layer behind the shell, plus its settings section (flat, a pale wash or an image).
 import { useEffect, useState, type CSSProperties } from 'react';
 import {
   backgroundFileProblem, backgroundLimits, backgroundModes, loadBackgroundImage, maxBackgroundBytes, prepareBackgroundImage,
@@ -30,7 +30,7 @@ export function useBackgroundImage(): { url?: string; setUrl: (url: string | und
   return { url, setUrl: next => { setLoadFailed(false); setUrl(next); }, loadFailed, dismissLoadFailure: () => setLoadFailed(false) };
 }
 
-/** Image layers sit on a ground (gradient or solid, styled by data-bg); the scrim fades the image toward the ground. */
+/** The image sits on the workspace colour; the scrim fades it back toward that colour. */
 export function Backdrop({ settings, image }: { settings: BackgroundSettings; image?: string }) {
   const showImage = settings.mode === 'image' && image;
   return <div className="backdrop" aria-hidden="true">
@@ -41,7 +41,7 @@ export function Backdrop({ settings, image }: { settings: BackgroundSettings; im
   </div>;
 }
 
-const modeNames: Record<BackgroundMode, [string, string]> = { gradient: ['渐变', 'Gradient'], solid: ['纯色', 'Solid'], image: ['图片', 'Image'] };
+const modeNames: Record<BackgroundMode, [string, string]> = { solid: ['纯色', 'Plain'], tint: ['渐变', 'Gradient'], image: ['图片', 'Image'] };
 
 export function BackgroundSettingsSection({ zh, settings, image, onChange, onMode, onImage }: {
   zh: boolean; settings: BackgroundSettings; image?: string;
@@ -69,7 +69,7 @@ export function BackgroundSettingsSection({ zh, settings, image, onChange, onMod
     setError('');
     try { await removeBackgroundImage(); } catch { setError(zh ? '图片移除失败。' : 'Could not remove the image.'); return; }
     onImage(undefined);
-    onMode('gradient');
+    onMode('solid');
   }
   const slider = (key: 'visibility' | 'blur' | 'cardOpacity', label: string, unit: string) => {
     const [min, max] = backgroundLimits[key];

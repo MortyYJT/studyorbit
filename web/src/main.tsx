@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './App.js';
 import './style.css';
+import { migratePaletteChoice } from './palette.js';
 import { migrateStoragePrefix } from './storage-prefix.js';
 import { migrateThemeChoice } from './theme.js';
 
@@ -8,6 +9,8 @@ import { migrateThemeChoice } from './theme.js';
 try { migrateStoragePrefix(localStorage); } catch { /* Storage may be blocked; readers fall back to their defaults. */ }
 // Then the theme: a `light` left by the old start-up default is dropped, a chosen theme moves to its new key (theme.ts).
 try { migrateThemeChoice(localStorage); } catch { /* Storage may be blocked; the page follows the system. */ }
+// The palette picker is gone; drop the id it stored (palette.ts).
+try { migratePaletteChoice(localStorage); } catch { /* Storage may be blocked; nothing reads the key anyway. */ }
 
 // Move previous prototype data aside once; keep a recoverable copy in this browser.
 try {
