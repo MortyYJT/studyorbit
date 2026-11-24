@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { Language } from './i18n.js';
-import { durations, easeOut, reducedMotion, useCountUp, useSlidingIndicator } from './motion.js';
+import { drawArc, durations, reducedMotion, useReveal, useSlidingIndicator } from './motion.js';
 import { RichText } from './Agent.js';
 import type { RevisionNote } from '../../scripts/lib/revision-store.mjs';
 import { CourseDocumentSchema, toDisplayDocument } from '../../shared/course-data.js';
@@ -134,24 +134,21 @@ function readTargets(): Record<string, Band> {
   try { const value = record(JSON.parse(localStorage.getItem(targetKey) ?? '{}')); return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, Band] => typeof entry[1] === 'string' && entry[1] in bandTargets)); }
   catch { return {}; }
 }
-function ScoreOverview({ assessments, parents, identified, zh, animateKey }: { assessments: Assessment[]; parents: ParentAssessment[]; identified: number; zh: boolean; animateKey: string }) {
-  // The chosen band is remembered per course; animateKey is the course id.
-  const [target, setTargetState] = useState<Band>(() => readTargets()[animateKey] ?? 'H1');
-  useEffect(() => { setTargetState(readTargets()[animateKey] ?? 'H1'); }, [animateKey]);
-  const setTarget = (band: Band) => { setTargetState(band); try { localStorage.setItem(targetKey, JSON.stringify({ ...readTargets(), [animateKey]: band })); } catch { /* Kept for this view only. */ } };
+function ScoreOverview({ assessments, parents, identified, zh, courseId }: { assessments: Assessment[]; parents: ParentAssessment[]; identified: number; zh: boolean; courseId: string }) {
+  // The chosen band is remembered per course.
+  const [target, setTargetState] = useState<Band>(() => readTargets()[courseId] ?? 'H1');
+  useEffect(() => { setTargetState(readTargets()[courseId] ?? 'H1'); }, [courseId]);
+  const setTarget = (band: Band) => { setTargetState(band); try { localStorage.setItem(targetKey, JSON.stringify({ ...readTargets(), [courseId]: band })); } catch { /* Kept for this view only. */ } };
   const { weight, earned, average } = calculateGrades(assessments, parents);
   const needed = finalNeeded({ earned, weight }, bandTargets[target]);
   const neededText = needed.status === 'secured' ? (zh ? '已稳' : 'Secured') : needed.status === 'unreachable' ? (zh ? '已无法达到' : 'Out of reach') : `${needed.percent.toFixed(1)}%`;
   const missing = Number((100 - identified).toFixed(2));
-  // The earned arc draws in from zero and the two facts count up when a course opens; edits apply at once.
+  // The figures are the course's own from the first frame; the earned arc draws in when the course page opens.
   const earnedRing = useRef<SVGCircleElement>(null);
   const offset = ringLength - Math.min(earned, 100) * 4.398;
-  useLayoutEffect(() => {
-    if (reducedMotion()) return;
-    earnedRing.current?.animate([{ strokeDashoffset: ringLength }, { strokeDashoffset: offset }], { duration: 700, easing: easeOut });
-  }, [animateKey]);
-  const averageShown = useCountUp(average, averageText, animateKey);
-  const weightShown = useCountUp(weight || undefined, weightText, animateKey);
+  useLayoutEffect(() => { drawArc(earnedRing.current, ringLength, offset); }, [courseId]);
+  const averageShown = average === undefined ? '—' : averageText(average);
+  const weightShown = weight ? weightText(weight) : '—';
   return <section className="score" aria-label={zh ? '分数构成' : 'Score structure'}>
     <svg className="donut" viewBox="0 0 170 170" role="img" aria-label={zh ? '已得成绩' : 'Earned grades'}>
       <circle className="track" cx="85" cy="85" r="70" />
@@ -190,17 +187,30 @@ function WeightBreakdown({ assessments, parents, zh }: { assessments: Assessment
   const total = rows.reduce((sum, item) => sum + item.weight, 0);
   let used = 0;
   return <section className="weight-breakdown"><h2>{zh ? '分数占比' : 'Assessment weights'}</h2><div className="weight-bar-row"><div className="weight-bar" role="img" aria-label={`${zh ? '已识别课程占比' : 'Identified weight'} ${total}/100`}>
-    {rows.map((item, index) => { const width = Math.max(0, Math.min(item.weight, 100 - used)); used += item.weight; return <span key={item.key} className={`weight-segment weight-color-${index % 6}`} style={{ width: `${width}%`, '--i': index } as CSSProperties} title={`${item.name}: ${item.weight}%`} />; })}
+    {rows.map((item, index) => { const width = Math.max(0, Math.min(item.weight, 100 - used)); used += item.weight; return <span key={item.key} className={`weight-segment weight-color-${index % 6}`} style={{ width: `${width}%` }} title={`${item.name}: ${item.weight}%`} />; })}
     </div><strong>{Number(total.toFixed(2))}/100</strong></div><div className="weight-legend">{rows.map((item, index) => <span key={item.key}><i className={`weight-color-${index % 6}`} />{item.name} {item.weight}%</span>)}
       {unsourcedWeightRows(assessments, parents).map(item => <span key={item.key} className="unsourced-row"><i aria-hidden="true" />{item.name} —<Unsourced zh={zh} /></span>)}</div></section>;
 }
 
-export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersion, courseId, onCourse, onBack, onCourses, onAsk, syncIssues }: { language: Language; timeZone: string; frameworkLabel: string | null; refreshVersion: number; courseId?: string; onCourse: (id: string) => void; onBack: () => void; onCourses?: (courses: SidebarCourse[]) => void; onAsk?: (courseId: string, prompt?: string) => void; syncIssues: { id: string; status: string; reason: string }[] }) {
+/**
+ * The week page and the course pages. It holds the course data for the whole visit, so the shell keeps it mounted
+ * while another page is shown (`hidden`); a page switch then never waits for a request. Until the first load has
+ * finished and the institution's time zone is known (`zoneReady`), it shows placeholders, not an empty plan.
+ */
+export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = false, frameworkLabel, refreshVersion, courseId, onCourse, onBack, onCourses, onLoading, onAsk, syncIssues }: { language: Language; timeZone: string; zoneReady?: boolean; hidden?: boolean; frameworkLabel: string | null; refreshVersion: number; courseId?: string; onCourse: (id: string) => void; onBack: () => void; onCourses?: (courses: SidebarCourse[]) => void; onLoading?: (loading: boolean) => void; onAsk?: (courseId: string, prompt?: string) => void; syncIssues: { id: string; status: string; reason: string }[] }) {
   const zh = language === 'zh';
   // An incomplete sync kept the previous document (decision #480): say so, with the cause.
   const brief = (text: string) => (text.length > 160 ? `${text.slice(0, 159)}…` : text);
   const incompleteText = (reason: string) => zh ? `本次同步不完整，仍显示上次的结果${reason ? `（原因：${brief(reason)}）` : ''}` : `This sync was incomplete; the previous result is still shown${reason ? ` (cause: ${brief(translateReason(reason, 'en'))})` : ''}`;
   const [courses, setCourses] = useState<CourseData[]>([]);
+  // False until the first load has finished, with data or with an error: an empty list before that is not "no courses".
+  const [loaded, setLoaded] = useState(false);
+  const ready = loaded && zoneReady;
+  const reveal = useReveal(ready);
+  // Coming back from another page reads the data again in the background; what is on screen stays until it answers,
+  // and that read is not announced as a refresh.
+  const [visits, setVisits] = useState(0);
+  const loadedVisit = useRef(0);
   const [error, setError] = useState('');
   const [work, setWork] = useState<Work[]>(readWork);
   const [corrections, setCorrections] = useState<Record<string, Correction>>(() => readStore<Correction>(correctionKey));
@@ -210,7 +220,12 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
   const [addingTask, setAddingTask] = useState(false);
   const [availability, setAvailability] = useState<number[]>(readAvailability);
   const [editingHours, setEditingHours] = useState(false);
-  const [week, setWeek] = useState(() => { const today = localDay(timeZone); return addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)); });
+  const thisWeek = (zone: string) => { const today = localDay(zone); return addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)); };
+  const [week, setWeek] = useState(() => thisWeek(timeZone));
+  // The institution's zone arrives after the first render and can change in Settings: the plan goes back to "this week"
+  // there. Done while rendering, so no frame is painted with the new zone's "today" in the old zone's week.
+  const [shownZone, setShownZone] = useState(timeZone);
+  if (shownZone !== timeZone) { setShownZone(timeZone); setWeek(thisWeek(timeZone)); }
   const [chosen, setChosen] = useState<Assessment>();
   const [chosenSiblings, setChosenSiblings] = useState<string[]>();
   const kindName: Record<Kind, string> = zh ? { exam: '考试', quiz: '测验', assignment: '作业', presentation: '展示', participation: '参与', hurdle: 'Hurdle', ungraded: '不计分', unknown: '其他' } : { exam: 'Exam', quiz: 'Quiz', assignment: 'Assignment', presentation: 'Presentation', participation: 'Participation', hurdle: 'Hurdle', ungraded: 'Ungraded', unknown: 'Other' };
@@ -249,7 +264,7 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
       if (notesFor.current === id) { setNotes(data.notes); setNotesError(false); }
     } catch { if (notesFor.current === id) { setNotes([]); setNotesError(true); } }
   }
-  useEffect(() => { setNotes(undefined); if (courseId && courseTab === 'revision') void loadNotes(courseId); }, [courseId, courseTab]);
+  useEffect(() => { setNotes(undefined); if (courseId && courseTab === 'revision' && !hidden) void loadNotes(courseId); }, [courseId, courseTab, hidden]);
   async function removeNote(note: RevisionNote) {
     if (!window.confirm(zh ? `删除复习笔记「${note.title || '笔记'}」？` : `Delete the revision note "${note.title || 'Note'}"?`)) return;
     try { const response = await fetch(`/api/local/revision-notes/${note.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }); if (!response.ok && response.status !== 404) throw new Error('failed'); }
@@ -258,7 +273,12 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
   }
   useEffect(() => {
     let live = true;
+    const announced = visits === loadedVisit.current;
+    loadedVisit.current = visits;
     async function load() {
+      if (announced) onLoading?.(true);
+      // The change log does not depend on the reports, so it is read beside them; the corrections wait for the key migration below.
+      const changesRead = loadChanges();
       try {
         const response = await fetch('/api/local/course-reports', { cache: 'no-store' });
         if (response.status === 409) { if (live) setError(zh ? 'Canvas 地址已更改，请重新获取课程。' : 'The Canvas address changed. Fetch the courses again.'); return; }
@@ -274,14 +294,15 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
         if (migrated.changed) { setCorrections(readStore<Correction>(correctionKey)); setManual(readStore<Assessment[]>(manualKey)); setOrder(readStore<string[]>(orderKey)); setWork(readWork()); }
         if (migrated.failed) setSaveError(true);
         await loadCorrections();
-        const logged = await loadChanges();
+        const logged = await changesRead;
         if (!live) return;
         setChanges(logged);
         setCourses(data.courses.filter(course => ids.includes(course.id)).map(course => normalize(course, data.reports.find(item => item.id === course.id)?.report))); setError('');
       } catch { if (live) setError(zh ? '无法读取本地课程数据，请先同步课程。' : 'Could not load local course data. Sync courses first.'); }
+      finally { if (live) { setLoaded(true); onLoading?.(false); } }
     }
     void load(); return () => { live = false; };
-  }, [refreshVersion, zh]);
+  }, [refreshVersion, zh, visits]);
   // The change log is a reminder only: when it cannot be read, no reminder is shown.
   async function loadChanges(): Promise<CourseChange[]> {
     try {
@@ -369,7 +390,8 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
     const course = withCorrections(original), items = visibleItems(course), inputs = gradingInputs(items, groupParents(course, items));
     return calculateGrades(inputs.assessments, inputs.parents).weight;
   };
-  useEffect(() => { onCourses?.(courses.map(item => ({ id: item.course.id, code: item.course.subjectCode, name: item.course.name, graded: gradedWeight(item) }))); }, [courses, corrections, manual]);
+  // A layout effect, so the sidebar rows are painted in the same frame as the page that the same data fills.
+  useLayoutEffect(() => { if (loaded) onCourses?.(courses.map(item => ({ id: item.course.id, code: item.course.subjectCode, name: item.course.name, graded: gradedWeight(item) }))); }, [loaded, courses, corrections, manual]);
   const selected = original && withCorrections(original);
   const primaryItems = selected ? visibleItems(selected) : [];
   const parents = selected ? groupParents(selected, primaryItems) : [];
@@ -504,18 +526,9 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
     const existing = work.find(item => item.key === chosen.key);
     if (saveWork([...work.filter(item => item.key !== chosen.key), { key: chosen.key, courseId: selected.course.id, courseCode: selected.course.subjectCode, title: chosen.name, due, minutes, spent: existing?.spent, done: existing?.done }])) setChosen(undefined);
   }
-  // Assessment rows rise in with a short stagger when a course (or its list tab) opens, not on later edits.
-  const assessmentList = useRef<HTMLDivElement>(null);
   const tabList = useRef<HTMLDivElement>(null);
   const tabIndicator = useRef<HTMLSpanElement>(null);
-  const listKey = selected && courseTab === 'assessments' ? `${selected.course.id}` : '';
-  useLayoutEffect(() => {
-    if (!listKey || reducedMotion()) return;
-    assessmentList.current?.querySelectorAll(':scope > .kind-block > *, :scope > .no-marks').forEach((row, index) => {
-      row.animate([{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }], { duration: durations.medium, delay: Math.min(index * 25, 300), easing: easeOut, fill: 'backwards' });
-    });
-  }, [listKey]);
-  useSlidingIndicator(tabList, tabIndicator, '[aria-selected="true"]', 'x', [courseTab, courseId, !!selected]);
+  useSlidingIndicator(tabList, tabIndicator, '[aria-selected="true"]', 'x', [courseTab, courseId, !!selected, hidden]);
   // The drawer slides out before it unmounts.
   const [drawerClosing, setDrawerClosing] = useState(false);
   const drawerTimer = useRef<number | undefined>(undefined);
@@ -527,7 +540,19 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
     const finish = () => { drawerTimer.current = undefined; setChosen(undefined); setChosenSiblings(undefined); setDrawerClosing(false); };
     if (reducedMotion()) finish(); else { setDrawerClosing(true); drawerTimer.current = window.setTimeout(finish, durations.short + 30); }
   };
-  if (courseId) return <div className="course-page">
+  // Leaving for another page closes the drawer; coming back reads the data again (see `visits`).
+  const wasHidden = useRef(hidden);
+  useEffect(() => {
+    if (wasHidden.current === hidden) return;
+    wasHidden.current = hidden;
+    if (hidden) { cancelDrawerClose(); setChosen(undefined); setChosenSiblings(undefined); setDrawerClosing(false); } else setVisits(value => value + 1);
+  }, [hidden]);
+  if (hidden) return null;
+  // Flat bars where the page's data will be; they are painted only when the wait outlasts the delay (motion.ts useReveal).
+  const placeholder = <div className={`page-placeholder pending${reveal === 'placeholder' ? ' late' : ''}`} role="status" aria-busy="true" aria-label={zh ? '加载中…' : 'Loading…'}><i className="skeleton" /><i className="skeleton" /><i className="skeleton" /></div>;
+  const filled = reveal === 'faded' ? ' fill-in' : '';
+  // Each page has its own key, so one page's elements are never reused as another's.
+  if (courseId) return <div className="course-page" key={`course:${courseId}`}>
     <button className="crumb" onClick={onBack}>← {zh ? '计划' : 'Plan'}</button>
     {error && <p className="needs">{error}</p>}
     {selected ? <>
@@ -558,11 +583,11 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
           </div></div>)}
       </section>}
       {selected.available && <div className="course-summary card">
-        <ScoreOverview {...gradingInputs(primaryItems, parents)} identified={identifiedWeight(primaryItems, parents)} zh={zh} animateKey={selected.course.id} />
+        <ScoreOverview {...gradingInputs(primaryItems, parents)} identified={identifiedWeight(primaryItems, parents)} zh={zh} courseId={selected.course.id} />
         <WeightBreakdown assessments={primaryItems} parents={parents} zh={zh} />
       </div>}
       <div className="tabs" role="tablist" ref={tabList}><span className="tab-indicator" ref={tabIndicator} aria-hidden="true" /><button role="tab" aria-selected={courseTab === 'assessments'} onClick={() => setCourseTab('assessments')}>{zh ? '考核' : 'Assessments'}</button><button role="tab" aria-selected={courseTab === 'revision'} onClick={() => setCourseTab('revision')}>{zh ? '复习' : 'Revision'}</button></div>
-      {courseTab === 'assessments' ? <div className="assessment-list" ref={assessmentList}>
+      {courseTab === 'assessments' ? <div className="assessment-list">
         <div className="list-tools"><button className="small" onClick={() => setAdding(value => !value)}>{adding ? (zh ? '取消' : 'Cancel') : (zh ? '新增考核' : 'Add assessment')}</button></div>
         {adding && <form className="local-confirm" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); const name = String(data.get('name') ?? '').trim(); if (!name) return;
           const kind = String(data.get('kind') ?? 'unknown') as Kind; const weightText = String(data.get('weight') ?? '').trim(); const weight = weightText ? Number(weightText) : undefined;
@@ -699,7 +724,7 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
         </>}
       </section></div>; })()}
 
-    </> : <p>{zh ? '课程不可用或未选中。' : 'Course unavailable or not selected.'}</p>}
+    </> : ready ? <p>{zh ? '课程不可用或未选中。' : 'Course unavailable or not selected.'}</p> : placeholder}
     {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}
     {correctionsNotice && <p role="alert">{correctionsNotice === 'refreshed' ? (zh ? '修正已在别处更新，已刷新；请重新编辑' : 'Corrections were updated elsewhere and have been refreshed; please edit again')
       : correctionsNotice === 'save' ? (zh ? '修正保存失败，已恢复为上次保存的内容；请确认本地服务在运行后重试。' : 'Could not save the corrections; the last saved version is shown. Check that the local server is running and try again.')
@@ -779,7 +804,8 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
   };
   return <>
     {error && <p className="needs">{error}</p>}
-    <div className="week-layout"><div className="week-main">
+    <div className="week-layout" key="week"><div className={`week-main${filled}`}>
+      {!ready ? placeholder : <>
       <div className="week-toolbar"><div className="week-nav" role="group" aria-label={zh ? '周切换' : 'Navigate weeks'}>
         <button onClick={() => shift(-1)}>‹</button><button onClick={() => setWeek(addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)))}>{zh ? '今天' : 'Today'}</button><button onClick={() => shift(1)}>›</button><span className="range">{mode === 'plan' ? `${shortDate(week)} – ${shortDate(addDays(week, 6))}` : currentMonth}</span></div>
         <div className="week-actions"><span className="muted">{zh ? '学期' : 'Term'}: {courses[0]?.course.term || '—'}</span><div className="seg" role="group" aria-label={zh ? '视图' : 'View'}><button aria-pressed={mode === 'plan'} onClick={() => { setWeek(addDays(week, -((new Date(`${week}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{zh ? '周视图' : 'Week'}</button><button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>{zh ? '月历' : 'Month'}</button></div><button aria-expanded={editingHours} onClick={() => setEditingHours(value => !value)}>{zh ? '每天可用时间' : 'Daily hours'}</button><button aria-expanded={addingTask} onClick={() => setAddingTask(value => !value)}>{addingTask ? (zh ? '取消' : 'Cancel') : (zh ? '添加任务' : 'Add task')}</button></div></div>
@@ -800,7 +826,7 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
         <button type="submit" className="primary">{zh ? '添加' : 'Add'}</button></form>}
       {mode === 'plan' ? <div className="local-week-grid">{Array.from({ length: 7 }, (_, index) => {
         const day = addDays(week, index); const entries = (plan.days[day] ?? []).flatMap(block => { const task = workByKey.get(block.key); return task ? [{ work: task, minutes: block.minutes }] : []; }); const due = deadlinesOn(day);
-        return <section key={day} style={{ '--i': index } as CSSProperties} className={`local-week-day${day === today ? ' today' : ''}${day < today ? ' past' : ''}`}>
+        return <section key={day} className={`local-week-day${day === today ? ' today' : ''}${day < today ? ' past' : ''}`}>
           <div className="local-week-heading"><b>{dayName(day)}</b></div>
           <div className="local-week-body"><div className="day-deadlines">{due.map(entry => deadlineButton(entry, true))}</div>
           <div className="day-items">{entries.length ? entries.map(entry => { const body = <><span className="tm">{entry.minutes} min</span><span className="tt">{entry.work.title}</span><span className="cr">{codeOfWork(entry.work)}</span></>;
@@ -818,6 +844,7 @@ export function LocalPlanning({ language, timeZone, frameworkLabel, refreshVersi
                 if (!input.validity.badInput && (value === undefined || (Number.isFinite(value) && value >= 0 && value <= 100000))) { if (value !== item.spent) updateTask(item.key, { spent: value }); } else input.value = String(item.spent ?? ''); }} /></label>
             <label className="inline"><input type="checkbox" checked={item.done === true} onChange={event => updateTask(item.key, { done: event.currentTarget.checked })} />{zh ? '完成' : 'Done'}</label>
             <button className="small ghost" onClick={() => saveWork(work.filter(row => row.key !== item.key))}>{zh ? '移除' : 'Remove'}</button></span></div>; })}</details>}
+      </>}
       {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}
     {correctionsNotice && <p role="alert">{correctionsNotice === 'refreshed' ? (zh ? '修正已在别处更新，已刷新；请重新编辑' : 'Corrections were updated elsewhere and have been refreshed; please edit again')
       : correctionsNotice === 'save' ? (zh ? '修正保存失败，已恢复为上次保存的内容；请确认本地服务在运行后重试。' : 'Could not save the corrections; the last saved version is shown. Check that the local server is running and try again.')

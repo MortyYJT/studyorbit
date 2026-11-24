@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { applyBackground, Backdrop, BackgroundSettingsSection, useBackgroundImage } from './BackgroundLayer.js';
 import { backgroundStorageKey, parseBackground, type BackgroundMode, type BackgroundSettings } from './background.js';
 import { en, zh, type Language, type Theme } from './i18n.js';
@@ -6,8 +6,8 @@ import { AgentChat, type AgentRequest } from './Agent.js';
 import { createAgentRequest } from './agent-request.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning, type SidebarCourse } from './LocalPlanning.js';
-import { closeDialog, durations, easeOut, openDialog, reducedMotion, useSlidingIndicator, viewTransition } from './motion.js';
-import { fetchSourceSettings, SourceSettingsSection, type SourceSettingsReply } from './SourceSettings.js';
+import { closeDialog, openDialog, pageFade, themeTransition, useReveal, useSlidingIndicator } from './motion.js';
+import { fetchSourceSettings, SettingsPlaceholder, SourceSettingsSection, type SourceSettingsReply } from './SourceSettings.js';
 import { readTheme, saveThemeChoice, themes } from './theme.js';
 import type { LlmProvider, PublicLlmConfig } from '../../scripts/lib/llm-config.mjs';
 import { translateReason } from '../../shared/sync-reasons.js';
@@ -23,6 +23,16 @@ export type View = { page: 'week' } | { page: 'agent' } | { page: 'course'; cour
 function preference(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
 function remember(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Preferences remain usable in memory. */ } }
 function selectionExists(): boolean { try { return localStorage.getItem('studyorbit.selected-course-ids') !== null; } catch { return false; } }
+/** How many courses are selected, known before any request answers: the sidebar reserves that many rows while the course data loads. */
+function selectedCount(): number { try { const ids: unknown = JSON.parse(localStorage.getItem('studyorbit.selected-course-ids') ?? '[]'); return Array.isArray(ids) ? ids.length : 0; } catch { return 0; } }
+// The model settings last read, kept for this visit: Settings opens with its form instead of a loading line.
+let knownLlmConfig: PublicLlmConfig | undefined;
+async function fetchLlmConfig(): Promise<PublicLlmConfig> {
+  const response = await fetch('/api/local/llm-config');
+  if (!response.ok) throw new Error('unavailable');
+  knownLlmConfig = await response.json() as PublicLlmConfig;
+  return knownLlmConfig;
+}
 export function App() {
   const [language, setLanguage] = useState<Language>(() => preference('studyorbit.language') === 'en' ? 'en' : 'zh');
   // Follows the system until a theme is picked in Settings; `system` itself is plain CSS, so an OS switch needs no code here.
@@ -42,7 +52,10 @@ export function App() {
   const [courseRefresh, setCourseRefresh] = useState(0);
   const [coursePanelOpen, setCoursePanelOpen] = useState(() => !selectionExists());
   const [savedNotice, setSavedNotice] = useState(0);
-  const [sidebarCourses, setSidebarCourses] = useState<SidebarCourse[]>([]);
+  // Undefined until the course data has loaded once; the sidebar then shows reserved rows, not "no courses".
+  const [loadedCourses, setSidebarCourses] = useState<SidebarCourse[]>();
+  const sidebarCourses = loadedCourses ?? [];
+  const [refreshing, setRefreshing] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [localSyncWarning, setLocalSyncWarning] = useState('');
   const [courseRun, setCourseRun] = useState<CourseRun>();
@@ -50,13 +63,16 @@ export function App() {
   const [syncModal, setSyncModal] = useState<SyncModal>();
   // The institution's time zone from the source settings decides "today" and due days; the browser's until it loads.
   const [timeZone, setTimeZone] = useState(() => new Intl.DateTimeFormat().resolvedOptions().timeZone);
+  // True once the source settings have answered (or failed): until then "today" may still be in the wrong zone.
+  const [zoneReady, setZoneReady] = useState(false);
+  const [sourceReply, setSourceReply] = useState<SourceSettingsReply>();
   // The name of the institution's framework source (the contract's `handbook` platform), or null without one.
   const [frameworkLabel, setFrameworkLabel] = useState<string | null>(null);
   const syncDialog = useRef<HTMLDialogElement>(null);
   const selectDialog = useRef<HTMLDialogElement>(null);
   const cancelledDiscovery = useRef(false);
   const cancelDuringStart = useRef(false);
-  const resultSignature = useRef('');
+  const resultSignature = useRef<string>(undefined);
   const dialog = useRef<HTMLDialogElement>(null);
   const avatar = useRef<HTMLButtonElement>(null);
   const menuRoot = useRef<HTMLDivElement>(null);
@@ -67,27 +83,37 @@ export function App() {
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('studyorbit.language', language); }, [language]);
   useEffect(() => { if (panel) openDialog(dialog.current); }, [panel]);
   function applySourceSettings(reply: SourceSettingsReply) {
+    setSourceReply(reply);
     setTimeZone(reply.settings.timeZone);
     setFrameworkLabel(reply.available.institutions.find(item => item.id === reply.settings.institution)?.frameworkLabel ?? null);
   }
   // Read again whenever the course data reloads (after a sync, a course fetch or a settings save), so a failed read
   // does not keep the browser's zone for the whole session.
-  useEffect(() => { let live = true; void fetchSourceSettings().then(reply => { if (live && reply) applySourceSettings(reply); }); return () => { live = false; }; }, [courseRefresh]);
+  useEffect(() => { let live = true; void fetchSourceSettings().then(reply => { if (!live) return; if (reply) applySourceSettings(reply); setZoneReady(true); }); return () => { live = false; }; }, [courseRefresh]);
+  // Read the model settings ahead of the first visit to Settings; a failure is shown there, when it matters.
+  useEffect(() => { void fetchLlmConfig().catch(() => {}); }, []);
   /** Saved source settings: a new time zone or institution changes the course pages, so they reload. */
   function sourceSettingsSaved(reply: SourceSettingsReply) { applySourceSettings(reply); setCourseRefresh(value => value + 1); }
-  // Page changes run as a View Transition (see go); other view changes, or browsers without it, fade the canvas in.
+  // A page change replaces the page in the same frame and fades it in (motion.ts pageFade); the first page is not faded.
+  // The new page starts at its top: the browser would otherwise keep, or clamp, the previous page's scroll position.
   const mainRef = useRef<HTMLElement>(null);
-  const viaTransition = useRef(false);
   const pageKey = view.page === 'course' ? `course:${view.courseId}` : view.page;
-  useEffect(() => {
-    if (viaTransition.current) { viaTransition.current = false; return; }
-    if (reducedMotion()) return;
-    mainRef.current?.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: durations.medium, easing: easeOut });
+  const shownPage = useRef(pageKey);
+  useLayoutEffect(() => {
+    if (shownPage.current === pageKey) return;
+    shownPage.current = pageKey;
+    window.scrollTo(0, 0);
+    pageFade(mainRef.current);
   }, [pageKey]);
   // One indicator slides between the current nav and course items instead of each item painting its own fill.
   const sidebarBody = useRef<HTMLDivElement>(null);
   const navIndicator = useRef<HTMLSpanElement>(null);
-  useSlidingIndicator(sidebarBody, navIndicator, '.nav-item[aria-current="page"]', 'both', [pageKey, sidebarCourses, navOpen]);
+  useSlidingIndicator(sidebarBody, navIndicator, '.nav-item[aria-current="page"]', 'both', [pageKey, loadedCourses, navOpen]);
+  const coursesReveal = useReveal(loadedCourses !== undefined);
+  const reservedCourses = loadedCourses === undefined ? selectedCount() : 0;
+  // A refresh that outlasts the placeholder delay dims its button; a quick one shows nothing.
+  const refreshBusy = useReveal(!refreshing) === 'placeholder';
+  const usageReveal = useReveal(panel !== 'status' || syncUsage !== undefined || usageError);
   // Dialog content stays as it was while the dialog animates out.
   const [selectContent, setSelectContent] = useState(coursePanelOpen);
   const shownSyncModal = useRef<SyncModal>(syncModal);
@@ -115,9 +141,14 @@ export function App() {
     const timer = window.setInterval(() => void refreshRun(), 2000);
     return () => { stopped = true; window.clearInterval(timer); };
   }, []);
+  // Reload the course data when a sync changes a course's result. The first run state read after the page loads is the
+  // baseline: the page has just loaded that data, so it is not a change.
   useEffect(() => {
-    const signature = JSON.stringify(courseRun?.courses.map(course => [course.id, course.status, course.file]) ?? []);
-    if (signature !== resultSignature.current) { resultSignature.current = signature; setCourseRefresh(value => value + 1); }
+    if (!courseRun) return;
+    const signature = JSON.stringify(courseRun.courses.map(course => [course.id, course.status, course.file]));
+    const known = resultSignature.current;
+    resultSignature.current = signature;
+    if (known !== undefined && signature !== known) setCourseRefresh(value => value + 1);
   }, [courseRun]);
   useEffect(() => {
     if (!menu) return;
@@ -135,12 +166,13 @@ export function App() {
       setSyncUsage(data.items);
     } catch { setUsageError(true); }
   }
-  function open(next: Panel) { setMenu(false); setPanel(next); if (next === 'status') void loadSyncUsage(); }
+  // The sync records are read when the owner menu opens (see the button), ahead of the dialog that shows them.
+  function open(next: Panel) { setMenu(false); setPanel(next); if (next === 'status' && !menu) void loadSyncUsage(); }
   // The dialog's close event clears the panel, so its content stays while it animates out.
   function close() { closeDialog(dialog.current); }
   // The only place the theme is stored: a default is never written, so "never picked" stays distinguishable (decision #501).
-  const changeTheme = (next: Theme) => { try { saveThemeChoice(localStorage, next); } catch { /* Storage is blocked; the pick lasts for this visit. */ } viewTransition('theme', () => { document.documentElement.dataset.theme = next; setTheme(next); }); };
-  const changeBackgroundMode = (mode: BackgroundMode) => viewTransition('theme', () => { const next = { ...background, mode }; applyBackground(next); setBackground(next); });
+  const changeTheme = (next: Theme) => { try { saveThemeChoice(localStorage, next); } catch { /* Storage is blocked; the pick lasts for this visit. */ } themeTransition(() => { document.documentElement.dataset.theme = next; setTheme(next); }); };
+  const changeBackgroundMode = (mode: BackgroundMode) => themeTransition(() => { const next = { ...background, mode }; applyBackground(next); setBackground(next); });
   async function syncCourses() {
     if (running) return;
     cancelledDiscovery.current = false; setSyncModal('discovery'); setCourseRun(undefined); setLocalSyncing(true); setLocalSyncError(''); setLocalSyncWarning('');
@@ -219,11 +251,7 @@ export function App() {
       else setSyncModal('syncing');
     } catch (error) { setCourseRunError(error instanceof Error ? error.message : t.error); setSyncModal('finished'); }
   }
-  const go = (next: View) => {
-    const key = next.page === 'course' ? `course:${next.courseId}` : next.page;
-    if (key === pageKey) { setView(next); setNavOpen(false); return; }
-    viaTransition.current = viewTransition('page', () => { setView(next); setNavOpen(false); });
-  };
+  const go = (next: View) => { setView(next); setNavOpen(false); };
   const isZh = language === 'zh';
   const title = view.page === 'agent' ? t.agent : (isZh ? '本周' : 'This week');
   const syncButton = <button disabled={!!running} onClick={() => void syncCourses()} aria-busy={!!running}>{running ? t.syncing : t.sync}</button>;
@@ -246,7 +274,9 @@ export function App() {
         </nav>
         <div className="nav-group">
           <h2 className="nav-label">{t.courses}</h2>
-          {sidebarCourses.length ? sidebarCourses.map(course => <button key={course.id} className="nav-item course-item" aria-current={view.page === 'course' && view.courseId === course.id ? 'page' : undefined}
+          {loadedCourses === undefined ? <div className={`course-placeholders pending${coursesReveal === 'placeholder' ? ' late' : ''}`} role="status" aria-busy="true" aria-label={t.loading}>
+            {Array.from({ length: reservedCourses }, (_, index) => <div className="course-placeholder" key={index}><i className="skeleton" /><i className="skeleton" /></div>)}</div>
+          : sidebarCourses.length ? sidebarCourses.map(course => <button key={course.id} className="nav-item course-item" aria-current={view.page === 'course' && view.courseId === course.id ? 'page' : undefined}
             title={course.name} onClick={() => go({ page: 'course', courseId: course.id })}>
             <span className="course-code">{course.code}</span>
             <small className="course-graded" title={isZh ? '已出分占比' : 'Graded weight'}>{course.graded === undefined ? '—' : `${Number(course.graded.toFixed(1))}%`}</small>
@@ -257,7 +287,7 @@ export function App() {
           {syncButton}
           {canResume && <button className="ghost" onClick={() => void resumeSync()}>{resumeLabel}</button>}
           <div className="owner" ref={menuRoot} onKeyDown={event => { if (event.key === 'Escape') { setMenu(false); avatar.current?.focus(); } }}>
-            <button className="owner-button ghost" ref={avatar} aria-label={t.menu} aria-expanded={menu} aria-controls="owner-menu" onClick={() => setMenu(!menu)}>
+            <button className="owner-button ghost" ref={avatar} aria-label={t.menu} aria-expanded={menu} aria-controls="owner-menu" onClick={() => { if (!menu) void loadSyncUsage(); setMenu(!menu); }}>
               <span className="avatar" aria-hidden="true">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><span>{isZh ? '同步数据 · 设置' : 'Sync data · Settings'}</span></button>
             {menu && <div id="owner-menu" className="menu"><button onClick={() => { setNavOpen(false); open('status'); }}>{isZh ? '同步数据' : 'Sync data'}</button><button onClick={() => { setNavOpen(false); open('settings'); }}>{t.settings}</button></div>}
           </div>
@@ -269,12 +299,13 @@ export function App() {
       {localSyncWarning && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{localSyncWarning}</p>}
       {backgroundLoadFailed && background.mode === 'image' && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{isZh ? '无法从浏览器存储读取背景图片，暂时不显示图片。可以在「设置 → 背景」重新选择图片。' : 'Could not read the background image from browser storage, so no image is shown for now. You can choose the image again in Settings → Background.'}<button className="small ghost" onClick={dismissLoadFailure}>{t.close}</button></p>}
       {courseRunError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{courseRunError}</p>}
-      {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1>{view.page !== 'agent' && <button className="ghost" onClick={() => setCourseRefresh(value => value + 1)}>{t.refresh}</button>}</div>}
+      {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1>{view.page !== 'agent' && <button className="ghost" aria-busy={refreshBusy} disabled={refreshBusy} onClick={() => setCourseRefresh(value => value + 1)}>{t.refresh}</button>}</div>}
       {savedNotice > 0 && <div className="save-toast" role="status">{isZh ? '课程已经保存' : 'Courses saved'}</div>}
-      {view.page === 'agent' ? <AgentChat language={language} courses={sidebarCourses} request={agentRequest} onOpenSettings={() => open('settings')} />
-        : <LocalPlanning key={timeZone} language={language} timeZone={timeZone} frameworkLabel={frameworkLabel} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined} onCourses={setSidebarCourses}
-          syncIssues={courseRun?.courses ?? []} onCourse={courseId => go({ page: 'course', courseId })} onBack={() => go({ page: 'week' })}
-          onAsk={(courseId, prompt) => { setAgentRequest(createAgentRequest(courseId, prompt)); go({ page: 'agent' }); }} />}
+      {view.page === 'agent' && <AgentChat language={language} courses={sidebarCourses} request={agentRequest} onOpenSettings={() => open('settings')} />}
+      {/* Stays mounted behind the Agent page: it holds the course data, which a page switch must not fetch again. */}
+      <LocalPlanning hidden={view.page === 'agent'} zoneReady={zoneReady} language={language} timeZone={timeZone} frameworkLabel={frameworkLabel} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined} onCourses={setSidebarCourses} onLoading={setRefreshing}
+        syncIssues={courseRun?.courses ?? []} onCourse={courseId => go({ page: 'course', courseId })} onBack={() => go({ page: 'week' })}
+        onAsk={(courseId, prompt) => { setAgentRequest(createAgentRequest(courseId, prompt)); go({ page: 'agent' }); }} />
     </main>
     <dialog ref={selectDialog} className="select-dialog" aria-labelledby="select-title" onCancel={event => { event.preventDefault(); setCoursePanelOpen(false); }} onClose={() => setSelectContent(false)}>
       <div className="dialog-heading"><h2 id="select-title" tabIndex={-1} autoFocus>{isZh ? '修改选课' : 'Edit courses'}</h2><button className="ghost" onClick={() => setCoursePanelOpen(false)}>{t.close}</button></div>
@@ -298,15 +329,17 @@ export function App() {
       <div className="dialog-heading"><h2 id="panel-title" tabIndex={-1} autoFocus>{panel === 'status' ? (language === 'zh' ? '同步数据' : 'Sync data') : panel ? t[panel] : ''}</h2><button className="ghost" onClick={close}>{t.close}</button></div>
       {panel === 'status' && <>
         {usageError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{language === 'zh' ? '无法读取同步记录。' : 'Could not read sync records.'}</p>}
-        {!syncUsage && !usageError && <p className="muted">{t.loading}</p>}
-        {syncUsage?.length === 0 && <p className="muted">{language === 'zh' ? '还没有同步记录。点侧栏的「立即同步」开始第一次同步。' : 'No syncs yet. Use Sync now in the sidebar to run the first one.'}</p>}
-        {syncBatches.length > 0 && <><SyncLatest batch={syncBatches[0]!} language={language} onRefresh={() => void loadSyncUsage()} /><SyncHistory batches={syncBatches} language={language} /></>}
+        {!syncUsage && !usageError && <p className={`muted pending-line pending${usageReveal === 'placeholder' ? ' late' : ''}`} aria-busy="true"><span className="skeleton-text">{t.loading}</span></p>}
+        {syncUsage?.length === 0 && <p className={`muted${usageReveal === 'faded' ? ' fill-in' : ''}`}>{language === 'zh' ? '还没有同步记录。点侧栏的「立即同步」开始第一次同步。' : 'No syncs yet. Use Sync now in the sidebar to run the first one.'}</p>}
+        {syncBatches.length > 0 && <div className={usageReveal === 'faded' ? 'fill-in' : undefined}><SyncLatest batch={syncBatches[0]!} language={language} onRefresh={() => void loadSyncUsage()} /><SyncHistory batches={syncBatches} language={language} /></div>}
       </>}
       {panel === 'settings' && <>
-        <section className="settings-row"><div><h3>{isZh ? '课程' : 'Courses'}</h3><p className="muted">{sidebarCourses.length ? (isZh ? `已选 ${sidebarCourses.length} 门：${sidebarCourses.map(course => course.code).join('、')}` : `${sidebarCourses.length} selected: ${sidebarCourses.map(course => course.code).join(', ')}`) : (isZh ? '还没有选课。' : 'No courses selected.')}</p></div>
+        <section className="settings-row"><div><h3>{isZh ? '课程' : 'Courses'}</h3><p className="muted">{sidebarCourses.length ? (isZh ? `已选 ${sidebarCourses.length} 门：${sidebarCourses.map(course => course.code).join('、')}` : `${sidebarCourses.length} selected: ${sidebarCourses.map(course => course.code).join(', ')}`)
+          // The count is known from this browser before the course data has loaded; the codes follow on the same line.
+          : loadedCourses === undefined && reservedCourses > 0 ? (isZh ? `已选 ${reservedCourses} 门` : `${reservedCourses} selected`) : (isZh ? '还没有选课。' : 'No courses selected.')}</p></div>
           <button disabled={courseRun?.running} onClick={() => { close(); setCoursePanelOpen(true); }}>{isZh ? '修改选课' : 'Edit courses'}</button></section>
         <AnalysisModelSettings language={language} />
-        <SourceSettingsSection language={language} onSaved={sourceSettingsSaved} />
+        <SourceSettingsSection language={language} known={sourceReply} onSaved={sourceSettingsSaved} />
         <div className="avatar-settings"><span className="avatar-preview">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><div><label className="avatar-upload">{language === 'zh' ? '上传头像' : 'Upload photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
           const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!file) return;
           if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) { setAvatarError(language === 'zh' ? '请选择不超过 2 MB 的 JPG、PNG 或 WebP 图片。' : 'Choose a JPG, PNG or WebP image up to 2 MB.'); return; }
@@ -455,24 +488,26 @@ function formFrom(config: PublicLlmConfig): ModelForm { return { provider: confi
 function AnalysisModelSettings({ language }: { language: Language }) {
   const zh = language === 'zh';
   const pick = (pair: [string, string]) => pair[zh ? 0 : 1];
-  const [config, setConfig] = useState<PublicLlmConfig>();
-  const [form, setForm] = useState<ModelForm>();
+  const [config, setConfig] = useState<PublicLlmConfig | undefined>(knownLlmConfig);
+  const [form, setForm] = useState<ModelForm | undefined>(() => knownLlmConfig && formFrom(knownLlmConfig));
+  // The form may start from the settings read earlier in this visit; the fresh reply replaces it unless it was edited.
+  const touched = useRef(false);
   const [loadError, setLoadError] = useState(false);
+  const reveal = useReveal(config !== undefined || loadError);
   const [busy, setBusy] = useState<'save' | 'test'>();
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<{ problem: boolean; text: string }>();
   useEffect(() => {
     let live = true;
-    fetch('/api/local/llm-config').then(async response => { if (!response.ok) throw new Error(); return await response.json() as PublicLlmConfig; })
-      .then(data => { if (live) { setConfig(data); setForm(formFrom(data)); } }).catch(() => { if (live) setLoadError(true); });
+    fetchLlmConfig().then(data => { if (live && !touched.current) { setConfig(data); setForm(formFrom(data)); } }).catch(() => { if (live && !knownLlmConfig) setLoadError(true); });
     return () => { live = false; };
   }, []);
   if (loadError) return <section className="settings-row model-settings"><div><h3>{zh ? '分析模型' : 'Analysis model'}</h3><p className="muted">{zh ? '无法读取模型设置（仅在本地开发服务器中可用）。' : 'Could not read model settings (local dev server only).'}</p></div></section>;
-  if (!config || !form) return <section className="settings-row model-settings"><div><h3>{zh ? '分析模型' : 'Analysis model'}</h3><p className="muted">{zh ? '加载中…' : 'Loading…'}</p></div></section>;
+  if (!config || !form) return <section className={`model-settings model-pending pending${reveal === 'placeholder' ? ' late' : ''}`} aria-busy="true"><h3>{zh ? '分析模型' : 'Analysis model'}</h3><SettingsPlaceholder rows={3} /></section>;
   const sameProvider = form.provider === config.provider;
   const dirty = Boolean(config.providerInvalid) || !sameProvider || form.model !== config.model || form.baseUrl !== config.baseUrl || form.apiKey !== '' || form.clearKey;
   const placeholder = (sameProvider && !config.model ? config.effectiveModel : config.defaultModels[form.provider]) ?? (zh ? '必填，例如 gpt-5.5' : 'Required, e.g. gpt-5.5');
-  const update = (patch: Partial<ModelForm>) => { setForm({ ...form, ...patch }); setStatus(undefined); setFieldErrors({}); };
+  const update = (patch: Partial<ModelForm>) => { touched.current = true; setForm({ ...form, ...patch }); setStatus(undefined); setFieldErrors({}); };
   const changeProvider = (provider: LlmProvider) => update(provider === config.provider ? { ...formFrom(config), apiKey: form.apiKey } : { provider, model: '', baseUrl: '', clearKey: false });
   const errorFor = (field: string) => fieldErrors[field] && <small className="model-error" role="alert">{pick(fieldErrorText[fieldErrors[field]!] ?? [fieldErrors[field]!, fieldErrors[field]!])}</small>;
   async function save() {
@@ -485,6 +520,7 @@ function AnalysisModelSettings({ language }: { language: Language }) {
       if (response.status === 400 && data && typeof data === 'object' && 'fieldErrors' in data) { setFieldErrors(data.fieldErrors as Record<string, string>); setStatus({ problem: true, text: zh ? '没有保存：请修正标出的字段。' : 'Not saved: fix the marked fields.' }); return; }
       if (!response.ok) throw new Error();
       const next = data as PublicLlmConfig;
+      knownLlmConfig = next; touched.current = false;
       setConfig(next); setForm(formFrom(next));
       setStatus({ problem: next.keyRequired && !next.hasKey, text: next.keyRequired && !next.hasKey ? (zh ? '已保存，但还没有 API 密钥，同步会失败。' : 'Saved, but there is no API key yet; syncs will fail.') : (zh ? '已保存。下次同步开始时生效。' : 'Saved. Applies from the next sync.') });
     } catch { setStatus({ problem: true, text: zh ? '保存失败，请重试。' : 'Could not save. Please retry.' }); }
@@ -504,7 +540,7 @@ function AnalysisModelSettings({ language }: { language: Language }) {
   const keyNote = sameProvider && config.hasKey && !form.clearKey
     ? (config.keySource === 'settings' ? (zh ? '已保存（来自设置）' : 'Saved (from settings)') : (zh ? '已保存（来自环境变量）' : 'Saved (from environment)'))
     : form.clearKey ? (zh ? '保存后清除' : 'Cleared on save') : '';
-  return <section className="model-settings" aria-labelledby="model-settings-title">
+  return <section className={`model-settings${reveal === 'faded' ? ' fill-in' : ''}`} aria-labelledby="model-settings-title">
     <h3 id="model-settings-title">{zh ? '分析模型' : 'Analysis model'}</h3>
     {config.providerInvalid && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{zh ? '环境变量 COURSE_ANALYSIS_PROVIDER 不可识别，同步不会启动。请在下面选择提供方并保存。' : 'COURSE_ANALYSIS_PROVIDER is not recognised; syncs will not start. Choose a provider below and save.'}</p>}
     <p className="muted model-note">{zh ? '同步时用来整理课程数据的模型。课程和成绩会发送给所选服务，可能产生费用。' : 'The model that organises course data during a sync. Course data and grades are sent to the chosen service and may cost money.'}</p>

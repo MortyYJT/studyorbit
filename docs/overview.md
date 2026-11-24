@@ -45,7 +45,8 @@ No course files are downloaded and nothing is submitted. Coverage is not guarant
 | `web/src/App.tsx`, `web/src/SourceSettings.tsx` | Shell, sidebar, sync dialog, settings (model, data sources, appearance, background) |
 | `web/src/LocalPlanning.tsx` | Course page (grades, assessments, revision) and week / month views (plan, needs you, time spent) |
 | `web/src/Agent.tsx`, `agent-request.ts` | Chat page; other pages open a new chat with a course and a preset prompt |
-| `web/src/theme.ts`, `palette.ts`, `background.ts`, `BackgroundLayer.tsx`, `motion.ts` | Light/dark choice, clean-up of what the removed palette picker stored, background, animation |
+| `web/src/theme.ts`, `palette.ts`, `background.ts`, `BackgroundLayer.tsx` | Light/dark choice, clean-up of what the removed palette picker stored, background |
+| `web/src/motion.ts` | The page fade, the delayed placeholder, the sliding indicators, the arc of the grade ring, dialog exits, the theme fade (see [Motion](#motion)) |
 | `web/src/style.css` | Every style, and the colour tokens (see [Colours](#colours)) |
 | `web/index.html`, `web/public/` | Page entry (applies the theme and the background mode before the app mounts, see [Theme](#theme)); tab icons: `favicon.svg` (the header mark redrawn for 16px), a 32px PNG fallback and the Apple touch icon |
 | `server/main.ts`, `server/app.ts`, `server/routes/` | Local API server: start-up, the route table behind the access checks, one file per `/api/local/*` route |
@@ -132,6 +133,17 @@ The page has one set of colours, those of the Codex desktop app in light and dar
 - **No palette picker.** The five earlier palettes (Ink, Mist, Pine, Stone, Morty) are gone. `migratePaletteChoice` in `web/src/palette.ts` removes the id they stored (`studyorbit.palette`, and `coursework.palette` if it is still there) on the first load; nothing reads it.
 - **Background** (Settings → Background): Plain is the flat workspace and the default; Gradient washes the workspace with Codex's pale accent tint at 60%; Image puts an uploaded picture behind panels whose opacity can be set. A `gradient` stored by an earlier version reads as Plain: the app used to write that default back on every start, so the value did not show a choice. The gradient is now stored as `tint`.
 - **Tests:** `test/palette.test.ts` computes WCAG contrast for every pairing from the tokens (4.5:1 for text, 3:1 for marks and field edges), checks the rules that keep the translucent fills from stacking (a pairing it does not list cannot then appear), checks the distances between the weight colours with and without simulated colour-vision deficiency, and runs the script in `web/index.html` to confirm that a stored palette changes nothing.
+
+## Motion
+
+One rule set, written out with its measurements in [Motion](motion.md):
+
+- **Page switch:** the new page replaces the old one in the frame of the click and fades in over 150 ms, by opacity only, from 40%. Nothing animates out; rows, columns and numbers make no entrance of their own (the earned arc of a course's grade ring is the one exception). A second click restarts the fade, so quick switches end on the last page clicked.
+- **Course data stays for the visit:** `LocalPlanning` is kept mounted behind the Agent page, so switching pages never fetches. Coming back reads the data again in the background.
+- **Loading:** until the first load has finished and the institution's time zone is known, the sidebar reserves a row for each selected course and the page shows a placeholder. A placeholder is painted only after 150 ms, and only what replaces a painted placeholder fades in (`useReveal`). Settings opens with its forms filled from replies read earlier in the visit.
+- **No View Transition:** while one runs, the page under it takes no clicks. The theme and background change fades every colour together instead (`themeTransition`, `data-theming`).
+- **Reduced motion:** one block at the end of the Motion section of `style.css` switches every animation and transition off; the helpers skip their animations in script. Loading states still show.
+- **Tests:** `test/motion.test.ts` covers the helpers, including their reduced-motion paths, and reads `style.css` to keep keyframes to opacity and transform, the reduced-motion rule in one place, and View Transitions out.
 
 ## Current limits
 
