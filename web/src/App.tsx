@@ -9,6 +9,7 @@ import { LocalPlanning, type SidebarCourse } from './LocalPlanning.js';
 import { closeDialog, durations, easeOut, openDialog, reducedMotion, useSlidingIndicator, viewTransition } from './motion.js';
 import { palettes, parsePalette, type Palette } from './palette.js';
 import { fetchSourceSettings, SourceSettingsSection, type SourceSettingsReply } from './SourceSettings.js';
+import { readTheme, saveThemeChoice, themes } from './theme.js';
 import type { LlmProvider, PublicLlmConfig } from '../../scripts/lib/llm-config.mjs';
 import { translateReason } from '../../shared/sync-reasons.js';
 
@@ -25,7 +26,8 @@ function remember(key: string, value: string) { try { localStorage.setItem(key, 
 function selectionExists(): boolean { try { return localStorage.getItem('studyorbit.selected-course-ids') !== null; } catch { return false; } }
 export function App() {
   const [language, setLanguage] = useState<Language>(() => preference('studyorbit.language') === 'en' ? 'en' : 'zh');
-  const [theme, setTheme] = useState<Theme>(() => { const value = preference('studyorbit.theme'); return value === 'system' || value === 'dark' ? value : 'light'; });
+  // Follows the system until a theme is picked in Settings; `system` itself is plain CSS, so an OS switch needs no code here.
+  const [theme, setTheme] = useState<Theme>(() => { try { return readTheme(localStorage); } catch { return 'system'; } });
   const [palette, setPalette] = useState<Palette>(() => parsePalette(preference('studyorbit.palette')));
   const [background, setBackground] = useState<BackgroundSettings>(() => parseBackground(preference(backgroundStorageKey)));
   const { url: backgroundImage, setUrl: setBackgroundImage, loadFailed: backgroundLoadFailed, dismissLoadFailure } = useBackgroundImage();
@@ -62,7 +64,7 @@ export function App() {
   const menuRoot = useRef<HTMLDivElement>(null);
   const t = language === 'zh' ? zh : en;
   const running = localSyncing || courseRun?.running;
-  useEffect(() => { document.documentElement.dataset.theme = theme; remember('studyorbit.theme', theme); }, [theme]);
+  useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
   useEffect(() => { document.documentElement.dataset.palette = palette; remember('studyorbit.palette', palette); }, [palette]);
   useEffect(() => { applyBackground(background); remember(backgroundStorageKey, JSON.stringify(background)); }, [background]);
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('studyorbit.language', language); }, [language]);
@@ -139,7 +141,8 @@ export function App() {
   function open(next: Panel) { setMenu(false); setPanel(next); if (next === 'status') void loadSyncUsage(); }
   // The dialog's close event clears the panel, so its content stays while it animates out.
   function close() { closeDialog(dialog.current); }
-  const changeTheme = (next: Theme) => viewTransition('theme', () => { document.documentElement.dataset.theme = next; setTheme(next); });
+  // The only place the theme is stored: a default is never written, so "never picked" stays distinguishable (decision #501).
+  const changeTheme = (next: Theme) => { try { saveThemeChoice(localStorage, next); } catch { /* Storage is blocked; the pick lasts for this visit. */ } viewTransition('theme', () => { document.documentElement.dataset.theme = next; setTheme(next); }); };
   const changePalette = (next: Palette) => viewTransition('theme', () => { document.documentElement.dataset.palette = next; setPalette(next); });
   const changeBackgroundMode = (mode: BackgroundMode) => viewTransition('theme', () => { const next = { ...background, mode }; applyBackground(next); setBackground(next); });
   async function syncCourses() {
@@ -316,7 +319,7 @@ export function App() {
           reader.readAsDataURL(file);
         }} /></label>{avatarImage && <button onClick={() => { try { localStorage.removeItem('studyorbit.avatar'); setAvatarImage(''); setAvatarError(''); } catch { setAvatarError(language === 'zh' ? '头像移除失败。' : 'Could not remove the photo.'); } }}>{language === 'zh' ? '移除' : 'Remove'}</button>}</div></div>
         {avatarError && <p role="alert">{avatarError}</p>}
-        <div className="preferences"><label>{t.theme}<select value={theme} onChange={event => changeTheme(event.target.value as Theme)}>{(['system', 'light', 'dark'] as const).map(value => <option key={value} value={value}>{t[value]}</option>)}</select></label>
+        <div className="preferences"><label>{t.theme}<select value={theme} onChange={event => changeTheme(event.target.value as Theme)}>{themes.map(value => <option key={value} value={value}>{t[value]}</option>)}</select></label>
           <label>{t.language}<select value={language} onChange={event => setLanguage(event.target.value as Language)}><option value="en">English</option><option value="zh">中文</option></select></label></div>
         <fieldset className="palette-picker"><legend>{t.palette}</legend><div className="palette-options">
           {palettes.map(value => <button key={value} type="button" className="palette-swatch" data-palette={value} aria-pressed={palette === value} onClick={() => changePalette(value)}>

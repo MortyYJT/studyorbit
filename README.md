@@ -20,7 +20,7 @@
 - **Use it from other AI clients.** A local MCP server exposes the same read-only course tools to Claude Code, Claude Desktop and other MCP clients.
 - **Choose the model.** DeepSeek, any OpenAI-compatible API (including a local Ollama), Anthropic Claude or the Codex CLI.
 
-The interface defaults to Chinese; an English version can be chosen under Settings → Language.
+The interface defaults to Chinese; an English version can be chosen under Settings → Language. Light or dark follows the system unless you pick one under Settings → Theme.
 
 ![Weekly plan with synthetic tasks: a "Needs you" list (an overdue task, work that does not fit before its deadline, an unplanned deadline) above a Monday-to-Sunday plan](docs/images/weekly-plan.webp)
 

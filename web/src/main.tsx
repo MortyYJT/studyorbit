@@ -2,9 +2,12 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App.js';
 import './style.css';
 import { migrateStoragePrefix } from './storage-prefix.js';
+import { migrateThemeChoice } from './theme.js';
 
 // Move browser data saved under the project's former key prefix first, so every reader below sees the new keys.
 try { migrateStoragePrefix(localStorage); } catch { /* Storage may be blocked; readers fall back to their defaults. */ }
+// Then the theme: a `light` left by the old start-up default is dropped, a chosen theme moves to its new key (theme.ts).
+try { migrateThemeChoice(localStorage); } catch { /* Storage may be blocked; the page follows the system. */ }
 
 // Move previous prototype data aside once; keep a recoverable copy in this browser.
 try {

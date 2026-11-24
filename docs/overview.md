@@ -1,6 +1,6 @@
 # Overview: structure and data flow
 
-Updated 2026-10-31. StudyOrbit is a local prototype. `npm run dev` starts two processes: the local API server (`server/`) and the Vite dev server that serves the React page. A static build has no local API. Installing, browsers, models and environment variables: [Setup](setup.md).
+Updated 2026-11-24. StudyOrbit is a local prototype. `npm run dev` starts two processes: the local API server (`server/`) and the Vite dev server that serves the React page. A static build has no local API. Installing, browsers, models and environment variables: [Setup](setup.md).
 
 ## Processes, ports and token
 
@@ -45,8 +45,8 @@ No course files are downloaded and nothing is submitted. Coverage is not guarant
 | `web/src/App.tsx`, `web/src/SourceSettings.tsx` | Shell, sidebar, sync dialog, settings (model, data sources, appearance, background) |
 | `web/src/LocalPlanning.tsx` | Course page (grades, assessments, revision) and week / month views (plan, needs you, time spent) |
 | `web/src/Agent.tsx`, `agent-request.ts` | Chat page; other pages open a new chat with a course and a preset prompt |
-| `web/src/palette.ts`, `background.ts`, `BackgroundLayer.tsx`, `motion.ts` | Palettes, background, animation |
-| `web/index.html`, `web/public/` | Page entry (applies the saved theme before the app mounts); tab icons: `favicon.svg` (the header mark redrawn for 16px), a 32px PNG fallback and the Apple touch icon |
+| `web/src/theme.ts`, `palette.ts`, `background.ts`, `BackgroundLayer.tsx`, `motion.ts` | Light/dark choice, palettes, background, animation |
+| `web/index.html`, `web/public/` | Page entry (applies the theme and palette before the app mounts, see [Theme](#theme)); tab icons: `favicon.svg` (the header mark redrawn for 16px), a 32px PNG fallback and the Apple touch icon |
 | `server/main.ts`, `server/app.ts`, `server/routes/` | Local API server: start-up, the route table behind the access checks, one file per `/api/local/*` route |
 | `server/guard.ts`, `server/proxy.ts` | Access checks (loopback, token, Host, Origin); Vite's `/api/local` proxy |
 | `vite.config.ts` | Page, ports and proxy only |
@@ -96,10 +96,33 @@ Entry points are `npm run dev` (`dev.mjs`) and `npm run sync:courses` (collects 
 | Each course's course JSON | UniMelb `~/Desktop/墨尔本大学 <year> S<semester>/<code>/分数结构*.json`; other institutions `~/Desktop/StudyOrbit <semester>/<code>/分数结构*.json` (new files never overwrite old ones; the newest valid file is read) |
 | Course selection, tasks, availability, target band, appearance, seen-change markers (`studyorbit.course-changes-seen.v1`); corrections from before the move (backup only) | Browser localStorage (per browser and port; keys use the `studyorbit.` prefix; keys and the background image saved under the former prefix are moved on the first load (`web/src/storage-prefix.ts`)) |
 | Background image | Browser IndexedDB `studyorbit` |
+| Theme pick (only after you choose one in Settings; see [Theme](#theme)) | Browser localStorage `studyorbit.theme.v2` |
 
 `.local/` and `.local-backups/` are ignored by Git but contain personal data.
 
 Storage stays on this machine; during analysis and chat, course data is sent to the model provider you chose (`scripts/lib/llm-config.mjs` decides which).
+
+## Theme
+
+Light or dark is chosen in one place, Settings → Theme (System, Light, Dark). The sidebar, the page header and the phone top bar have no theme control.
+
+- **Default:** with nothing chosen the page follows the system. `<html>` carries `data-theme="system"` and the dark tokens in `web/src/style.css` sit inside `@media (prefers-color-scheme: dark)`, so when the system switches, the page switches without a reload and without any script. `test/theme.test.ts` checks that every explicit dark rule has an identical system-dark twin.
+- **Storage:** only a pick made in Settings is stored (`studyorbit.theme.v2`). The default is never written, so "never picked" stays distinguishable from "picked light".
+- **Rule:** `resolveTheme` in `web/src/theme.ts`: a valid pick wins; otherwise a `dark` left under the older key `studyorbit.theme` is kept (or under `coursework.theme` when the older key is absent, which happens only if the prefix move could not write); anything else follows the system. The inline script in `web/index.html` applies the same rule before the bundle loads (it cannot import the module); the test runs that script against the module for every combination of the three keys, with and without failing writes.
+- **Move from the older key** (decision #501): until this change the app wrote its default, `light`, back to `studyorbit.theme` on every start, so a stored `light` did not show a choice. On the first load `migrateThemeChoice` (after the prefix move in `storage-prefix.ts`) drops a stored `light`, moves `dark` or `system` to the new key, and removes the old key. Someone who had picked light on purpose and whose system is dark gets dark once and picks light again.
+- **Tab icon:** `favicon.svg` has its own `prefers-color-scheme` rule and follows the browser's scheme, not the pick in Settings. There is no `theme-color` meta tag.
+
+Measured 2026-11-24 in a throw-away headless Chrome against a synthetic instance (two synthetic courses):
+
+| Case | Before | After |
+| --- | --- | --- |
+| First visit, system dark | light; `studyorbit.theme` = `light` written on start | dark; nothing written |
+| Stored `light` under the old key, system dark | light | dark (follows the system); old key removed, nothing written |
+| Stored `dark` under the old key (or under the former prefix), system light | dark | dark; moved to `studyorbit.theme.v2` |
+| Nothing picked, system switches light → dark → light, no reload | stays light (`data-theme="light"`) | `--ground` `#f7f7f7` → `#0a0a0a` → `#f7f7f7` in the same document |
+| Light or Dark picked in Settings, then the system switches | stays as picked | stays as picked; the pick survives a reload |
+
+Sidebar layout check for the "invisible but still takes width" class of bug (an element hidden with opacity or transparent text that still stretches its container): 84 states were measured from DOM geometry, at widths 1440, 1101, 761 (the narrowest two-column layout), 760, 390 and 320, each in light and dark, Chinese and English, with the sidebar as is, with the owner menu open, on a course page, and below 761 also with the menu sheet open. In every state `scrollWidth` equalled `clientWidth` on the document, the body, the sidebar, its header, body and foot; no sidebar element's box left the sidebar; and no element with a size was invisible. The sidebar is 232 px wide (231 px inside its border) down to 761 px, with the foot at 211 px; from 760 px down it is a top bar as wide as the page (at 390: brand 16–120, page name from 132, menu button 328–382, and the open sheet's foot 358 px wide). The desktop sidebar has no collapsed state. The probe was checked against a planted fault (a 300 px `opacity:0` label in the sidebar foot): it reported the label and three boxes 78 px past the sidebar's edge.
 
 ## Current limits
 
