@@ -8,8 +8,7 @@ import { createServer, type Server } from 'node:http';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createAssistant } from '../scripts/lib/deeptutor.mjs';
-import { resolveAnalysisConfig } from '../scripts/lib/llm-config.mjs';
+import { createAssistant, proxyKey } from '../scripts/lib/deeptutor.mjs';
 import { acquireServerLock } from '../scripts/lib/server-lock.mjs';
 import { openSyncStore } from '../scripts/lib/sync-store.mjs';
 import { createLocalApi } from './app.ts';
@@ -62,7 +61,7 @@ export async function startServer({ projectDir, desktopDir, env = process.env, w
     const assistant = withAssistant && env.STUDYORBIT_DEEPTUTOR !== 'off'
       ? createAssistant({
         projectDir, desktopDir: desktopDir ?? join(homedir(), 'Desktop'), webPort, env, log: warn,
-        createProxy: ({ token: launchToken, upstream }) => createLlmProxy({ token: launchToken, upstream, log: warn, resolveKey: async () => (await resolveAnalysisConfig(projectDir, env)).apiKey ?? null }),
+        createProxy: ({ token: launchToken, upstream }) => createLlmProxy({ token: launchToken, upstream, log: warn, resolveKey: () => proxyKey(projectDir, env) }),
       })
       : undefined;
     const api = createLocalApi({ projectDir, desktopDir, token, webPort, store, env, assistant });

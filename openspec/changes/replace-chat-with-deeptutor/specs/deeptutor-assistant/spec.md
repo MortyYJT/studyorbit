@@ -12,15 +12,19 @@ DeepTutor SHALL be installed in a Python virtual environment in the user's home 
 - **THEN** the Agent page shows a warning that names the module and the command that removes it
 
 ### Requirement: The launcher starts and stops DeepTutor on loopback
-After the local API server is listening, `npm run dev` SHALL check the DeepTutor API port. If `/health/ready` answers there, it SHALL start nothing and stop nothing. Otherwise it SHALL start DeepTutor's API server and web server bound to `127.0.0.1` on the instance's fixed ports, with `DEEPTUTOR_HOME` set to `.local/deeptutor/home` of the project. A failure at any step SHALL be recorded as the assistant's status and SHALL NOT stop or fail StudyOrbit. When the launcher stops, it SHALL stop the DeepTutor processes it started and no others. A port that is taken SHALL be reported, not replaced by another port.
+After the local API server is listening, `npm run dev` SHALL check the DeepTutor API port. If `/health/ready` answers there, it SHALL start nothing and stop nothing, and SHALL use what answers only when the guard on that port reports this project's instance id; otherwise the status SHALL be `failed` and name the port. Every process it starts SHALL be recorded as soon as it is launched, so that a later start can stop processes left by a server that was killed. Otherwise it SHALL start DeepTutor's API server and web server bound to `127.0.0.1` on the instance's fixed ports, with `DEEPTUTOR_HOME` set to `.local/deeptutor/home` of the project. A failure at any step SHALL be recorded as the assistant's status and SHALL NOT stop or fail StudyOrbit. When the launcher stops, it SHALL stop the DeepTutor processes it started and no others. A port that is taken SHALL be reported, not replaced by another port.
 
 #### Scenario: One command
 - **WHEN** the owner runs `npm run dev` with DeepTutor installed
 - **THEN** the StudyOrbit page and DeepTutor's page both answer on their ports, and neither DeepTutor port accepts a connection from another machine
 
 #### Scenario: Already running
-- **WHEN** a DeepTutor that the launcher did not start is healthy on the API port
+- **WHEN** this project's guarded DeepTutor, not started by this launcher, is healthy on the API port
 - **THEN** the launcher starts no DeepTutor process and leaves that one running when it exits
+
+#### Scenario: Port taken by another DeepTutor
+- **WHEN** a DeepTutor of another checkout, or one without the guard, is healthy on the API port
+- **THEN** it is neither used nor stopped, and the Agent page says that the port is in use and how to choose another
 
 #### Scenario: Ctrl-C
 - **WHEN** the owner presses Ctrl-C
@@ -38,11 +42,15 @@ The owner's instance SHALL use ports 5175 (DeepTutor web), 5195 (DeepTutor API) 
 - **THEN** the session is stored under that worktree's `.local/deeptutor/home` and the main checkout's home is unchanged
 
 ### Requirement: The model key is never written by or for DeepTutor
-The local server SHALL run a model proxy on `127.0.0.1` that forwards allow-listed model API paths to the configured provider and adds the key resolved by StudyOrbit's model settings. The proxy SHALL refuse a request that does not come from a loopback peer, whose `Host` is not the proxy's own, that carries an `Origin` header, or whose bearer token is not the token created for this launch. DeepTutor SHALL be configured with the proxy's address and that token. No file generated for DeepTutor, no command-line argument and no log line SHALL contain the key.
+The local server SHALL run a model proxy on `127.0.0.1` that forwards allow-listed model API paths to the configured provider and adds the key resolved by StudyOrbit's model settings. The key SHALL be added only while StudyOrbit's model settings name the supported provider; after a switch to another provider the proxy SHALL answer 503 and send nothing. The proxy SHALL refuse a request that does not come from a loopback peer, whose `Host` is not the proxy's own, that carries an `Origin` header, or whose bearer token is not the token created for this launch. DeepTutor SHALL be configured with the proxy's address and that token. No file generated for DeepTutor, no command-line argument and no log line SHALL contain the key.
 
 #### Scenario: Key not on disk
 - **WHEN** DeepTutor has been configured and has answered a question
 - **THEN** no file under the DeepTutor home contains the key
+
+#### Scenario: Provider changed while running
+- **WHEN** the owner saves another provider and key in the model settings while DeepTutor is running
+- **THEN** the proxy answers 503 and that provider's key is not sent anywhere
 
 #### Scenario: Wrong token
 - **WHEN** a local process calls the proxy without this launch's token

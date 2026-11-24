@@ -17,9 +17,11 @@ export function setupProfile(options: { model: string; ports: AssistantPorts }):
 export function mergeMcpConfig(existing: unknown, options: { node: string; projectDir: string; desktopDir?: string }): { servers: Record<string, any> };
 export function restrictSystemSettings(existing: unknown): Record<string, unknown>;
 export function disableWebSearch(yaml: string): string;
+export function webSearchOff(yaml: string): boolean;
+export function proxyKey(projectDir: string, env: Env): Promise<string | null>;
 export function childEnv(env: Env, extra?: Record<string, string>): Record<string, string>;
 export function apiCommand(options: { python: string; port: number }): string[];
-export function guardEnv(options: { ports: AssistantPorts; webPort: number }): Record<string, string>;
+export function guardEnv(options: { ports: AssistantPorts; webPort: number; instance?: string }): Record<string, string>;
 export function createAssistant(options: {
   projectDir: string; desktopDir?: string; webPort: number; env?: Env; home?: string;
   createProxy(options: { token: string; upstream: string }): { listen(port: number): Promise<number>; close(): Promise<void> };

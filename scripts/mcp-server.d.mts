@@ -2,4 +2,5 @@ export function parseServerOptions(argv: string[], env: Record<string, string | 
   projectDir: string;
   desktop: string | undefined;
   courseIds: string[] | null;
+  pageContext: boolean;
 };

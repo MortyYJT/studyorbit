@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { parsePlanningSnapshot } from '../../shared/planning-snapshot.ts';
 
-/** Largest request body and file accepted, in bytes. */
+/** Largest request body and largest file, in bytes. A context is refused (`TOO_LARGE`) when its stored form exceeds it. */
 export const AGENT_CONTEXT_LIMIT = 200000;
 /** How long a course stays "in focus" after the page saved it. */
 export const FOCUS_MAX_AGE_MS = 30 * 60 * 1000;
@@ -45,11 +45,14 @@ export function parseAgentContext(value) {
  */
 export async function writeAgentContext(projectDir, context, now = () => new Date()) {
   const saved = { savedAt: now().toISOString(), selectedCourseIds: context.selectedCourseIds, focusCourseId: context.focusCourseId, planning: context.planning };
+  // The stored form is longer than the request body (it adds the save time): what is written must be readable.
+  const text = `${JSON.stringify(saved)}\n`;
+  if (Buffer.byteLength(text) > AGENT_CONTEXT_LIMIT) throw new Error('TOO_LARGE');
   const file = contextPath(projectDir);
   await mkdir(join(projectDir, '.local'), { recursive: true });
   const temp = `${file}.${randomUUID()}.tmp`;
   try {
-    await writeFile(temp, `${JSON.stringify(saved)}\n`, { mode: 0o600, flag: 'wx' });
+    await writeFile(temp, text, { mode: 0o600, flag: 'wx' });
     await chmod(temp, 0o600);
     await rename(temp, file);
   } catch (error) { await rm(temp, { force: true }); throw error; }

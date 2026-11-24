@@ -152,7 +152,7 @@ claude mcp add studyorbit -- node <repo>/scripts/mcp-server.mjs
 For example, `claude mcp add --env STUDYORBIT_COURSES=<id>,<id> studyorbit -- node <repo>/scripts/mcp-server.mjs`, or `"env": { "STUDYORBIT_COURSES": "<id>,<id>" }` in the Claude Desktop entry.
 
 - **Read-only and local:** every call re-reads the course list and the newest valid course files, so no restart is needed after a sync. The server does not sync, write files, call a model, read model settings or keys, or use the network. It does not apply corrections made in the page.
-- **Planning data:** weekly-plan tasks live in the browser. The Agent page saves them to `.local/agent-context.json` when it opens, and `plan_schedule` uses that copy (with its save time); before the page has been opened it works only with tasks passed in as arguments.
+- **No planning data:** weekly-plan tasks live in the browser; `plan_schedule` works only with tasks passed in as arguments. (The copy of the server that DeepTutor starts is given `--page-context` and also reads what the Agent page saved; other clients are unaffected.)
 - **Where data goes:** tool results contain your grades and assessments and are sent to the model your client uses (Claude Code and Claude Desktop send them to Anthropic), under that provider's terms. Use `--courses` to keep a course out. Diagnostics go to standard error only and contain no course content.
 
 ## Privacy and data

@@ -9,12 +9,14 @@ stopped by this (they send whatever headers they like).
 
 Run by `scripts/dev.mjs` with DeepTutor's own interpreter:
     python -m uvicorn guard_app:app --app-dir <this directory> --host 127.0.0.1 --port <api port>
-Configuration (environment): STUDYORBIT_GUARD_PORTS (comma-separated ports accepted in Host) and
-STUDYORBIT_GUARD_ORIGINS (comma-separated exact origins). `allowed()` is pure and is unit-tested from Node.
+Configuration (environment): STUDYORBIT_GUARD_PORTS (comma-separated ports accepted in Host),
+STUDYORBIT_GUARD_ORIGINS (comma-separated exact origins) and STUDYORBIT_GUARD_INSTANCE (the id of the checkout that
+started it, answered at /studyorbit-guard/instance). `allowed()` is pure and is unit-tested from Node.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -47,7 +49,10 @@ def allowed(headers: dict[str, str], hosts: frozenset[str], origins: frozenset[s
     return None
 
 
-def guard(inner, hosts: frozenset[str], origins: frozenset[str]):
+INSTANCE_PATH = "/studyorbit-guard/instance"
+
+
+def guard(inner, hosts: frozenset[str], origins: frozenset[str], instance: str = ""):
     async def app(scope, receive, send):
         if scope["type"] not in ("http", "websocket"):
             await inner(scope, receive, send)
@@ -61,6 +66,13 @@ def guard(inner, hosts: frozenset[str], origins: frozenset[str]):
                 duplicated = duplicated or name in headers
                 headers[name] = raw_value.decode("latin-1")
         reason = "duplicate-header" if duplicated else allowed(headers, hosts, origins)
+        if reason is None and scope["type"] == "http" and scope.get("path") == INSTANCE_PATH:
+            # Answered by the guard itself: which StudyOrbit checkout this DeepTutor belongs to. The launcher uses it to
+            # tell its own guarded instance from another checkout's or an unguarded DeepTutor on the same port.
+            body = json.dumps({"instance": instance}).encode()
+            await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json"), (b"cache-control", b"no-store"), (b"content-length", str(len(body)).encode())]})
+            await send({"type": "http.response.body", "body": body})
+            return
         if reason is None:
             await inner(scope, receive, send)
             return
@@ -83,7 +95,7 @@ def _build():
         raise RuntimeError("STUDYORBIT_GUARD_PORTS and STUDYORBIT_GUARD_ORIGINS must be set")
     from deeptutor.api.main import app as deeptutor_app
 
-    return guard(deeptutor_app, allowed_hosts(ports), origins)
+    return guard(deeptutor_app, allowed_hosts(ports), origins, os.environ.get("STUDYORBIT_GUARD_INSTANCE", ""))
 
 
 # Imported by the unit test with STUDYORBIT_GUARD_SKIP_APP=1, which only wants the pure functions.

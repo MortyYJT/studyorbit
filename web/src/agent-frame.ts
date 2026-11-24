@@ -11,6 +11,7 @@ export type AssistantStatus =
 
 /** Shown on the Agent page when DeepTutor is missing; the same command is in docs/setup.md. */
 export const INSTALL_COMMAND = [
+  'curl -LsSf https://astral.sh/uv/install.sh | sh',
   'uv venv --python 3.12 ~/.local/share/studyorbit/deeptutor/venv',
   'uv pip install --python ~/.local/share/studyorbit/deeptutor/venv/bin/python "deeptutor[server,web,memory,questions,notebook]==1.7.4"',
 ].join('\n');
@@ -52,7 +53,7 @@ export function describeStatus(status: AssistantStatus | null, language: Languag
     case 'running': case 'external': return null;
     case 'not-installed': return {
       title: zh ? '还没有安装 DeepTutor' : 'DeepTutor is not installed',
-      body: zh ? '对话、记忆和出题由 DeepTutor 提供，它装在仓库外面。在终端里运行下面两行，然后重新运行 npm run dev。其余页面不受影响。' : 'Chat, memory and practice questions come from DeepTutor, which is installed outside the repository. Run these two lines in a terminal, then run npm run dev again. The other pages work without it.',
+      body: zh ? '对话、记忆和出题由 DeepTutor 提供，它装在仓库外面。在终端里运行下面几行（第一行安装 uv，已经有 uv 就跳过），然后重新运行 npm run dev。其余页面不受影响。' : 'Chat, memory and practice questions come from DeepTutor, which is installed outside the repository. Run these lines in a terminal (the first installs uv; skip it if you have uv), then run npm run dev again. The other pages work without it.',
       command: INSTALL_COMMAND,
     };
     case 'unsupported-provider': return {
@@ -64,7 +65,12 @@ export function describeStatus(status: AssistantStatus | null, language: Languag
       title: zh ? '这次启动没有带助手' : 'This run was started without the assistant',
       body: zh ? '去掉环境变量 STUDYORBIT_DEEPTUTOR=off 后重新运行 npm run dev。' : 'Remove the environment variable STUDYORBIT_DEEPTUTOR=off and run npm run dev again.',
     };
-    case 'failed': return {
+    case 'failed': if (/^port \d+ is in use/.test(status.reason)) return {
+      title: zh ? 'DeepTutor 的端口被别的程序占用' : 'DeepTutor\'s port is taken by another program',
+      body: zh ? '那个端口上已经有一个不属于这个项目的 DeepTutor 或别的程序，这里不会接管它。关掉它，或者换一个端口（环境变量 STUDYORBIT_DEEPTUTOR_API_PORT），然后重新运行下面的命令。其余页面不受影响。' : 'Something that is not this project\'s DeepTutor already answers on that port, and it is not taken over. Stop it, or choose another port (environment variable STUDYORBIT_DEEPTUTOR_API_PORT), then run the command below again. The other pages work without it.',
+      detail: status.reason, command: 'npm run dev',
+    };
+    return {
       title: zh ? 'DeepTutor 没有在运行' : 'DeepTutor is not running',
       body: zh ? '停止后重新运行下面的命令；出错原因也会打印在运行它的终端里。其余页面不受影响。' : 'Stop and run the command below again; the reason is also printed in the terminal it runs in. The other pages work without it.',
       detail: status.reason, command: 'npm run dev',

@@ -16,6 +16,6 @@ export function agentContextRoute({ projectDir }: RouteContext): RouteHandler {
     const parsed = parseAgentContext(body.value);
     if (!parsed.ok) { json(400, { error: 'INVALID_CONTEXT' }); return; }
     try { json(200, { ok: true, savedAt: (await writeAgentContext(projectDir, parsed.context)).savedAt }); }
-    catch { json(500, { error: 'CONTEXT_UNAVAILABLE' }); }
+    catch (error) { if ((error as Error).message === 'TOO_LARGE') json(413, { error: 'TOO_LARGE' }); else json(500, { error: 'CONTEXT_UNAVAILABLE' }); }
   };
 }

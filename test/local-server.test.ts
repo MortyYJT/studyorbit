@@ -203,6 +203,16 @@ describe('agent-context', () => {
     expect((await write('PUT', '/api/local/agent-context', 'x'.repeat(200001))).status).toBe(413);
     expect((await write('PUT', '/api/local/agent-context', { selectedCourseIds: [] }, { origin: 'http://evil.example' })).status).toBe(403);
     expect((await write('PUT', '/api/local/agent-context', { selectedCourseIds: [] }, { 'content-type': 'text/plain' })).status).toBe(403);
+    // A body just under the request limit whose stored form (with the save time) is over the file limit: refused, not
+    // accepted and then unreadable.
+    const task = (index: number, pad: number) => ({ key: `k${index}-${'x'.repeat(pad)}`, title: 't', courseId: '900001', courseCode: 'SYNT10001', due: '2026-09-18', minutes: 30 });
+    const fill: ReturnType<typeof task>[] = [];
+    const near = (pad: number) => JSON.stringify({ selectedCourseIds: ['900001'], planning: { ...planning, tasks: [...fill, task(999, pad)] } });
+    while (near(1).length < 199550) fill.push(task(fill.length, 300));
+    const body = near(1 + 199995 - near(1).length);
+    expect(body.length).toBeGreaterThan(199980);
+    expect(body.length).toBeLessThanOrEqual(200000);
+    expect((await write('PUT', '/api/local/agent-context', body)).status).toBe(413);
     expect((await get('/api/local/agent-context')).json()).toEqual({ error: 'METHOD_NOT_ALLOWED' });
     expect(await readFile(file(), 'utf8')).toBe(before);
   });

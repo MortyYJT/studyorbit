@@ -78,7 +78,7 @@ Entry points are `npm run dev` (`dev.mjs`) and `npm run sync:courses` (collects 
 | `eval-chat-qa.mjs`, `lib/qa-grade.mjs` | Chat Q&A evaluation and its pure grader ([details](eval-chat-qa.md)) |
 | `lib/deeptutor.mjs`, `deeptutor/guard_app.py`, `deeptutor/prepare_web.py`, `deeptutor/skill/SKILL.md` | The assistant: finds the DeepTutor install, writes its configuration (never the key), starts its API behind the guard and its web server on loopback, installs the house rules, stops what it started; the ASGI guard; the web-file preparation; the always-on rules ([Assistant](deeptutor.md)) |
 | `lib/agent-context.mjs` | Validates and stores the page context for the MCP server (`.local/agent-context.json`, atomic, mode 600) |
-| `mcp-server.mjs`, `lib/course-mcp.mjs` | Local stdio MCP server (`--project`, `--desktop`, `--courses` or `STUDYORBIT_COURSES`; writes nothing, calls no model, no network; reads the page context when the Agent page has saved one); one MCP tool per course tool, re-reading course files on every call ([setup](../README.md#use-from-an-mcp-client)) |
+| `mcp-server.mjs`, `lib/course-mcp.mjs` | Local stdio MCP server (`--project`, `--desktop`, `--courses` or `STUDYORBIT_COURSES`; writes nothing, calls no model, no network; with `--page-context`, which only DeepTutor's registration passes, it also reads the page context); one MCP tool per course tool, re-reading course files on every call ([setup](../README.md#use-from-an-mcp-client)) |
 | `lib/course-list.mjs` | Canvas course JSON parsing and course-code filtering |
 | `lib/course-analysis.mjs`, `lib/course-validation.mjs`, `lib/course-refs.mjs`, `lib/course-quotes.mjs`, `lib/normalise-text.mjs` | Analysis prompt and output schema; validation and the repair round; platform references and Handbook component parsing; quote verification; text normalisation |
 | `lib/course-reports.mjs` | Reads the selected courses and each course folder's newest valid course JSON |
@@ -102,7 +102,7 @@ Entry points are `npm run dev` (`dev.mjs`) and `npm run sync:courses` (collects 
 | Data source settings (mode 600, folder 700; delete to return to UniMelb + Edge) | `.local/config/sources.json` |
 | Chats of the old chat, revision notes | `.local/chat/`, `.local/revision/notes.json` |
 | Page context for the assistant (course selection, course in focus, planning snapshot; mode 600; rewritten when the Agent page opens) | `.local/agent-context.json` |
-| DeepTutor's sessions, memory and settings; the PIDs of its running processes | `.local/deeptutor/home/`, `.local/deeptutor/processes.json` |
+| DeepTutor's sessions, memory and settings; the PIDs of its running processes; this checkout's instance id | `.local/deeptutor/home/`, `.local/deeptutor/processes.json`, `.local/deeptutor/instance-id` |
 | Each course's course JSON | UniMelb `~/Desktop/墨尔本大学 <year> S<semester>/<code>/分数结构*.json`; other institutions `~/Desktop/StudyOrbit <semester>/<code>/分数结构*.json` (new files never overwrite old ones; the newest valid file is read) |
 | Course selection, tasks, availability, target band, appearance, seen-change markers (`studyorbit.course-changes-seen.v1`); corrections from before the move (backup only) | Browser localStorage (per browser and port; keys use the `studyorbit.` prefix; keys and the background image saved under the former prefix are moved on the first load (`web/src/storage-prefix.ts`)) |
 | Background image | Browser IndexedDB `studyorbit` |

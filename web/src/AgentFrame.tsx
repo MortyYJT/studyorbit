@@ -2,8 +2,8 @@
 // page's course context for the MCP server, asks the local server whether DeepTutor is up, and for a preset prompt
 // starts one DeepTutor session after the owner's click. When DeepTutor is missing or stopped, the page says what to
 // run. The frame exists only while this page is showing: DeepTutor's chat page calls the model when it opens.
-import { useEffect, useRef, useState } from 'react';
-import type { AgentRequest } from './agent-request.js';
+import { useEffect, useState } from 'react';
+import { agentRequestClaimed, claimAgentRequest, type AgentRequest } from './agent-request.js';
 import { agentContextBody, describeStatus, frameUrl, statusPollMs, type AssistantStatus } from './agent-frame.js';
 import type { Language } from './i18n.js';
 import { readAvailability, readTargets, readWork, type SidebarCourse } from './LocalPlanning.js';
@@ -23,7 +23,6 @@ export function AgentFrame({ language, courses, request, onOpenSettings, onOldCh
   // The session a preset started, per request; `failed` when DeepTutor did not take the prompt.
   const [turn, setTurn] = useState<{ nonce: number; sessionId?: string; failed?: boolean }>();
   const [contextSaved, setContextSaved] = useState(true);
-  const sent = useRef<number>(undefined);
   const up = status?.state === 'running' || status?.state === 'external';
 
   // Status: asked on arrival and then on a timer while the page shows; never calls the model.
@@ -57,8 +56,7 @@ export function AgentFrame({ language, courses, request, onOpenSettings, onOldCh
 
   // A preset prompt: one session, started once per request, only when DeepTutor is up.
   useEffect(() => {
-    if (!up || !request?.prompt || sent.current === request.nonce) return;
-    sent.current = request.nonce;
+    if (!up || !request?.prompt || !claimAgentRequest(request.nonce)) return;
     const nonce = request.nonce;
     setTurn({ nonce });
     fetch('/api/local/deeptutor/turns', { method: 'POST', headers: json, body: JSON.stringify({ content: request.prompt, language }) })
@@ -67,7 +65,10 @@ export function AgentFrame({ language, courses, request, onOpenSettings, onOldCh
   }, [up, request, language]);
 
   const notice = describeStatus(status, language);
-  const waitingForTurn = !!request?.prompt && up && (turn?.nonce !== request.nonce || (!turn.sessionId && !turn.failed));
+  // Waiting: the prompt is about to be handed over (not claimed yet) or its session id has not come back. A request
+  // that was claimed before this mount (by the old chat, or before a remount) is not waited for and not sent again.
+  const mine = turn?.nonce === request?.nonce;
+  const waitingForTurn = !!request?.prompt && up && (mine ? !turn!.sessionId && !turn!.failed : !agentRequestClaimed(request.nonce));
   const reveal = useReveal(!(notice?.busy || waitingForTurn));
   const session = turn && request && turn.nonce === request.nonce ? turn.sessionId : undefined;
   const src = up && !waitingForTurn ? frameUrl(status.url, window.location.hostname, session) : null;
@@ -86,7 +87,7 @@ export function AgentFrame({ language, courses, request, onOpenSettings, onOldCh
       <button className="small ghost" onClick={onOldChat}>{zh ? '旧版对话' : 'Old chat'}</button>
     </div>
     {src
-      ? <iframe className="agent-frame" title="DeepTutor" src={src} allow="clipboard-write; microphone" referrerPolicy="no-referrer" />
+      ? <iframe className="agent-frame" title="DeepTutor" src={src} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" allow="clipboard-write" referrerPolicy="no-referrer" />
       : notice && !notice.busy
         ? <div className="empty agent-frame-notice" role="status">
           <h2>{notice.title}</h2>

@@ -45,7 +45,13 @@ describe('describeStatus', () => {
       expect(missing.command).toBe(INSTALL_COMMAND);
       expect(missing.command).toContain('deeptutor[server,web,memory,questions,notebook]==1.7.4');
       expect(missing.command).not.toContain('solve');
+      // The machine may not have uv either: the first line gets it.
+      expect(missing.command!.split('\n')[0]).toBe('curl -LsSf https://astral.sh/uv/install.sh | sh');
       expect(describeStatus({ state: 'failed', reason: 'DeepTutor API exited' }, language)).toMatchObject({ detail: 'DeepTutor API exited', command: 'npm run dev' });
+      // A port taken by something else: the page names the two ways out instead of only "run it again".
+      const taken = describeStatus({ state: 'failed', reason: 'port 5196 is in use by another DeepTutor or program' }, language)!;
+      expect(taken.detail).toBe('port 5196 is in use by another DeepTutor or program');
+      expect(taken.body).toContain('STUDYORBIT_DEEPTUTOR_API_PORT');
       expect(describeStatus({ state: 'unsupported-provider' }, language)).toMatchObject({ settings: true });
       expect(describeStatus({ state: 'off' }, language)!.title.length).toBeGreaterThan(0);
       expect(describeStatus({ state: 'starting' }, language)).toMatchObject({ busy: true });

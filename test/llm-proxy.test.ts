@@ -1,5 +1,9 @@
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { proxyKey } from '../scripts/lib/deeptutor.mjs';
 import { createLlmProxy, type LlmProxy } from '../server/llm-proxy.ts';
 import { call, closeServer, listen, open } from './local-api-helpers.ts';
 
@@ -63,6 +67,28 @@ describe('model proxy', () => {
     const reply = await request(port, '/responses');
     expect(reply.status).toBe(503);
     expect(seen).toHaveLength(0);
+  });
+
+  it('stops forwarding when the model settings switch to another provider: that provider\'s key never reaches DeepSeek', async () => {
+    const DEEPSEEK = 'sk-deepseek-sentinel-000', OTHER = 'sk-other-provider-sentinel-999';
+    const project = await mkdtemp(join(tmpdir(), 'so-proxy-key-'));
+    try {
+      upstream = createServer(async (req, res) => { for await (const _ of req) { /* drain */ } seen.push({ method: req.method, url: req.url, headers: req.headers, body: '' }); res.end('{}'); });
+      const upstreamPort = await listen(upstream);
+      const env = { DEEPSEEK_API_KEY: DEEPSEEK, ANTHROPIC_API_KEY: OTHER };
+      proxy = createLlmProxy({ token: TOKEN, upstream: `http://127.0.0.1:${upstreamPort}`, resolveKey: () => proxyKey(project, env), log: line => lines.push(line) });
+      const port = await proxy.listen(0);
+      expect((await request(port, '/responses')).status).toBe(200);
+      expect(seen.at(-1)!.headers.authorization).toBe(`Bearer ${DEEPSEEK}`);
+      // The owner saves another provider in Settings while DeepTutor is running.
+      await mkdir(join(project, '.local', 'config'), { recursive: true });
+      await writeFile(join(project, '.local', 'config', 'llm.json'), JSON.stringify({ provider: 'anthropic', apiKey: OTHER, updatedAt: '2026-11-24T00:00:00.000Z' }));
+      expect((await request(port, '/responses')).status).toBe(503);
+      await writeFile(join(project, '.local', 'config', 'llm.json'), JSON.stringify({ provider: 'openai-compatible', apiKey: OTHER, baseUrl: 'https://api.example.com/v1/chat/completions', model: 'm', updatedAt: '2026-11-24T00:00:00.000Z' }));
+      expect((await request(port, '/chat/completions')).status).toBe(503);
+      expect(seen).toHaveLength(1);
+      expect(JSON.stringify(seen)).not.toContain(OTHER);
+    } finally { await rm(project, { recursive: true, force: true }); }
   });
 
   it('streams the reply as it arrives and passes the status through', async () => {

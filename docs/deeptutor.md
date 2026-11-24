@@ -13,12 +13,14 @@ Everything marked "measured" was run on 2026-11-24 on one Mac with DeepTutor 1.7
 | Model proxy (inside the local API server) | `127.0.0.1:5197`; `5199` | `server/llm-proxy.ts` |
 | DeepTutor API behind StudyOrbit's guard | `127.0.0.1:5195`; `5196` | DeepTutor's interpreter running `uvicorn guard_app:app` (`scripts/deeptutor/guard_app.py`) |
 | DeepTutor web server | `127.0.0.1:5175`; `5185` | `node <home>/data/user/runtime/web/server.js`, prepared by `scripts/deeptutor/prepare_web.py` |
-| StudyOrbit's MCP server | stdio child of DeepTutor's API | `node scripts/mcp-server.mjs --project <this checkout>` |
+| StudyOrbit's MCP server | stdio child of DeepTutor's API | `node scripts/mcp-server.mjs --project <this checkout> --page-context` |
 
 - "Owner's instance" is the one whose page is on port 5173. Every other page port gets the second set, so a test run cannot reach the owner's DeepTutor. Override with `STUDYORBIT_DEEPTUTOR_WEB_PORT`, `STUDYORBIT_DEEPTUTOR_API_PORT`, `STUDYORBIT_LLM_PROXY_PORT`.
 - DeepTutor's data (sessions, memory, settings) is in `.local/deeptutor/home` of the checkout, mode 700, ignored by Git. Each checkout has its own.
 - Start-up measured: 6 s for the API and 1 s for the web server; the first start in a checkout also copies 123 MB of web files. `deeptutor start` is not used because it binds every network interface.
-- The server stops the processes it started when it stops, and nothing else. If DeepTutor's API already answers on the port, it is used as it is and left running. If the server was killed without cleaning up, the next start stops the two processes recorded in `.local/deeptutor/processes.json`, after checking their command lines.
+- The server stops the processes it started when it stops, and nothing else. Each process is written to `.local/deeptutor/processes.json` the moment it is launched; if the server was killed without cleaning up, the next start stops the recorded processes after checking their command lines.
+- If something already answers on the API port, it is used only when it proves to be this checkout's own guarded DeepTutor: the guard answers `/studyorbit-guard/instance` with the id kept in `.local/deeptutor/instance-id`. Another checkout's DeepTutor (other courses) or an unguarded one is not adopted; the status is `failed` with "port … is in use" and the page says to stop it or choose another port. It is never stopped.
+- A stop that arrives while the assistant is still starting leaves no process and no open proxy port.
 - Whatever goes wrong becomes a status on the Agent page (`GET /api/local/deeptutor/status`: `starting`, `running`, `external`, `not-installed`, `unsupported-provider`, `failed` with a reason, `off`). StudyOrbit itself starts and runs the same without DeepTutor. Measured: with the API process killed, the web process was stopped, the page showed "not running" with the reason, and the course pages kept working.
 - `STUDYORBIT_DEEPTUTOR=off` starts StudyOrbit without the assistant.
 
@@ -27,6 +29,7 @@ Everything marked "measured" was run on 2026-11-24 on one Mac with DeepTutor 1.7
 The owner asked for two things that DeepTutor 1.7.4 cannot give together: the key read through DeepTutor's `api_key_env`, and the key never written to a file. `deeptutor config apply` resolves the variable named by `api_key_env` once and saves the value in clear in `data/user/settings/model_catalog.json` (`deeptutor_cli/setup_config.py`); there is no mode that keeps only the name. The no-file rule was kept:
 
 - DeepTutor is configured with `base_url` = the model proxy and `api_key_env` = a variable that holds a random token created for this launch.
+- The key is read from StudyOrbit's settings on every request, and only while those settings still name DeepSeek: after a switch to another provider the proxy answers 503, so another provider's key is never sent to DeepSeek's address.
 - The proxy accepts a request only from a loopback peer, with its own `Host`, without an `Origin` header and with that token, and only `POST /responses`, `POST /chat/completions` and `GET /models`. It replaces the token with the key from StudyOrbit's model settings (or `DEEPSEEK_API_KEY`) and forwards to `https://api.deepseek.com`. It logs why a request was refused and nothing else: no headers, no bodies.
 - DeepTutor's processes get a short environment (`PATH`, `HOME`, locale): no key, no API token, no proxy variables.
 - Measured after real turns: no file under `.local/deeptutor` contained the key. A test does the same with a sentinel key over every generated file, argument and child environment.
@@ -59,9 +62,9 @@ Not covered: a program running as the same user can call DeepTutor's API (it nee
 
 DeepTutor calls StudyOrbit's six read-only tools through MCP (`mcp_studyorbit_list_courses` and so on, after its `load_tools` step). Grades, targets, deadlines and the plan are still computed by `shared/course-tools.ts`.
 
-What the MCP server cannot read from the browser reaches it through a file. The Agent page sends the course selection, the course it was opened from and the planning snapshot (tasks, time estimates, daily hours, target bands) to `PUT /api/local/agent-context`; the server validates it and writes `.local/agent-context.json` (mode 600); the MCP server reads it on every call:
+What the MCP server cannot read from the browser reaches it through a file, and only the MCP server that DeepTutor starts reads it (it is registered with `--page-context`; Claude Code, Claude Desktop and other MCP clients behave as before). The Agent page sends the course selection, the course it was opened from and the planning snapshot (tasks, time estimates, daily hours, target bands) to `PUT /api/local/agent-context`; the server validates it and writes `.local/agent-context.json` (mode 600); the MCP server reads it on every call:
 
-- the scope is the page's course selection (a `--courses` filter still narrows it);
+- the scope is the page's course selection (a `--courses` filter still narrows it; a selection that names none of the listed courses, such as an empty one, narrows nothing);
 - `plan_schedule` plans the page's tasks and returns `snapshotSavedAt`;
 - `list_courses` returns `focus` with the course the page was opened from, for 30 minutes after it was saved.
 
@@ -87,7 +90,7 @@ This is a prompt rule, not an enforcement. Two other things back it: DeepTutor's
 | DeepTutor feature | Reaches | Here |
 | --- | --- | --- |
 | The model (`chat`, `deep_question`, input suggestions) | the model provider, through the proxy | on |
-| `web_search` | a search provider | off: no provider configured and the tool disabled in `main.yaml`. Measured: a call returned "no search provider is configured" |
+| `web_search` | a search provider | off: no provider configured and the tool disabled in `main.yaml`. The launcher reads the file back and refuses to start DeepTutor (status `failed`) when it cannot confirm `enabled: false`. Measured: a call returned "no search provider is configured" |
 | `web_fetch`, `github` | any URL the model asks for; GitHub's API | **cannot be switched off in 1.7.4**: they are mounted for every chat turn, and the per-turn tool list only selects the eight optional tools. The rules above forbid sending course data |
 | `paper_search`, `zotero_search`, `imagegen`, `videogen`, `brainstorm`, `reason`, `geogebra_analysis` | their services or the model | off in sessions StudyOrbit starts (`tools: []`); can be switched on in DeepTutor's composer |
 | `exec` (runs model-written code) | this machine | off. On macOS its only backend is a restricted child process, not a system sandbox; it exists only when `sandbox_allow_subprocess` is true, which the launcher sets to false. Measured: offered to the model before, not offered after |
@@ -96,16 +99,17 @@ This is a prompt rule, not an enforcement. Two other things back it: DeepTutor's
 
 ## The Agent page
 
-- The page shows DeepTutor's chat in a frame, with "Open in a new tab" and "Old chat". DeepTutor sends no `X-Frame-Options` or `Content-Security-Policy`, so framing needs no change on its side.
+- The page shows DeepTutor's chat in a frame, with "Open in a new tab" and "Old chat". The frame is sandboxed (`allow-scripts allow-same-origin allow-forms allow-popups`) and is given clipboard writing only: no microphone, no downloads, no navigation of the StudyOrbit page. Measured with the sandbox: the page loaded and a preset session streamed. DeepTutor's voice input and file downloads were not tried in the frame; use the new tab for them. DeepTutor sends no `X-Frame-Options` or `Content-Security-Policy`, so framing needs no change on its side.
 - "Ask Agent" on a course saves the context with that course in focus and opens a new conversation. Nothing is sent to the model.
 - A revision preset (including "10 practice questions") starts one DeepTutor chat session with the prompt through `POST /api/local/deeptutor/turns` and the frame opens that session. Measured: the session id came back at once, the frame showed the reply streaming, and the turn finished after StudyOrbit had closed its own connection. The presets use plain chat: DeepTutor's `deep_question` capability produced two questions only after seven protocol retries and one schema repair with `deepseek-flash` (120,846 tokens).
+- A request from another page is acted on once, by whichever Agent page takes it first: moving between DeepTutor and the old chat does not send the prompt again (measured in the browser: one hand-over across two round trips).
 - The frame is created only while the Agent page is showing. Opening DeepTutor's chat page makes it ask the model for input suggestions (measured: two calls, 1,858 tokens).
 - DeepTutor's page follows the system's light or dark setting, not a theme picked in StudyOrbit's settings. Its interface language is its own setting (English by default).
 - DeepTutor's page still shows "Solve" and "Research" shortcuts although those modules are not installed. Not tried.
 
 ## Token use
 
-One question costs several times what StudyOrbit's own tool-mode chat did: DeepTutor's prompt and tool list are about 6,500 to 8,500 input tokens per model call and each tool round resends the conversation. Measured totals per question are in the tables above (34,635 to 57,390 for a grade or revision question, most of it cache hits); the old tool-mode chat averaged 6,748 input tokens per question on its own question set ([Chat Q&A evaluation](eval-chat-qa.md)). The two were not run on the same questions. All real calls for this change: 54 calls and 403,882 tokens for the first trial (the provider's usage figures), then 24 calls and 178,858 tokens while building the integration (5 calls counted from the provider's figures, 19 from DeepTutor's usage ledger, which includes 5 calls and 4,615 tokens that belong to no chat turn: input suggestions and titles).
+One question costs several times what StudyOrbit's own tool-mode chat did: DeepTutor's prompt and tool list are about 6,500 to 8,500 input tokens per model call and each tool round resends the conversation. Measured totals per question are in the tables above (34,635 to 57,390 for a grade or revision question, most of it cache hits); the old tool-mode chat averaged 6,748 input tokens per question on its own question set ([Chat Q&A evaluation](eval-chat-qa.md)). The two were not run on the same questions. All real calls for this change: 54 calls and 403,882 tokens for the first trial (the provider's usage figures), then 39 calls and 278,562 tokens while building and reviewing the integration (5 calls counted from the provider's figures, 34 from DeepTutor's usage ledger, which includes the calls that belong to no chat turn: input suggestions and titles).
 
 ## Not verified
 

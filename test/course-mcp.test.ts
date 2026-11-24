@@ -190,7 +190,11 @@ describe('courseContextLoader', () => {
     const planning = { tasks: [{ key: 't1', title: 'Draft', courseId: '101', courseCode: 'SYNT10001', due: '2026-09-18', minutes: 180 }], availability: [120, 120, 120, 120, 120, 120, 120], targets: {} };
     await writeAgentContext(project, { selectedCourseIds: ['101', '999'], focusCourseId: '101', planning }, () => new Date('2026-09-14T15:20:00Z'));
     const before = (await readdir(join(project, '.local'))).sort();
-    const client = await connect(courseContextLoader({ projectDir: project, desktop, now }));
+    // Without `pageContext` (Claude Code, Claude Desktop and every other MCP client) the file changes nothing.
+    const plain = await courseContextLoader({ projectDir: project, desktop, now })();
+    expect(plain).toMatchObject({ scope: ['101', '202'], planning: null });
+    expect(plain.focusCourseId).toBeUndefined();
+    const client = await connect(courseContextLoader({ projectDir: project, desktop, now, pageContext: true }));
     const list = JSON.parse((await call(client, 'list_courses', {})).text);
     expect(list.courses.map((course: { id: string }) => course.id)).toEqual(['101']);
     expect(list.focus).toEqual({ courseId: '101', code: 'SYNT10001' });
@@ -201,15 +205,22 @@ describe('courseContextLoader', () => {
     expect((await readdir(join(project, '.local'))).sort()).toEqual(before);
     // The filter still narrows the page's selection; a focus saved two hours ago is not reported.
     await writeAgentContext(project, { selectedCourseIds: ['101', '202'], focusCourseId: '202', planning: null }, () => new Date('2026-09-14T13:30:00Z'));
-    const stale = await courseContextLoader({ projectDir: project, desktop, courseIds: ['202'], now })();
+    const stale = await courseContextLoader({ projectDir: project, desktop, courseIds: ['202'], now, pageContext: true })();
     expect(stale.scope).toEqual(['202']);
     expect(stale.focusCourseId).toBeUndefined();
     expect(stale.planning).toBeNull();
+    // An empty selection (the page had not loaded its courses yet) and a selection of unknown courses do not narrow.
+    for (const selectedCourseIds of [[], ['999']]) {
+      await writeAgentContext(project, { selectedCourseIds, focusCourseId: null, planning }, () => new Date('2026-09-14T15:20:00Z'));
+      const open = await courseContextLoader({ projectDir: project, desktop, now, pageContext: true })();
+      expect(open.scope).toEqual(['101', '202']);
+      expect(open.planning).toEqual(planning);
+    }
   });
 
   it('ignores an invalid page context', async () => {
     await writeFile(join(project, '.local', 'agent-context.json'), '{"savedAt":"nope"}');
-    const ctx = await courseContextLoader({ projectDir: project, desktop, now })();
+    const ctx = await courseContextLoader({ projectDir: project, desktop, now, pageContext: true })();
     expect(ctx.scope).toEqual(['101', '202']);
     expect(ctx.planning).toBeNull();
   });
@@ -226,6 +237,8 @@ describe('parseServerOptions', () => {
     expect(parseServerOptions([], { STUDYORBIT_COURSES: '303' }).courseIds).toEqual(['303']);
     expect(parseServerOptions(['--courses', '101'], { STUDYORBIT_COURSES: '303' }).courseIds).toEqual(['101']);
     expect(parseServerOptions([], {}).courseIds).toBeNull();
+    expect(parseServerOptions([], {}).pageContext).toBe(false);
+    expect(parseServerOptions(['--page-context'], {}).pageContext).toBe(true);
     expect(parseServerOptions([], { STUDYORBIT_COURSES: ' ' }).courseIds).toBeNull();
     expect(parseServerOptions([], {}).desktop).toBeUndefined();
   });

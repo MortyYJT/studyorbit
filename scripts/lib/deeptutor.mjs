@@ -99,7 +99,8 @@ export function mergeMcpConfig(existing, { node, projectDir, desktopDir }) {
   const servers = existing && typeof existing === 'object' && existing.servers && typeof existing.servers === 'object' && !Array.isArray(existing.servers) ? existing.servers : {};
   return { servers: { ...servers, studyorbit: {
     type: 'stdio', command: node,
-    args: [MCP_SCRIPT, '--project', projectDir, ...(desktopDir ? ['--desktop', desktopDir] : [])],
+    // `--page-context`: only this MCP server, the one DeepTutor starts, reads what the Agent page saved (decision #546).
+    args: [MCP_SCRIPT, '--project', projectDir, '--page-context', ...(desktopDir ? ['--desktop', desktopDir] : [])],
     cwd: projectDir, tool_timeout: 30, enabled: true,
   } } };
 }
@@ -109,9 +110,59 @@ export function restrictSystemSettings(existing) {
   return { ...(existing && typeof existing === 'object' && !Array.isArray(existing) ? existing : {}), sandbox_allow_subprocess: false, version_check_enabled: false };
 }
 
-/** `main.yaml` with `tools.web_search.enabled` set to false. The file is DeepTutor's; only that one line changes. */
+/**
+ * Where `enabled` of the block-style `web_search:` mapping is in `main.yaml`: the line index of `web_search:`, its
+ * indentation, and the index and value of its own `enabled:` line (null when the block has none). Null when there is
+ * no such block or it is written in a form this does not read (flow style `{...}`), so callers can refuse to guess.
+ */
+function webSearchBlock(lines) {
+  const start = lines.findIndex(line => /^\s+web_search:\s*(#.*)?$/.test(line));
+  if (start === -1) return null;
+  const indent = lines[start].match(/^\s*/)[0].length;
+  let childIndent = null, enabledAt = null, value = null;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    const depth = line.match(/^\s*/)[0].length;
+    if (depth <= indent) break;
+    childIndent ??= depth;
+    const match = depth === childIndent ? /^\s*enabled:\s*(.*?)\s*(#.*)?$/.exec(line) : null;
+    if (match) { enabledAt = index; value = match[1].replace(/^["']|["']$/g, '').toLowerCase(); }
+  }
+  return { start, indent, childIndent: childIndent ?? indent + 2, enabledAt, value };
+}
+
+/** True only when `main.yaml` has a block-style `web_search:` whose `enabled` is written as false. */
+export function webSearchOff(yaml) {
+  const block = webSearchBlock(yaml.split('\n'));
+  return !!block && block.enabledAt !== null && ['false', 'no', 'off'].includes(block.value);
+}
+
+/**
+ * `main.yaml` with `web_search.enabled` set to false: the block's own `enabled` line is rewritten wherever it stands,
+ * or added as the block's first key. The file is DeepTutor's and nothing else in it changes. Text without a readable
+ * `web_search:` block is returned unchanged; `webSearchOff` then says so and the launcher refuses to start.
+ */
 export function disableWebSearch(yaml) {
-  return yaml.replace(/^(\s*web_search:\s*\n\s*enabled:\s*)true\b/m, '$1false');
+  const lines = yaml.split('\n');
+  const block = webSearchBlock(lines);
+  if (!block) return yaml;
+  const line = `${' '.repeat(block.childIndent)}enabled: false`;
+  if (block.enabledAt === null) lines.splice(block.start + 1, 0, line); else lines[block.enabledAt] = line;
+  return lines.join('\n');
+}
+
+/**
+ * The key the model proxy may add (decision #542): the DeepSeek key, and only while the model settings still resolve
+ * to DeepSeek. The settings are read on every request, so when the owner switches to another provider while DeepTutor
+ * runs, that provider's key is never sent to DeepSeek's address: the proxy answers 503 instead.
+ * @param {string} projectDir
+ * @param {Record<string, string | undefined>} env
+ * @returns {Promise<string | null>}
+ */
+export async function proxyKey(projectDir, env) {
+  const config = await resolveAnalysisConfig(projectDir, env);
+  return config.provider === 'deepseek' && !config.invalidProvider ? config.apiKey ?? null : null;
 }
 
 const PASSED_ENV = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'TERM'];
@@ -130,8 +181,9 @@ export function apiCommand({ python, port: apiPort }) {
 }
 
 /** Origins the guard accepts: DeepTutor's own page and the StudyOrbit page, under both loopback names. */
-export function guardEnv({ ports, webPort }) {
+export function guardEnv({ ports, webPort, instance }) {
   return {
+    ...(instance ? { STUDYORBIT_GUARD_INSTANCE: instance } : {}),
     STUDYORBIT_GUARD_PORTS: `${ports.api},${ports.web}`,
     STUDYORBIT_GUARD_ORIGINS: [ports.web, webPort].flatMap(value => [`http://localhost:${value}`, `http://127.0.0.1:${value}`]).join(','),
   };
@@ -166,6 +218,8 @@ export function createAssistant({ projectDir, desktopDir, webPort, env = process
   let status = { state: 'starting' };
   let ports, proxy, stopped = false;
   const children = new Map();
+  /** Every process is on record from the moment it is launched, so a server killed at any point leaves none untracked. */
+  const started = [];
   const dataDir = join(projectDir, '.local', 'deeptutor');
   const dtHome = join(dataDir, 'home');
   const processFile = join(dataDir, 'processes.json');
@@ -215,6 +269,7 @@ export function createAssistant({ projectDir, desktopDir, webPort, env = process
     const deadline = Date.now() + killAfterMs;
     while (children.size && Date.now() < deadline) await sleep(50);
     for (const child of children.values()) child.kill('SIGKILL');
+    started.length = 0;
     await rm(processFile, { force: true });
     // Without DeepTutor nothing may use the model proxy: its port closes with the processes.
     await proxy?.close();
@@ -239,6 +294,27 @@ export function createAssistant({ projectDir, desktopDir, webPort, env = process
     await rm(processFile, { force: true });
   }
 
+  async function record(child, marker) {
+    started.push({ pid: child.pid, marker });
+    await writePrivate(processFile, JSON.stringify(started));
+  }
+
+  /** This checkout's instance id: the guard answers with it, which is how a running DeepTutor is recognised as ours. */
+  async function instanceId() {
+    const file = join(dataDir, 'instance-id');
+    try { const saved = (await readFile(file, 'utf8')).trim(); if (/^[0-9a-f]{32}$/.test(saved)) return saved; } catch { /* first start */ }
+    const created = randomBytes(16).toString('hex');
+    await writePrivate(file, `${created}\n`);
+    return created;
+  }
+  /** Whether what answers on the API port is this project's guarded DeepTutor (decision #549). */
+  async function ours(id) {
+    try {
+      const reply = await fetch(`http://127.0.0.1:${ports.api}/studyorbit-guard/instance`, { signal: AbortSignal.timeout(2000) });
+      return reply.ok && (await reply.json())?.instance === id;
+    } catch { return false; }
+  }
+
   async function installSkill() {
     const content = await readFile(join(SCRIPTS, 'skill', 'SKILL.md'), 'utf8');
     const description = /^description:\s*(.+)$/m.exec(content)?.[1] ?? '';
@@ -260,42 +336,55 @@ export function createAssistant({ projectDir, desktopDir, webPort, env = process
       await stopLeftovers();
       const url = `http://localhost:${ports.web}`;
       const warning = installWarning(install);
-      if (await healthy()) { status = { state: 'external', url, ...(warning ? { warning } : {}) }; log('[assistant] DeepTutor is already running; using it as it is'); return; }
+      const instance = await instanceId();
+      if (await healthy()) {
+        // Something already answers there. It is used only when it is this project's own guarded DeepTutor; another
+        // checkout's instance (other courses) or an unguarded DeepTutor is never adopted.
+        if (await ours(instance)) { status = { state: 'external', url, ...(warning ? { warning } : {}) }; log('[assistant] this project\'s DeepTutor is already running; using it as it is'); return; }
+        return fail(`port ${ports.api} is in use by another DeepTutor or program`);
+      }
+      if (stopped) return;
 
       const token = randomBytes(32).toString('hex');
       proxy = createProxy({ token, upstream: DEEPSEEK_UPSTREAM });
       await proxy.listen(ports.proxy);
+      if (stopped) return await stopChildren();
 
       const init = await run(install.bin, ['init', '--non-interactive']);
-      if (init.code !== 0) return fail(`deeptutor init failed (exit ${init.code})`);
+      if (init.code !== 0) { fail(`deeptutor init failed (exit ${init.code})`); return await stopChildren(); }
       const setupFile = join(dataDir, 'setup.json');
       await writePrivate(setupFile, `${JSON.stringify(setupProfile({ model: model.model, ports }), null, 2)}\n`);
       const applied = await run(install.bin, ['config', 'apply', setupFile], { [PROXY_TOKEN_ENV]: token });
-      if (applied.code !== 0) return fail(`deeptutor config apply failed (exit ${applied.code})`);
+      if (applied.code !== 0) { fail(`deeptutor config apply failed (exit ${applied.code})`); return await stopChildren(); }
       const settings = join(dtHome, 'data', 'user', 'settings');
       await writePrivate(join(settings, 'system.json'), `${JSON.stringify(restrictSystemSettings(await readJson(join(settings, 'system.json'))), null, 2)}\n`);
-      try { const yaml = join(settings, 'main.yaml'); await writeFile(yaml, disableWebSearch(await readFile(yaml, 'utf8'))); } catch { /* no main.yaml: nothing to switch off */ }
+      // Web search: switched off in DeepTutor's own file, then read back. If that cannot be confirmed, do not start.
+      let searchOff = false;
+      try { const yaml = join(settings, 'main.yaml'); await writeFile(yaml, disableWebSearch(await readFile(yaml, 'utf8'))); searchOff = webSearchOff(await readFile(yaml, 'utf8')); } catch { /* reported below */ }
+      if (!searchOff) { fail('web search could not be switched off in DeepTutor\'s main.yaml'); return await stopChildren(); }
       await writePrivate(join(settings, 'mcp.json'), `${JSON.stringify(mergeMcpConfig(await readJson(join(settings, 'mcp.json')), { node, projectDir, desktopDir }), null, 2)}\n`);
-      if (stopped) return;
+      if (stopped) return await stopChildren();
 
       const [python, ...apiArgs] = apiCommand({ python: install.python, port: ports.api });
-      const api = launch('API', python, apiArgs, { cwd: dtHome, env: childEnv(env, { DEEPTUTOR_HOME: dtHome, DEEPTUTOR_SANDBOX_ALLOW_SUBPROCESS: '0', PYTHONUNBUFFERED: '1', PYTHONDONTWRITEBYTECODE: '1', ...guardEnv({ ports, webPort }) }) });
+      const api = launch('API', python, apiArgs, { cwd: dtHome, env: childEnv(env, { DEEPTUTOR_HOME: dtHome, DEEPTUTOR_SANDBOX_ALLOW_SUBPROCESS: '0', PYTHONUNBUFFERED: '1', PYTHONDONTWRITEBYTECODE: '1', ...guardEnv({ ports, webPort, instance }) }) });
+      await record(api, 'guard_app:app');
       if (!await waitFor(healthy, 'API')) { if (!stopped && status.state !== 'failed') fail('DeepTutor API did not become ready'); await stopChildren(); return; }
 
       const prepared = await run(install.python, ['-B', join(SCRIPTS, 'prepare_web.py'), dtHome, String(ports.web), `http://127.0.0.1:${ports.api}`]);
       let web;
       try { web = JSON.parse(prepared.out.trim().split('\n').at(-1)); } catch { web = null; }
+      if (stopped) return await stopChildren();
       if (prepared.code !== 0 || typeof web?.server !== 'string') { fail('DeepTutor web files could not be prepared'); await stopChildren(); return; }
       const page = launch('web', node, [web.server], { cwd: dirname(web.server), env: childEnv(env, {
         PORT: String(ports.web), HOSTNAME: '127.0.0.1', DEEPTUTOR_API_BASE_URL: `http://127.0.0.1:${ports.api}`, DEEPTUTOR_AUTH_ENABLED: 'false',
         NEXT_PUBLIC_API_BASE: `http://127.0.0.1:${ports.api}`, NEXT_PUBLIC_AUTH_ENABLED: 'false', DEEPTUTOR_HOME: dtHome,
       }) });
-      await writePrivate(processFile, JSON.stringify([{ pid: api.pid, marker: 'guard_app:app' }, { pid: page.pid, marker: web.server }]));
+      await record(page, web.server);
       const pageUp = async () => { try { return (await fetch(`http://127.0.0.1:${ports.web}/chat`, { signal: AbortSignal.timeout(2000), redirect: 'manual' })).status < 500; } catch { return false; } };
       if (!await waitFor(pageUp, 'web')) { if (!stopped && status.state !== 'failed') fail('DeepTutor web server did not become ready'); await stopChildren(); return; }
 
       try { await installSkill(); } catch (error) { fail(`the house rules could not be installed (${error.message})`); await stopChildren(); return; }
-      if (stopped || status.state === 'failed') return;
+      if (stopped || status.state === 'failed') return await stopChildren();
       status = { state: 'running', url, ...(warning ? { warning } : {}) };
       log(`[assistant] DeepTutor ${install.version ?? ''} is running at ${url}`);
     } catch (error) {

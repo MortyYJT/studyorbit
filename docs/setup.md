@@ -85,6 +85,7 @@ Settings are saved in `.local/config/llm.json` (mode 600); keys are write-only a
 The Agent page shows [DeepTutor](https://github.com/HKUDS/DeepTutor) 1.7.4. It is optional: without it every other page works and the Agent page shows these commands. It is installed once, outside the repository, and needs Python 3.11 to 3.14; [`uv`](https://docs.astral.sh/uv/) can fetch one.
 
 ```sh
+curl -LsSf https://astral.sh/uv/install.sh | sh   # installs uv into ~/.local/bin; skip if you have it
 uv venv --python 3.12 ~/.local/share/studyorbit/deeptutor/venv
 uv pip install --python ~/.local/share/studyorbit/deeptutor/venv/bin/python "deeptutor[server,web,memory,questions,notebook]==1.7.4"
 ```
@@ -95,7 +96,7 @@ uv pip install --python ~/.local/share/studyorbit/deeptutor/venv/bin/python "dee
 - Data: `.local/deeptutor/home` in the checkout (sessions, memory, DeepTutor's settings). Delete the folder to start again.
 - Model: DeepSeek only, with the key StudyOrbit already uses (Settings → Analysis model, or `DEEPSEEK_API_KEY`). The key is not copied into DeepTutor's files; see [Assistant](deeptutor.md#the-model-key).
 - Knowledge bases are not set up: they need an embedding service, and DeepSeek has none.
-- Upgrade: stop StudyOrbit, run the second command with the new version, start again. Only 1.7.4 has been tried; the page says so when another version is installed.
+- Upgrade: stop StudyOrbit, run the `uv pip install` command with the new version, start again. Only 1.7.4 has been tried; the page says so when another version is installed.
 - Remove: `rm -r ~/.local/share/studyorbit/deeptutor` and `rm -r .local/deeptutor`.
 
 Chats held with the earlier built-in chat are in `.local/chat/`; they stay readable through "Old chat" on the Agent page for now.

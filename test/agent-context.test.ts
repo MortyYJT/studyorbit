@@ -44,6 +44,17 @@ describe('agent context file', () => {
     await writeFile(join(project, '.local', 'agent-context.json'), ' '.repeat(AGENT_CONTEXT_LIMIT + 1));
     expect(await readAgentContext(project)).toBeNull();
   });
+  it('refuses a context whose stored form would be too large to read back', async () => {
+    const tasks = Array.from({ length: 400 }, (_, index) => ({ key: `k${index}-${'x'.repeat(480)}`, title: 't', courseId: '101', courseCode: 'SYNT10001', due: '2026-09-18', minutes: 30 }));
+    const big = { selectedCourseIds: ['101'], focusCourseId: null, planning: { ...planning, tasks } };
+    expect(JSON.stringify(big).length).toBeGreaterThan(AGENT_CONTEXT_LIMIT);
+    await expect(writeAgentContext(project, big)).rejects.toThrow('TOO_LARGE');
+    expect(await readAgentContext(project)).toBeNull();
+    // Whatever is written can be read back, right up to the limit.
+    const fitting = { ...big, planning: { ...planning, tasks: tasks.slice(0, 300) } };
+    const saved = await writeAgentContext(project, fitting);
+    expect(await readAgentContext(project)).toEqual(saved);
+  });
   it('exports a 30-minute focus window', () => { expect(FOCUS_MAX_AGE_MS).toBe(30 * 60 * 1000); });
 });
 
