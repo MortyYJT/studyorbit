@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Local stdio MCP server exposing StudyOrbit's read-only course tools (decision #331).
-// Usage: node scripts/mcp-server.mjs [--project <dir>] [--desktop <dir>] [--courses <id,id>]
+// Usage: node scripts/mcp-server.mjs [--project <dir>] [--desktop <dir>] [--courses <id,id>] [--page-context]
 // stdout carries only MCP protocol messages; every diagnostic goes to stderr. Start it with `node`, not `npm run`,
 // from an MCP client: npm prints a header line to stdout.
 import { readFileSync } from 'node:fs';
@@ -27,12 +27,14 @@ const ids = value => {
  */
 export function parseServerOptions(argv, env) {
   const { values } = parseArgs({ args: argv, strict: true, allowPositionals: false, options: {
-    project: { type: 'string' }, desktop: { type: 'string' }, courses: { type: 'string' },
+    project: { type: 'string' }, desktop: { type: 'string' }, courses: { type: 'string' }, 'page-context': { type: 'boolean' },
   } });
   return {
     projectDir: values.project ? resolve(values.project) : REPOSITORY,
     desktop: values.desktop ? resolve(values.desktop) : undefined,
     courseIds: ids(values.courses) ?? ids(env.STUDYORBIT_COURSES),
+    // Set by StudyOrbit when it registers this server with DeepTutor: use what the Agent page saved (decision #546).
+    pageContext: values['page-context'] === true,
   };
 }
 

@@ -57,6 +57,28 @@ const env = (more: Record<string, string> = {}) => ({ STUDYORBIT_API_TOKEN: toke
 const lockPath = () => join(projectDir, '.local', 'server.lock');
 const statusOf = (port: number) => call(port, '/api/local/course-sync', { headers: { host: 'localhost:5999', [TOKEN_HEADER]: token } });
 
+describe('assistant', () => {
+  const assistantStatus = (port: number) => call(port, '/api/local/deeptutor/status', { headers: { host: 'localhost:5999', [TOKEN_HEADER]: token } });
+
+  it('starts without DeepTutor installed: the status says so and the server serves and stops as usual', async () => {
+    const server = run(env());
+    const port = await server.listening;
+    let state = '';
+    for (let waited = 0; waited < 100 && state !== 'not-installed'; waited += 1) { state = (await assistantStatus(port)).json().state; if (state !== 'not-installed') await new Promise(resolve => setTimeout(resolve, 50)); }
+    expect(state).toBe('not-installed');
+    expect((await statusOf(port)).status).toBe(200);
+    server.child.kill('SIGTERM');
+    expect(await server.exited).toBe(0);
+  });
+
+  it('can be switched off with STUDYORBIT_DEEPTUTOR=off', async () => {
+    const server = run(env({ STUDYORBIT_DEEPTUTOR: 'off' }));
+    expect((await assistantStatus(await server.listening)).json()).toEqual({ state: 'off' });
+    server.child.kill('SIGTERM');
+    expect(await server.exited).toBe(0);
+  });
+});
+
 describe('parseServerEnv', () => {
   it('reads the token and both ports with their defaults', () => {
     expect(parseServerEnv({ STUDYORBIT_API_TOKEN: token })).toEqual({ token, apiPort: 5190, webPort: 5173 });

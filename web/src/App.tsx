@@ -3,6 +3,7 @@ import { applyBackground, Backdrop, BackgroundSettingsSection, useBackgroundImag
 import { backgroundStorageKey, parseBackground, type BackgroundMode, type BackgroundSettings } from './background.js';
 import { en, zh, type Language, type Theme } from './i18n.js';
 import { AgentChat, type AgentRequest } from './Agent.js';
+import { AgentFrame } from './AgentFrame.js';
 import { createAgentRequest } from './agent-request.js';
 import { replyGuard, syncNeedsReload } from './fresh.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
@@ -52,6 +53,8 @@ export function App() {
   const [usageError, setUsageError] = useState(false);
   const [view, setView] = useState<View>({ page: 'week' });
   const [agentRequest, setAgentRequest] = useState<AgentRequest>();
+  // The self-built chat stays reachable until the DeepTutor path has been validated (decision #548).
+  const [oldChat, setOldChat] = useState(false);
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState<Panel>();
   const [localSyncing, setLocalSyncing] = useState(false);
@@ -308,11 +311,13 @@ export function App() {
       {courseRunError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{courseRunError}</p>}
       {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1>{view.page !== 'agent' && <button className="ghost" aria-busy={refreshBusy} aria-disabled={refreshBusy} onClick={() => { if (!refreshing) setCourseRefresh(value => value + 1); }}>{t.refresh}</button>}</div>}
       {savedNotice > 0 && <div className="save-toast" role="status">{isZh ? '课程已经保存' : 'Courses saved'}</div>}
-      {view.page === 'agent' && <AgentChat language={language} courses={sidebarCourses} request={agentRequest} onOpenSettings={() => open('settings')} />}
+      {view.page === 'agent' && (oldChat
+        ? <><p className="old-chat-note"><button className="small ghost" onClick={() => setOldChat(false)}>{isZh ? '← 回到 DeepTutor' : '← Back to DeepTutor'}</button></p><AgentChat language={language} courses={sidebarCourses} request={agentRequest} onOpenSettings={() => open('settings')} /></>
+        : <AgentFrame language={language} courses={sidebarCourses} request={agentRequest} onOpenSettings={() => open('settings')} onOldChat={() => setOldChat(true)} />)}
       {/* Stays mounted behind the Agent page: it holds the course data, which a page switch must not fetch again. */}
       <LocalPlanning hidden={view.page === 'agent'} zoneReady={zoneReady} language={language} timeZone={timeZone} frameworkLabel={frameworkLabel} refreshVersion={courseRefresh} courseId={view.page === 'course' ? view.courseId : undefined} onCourses={setSidebarCourses} onLoading={setRefreshing}
         syncIssues={courseRun?.courses ?? []} onCourse={courseId => go({ page: 'course', courseId })} onBack={() => go({ page: 'week' })}
-        onAsk={(courseId, prompt) => { setAgentRequest(createAgentRequest(courseId, prompt)); go({ page: 'agent' }); }} />
+        onAsk={(courseId, prompt) => { setOldChat(false); setAgentRequest(createAgentRequest(courseId, prompt)); go({ page: 'agent' }); }} />
     </main>
     <dialog ref={selectDialog} className="select-dialog" aria-labelledby="select-title" onCancel={event => { event.preventDefault(); setCoursePanelOpen(false); }} onClose={() => setSelectContent(false)}>
       <div className="dialog-heading"><h2 id="select-title" tabIndex={-1} autoFocus>{isZh ? '修改选课' : 'Edit courses'}</h2><button className="ghost" onClick={() => setCoursePanelOpen(false)}>{t.close}</button></div>

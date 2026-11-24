@@ -19,7 +19,7 @@
 - **See where you stand.** Marks earned, current average, how much of the course is already marked, and each item's weight. Pick a target band (H1 to P) to see the average you need on what is left, or whether it is already secured or out of reach.
 - **Fix what the sync got wrong.** Correct, merge, add or hide assessments. Corrections are stored separately, survive the next sync, and when a sync and your correction disagree you choose which value to keep.
 - **Plan the week.** Set the hours you have each day and tasks are spread over the days before their deadlines, earliest deadline first. Work that does not fit, overdue work, unplanned deadlines and deadlines or weights that changed in a sync are listed under "Needs you".
-- **Revise and ask.** The revision tab lists exam dates, weights and rules. The chat answers from your synced data; with DeepSeek, OpenAI-compatible APIs and Anthropic it computes grades through tools that run the same code as the course page. It explains and plans; it never writes, completes or submits any assessment.
+- **Revise and ask.** The revision tab lists exam dates, weights and rules. The Agent page shows [DeepTutor](https://github.com/HKUDS/DeepTutor), which chats, remembers and writes practice questions, and reads your grades, deadlines and weekly plan through StudyOrbit's course tools, so the numbers come from the same code as the course page. It is told to explain and plan and never to write, complete or submit an assessment ([how it is wired](docs/deeptutor.md)).
 - **Use it from other AI clients.** A local MCP server exposes the same read-only course tools to Claude Code, Claude Desktop and other MCP clients.
 - **Choose the model.** DeepSeek, any OpenAI-compatible API (including a local Ollama), Anthropic Claude or the Codex CLI.
 
@@ -152,7 +152,7 @@ claude mcp add studyorbit -- node <repo>/scripts/mcp-server.mjs
 For example, `claude mcp add --env STUDYORBIT_COURSES=<id>,<id> studyorbit -- node <repo>/scripts/mcp-server.mjs`, or `"env": { "STUDYORBIT_COURSES": "<id>,<id>" }` in the Claude Desktop entry.
 
 - **Read-only and local:** every call re-reads the course list and the newest valid course files, so no restart is needed after a sync. The server does not sync, write files, call a model, read model settings or keys, or use the network. It does not apply corrections made in the page.
-- **No planning data:** weekly-plan tasks live in the browser; `plan_schedule` works only with tasks passed in as arguments, as the chat does.
+- **No planning data:** weekly-plan tasks live in the browser; `plan_schedule` works only with tasks passed in as arguments. (The copy of the server that DeepTutor starts is given `--page-context` and also reads what the Agent page saved; other clients are unaffected.)
 - **Where data goes:** tool results contain your grades and assessments and are sent to the model your client uses (Claude Code and Claude Desktop send them to Anthropic), under that provider's terms. Use `--courses` to keep a course out. Diagnostics go to standard error only and contain no course content.
 
 ## Privacy and data
@@ -182,7 +182,8 @@ Only **macOS + Microsoft Edge + University of Melbourne** (Canvas, Ed Australia,
 | [Course JSON](docs/course-json.md) | The v2 contract: what the model fills in, what code fills in, validation and quote checks |
 | [Sync optimisation](docs/sync-optimization.md) | Measured time and tokens of real syncs, resume versus restart, raw records |
 | [Course analysis evaluation](docs/eval-course-analysis.md) | Method and results of the repeated-run evaluation |
-| [Chat Q&A evaluation](docs/eval-chat-qa.md) | Context mode versus tool mode on a synthetic question set |
+| [Assistant](docs/deeptutor.md) | How DeepTutor runs next to StudyOrbit: key handling, the guard in front of its API, course context, measured turns and tokens |
+| [Chat Q&A evaluation](docs/eval-chat-qa.md) | The self-built chat's context mode versus tool mode on a synthetic question set |
 
 Requirements live in `openspec/specs/`. Working rules are in [CLAUDE.md](CLAUDE.md); the handoff, decisions and product notes in `note/` are written in Chinese.
 

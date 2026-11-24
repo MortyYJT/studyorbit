@@ -4,6 +4,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toDisplayDocument } from '../../shared/course-data.ts';
 import { courseTools, courseToolsFor, runTool } from '../../shared/course-tools.ts';
+import { FOCUS_MAX_AGE_MS, readAgentContext } from './agent-context.mjs';
 import { loadCourseReports } from './course-reports.mjs';
 import { loadSourceSetup } from './source-settings.mjs';
 
@@ -49,18 +50,32 @@ function dayIn(date, timeZone) {
 /**
  * A `loadContext` that reads the same files as the app on every call: the source settings, the course list in the
  * project and the newest valid document per course in the institution's Desktop course folders. The scope is every
- * listed course, or the listed courses named in `courseIds`. There is no planning snapshot. Rejects when the settings or
- * the course list cannot be read, or the list came from another Canvas than the settings'.
- * @param {{ projectDir: string, desktop?: string, courseIds?: string[] | null, now?: () => Date }} options
+ * listed course, or the listed courses named in `courseIds`. With `pageContext` (the MCP server DeepTutor starts; other
+ * MCP clients keep the behaviour they had), the page context (`.local/agent-context.json`, decision #546) is read on
+ * every call too: a valid one narrows the scope to the page's course selection, supplies the planning
+ * snapshot with its save time, and names the course in focus for 30 minutes after it was saved; a missing or invalid
+ * one changes nothing. Rejects when the settings or the course list cannot be read, or the list came from another
+ * Canvas than the settings'.
+ * @param {{ projectDir: string, desktop?: string, courseIds?: string[] | null, now?: () => Date, pageContext?: boolean }} options
  */
-export function courseContextLoader({ projectDir, desktop, courseIds = null, now = () => new Date() }) {
+export function courseContextLoader({ projectDir, desktop, courseIds = null, now = () => new Date(), pageContext = false }) {
   return async () => {
     const setup = await loadSourceSetup(projectDir);
     const loaded = await loadCourseReports(projectDir, { ...(desktop ? { desktop } : {}), institution: setup.institution, canvasOrigin: setup.settings.canvasOrigin });
     const courses = loaded.courses.map(course => ({ id: course.id, code: course.subjectCode, name: course.name }));
     const documents = loaded.reports.flatMap(entry => entry.report ? [toDisplayDocument(entry.report)] : []);
     const listed = courses.map(course => course.id);
-    const scope = courseIds ? listed.filter(id => courseIds.includes(id)) : listed;
-    return { documents, courses, scope, today: dayIn(now(), setup.timeZone), planning: null, timeZone: setup.timeZone };
+    const page = pageContext ? await readAgentContext(projectDir) : null;
+    // A selection that names none of the listed courses (the page had not loaded them yet) narrows nothing.
+    const chosen = page ? listed.filter(id => page.selectedCourseIds.includes(id)) : [];
+    const selected = chosen.length ? chosen : listed;
+    const scope = courseIds ? selected.filter(id => courseIds.includes(id)) : selected;
+    const age = page ? now().getTime() - Date.parse(page.savedAt) : Infinity;
+    return {
+      documents, courses, scope, today: dayIn(now(), setup.timeZone), timeZone: setup.timeZone,
+      planning: page?.planning ?? null,
+      ...(page?.planning ? { planningSavedAt: page.savedAt } : {}),
+      ...(page?.focusCourseId && age >= 0 && age < FOCUS_MAX_AGE_MS ? { focusCourseId: page.focusCourseId } : {}),
+    };
   };
 }

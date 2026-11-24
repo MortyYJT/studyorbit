@@ -5,11 +5,15 @@
 // `interrupted` (resumable), wait for it to settle, close everything and exit.
 // The token is never printed or written anywhere.
 import { createServer, type Server } from 'node:http';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createAssistant, proxyKey } from '../scripts/lib/deeptutor.mjs';
 import { acquireServerLock } from '../scripts/lib/server-lock.mjs';
 import { openSyncStore } from '../scripts/lib/sync-store.mjs';
 import { createLocalApi } from './app.ts';
 import type { Env } from './context.ts';
+import { createLlmProxy } from './llm-proxy.ts';
 import { DEFAULT_API_PORT, DEFAULT_WEB_PORT, parsePort } from './ports.ts';
 
 export const LISTENING_LINE = 'StudyOrbit local API listening on';
@@ -43,8 +47,8 @@ function listen(server: Server, port: number): Promise<number> {
 
 export type RunningServer = { port: number; stop(): Promise<void> };
 
-export async function startServer({ projectDir, desktopDir, env = process.env, warn = (line: string) => console.error(line) }:
-  { projectDir: string; desktopDir?: string; env?: Env; warn?: (line: string) => void }): Promise<RunningServer> {
+export async function startServer({ projectDir, desktopDir, env = process.env, warn = (line: string) => console.error(line), withAssistant = false }:
+  { projectDir: string; desktopDir?: string; env?: Env; warn?: (line: string) => void; /** Also start DeepTutor (decision #549); `main()` does, tests of the server do not. */ withAssistant?: boolean }): Promise<RunningServer> {
   const { token, apiPort, webPort } = parseServerEnv(env);
   const lock = acquireServerLock(projectDir);
   let store: Awaited<ReturnType<typeof openSyncStore>> | undefined;
@@ -52,9 +56,18 @@ export async function startServer({ projectDir, desktopDir, env = process.env, w
   try {
     store = await openSyncStore({ projectDir });
     if (!store.ok) warn(`同步记录数据库不可用（${store.error}: ${store.reason}），同步接口将返回 503，其他功能照常。`);
-    const api = createLocalApi({ projectDir, desktopDir, token, webPort, store, env });
+    // The assistant (DeepTutor) lives and dies with this server. It starts in the background after the server is
+    // listening; whatever goes wrong becomes its status, never a failed start of the server.
+    const assistant = withAssistant && env.STUDYORBIT_DEEPTUTOR !== 'off'
+      ? createAssistant({
+        projectDir, desktopDir: desktopDir ?? join(homedir(), 'Desktop'), webPort, env, log: warn,
+        createProxy: ({ token: launchToken, upstream }) => createLlmProxy({ token: launchToken, upstream, log: warn, resolveKey: () => proxyKey(projectDir, env) }),
+      })
+      : undefined;
+    const api = createLocalApi({ projectDir, desktopDir, token, webPort, store, env, assistant });
     server.on('request', api.handle);
     const port = await listen(server, apiPort);
+    void assistant?.start();
     let stopping: Promise<void> | undefined;
     const stop = () => (stopping ??= (async () => {
       // Stop accepting connections, refuse requests on open ones, then interrupt the sync.
@@ -62,11 +75,13 @@ export async function startServer({ projectDir, desktopDir, env = process.env, w
       server.closeIdleConnections();
       // Also closes the dedicated browser of the CDP bridge, if one runs (Browser.close, killed after 5 s).
       const browserClosed = api.close();
+      const assistantStopped = assistant?.stop().catch(() => { /* Its processes are signalled either way. */ });
       const deadline = Date.now() + SHUTDOWN_WAIT_MS;
       while (api.syncRunning() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
       server.closeAllConnections();
       await closed;
       await browserClosed.catch(() => { /* The browser process is gone either way. */ });
+      await assistantStopped;
       if (store?.ok) store.store.close();
       lock.release();
     })());
@@ -93,7 +108,7 @@ export async function main({ projectDir = fileURLToPath(new URL('../', import.me
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
   try {
-    running = await startServer({ projectDir });
+    running = await startServer({ projectDir, withAssistant: true });
   } catch (error) {
     console.error(`StudyOrbit 本地服务无法启动：${(error as Error).message}`);
     process.exit(1);

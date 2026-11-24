@@ -26,6 +26,10 @@ export type ToolContext = {
   /** YYYY-MM-DD in the institution's time zone. */
   today: string;
   planning: PlanningSnapshot | null;
+  /** When the page saved the planning snapshot (ISO time), where the caller knows it (the MCP server does). */
+  planningSavedAt?: string;
+  /** The course the owner opened the assistant from, if any; reported by `list_courses` when it is in scope. */
+  focusCourseId?: string;
   /** The institution's IANA time zone, for due dates; default the default institution's (generic-adapters §4). */
   timeZone?: string;
 };
@@ -182,12 +186,20 @@ function grade(original: DisplayDocument, entries: WhatIf): Graded | Failure {
 
 // Tool descriptions name the institution's time zone with its English time label (`label`); for the default institution
 // they are the descriptions the chat Q&A evaluation was run with.
+/** `focus` for `list_courses`: only a course in scope, with its code when known. */
+function focusOf(ctx: ToolContext): { focus?: { courseId: string; code: string | null } } {
+  const id = ctx.focusCourseId;
+  if (!id || !ctx.scope.includes(id)) return {};
+  const code = ctx.documents.find(entry => entry.course.id === id)?.course.code ?? ctx.courses.find(entry => entry.id === id)?.code ?? null;
+  return { focus: { courseId: id, code } };
+}
 const listCourses = (label: string): CourseTool => ({
   name: 'list_courses', title: 'List courses',
   description: `List the courses you may read, with today's date (${label}), whether synced data exists, the number of assessments and the identified weight (sum of top-level weights that count). Call this first to get course IDs.`,
   input: z.object({}),
   run: (_input: Record<string, never>, ctx) => ({ value: {
     today: ctx.today,
+    ...focusOf(ctx),
     courses: ctx.scope.map(id => {
       const doc = ctx.documents.find(entry => entry.course.id === id);
       if (doc) return { id, code: doc.course.code, name: doc.course.name, term: doc.course.term, synced: true, version: doc.version, assessmentCount: doc.assessments.length, identifiedWeight: identifiedWeight(doc) };
@@ -343,6 +355,7 @@ const planSchedule: CourseTool = {
     const overflow = plan.overflow.filter(entry => shown(entry.key)).map(entry => ({ key: entry.key, title: byKey.get(entry.key)!.title, courseCode: byKey.get(entry.key)!.courseCode, minutes: entry.minutes, overdue: entry.overdue }));
     return { value: {
       available: true, today: ctx.today, from, to, tasksSource: input.tasks ? 'argument' : 'snapshot',
+      ...(!input.tasks && ctx.planningSavedAt ? { snapshotSavedAt: ctx.planningSavedAt } : {}),
       availabilitySource: input.availability ? 'argument' : ctx.planning ? 'snapshot' : 'default', days, overflow,
     }, hint: 'Pass fewer days or courseIds to see the rest.' };
   },

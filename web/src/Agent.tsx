@@ -5,7 +5,7 @@ import { readAvailability, readTargets, readWork, type SidebarCourse } from './L
 import type { Chat, ChatMessage, ChatStep, ChatSummary } from '../../scripts/lib/chat-store.mjs';
 import { buildPlanningSnapshot } from '../../shared/planning-snapshot.js';
 
-import type { AgentRequest } from './agent-request.js';
+import { claimAgentRequest, type AgentRequest } from './agent-request.js';
 
 export type { AgentRequest };
 type Failure = { code: string; message: string };
@@ -37,8 +37,6 @@ function ToolSteps({ steps, zh }: { steps: ChatStep[]; zh: boolean }) {
   </details>;
 }
 
-// The page remounts on every visit, so the last handled request lives outside it: a request is acted on (and its prompt sent) once.
-let handledNonce: number | undefined;
 const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every(id => b.includes(id));
 
 /** Split a server-sent event stream into parsed `{event, data}` records. */
@@ -130,8 +128,9 @@ export function AgentChat({ language, courses, request, onOpenSettings }: { lang
 
   useEffect(() => { void loadList(); }, []);
   useEffect(() => {
-    if (!request || request.nonce === handledNonce || busy) return;
-    handledNonce = request.nonce; startDraft(request.courseId);
+    // Claimed once across both Agent pages (agent-request.ts), so a prompt DeepTutor already got is not sent again here.
+    if (!request || busy || !claimAgentRequest(request.nonce)) return;
+    startDraft(request.courseId);
     if (request.prompt) setQueued(request.prompt);
   }, [request]);
   useEffect(() => { if (queued && !active && !busy) { setQueued(undefined); void send(queued); } }, [queued, active, busy]);

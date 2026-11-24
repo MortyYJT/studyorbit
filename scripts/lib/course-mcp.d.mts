@@ -12,4 +12,6 @@ export function courseContextLoader(options: {
   desktop?: string;
   courseIds?: string[] | null;
   now?: () => Date;
+  /** Read the page context the Agent page saved; only the MCP server DeepTutor starts sets it. */
+  pageContext?: boolean;
 }): () => Promise<ToolContext>;
