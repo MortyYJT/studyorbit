@@ -14,6 +14,9 @@ coverage/
 .local/
 *.ics
 
+# Python bytecode of scripts/deeptutor/ (run by DeepTutor's interpreter)
+__pycache__/
+
 # OS / editor
 .DS_Store
 .idea/

@@ -10,6 +10,7 @@ import { toDisplayDocument, type CourseDocument } from '../shared/course-data.js
 import { courseTools, runTool, toolDefinitions, type ToolContext } from '../shared/course-tools.js';
 import { courseContextLoader, createCourseMcpServer, TOOL_ANNOTATIONS } from '../scripts/lib/course-mcp.mjs';
 import { parseServerOptions } from '../scripts/mcp-server.mjs';
+import { writeAgentContext } from '../scripts/lib/agent-context.mjs';
 
 // Synthetic courses only; temporary directories stand in for the project and the Desktop.
 type V2 = Extract<CourseDocument, { version: 2 }>;
@@ -183,6 +184,34 @@ describe('courseContextLoader', () => {
     const newer = doc('202', 'SYNT20002', [...second.assessments, item({ id: 'b2', name: 'Presentation', kind: 'presentation', weight: 0 })]);
     await writeCourseFile('SYNT20002', '分数结构-2.json', newer, 5);
     expect(JSON.parse((await call(client, 'get_assessments', { courseId: '202' })).text).assessments).toHaveLength(2);
+  });
+
+  it('uses the page context: selection as scope, snapshot with its save time, focus for 30 minutes', async () => {
+    const planning = { tasks: [{ key: 't1', title: 'Draft', courseId: '101', courseCode: 'SYNT10001', due: '2026-09-18', minutes: 180 }], availability: [120, 120, 120, 120, 120, 120, 120], targets: {} };
+    await writeAgentContext(project, { selectedCourseIds: ['101', '999'], focusCourseId: '101', planning }, () => new Date('2026-09-14T15:20:00Z'));
+    const before = (await readdir(join(project, '.local'))).sort();
+    const client = await connect(courseContextLoader({ projectDir: project, desktop, now }));
+    const list = JSON.parse((await call(client, 'list_courses', {})).text);
+    expect(list.courses.map((course: { id: string }) => course.id)).toEqual(['101']);
+    expect(list.focus).toEqual({ courseId: '101', code: 'SYNT10001' });
+    const plan = JSON.parse((await call(client, 'plan_schedule', {})).text);
+    expect(plan).toMatchObject({ available: true, tasksSource: 'snapshot', snapshotSavedAt: '2026-09-14T15:20:00.000Z' });
+    expect(plan.days['2026-09-15']).toEqual([{ key: 't1', title: 'Draft', courseCode: 'SYNT10001', minutes: 120 }]);
+    // Reading the context writes nothing.
+    expect((await readdir(join(project, '.local'))).sort()).toEqual(before);
+    // The filter still narrows the page's selection; a focus saved two hours ago is not reported.
+    await writeAgentContext(project, { selectedCourseIds: ['101', '202'], focusCourseId: '202', planning: null }, () => new Date('2026-09-14T13:30:00Z'));
+    const stale = await courseContextLoader({ projectDir: project, desktop, courseIds: ['202'], now })();
+    expect(stale.scope).toEqual(['202']);
+    expect(stale.focusCourseId).toBeUndefined();
+    expect(stale.planning).toBeNull();
+  });
+
+  it('ignores an invalid page context', async () => {
+    await writeFile(join(project, '.local', 'agent-context.json'), '{"savedAt":"nope"}');
+    const ctx = await courseContextLoader({ projectDir: project, desktop, now })();
+    expect(ctx.scope).toEqual(['101', '202']);
+    expect(ctx.planning).toBeNull();
   });
 
   it('rejects when the course list is missing', async () => {

@@ -13,6 +13,7 @@ import { canvasSource } from '../scripts/sources/registry.mjs';
 import type { OpenResult } from '../scripts/lib/sync-store.mjs';
 import type { Env, RouteContext, RouteHandler } from './context.ts';
 import { checkRequest } from './guard.ts';
+import { agentContextRoute } from './routes/agent-context.ts';
 import { browserRoute } from './routes/browser.ts';
 import { chatsRoute } from './routes/chats.ts';
 import { correctionsRoute } from './routes/corrections.ts';
@@ -20,6 +21,7 @@ import { courseCandidatesRoute } from './routes/course-candidates.ts';
 import { courseChangesRoute } from './routes/course-changes.ts';
 import { courseReportsRoute } from './routes/course-reports.ts';
 import { courseSyncRoute } from './routes/course-sync.ts';
+import { deeptutorRoute, type Assistant } from './routes/deeptutor.ts';
 import { llmConfigRoute } from './routes/llm-config.ts';
 import { revisionNotesRoute } from './routes/revision-notes.ts';
 import { sourceSettingsRoute } from './routes/source-settings.ts';
@@ -57,6 +59,8 @@ export type LocalApiOptions = {
    * demand. Tests pass a host with a fake browser.
    */
   browserHost?: CdpHost;
+  /** The assistant (DeepTutor) started next to this server; without one the status route answers `off`. */
+  assistant?: Assistant;
 };
 
 export type LocalApi = {
@@ -101,6 +105,8 @@ export function createLocalApi(options: LocalApiOptions): LocalApi {
     ['course-changes', courseChangesRoute(context)],
     ['revision-notes', revisionNotesRoute(context)],
     ['chats', chatsRoute(context)],
+    ['agent-context', agentContextRoute(context)],
+    ['deeptutor', deeptutorRoute(options.assistant)],
     ['course-sync', courseSyncRoute(pipeline)],
     ['sync-jobs', syncJobsRoute(pipeline)],
     ['sync-courses', discovery.route],

@@ -48,9 +48,9 @@ The local server SHALL run a model proxy on `127.0.0.1` that forwards allow-list
 - **WHEN** a local process calls the proxy without this launch's token
 - **THEN** the proxy answers 403 and sends nothing to the provider
 
-#### Scenario: Provider without a key
-- **WHEN** StudyOrbit's model settings name the Codex provider
-- **THEN** DeepTutor is not started and the Agent page says which providers the assistant supports
+#### Scenario: Unsupported provider
+- **WHEN** StudyOrbit's model settings name a provider other than DeepSeek
+- **THEN** DeepTutor is not started and the Agent page says that the assistant works with DeepSeek only
 
 ### Requirement: StudyOrbit's MCP server is registered for the same instance
 Before starting DeepTutor the launcher SHALL write a stdio server named `studyorbit` into DeepTutor's MCP settings, running `scripts/mcp-server.mjs` of this project with this project's directory, and SHALL keep any other server already in that file.
@@ -67,7 +67,7 @@ The launcher SHALL install a DeepTutor skill with `always: true` whose text requ
 - **THEN** the reply declines and offers to explain, plan or review instead
 
 ### Requirement: Nothing but the model provider is contacted by default
-Web search SHALL be off, the update check SHALL be off, no search, image, video or embedding provider SHALL be configured, and no knowledge base SHALL be created. `docs/deeptutor.md` SHALL list the DeepTutor tools that can still reach the internet and cannot be switched off.
+Web search SHALL be off, local code execution (`exec`) SHALL be off, the update check SHALL be off, no search, image, video or embedding provider SHALL be configured, and no knowledge base SHALL be created. `docs/deeptutor.md` SHALL list the DeepTutor tools that can still reach the internet and cannot be switched off.
 
 #### Scenario: Search requested by the model
 - **WHEN** the model calls `web_search`
@@ -94,3 +94,18 @@ Opening the Agent page, clicking "Ask Agent" on a course and clicking a revision
 #### Scenario: Preset
 - **WHEN** the owner clicks a revision preset
 - **THEN** one session is started in DeepTutor with that prompt and the frame shows its reply
+
+### Requirement: DeepTutor's API refuses requests from other pages
+DeepTutor's API SHALL run behind a guard owned by StudyOrbit that refuses, with 403 and before DeepTutor handles them, HTTP requests and WebSocket upgrades whose `Host` (or forwarded Host) is not a loopback name with the API or web port, whose `Origin`, when present, is neither the StudyOrbit page nor DeepTutor's web page, or that carry `Sec-Fetch-Site: cross-site`. Both DeepTutor processes SHALL listen on `127.0.0.1` only.
+
+#### Scenario: Foreign page
+- **WHEN** a page of another site sends a request or opens a WebSocket to DeepTutor's API port or web port
+- **THEN** the request is refused with 403 and no CORS header allows that origin
+
+#### Scenario: DNS rebinding
+- **WHEN** a request arrives with a `Host` that is not a loopback name, directly or through DeepTutor's web server
+- **THEN** it is refused with 403
+
+#### Scenario: The assistant's own traffic
+- **WHEN** DeepTutor's page runs in the frame on the StudyOrbit page, or the StudyOrbit server starts a session
+- **THEN** those requests are served

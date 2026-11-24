@@ -69,7 +69,7 @@ The US and EU API addresses come from the CLI's region table; the course link fo
 
 ## Model
 
-In Settings → Analysis model choose a provider, enter its key and click "Test connection". Sync analysis and chat share this setting.
+In Settings → Analysis model choose a provider, enter its key and click "Test connection". Sync analysis, the old chat and the assistant share this setting (the assistant works with DeepSeek only).
 
 | Provider | Notes |
 | --- | --- |
@@ -80,6 +80,26 @@ In Settings → Analysis model choose a provider, enter its key and click "Test 
 
 Settings are saved in `.local/config/llm.json` (mode 600); keys are write-only and never shown again. Settings win over environment variables, which win over the defaults. If the API address points to a local model, course data stays on your machine.
 
+## Assistant (DeepTutor)
+
+The Agent page shows [DeepTutor](https://github.com/HKUDS/DeepTutor) 1.7.4. It is optional: without it every other page works and the Agent page shows these commands. It is installed once, outside the repository, and needs Python 3.11 to 3.14; [`uv`](https://docs.astral.sh/uv/) can fetch one.
+
+```sh
+uv venv --python 3.12 ~/.local/share/studyorbit/deeptutor/venv
+uv pip install --python ~/.local/share/studyorbit/deeptutor/venv/bin/python "deeptutor[server,web,memory,questions,notebook]==1.7.4"
+```
+
+- About 520 MB, plus 145 MB if `uv` downloads Python. Do not add the `solve` extra: it does assignments for you, and the Agent page warns when it is installed.
+- `npm run dev` then starts DeepTutor with StudyOrbit and stops it with StudyOrbit; nothing else needs configuring. The first start in a checkout copies DeepTutor's web files (123 MB) and takes longer.
+- Ports: DeepTutor's page 5175, its API 5195, the model proxy 5197 (5185, 5196 and 5199 for an instance whose page is not on 5173). All three listen on `127.0.0.1` only.
+- Data: `.local/deeptutor/home` in the checkout (sessions, memory, DeepTutor's settings). Delete the folder to start again.
+- Model: DeepSeek only, with the key StudyOrbit already uses (Settings → Analysis model, or `DEEPSEEK_API_KEY`). The key is not copied into DeepTutor's files; see [Assistant](deeptutor.md#the-model-key).
+- Knowledge bases are not set up: they need an embedding service, and DeepSeek has none.
+- Upgrade: stop StudyOrbit, run the second command with the new version, start again. Only 1.7.4 has been tried; the page says so when another version is installed.
+- Remove: `rm -r ~/.local/share/studyorbit/deeptutor` and `rm -r .local/deeptutor`.
+
+Chats held with the earlier built-in chat are in `.local/chat/`; they stay readable through "Old chat" on the Agent page for now.
+
 ## Environment variables
 
 | Variable | Effect |
@@ -88,6 +108,9 @@ Settings are saved in `.local/config/llm.json` (mode 600); keys are write-only a
 | `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY` | Key for that provider when none is saved in settings |
 | `COURSE_ANALYSIS_PROVIDER` | `deepseek` (default), `openai-compatible`, `anthropic` or `codex`; an unknown value stops the sync with a message |
 | `COURSE_ANALYSIS_MODEL`, `COURSE_ANALYSIS_URL`, `COURSE_ANALYSIS_API_KEY` | Model, base URL and key; used only for the provider named by `COURSE_ANALYSIS_PROVIDER`. For `openai-compatible` the key is sent only to the origin of `COURSE_ANALYSIS_URL` |
+| `STUDYORBIT_DEEPTUTOR_BIN` | Path of the `deeptutor` program when it is not in the default virtual environment |
+| `STUDYORBIT_DEEPTUTOR` | `off` starts StudyOrbit without the assistant |
+| `STUDYORBIT_DEEPTUTOR_WEB_PORT`, `STUDYORBIT_DEEPTUTOR_API_PORT`, `STUDYORBIT_LLM_PROXY_PORT` | Ports of DeepTutor's page, its API and the model proxy |
 | `STUDYORBIT_COURSES` | MCP server only: expose only these Canvas course IDs ([MCP](../README.md#use-from-an-mcp-client)) |
 | `CANVAS_PAGE_SIZE` | Canvas API page size, 1–100 (default 100) |
 | `EDSTEM_TOKEN` | Ed token for reading scores; by default the `edstem` CLI's own saved token is used |

@@ -222,7 +222,23 @@ button.due:is(:hover,:active):enabled { background:linear-gradient(var(--hover),
 .cell .num { justify-self:start; border:0; min-height:22px; padding:0 6px; font-size:12px; background:transparent; font-variant-numeric:tabular-nums; }
 .cell.today .num { background:var(--accent); color:var(--on-accent); font-weight:600; }
 
-/* Agent: the list beside the open conversation. */
+/* Agent: DeepTutor's own page in a frame under a one-line bar; the same box holds the notice when it is not running. */
+.agent-frame-page { display:grid; grid-template-rows:auto minmax(0,1fr); height:calc(100dvh - 140px); min-height:480px; padding:0; overflow:hidden; }
+.agent-frame-bar { display:flex; align-items:center; gap:12px; min-height:40px; padding:4px 12px; border-bottom:1px solid var(--rule); font-size:12px; }
+.agent-frame-note { flex:1; min-width:0; color:var(--muted); overflow-wrap:anywhere; }
+.agent-frame-link { color:var(--text); white-space:nowrap; }
+.agent-frame-bar button { flex-shrink:0; }
+.agent-frame { width:100%; height:100%; border:0; background:var(--ground); }
+.agent-frame-notice { max-width:720px; overflow:auto; align-content:start; gap:10px; }
+.agent-frame-notice p { margin:0; max-width:64ch; }
+.agent-frame-detail { color:var(--signal); font-size:13px; }
+.agent-frame-command { margin:8px 0 0; padding:8px 10px; max-width:100%; overflow:auto; border:1px solid var(--rule); border-radius:var(--radius-control); font-size:12px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; user-select:all; }
+.agent-frame-wait { padding:56px 24px; }
+.old-chat-note { margin:0 0 8px; }
+.agent-frame-starting { margin:8px 0 0; color:var(--muted); font-size:13px; }
+@media (max-width:760px) { .agent-frame-page { height:calc(100dvh - 150px); } .agent-frame-bar { flex-wrap:wrap; gap:4px 12px; } .agent-frame-notice { padding:32px 16px; } }
+
+/* Old chat (kept until the DeepTutor path is validated): the list beside the open conversation. */
 .agent-page { display:grid; grid-template-columns:240px minmax(0,1fr); height:calc(100dvh - 140px); min-height:480px; padding:0; overflow:hidden; }
 .chat-list { display:flex; flex-direction:column; gap:2px; border-right:1px solid var(--border); padding:10px; overflow:auto; }
 .chat-list p { margin:8px 10px; font-size:13px; }

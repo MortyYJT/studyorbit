@@ -182,6 +182,67 @@ describe('llm-config', () => {
   });
 });
 
+describe('agent-context', () => {
+  beforeEach(async () => { await start(); });
+  const planning = { tasks: [{ key: 't1', title: 'Draft', courseId: '900001', courseCode: 'SYNT10001', due: '2026-09-18', minutes: 180 }], availability: [120, 120, 120, 120, 120, 120, 120], targets: {} };
+  const file = () => join(projectDir, '.local', 'agent-context.json');
+
+  it('stores a valid page context with a server-side save time', async () => {
+    const reply = await write('PUT', '/api/local/agent-context', { selectedCourseIds: ['900001'], focusCourseId: '900001', planning });
+    expect(reply.status).toBe(200);
+    expect(reply.json()).toEqual({ ok: true, savedAt: expect.stringMatching(/^\d{4}-/) });
+    expect(JSON.parse(await readFile(file(), 'utf8'))).toMatchObject({ selectedCourseIds: ['900001'], focusCourseId: '900001', planning });
+    expect((await stat(file())).mode & 0o777).toBe(0o600);
+  });
+
+  it('refuses invalid bodies, oversized bodies, foreign origins and other methods without touching the file', async () => {
+    await write('PUT', '/api/local/agent-context', { selectedCourseIds: ['900001'] });
+    const before = await readFile(file(), 'utf8');
+    expect((await write('PUT', '/api/local/agent-context', { selectedCourseIds: ['900001'], planning: { tasks: 1 } })).json()).toEqual({ error: 'INVALID_CONTEXT' });
+    expect((await write('PUT', '/api/local/agent-context', '{')).json()).toEqual({ error: 'INVALID_JSON' });
+    expect((await write('PUT', '/api/local/agent-context', 'x'.repeat(200001))).status).toBe(413);
+    expect((await write('PUT', '/api/local/agent-context', { selectedCourseIds: [] }, { origin: 'http://evil.example' })).status).toBe(403);
+    expect((await write('PUT', '/api/local/agent-context', { selectedCourseIds: [] }, { 'content-type': 'text/plain' })).status).toBe(403);
+    expect((await get('/api/local/agent-context')).json()).toEqual({ error: 'METHOD_NOT_ALLOWED' });
+    expect(await readFile(file(), 'utf8')).toBe(before);
+  });
+});
+
+describe('deeptutor', () => {
+  it('reports "off" and refuses turns when the server runs without the assistant', async () => {
+    await start();
+    expect((await get('/api/local/deeptutor/status')).json()).toEqual({ state: 'off' });
+    expect((await write('POST', '/api/local/deeptutor/turns', { content: 'hello', language: 'en' })).status).toBe(503);
+  });
+
+  it('serves the assistant status and starts one turn', async () => {
+    const turns: unknown[] = [];
+    await start({ assistant: {
+      status: () => ({ state: 'running', url: 'http://localhost:5185' }),
+      startTurn: async input => { turns.push(input); return { sessionId: 'unified_1_abc' }; },
+      stop: async () => {},
+    } });
+    expect((await get('/api/local/deeptutor/status')).json()).toEqual({ state: 'running', url: 'http://localhost:5185' });
+    const reply = await write('POST', '/api/local/deeptutor/turns', { content: 'Help me revise SYNT10001', language: 'en' });
+    expect(reply.status).toBe(201);
+    expect(reply.json()).toEqual({ sessionId: 'unified_1_abc' });
+    expect(turns).toEqual([{ content: 'Help me revise SYNT10001', language: 'en' }]);
+    expect((await write('POST', '/api/local/deeptutor/turns', { content: ' ', language: 'en' })).json()).toEqual({ error: 'INVALID_TURN' });
+    expect((await write('POST', '/api/local/deeptutor/turns', { content: 'x'.repeat(8001), language: 'en' })).json()).toEqual({ error: 'INVALID_TURN' });
+    expect((await write('POST', '/api/local/deeptutor/turns', { content: 'x', language: 'fr' })).json()).toEqual({ error: 'INVALID_TURN' });
+    expect((await write('POST', '/api/local/deeptutor/turns', { content: 'x', language: 'en' }, { origin: 'http://evil.example' })).status).toBe(403);
+    expect((await write('PUT', '/api/local/deeptutor/status', {})).json()).toEqual({ error: 'METHOD_NOT_ALLOWED' });
+    expect(turns).toHaveLength(1);
+  });
+
+  it('answers 502 with a fixed code when the assistant cannot start the turn', async () => {
+    await start({ assistant: { status: () => ({ state: 'running', url: 'http://localhost:5185' }), startTurn: async () => { throw new Error('secret detail'); }, stop: async () => {} } });
+    const reply = await write('POST', '/api/local/deeptutor/turns', { content: 'x', language: 'zh' });
+    expect(reply.status).toBe(502);
+    expect(reply.body).toBe(JSON.stringify({ error: 'ASSISTANT_UNAVAILABLE' }));
+  });
+});
+
 describe('revision-notes', () => {
   beforeEach(async () => { await start(); });
 

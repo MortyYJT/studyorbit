@@ -7,18 +7,18 @@
 
 ## 1. Integration PR (`claude/deeptutor`)
 
-- [ ] 1.1 Spike, no merge: DeepTutor's authentication with a generated password and a session handed to the frame (design decision 14). Record what works; choose it or the ASGI wrapper
-- [ ] 1.2 Tests then `scripts/lib/deeptutor.mjs`: locate the install (default path, `STUDYORBIT_DEEPTUTOR_BIN`), version check, port set for real and test instances, status values (`not-installed`, `external`, `running`, `failed`, `unsupported-provider`)
-- [ ] 1.3 Tests then configuration generation: the setup JSON (provider mapping, `openai_responses` for DeepSeek, proxy address, ports, search `none`), `mcp.json` merge that keeps other servers, `main.yaml` and `system.json` switches; a test that no generated file or argument contains the key (a sentinel key is searched for in every output)
-- [ ] 1.4 Tests then `server/llm-proxy.ts`: loopback peer, exact `Host`, no `Origin`, launch token (constant-time), path allow-list, upstream origin fixed, streaming pass-through, key never logged; fake upstream only
-- [ ] 1.5 Tests then the launcher (`scripts/dev.mjs`): DeepTutor missing does not fail the start; an already healthy DeepTutor is neither started nor stopped; started processes are stopped on SIGINT, SIGTERM and when StudyOrbit exits; a failed start is reported and StudyOrbit keeps running (stub programs, as the existing launcher tests do)
-- [ ] 1.6 Tests then `PUT /api/local/agent-context` and `scripts/lib/agent-context.mjs` (validation, size limit, atomic write, mode 600, refused foreign origin)
-- [ ] 1.7 Tests then the MCP server reading the context file: scope from the selection, `plan_schedule` from the snapshot with `snapshotSavedAt`, `list_courses` focus with the 30-minute limit, missing or invalid file behaves as today, still no writes
-- [ ] 1.8 Tests then `GET /api/local/deeptutor/status` and `POST /api/local/deeptutor/turns` (fake WebSocket server: protocol version, session id returned, socket closed, errors mapped)
-- [ ] 1.9 The house-rules skill (`scripts/deeptutor/skill/SKILL.md`) and its installation after health; test that the installer sends the file unchanged and updates an existing skill
-- [ ] 1.10 `web/src/AgentFrame.tsx`, `App.tsx`, `LocalPlanning.tsx`, `agent-request.ts`, `i18n.ts`: the frame, the four states with exact commands, "open in a new tab", context hand-off on entry and on change, presets through the turns route, "save to revision" removed from the new path, old chat kept behind a link; Chinese and English; motion rules of `docs/motion.md`
-- [ ] 1.11 Screenshots (synthetic data; light and dark; 1440 and 390): DeepTutor running, not installed, not running
-- [ ] 1.12 `docs/setup.md` (install, upgrade, ports, data directory, embedding note, where old chats are), `docs/overview.md`, `README.md`, `note/decisions.md` (#540 onwards)
+- [x] 1.1 The ASGI guard (`scripts/deeptutor/guard_app.py`, design decision 14): unit tests of the pure check, then a real test against the running instance (foreign Origin and Host refused for HTTP and WebSocket, framed page and server-side `start_turn` still work). Merge condition
+- [x] 1.2 Tests then `scripts/lib/deeptutor.mjs`: locate the install (default path, `STUDYORBIT_DEEPTUTOR_BIN`), version check, port set for real and test instances, status values (`not-installed`, `external`, `running`, `failed`, `unsupported-provider`)
+- [x] 1.3 Tests then configuration generation: the setup JSON (DeepSeek only, `openai_responses`, proxy address, ports, search `none`), `exec` off, `mcp.json` merge that keeps other servers, `main.yaml` and `system.json` switches; a test that no generated file or argument contains the key (a sentinel key is searched for in every output)
+- [x] 1.4 Tests then `server/llm-proxy.ts`: loopback peer, exact `Host`, no `Origin`, launch token (constant-time), path allow-list, upstream origin fixed, streaming pass-through, key never logged; fake upstream only
+- [x] 1.5 Tests then the launcher (`scripts/dev.mjs`): DeepTutor missing does not fail the start; an already healthy DeepTutor is neither started nor stopped; started processes are stopped on SIGINT, SIGTERM and when StudyOrbit exits; a failed start is reported and StudyOrbit keeps running (stub programs, as the existing launcher tests do)
+- [x] 1.6 Tests then `PUT /api/local/agent-context` and `scripts/lib/agent-context.mjs` (validation, size limit, atomic write, mode 600, refused foreign origin)
+- [x] 1.7 Tests then the MCP server reading the context file: scope from the selection, `plan_schedule` from the snapshot with `snapshotSavedAt`, `list_courses` focus with the 30-minute limit, missing or invalid file behaves as today, still no writes
+- [x] 1.8 Tests then `GET /api/local/deeptutor/status` and `POST /api/local/deeptutor/turns` (fake WebSocket server: protocol version, session id returned, socket closed, errors mapped)
+- [x] 1.9 The house-rules skill (`scripts/deeptutor/skill/SKILL.md`) and its installation after health; test that the installer sends the file unchanged and updates an existing skill
+- [x] 1.10 `web/src/AgentFrame.tsx`, `App.tsx`, `LocalPlanning.tsx`, `agent-request.ts`, `i18n.ts`: the frame, the four states with exact commands, "open in a new tab", context hand-off on entry and on change, presets through the turns route, "save to revision" removed from the new path, old chat kept behind a link; Chinese and English; motion rules of `docs/motion.md`
+- [x] 1.11 Screenshots (synthetic data; light and dark; 1440 and 390): DeepTutor running, not installed, not running
+- [x] 1.12 `docs/setup.md` (install, upgrade, ports, data directory, embedding note, where old chats are), `docs/overview.md`, `README.md`, `note/decisions.md` (#540 onwards)
 - [ ] 1.13 `NODE_DEBUG= bash .claude/check.sh`; diff scan for score-like strings and local paths; PR; coordinator review
 
 ## 2. Real validation (after the integration PR is merged)

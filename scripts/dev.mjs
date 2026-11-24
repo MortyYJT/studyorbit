@@ -3,6 +3,8 @@
 // written). The server's stdout is piped and echoed line by line so the listening line can be seen; Vite inherits
 // the terminal. SIGINT/SIGTERM are forwarded to both; when one exits the other is stopped; the exit code is the first
 // non-zero one. No dependencies and no file watching (a restart would interrupt a running sync).
+// The assistant (DeepTutor) is started and stopped by the API server itself (server/main.ts, decision #549), so it
+// comes up and goes down with `npm run dev` without this launcher knowing about it.
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createInterface } from 'node:readline';
