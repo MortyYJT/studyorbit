@@ -52,6 +52,17 @@ describe('theme storage', () => {
     expect(previousThemeKey).toBe('studyorbit.theme');
   });
 
+  it('keeps a dark still under the former prefix when the prefix move could not write', () => {
+    // The pre-mount script falls back to `coursework.theme`; the app must read the same, or the page flips after mount.
+    const storage = memoryStorage({ 'coursework.theme': 'dark' }, [previousThemeKey]);
+    migrateStoragePrefix(storage);
+    migrateThemeChoice(storage);
+    expect(Object.fromEntries(storage.data)).toEqual({ 'coursework.theme': 'dark' });
+    expect(readTheme(storage)).toBe('dark');
+    // A value under the current prefix still wins over the former one, as in the prefix move.
+    expect(readTheme(memoryStorage({ [previousThemeKey]: 'light', 'coursework.theme': 'dark' }))).toBe('system');
+  });
+
   it('reads the theme without writing anything', () => {
     const storage = memoryStorage({ [previousThemeKey]: 'light' });
     expect(readTheme(storage)).toBe('system');
@@ -149,13 +160,15 @@ describe('the pre-mount script in index.html', () => {
 
   it('applies the same theme as the app for every stored combination, before and after the storage moves', () => {
     const values = [null, 'light', 'dark', 'system', 'sepia', ''];
-    for (const current of values) for (const previous of values) for (const legacy of values) {
+    // Each combination also runs with storage that refuses a write, so a move that stops half-way is covered too.
+    const failures = [[], [previousThemeKey], [themeStorageKey], [previousThemeKey, themeStorageKey]];
+    for (const failOn of failures) for (const current of values) for (const previous of values) for (const legacy of values) {
       const initial: Record<string, string> = {};
       if (current !== null) initial[themeStorageKey] = current;
       if (previous !== null) initial[previousThemeKey] = previous;
       if (legacy !== null) initial['coursework.theme'] = legacy;
-      const label = `current=${current} previous=${previous} legacy=${legacy}`;
-      const storage = memoryStorage(initial);
+      const label = `current=${current} previous=${previous} legacy=${legacy} failing writes=[${failOn.join(', ')}]`;
+      const storage = memoryStorage(initial, failOn);
       const firstPaint = premountTheme(storage);
       // main.tsx: the prefix move, then the theme move, then App reads the theme.
       migrateStoragePrefix(storage);
@@ -194,6 +207,12 @@ describe('the system-dark rules in style.css', () => {
       .map(match => [squash(match[1]!), squash(match[2]!)]);
     expect(explicit.length).toBeGreaterThan(1);
     expect(system).toEqual(explicit);
+    // A pair written in a form the two patterns above do not match (indented, or the media query on its own line)
+    // must not slip through: every `prefers-color-scheme: dark` in the file is a matched twin, and every explicit
+    // dark selector in the file sits in a matched rule.
+    expect(css.match(/prefers-color-scheme\s*:\s*dark/g)?.length).toBe(system.length);
+    const explicitSelectors = [...css.matchAll(/^((?::root)?\[data-theme="dark"\][^{]*)\{/gm)].reduce((count, match) => count + match[1]!.match(/\[data-theme="dark"\]/g)!.length, 0);
+    expect(css.match(/(?<!:not\()\[data-theme="dark"\]/g)?.length).toBe(explicitSelectors);
     // No dark rule hides elsewhere in the file in a form the pattern above does not see.
     expect(css.match(/\[data-theme="dark"\]/g)?.length).toBe(css.match(/:not\(\[data-theme="dark"\]\)/g)!.length * 2);
   });
