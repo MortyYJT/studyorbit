@@ -7,7 +7,6 @@ import { createAgentRequest } from './agent-request.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning, type SidebarCourse } from './LocalPlanning.js';
 import { closeDialog, durations, easeOut, openDialog, reducedMotion, useSlidingIndicator, viewTransition } from './motion.js';
-import { palettes, parsePalette, type Palette } from './palette.js';
 import { fetchSourceSettings, SourceSettingsSection, type SourceSettingsReply } from './SourceSettings.js';
 import { readTheme, saveThemeChoice, themes } from './theme.js';
 import type { LlmProvider, PublicLlmConfig } from '../../scripts/lib/llm-config.mjs';
@@ -28,7 +27,6 @@ export function App() {
   const [language, setLanguage] = useState<Language>(() => preference('studyorbit.language') === 'en' ? 'en' : 'zh');
   // Follows the system until a theme is picked in Settings; `system` itself is plain CSS, so an OS switch needs no code here.
   const [theme, setTheme] = useState<Theme>(() => { try { return readTheme(localStorage); } catch { return 'system'; } });
-  const [palette, setPalette] = useState<Palette>(() => parsePalette(preference('studyorbit.palette')));
   const [background, setBackground] = useState<BackgroundSettings>(() => parseBackground(preference(backgroundStorageKey)));
   const { url: backgroundImage, setUrl: setBackgroundImage, loadFailed: backgroundLoadFailed, dismissLoadFailure } = useBackgroundImage();
   const [avatarImage, setAvatarImage] = useState(() => preference('studyorbit.avatar') ?? '');
@@ -65,7 +63,6 @@ export function App() {
   const t = language === 'zh' ? zh : en;
   const running = localSyncing || courseRun?.running;
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
-  useEffect(() => { document.documentElement.dataset.palette = palette; remember('studyorbit.palette', palette); }, [palette]);
   useEffect(() => { applyBackground(background); remember(backgroundStorageKey, JSON.stringify(background)); }, [background]);
   useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; remember('studyorbit.language', language); }, [language]);
   useEffect(() => { if (panel) openDialog(dialog.current); }, [panel]);
@@ -143,7 +140,6 @@ export function App() {
   function close() { closeDialog(dialog.current); }
   // The only place the theme is stored: a default is never written, so "never picked" stays distinguishable (decision #501).
   const changeTheme = (next: Theme) => { try { saveThemeChoice(localStorage, next); } catch { /* Storage is blocked; the pick lasts for this visit. */ } viewTransition('theme', () => { document.documentElement.dataset.theme = next; setTheme(next); }); };
-  const changePalette = (next: Palette) => viewTransition('theme', () => { document.documentElement.dataset.palette = next; setPalette(next); });
   const changeBackgroundMode = (mode: BackgroundMode) => viewTransition('theme', () => { const next = { ...background, mode }; applyBackground(next); setBackground(next); });
   async function syncCourses() {
     if (running) return;
@@ -271,7 +267,7 @@ export function App() {
     <main className="canvas" ref={mainRef}>
       {localSyncError && <p className="error-line" role="status" style={{ whiteSpace: 'pre-wrap' }}><i className="signal" aria-hidden="true" />{localSyncError}</p>}
       {localSyncWarning && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{localSyncWarning}</p>}
-      {backgroundLoadFailed && background.mode === 'image' && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{isZh ? '无法从浏览器存储读取背景图片，暂时显示渐变背景。可以在「设置 → 背景」重新选择图片。' : 'Could not read the background image from browser storage; showing the gradient for now. You can choose the image again in Settings → Background.'}<button className="small ghost" onClick={dismissLoadFailure}>{t.close}</button></p>}
+      {backgroundLoadFailed && background.mode === 'image' && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{isZh ? '无法从浏览器存储读取背景图片，暂时不显示图片。可以在「设置 → 背景」重新选择图片。' : 'Could not read the background image from browser storage, so no image is shown for now. You can choose the image again in Settings → Background.'}<button className="small ghost" onClick={dismissLoadFailure}>{t.close}</button></p>}
       {courseRunError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{courseRunError}</p>}
       {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1>{view.page !== 'agent' && <button className="ghost" onClick={() => setCourseRefresh(value => value + 1)}>{t.refresh}</button>}</div>}
       {savedNotice > 0 && <div className="save-toast" role="status">{isZh ? '课程已经保存' : 'Courses saved'}</div>}
@@ -321,10 +317,6 @@ export function App() {
         {avatarError && <p role="alert">{avatarError}</p>}
         <div className="preferences"><label>{t.theme}<select value={theme} onChange={event => changeTheme(event.target.value as Theme)}>{themes.map(value => <option key={value} value={value}>{t[value]}</option>)}</select></label>
           <label>{t.language}<select value={language} onChange={event => setLanguage(event.target.value as Language)}><option value="en">English</option><option value="zh">中文</option></select></label></div>
-        <fieldset className="palette-picker"><legend>{t.palette}</legend><div className="palette-options">
-          {palettes.map(value => <button key={value} type="button" className="palette-swatch" data-palette={value} aria-pressed={palette === value} onClick={() => changePalette(value)}>
-            <span className="palette-chip" aria-hidden="true"><i /><i /><i /></span>{t.palettes[value]}</button>)}
-        </div></fieldset>
         <BackgroundSettingsSection zh={isZh} settings={background} image={backgroundImage} onChange={setBackground} onMode={changeBackgroundMode} onImage={setBackgroundImage} />
       </>}
     </dialog>

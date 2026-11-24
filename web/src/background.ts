@@ -1,6 +1,10 @@
 import { migrateBackgroundImage, NEW_IMAGE_DB } from './storage-prefix.js';
 /** Page background preferences. The settings live in localStorage; an uploaded image lives only in IndexedDB. */
-export const backgroundModes = ['gradient', 'solid', 'image'] as const;
+/**
+ * `solid` is the flat workspace, `tint` a pale wash over it, `image` an uploaded picture. The former `gradient` id is not
+ * listed on purpose: the app wrote it back as its default on every start, so a stored `gradient` reads as the default.
+ */
+export const backgroundModes = ['solid', 'tint', 'image'] as const;
 export type BackgroundMode = (typeof backgroundModes)[number];
 export type BackgroundSettings = {
   mode: BackgroundMode;
@@ -13,7 +17,7 @@ export type BackgroundSettings = {
 };
 
 export const backgroundStorageKey = 'studyorbit.background';
-export const defaultBackground: BackgroundSettings = { mode: 'gradient', visibility: 70, blur: 0, cardOpacity: 94 };
+export const defaultBackground: BackgroundSettings = { mode: 'solid', visibility: 70, blur: 0, cardOpacity: 94 };
 export const backgroundLimits = { visibility: [0, 100], blur: [0, 24], cardOpacity: [70, 100] } as const;
 /** Raw upload limit before the image is downscaled and re-encoded in the browser. */
 export const maxBackgroundBytes = 15 * 1024 * 1024;
@@ -52,7 +56,7 @@ export function fitWithin(width: number, height: number, edge = maxBackgroundEdg
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
 
-/** Card opacity applies only over an image; gradient and solid backgrounds keep fully opaque surfaces. */
+/** Card opacity applies only over an image; the flat and tinted backgrounds keep fully opaque surfaces. */
 export function surfaceAlpha(settings: BackgroundSettings): number {
   return settings.mode === 'image' ? settings.cardOpacity : 100;
 }

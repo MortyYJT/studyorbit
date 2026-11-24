@@ -3,9 +3,10 @@
        and wider gaps than the 18px header mark; the gaps sit on the vertical and horizontal axes so they stay crisp.
        Circumference 2π × 9.25 ≈ 58.12 = 4 × (11.53 dash + 3 gap); the offset centres a gap at 12 o'clock. -->
   <style>
-    .tile { fill: #111; }
-    .ring { fill: none; stroke: #fff; }
-    @media (prefers-color-scheme: dark) { .tile { fill: #f2f2f2; } .ring { stroke: #111; } }
+    /* The page's ink and workspace colours (web/src/style.css --text and --ground), light and dark. */
+    .tile { fill: #1a1c1f; }
+    .ring { fill: none; stroke: #ffffff; }
+    @media (prefers-color-scheme: dark) { .tile { fill: #dfdfdf; } .ring { stroke: #181818; } }
   </style>
   <rect class="tile" width="32" height="32" rx="7" />
   <circle class="ring" cx="16" cy="16" r="9.25" stroke-width="5" stroke-dasharray="11.53 3" stroke-dashoffset="13.03" transform="rotate(-90 16 16)" />

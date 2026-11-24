@@ -45,8 +45,9 @@ No course files are downloaded and nothing is submitted. Coverage is not guarant
 | `web/src/App.tsx`, `web/src/SourceSettings.tsx` | Shell, sidebar, sync dialog, settings (model, data sources, appearance, background) |
 | `web/src/LocalPlanning.tsx` | Course page (grades, assessments, revision) and week / month views (plan, needs you, time spent) |
 | `web/src/Agent.tsx`, `agent-request.ts` | Chat page; other pages open a new chat with a course and a preset prompt |
-| `web/src/theme.ts`, `palette.ts`, `background.ts`, `BackgroundLayer.tsx`, `motion.ts` | Light/dark choice, palettes, background, animation |
-| `web/index.html`, `web/public/` | Page entry (applies the theme and palette before the app mounts, see [Theme](#theme)); tab icons: `favicon.svg` (the header mark redrawn for 16px), a 32px PNG fallback and the Apple touch icon |
+| `web/src/theme.ts`, `palette.ts`, `background.ts`, `BackgroundLayer.tsx`, `motion.ts` | Light/dark choice, clean-up of what the removed palette picker stored, background, animation |
+| `web/src/style.css` | Every style, and the colour tokens (see [Colours](#colours)) |
+| `web/index.html`, `web/public/` | Page entry (applies the theme and the background mode before the app mounts, see [Theme](#theme)); tab icons: `favicon.svg` (the header mark redrawn for 16px), a 32px PNG fallback and the Apple touch icon |
 | `server/main.ts`, `server/app.ts`, `server/routes/` | Local API server: start-up, the route table behind the access checks, one file per `/api/local/*` route |
 | `server/guard.ts`, `server/proxy.ts` | Access checks (loopback, token, Host, Origin); Vite's `/api/local` proxy |
 | `vite.config.ts` | Page, ports and proxy only |
@@ -106,11 +107,11 @@ Storage stays on this machine; during analysis and chat, course data is sent to 
 
 Light or dark is chosen in one place, Settings → Theme (System, Light, Dark). The sidebar, the page header and the phone top bar have no theme control.
 
-- **Default:** with nothing chosen the page follows the system. `<html>` carries `data-theme="system"` and the dark tokens in `web/src/style.css` sit inside `@media (prefers-color-scheme: dark)`, so when the system switches, the page switches without a reload and without any script. `test/theme.test.ts` checks that every explicit dark rule has an identical system-dark twin.
+- **Default:** with nothing chosen the page follows the system. `<html>` carries `data-theme="system"`. Every colour token in `web/src/style.css` is written once as `light-dark(light, dark)`, and the only theme rules set `color-scheme`: one for an explicit dark, and its twin inside `@media (prefers-color-scheme: dark)` for a page that is neither light nor dark. So when the system switches, the page switches without a reload and without any script. `test/theme.test.ts` checks that the two rules match and set nothing but `color-scheme`; `test/palette.test.ts` checks that no colour token is declared a second time.
 - **Storage:** only a pick made in Settings is stored (`studyorbit.theme.v2`). The default is never written, so "never picked" stays distinguishable from "picked light".
 - **Rule:** `resolveTheme` in `web/src/theme.ts`: a valid pick wins; otherwise a `dark` left under the older key `studyorbit.theme` is kept (or under `coursework.theme` when the older key is absent, which happens only if the prefix move could not write); anything else follows the system. The inline script in `web/index.html` applies the same rule before the bundle loads (it cannot import the module); the test runs that script against the module for every combination of the three keys, with and without failing writes.
 - **Move from the older key** (decision #501): until this change the app wrote its default, `light`, back to `studyorbit.theme` on every start, so a stored `light` did not show a choice. On the first load `migrateThemeChoice` (after the prefix move in `storage-prefix.ts`) drops a stored `light`, moves `dark` or `system` to the new key, and removes the old key. Someone who had picked light on purpose and whose system is dark gets dark once and picks light again.
-- **Tab icon:** `favicon.svg` has its own `prefers-color-scheme` rule and follows the browser's scheme, not the pick in Settings. There is no `theme-color` meta tag.
+- **Tab icon:** `favicon.svg` has its own `prefers-color-scheme` rule and follows the browser's scheme, not the pick in Settings. Its tile and ring are the page's ink and workspace colours (`#1a1c1f` on `#ffffff`; dark `#dfdfdf` and `#181818`); the two PNG fallbacks are the light version. There is no `theme-color` meta tag: it would have to mirror the theme rule in script, including a system switch, and the page deliberately has no such script.
 
 Measured 2026-11-24 in a throw-away headless Chrome against a synthetic instance (two synthetic courses):
 
@@ -119,10 +120,18 @@ Measured 2026-11-24 in a throw-away headless Chrome against a synthetic instance
 | First visit, system dark | light; `studyorbit.theme` = `light` written on start | dark; nothing written |
 | Stored `light` under the old key, system dark | light | dark (follows the system); old key removed, nothing written |
 | Stored `dark` under the old key (or under the former prefix), system light | dark | dark; moved to `studyorbit.theme.v2` |
-| Nothing picked, system switches light → dark → light, no reload | stays light (`data-theme="light"`) | `--ground` `#f7f7f7` → `#0a0a0a` → `#f7f7f7` in the same document |
+| Nothing picked, system switches light → dark → light, no reload | stays light (`data-theme="light"`) | the workspace goes `#ffffff` → `#181818` → `#ffffff` in the same document (re-measured after the colour change below; `#f7f7f7` and `#0a0a0a` before it) |
 | Light or Dark picked in Settings, then the system switches | stays as picked | stays as picked; the pick survives a reload |
 
 Sidebar layout check for the "invisible but still takes width" class of bug (an element hidden with opacity or transparent text that still stretches its container): 84 states were measured from DOM geometry, at widths 1440, 1101, 761 (the narrowest two-column layout), 760, 390 and 320, each in light and dark, Chinese and English, with the sidebar as is, with the owner menu open, on a course page, and below 761 also with the menu sheet open. In every state `scrollWidth` equalled `clientWidth` on the document, the body, the sidebar, its header, body and foot; no sidebar element's box left the sidebar; and no element with a size was invisible. The sidebar is 232 px wide (231 px inside its border) down to 761 px, with the foot at 211 px; from 760 px down it is a top bar as wide as the page (at 390: brand 16–120, page name from 132, menu button 328–382, and the open sheet's foot 358 px wide). The desktop sidebar has no collapsed state. The probe was checked against a planted fault (a 300 px `opacity:0` label in the sidebar foot): it reported the label and three boxes 78 px past the sidebar's edge.
+
+## Colours
+
+The page has one set of colours, those of the Codex desktop app in light and dark: a grey sidebar beside a white workspace (near-black beside dark grey), ink for the primary action, today and the earned arc, one red for problems, and six colours that tell the groups of the weight bar apart. [Colours](palette.md) lists each token with the Codex variable it comes from, the measured contrast of every pairing, the Codex values that were too faint to copy, and the distances between the six weight colours.
+
+- **No palette picker.** The five earlier palettes (Ink, Mist, Pine, Stone, Morty) are gone. `migratePaletteChoice` in `web/src/palette.ts` removes the id they stored (`studyorbit.palette`, and `coursework.palette` if it is still there) on the first load; nothing reads it.
+- **Background** (Settings → Background): Plain is the flat workspace and the default; Gradient washes the workspace with Codex's pale accent tint; Image puts an uploaded picture behind panels whose opacity can be set. A `gradient` stored by an earlier version reads as Plain: the app used to write that default back on every start, so the value did not show a choice. The gradient is now stored as `tint`.
+- **Tests:** `test/palette.test.ts` computes WCAG contrast for every pairing from the tokens (4.5:1 for text, 3:1 for marks and field edges), checks the distances between the weight colours with and without simulated colour-vision deficiency, and runs the script in `web/index.html` to confirm that a stored palette changes nothing.
 
 ## Current limits
 

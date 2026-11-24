@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { backgroundFileProblem, backgroundModes, defaultBackground, fitWithin, parseBackground, surfaceAlpha } from '../web/src/background.js';
 
@@ -8,6 +9,18 @@ describe('parseBackground', () => {
     expect(parseBackground('not json')).toEqual(defaultBackground);
     expect(parseBackground('[1,2]')).toEqual(defaultBackground);
     expect(parseBackground('{"mode":"video","visibility":"high"}')).toEqual(defaultBackground);
+  });
+
+  it('starts flat: the default is the plain workspace', () => {
+    expect(defaultBackground.mode).toBe('solid');
+    expect(backgroundModes).toEqual(['solid', 'tint', 'image']);
+  });
+
+  it('reads the former gradient as the default, keeping the other settings', () => {
+    // The app wrote its old default (`gradient`) back on every start, so that value does not show a choice (decision #516).
+    expect(parseBackground(JSON.stringify({ mode: 'gradient', visibility: 40, blur: 8, cardOpacity: 80 })))
+      .toEqual({ mode: 'solid', visibility: 40, blur: 8, cardOpacity: 80 });
+    expect(parseBackground(JSON.stringify({ mode: 'tint', visibility: 40, blur: 8, cardOpacity: 80 })).mode).toBe('tint');
   });
 
   it('keeps valid settings and clamps numbers into their ranges', () => {
@@ -35,12 +48,23 @@ describe('background helpers', () => {
 
   it('applies card opacity only in image mode', () => {
     expect(surfaceAlpha({ ...defaultBackground, mode: 'image', cardOpacity: 80 })).toBe(80);
-    expect(surfaceAlpha({ ...defaultBackground, mode: 'gradient', cardOpacity: 80 })).toBe(100);
+    expect(surfaceAlpha({ ...defaultBackground, mode: 'tint', cardOpacity: 80 })).toBe(100);
+    expect(surfaceAlpha({ ...defaultBackground, mode: 'solid', cardOpacity: 80 })).toBe(100);
   });
 
   it('matches the modes that index.html applies before the app mounts', () => {
     const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
     const list = /\[((?:'[a-z]+',?\s*)+)\]\.indexOf\(background\.mode\)/.exec(html)?.[1];
     expect(list?.match(/[a-z]+/g)).toEqual([...backgroundModes]);
+  });
+
+  it('gets the same mode from index.html as from the parser, for every stored mode', () => {
+    const script = /<script>([\s\S]*?)<\/script>/.exec(readFileSync(new URL('../web/index.html', import.meta.url), 'utf8'))?.[1] ?? '';
+    for (const stored of [null, '', 'not json', '{}', '{"mode":"gradient"}', '{"mode":"solid"}', '{"mode":"tint"}', '{"mode":"image","cardOpacity":80}', '{"mode":"video"}']) {
+      const dataset: Record<string, string> = {};
+      const localStorage = { getItem: (key: string) => key === 'studyorbit.background' ? stored : null };
+      runInNewContext(script, { localStorage, document: { documentElement: { dataset, style: { setProperty() {} } } } });
+      expect(dataset.bg, String(stored)).toBe(parseBackground(stored).mode);
+    }
   });
 });
