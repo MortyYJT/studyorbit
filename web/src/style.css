@@ -9,7 +9,10 @@
    Each token is written once, as light-dark(light, dark). The only theme rules are the three below, which set
    color-scheme: an explicit dark, and dark when the theme follows the system (test/theme.test.ts keeps the two alike).
    Translucent tokens (--raised, --hover, --active and the borders) are laid over whatever surface they are on, as in
-   Codex, so they work on the sidebar, the workspace and dialogs alike. */
+   Codex, so they work on the sidebar, the workspace and dialogs alike. They never stack: a place is a surface, or a
+   surface with one of the three fills on it, and the contrast test counts on that. So a press uses the hover fill, a
+   control inside a filled area brings its own ground or takes no fill, and --active is kept for the current row, the
+   segmented track and a hovered plan block, none of which carries faint or alert text. */
 :root { color-scheme:light;
   --radius:8px; --radius-control:6px; --gap:16px;
   /* Motion: transform and opacity only; durations short / medium / long. */
@@ -28,7 +31,7 @@
   --raised:light-dark(rgb(26 28 31 / 0.047), rgb(255 255 255 / 0.051)); /* --color-background-secondary-soft: a quiet fill that stays */
   --hover:light-dark(rgb(26 28 31 / 0.055), rgb(255 255 255 / 0.078)); /* --color-token-list-hover-background */
   --active:light-dark(rgb(26 28 31 / 0.12), rgb(223 223 223 / 0.16)); /* --color-background-secondary-ghost-active: the current row, a press */
-  --tint:light-dark(#e5f2ff, #0d273f); /* --app-color-background-accent: the optional background wash */
+  --tint:light-dark(rgb(229 242 255 / 0.6), rgb(13 39 63 / 0.6)); /* --app-color-background-accent (#e5f2ff, #0d273f) at 60%: the optional background wash; at full strength a field's edge is under 3:1 on it */
   --scrim:light-dark(rgb(0 0 0 / 0.302), rgb(0 0 0 / 0.502)); /* --modal-backdrop-background */
 
   /* Lines. --border-strong is the one that has to be seen on its own (3:1): the edge of a field. Codex's input border
@@ -89,13 +92,13 @@ small { font-size:12px; }
 button { cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:32px; padding:0 12px;
   border:1px solid var(--border); border-radius:var(--radius-control); background:transparent; white-space:nowrap;
   transition:background-color var(--dur-1), border-color var(--dur-1), color var(--dur-1), box-shadow var(--dur-1), opacity var(--dur-1), transform var(--dur-1) var(--ease-out); }
-button:hover:enabled { background:var(--hover); }
-button:active:enabled { background:var(--active); }
+/* A press does not darken further: the darker fill would put secondary and alert text under 4.5:1. */
+button:is(:hover,:active):enabled { background:var(--hover); }
 button:disabled { opacity:.45; cursor:default; }
 button.primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
-button.primary:hover:enabled { background:var(--accent-hover); border-color:var(--accent-hover); }
+button.primary:is(:hover,:active):enabled { background:var(--accent-hover); border-color:var(--accent-hover); }
 button.ghost { border-color:transparent; background:transparent; color:var(--muted); }
-button.ghost:hover:enabled { background:var(--hover); color:var(--text); }
+button.ghost:is(:hover,:active):enabled { background:var(--hover); color:var(--text); }
 button.small { min-height:28px; padding:0 10px; font-size:12px; }
 input,select,textarea { min-width:0; width:100%; min-height:32px; background:var(--field); border:1px solid var(--border-strong); border-radius:var(--radius-control); padding:5px 9px; }
 input::placeholder,textarea::placeholder { color:var(--faint); }
@@ -121,9 +124,9 @@ legend { padding:0; margin-bottom:8px; font-size:13px; font-weight:500; }
 .sidebar-body { position:relative; flex:1; min-height:0; display:flex; flex-direction:column; padding:0 10px 14px; overflow:auto; }
 .nav { display:grid; gap:2px; }
 .nav-item { justify-content:flex-start; width:100%; min-height:32px; padding:0 10px; border:0; border-radius:var(--radius-control); background:none; color:var(--muted); font-size:14px; text-align:left; }
-.nav-item:hover:enabled { background:var(--hover); color:var(--text); }
+.nav-item:is(:hover,:active):enabled { background:var(--hover); color:var(--text); }
 .nav-item[aria-current="page"] { color:var(--text); font-weight:500; }
-.nav-item[aria-current="page"]:hover:enabled { background:none; }
+.nav-item[aria-current="page"]:is(:hover,:active):enabled { background:none; }
 /* One indicator slides under the current nav or course item (motion.ts useSlidingIndicator). */
 .nav-item { position:relative; z-index:1; }
 .nav-indicator { position:absolute; top:0; left:0; width:0; height:0; border-radius:var(--radius-control); background:var(--active); opacity:0; pointer-events:none;
@@ -143,7 +146,6 @@ legend { padding:0; margin-bottom:8px; font-size:13px; font-weight:500; }
 .avatar { display:inline-grid; place-items:center; width:24px; height:24px; border-radius:50%; background:var(--accent); color:var(--on-accent); font-size:12px; font-weight:600; flex:none; }
 .menu { position:absolute; left:0; right:0; bottom:calc(100% + 6px); padding:4px; display:grid; gap:2px; background:var(--float); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 8px 24px rgba(0,0,0,.08); z-index:5; }
 .menu button { justify-content:flex-start; border:0; background:none; }
-.menu button:hover:enabled { background:var(--hover); }
 
 .canvas { min-width:0; padding:32px 40px 72px; }
 .canvas > * { max-width:1240px; }
@@ -164,7 +166,8 @@ legend { padding:0; margin-bottom:8px; font-size:13px; font-weight:500; }
 /* Dialogs float, so they alone carry a shadow. */
 dialog { color:var(--text); background:var(--float); border:1px solid var(--border); border-radius:12px; width:min(620px,calc(100% - 24px)); max-height:calc(100dvh - 32px); padding:0 24px 24px; overflow:auto; overflow-wrap:anywhere; box-shadow:0 24px 64px rgba(0,0,0,.14); }
 dialog:focus-visible,.dialog-heading h2:focus { outline:none; }
-dialog::backdrop { background:var(--scrim); }
+/* The literal is for browsers whose ::backdrop does not inherit custom properties (before Chrome 122, Safari 17.4, Firefox 120). */
+dialog::backdrop { background:var(--scrim, rgb(0 0 0 / 0.302)); }
 .dialog-heading { position:sticky; top:0; background:var(--float); padding:18px 0 12px; margin-bottom:8px; z-index:1; border-bottom:1px solid var(--rule); }
 .dialog-heading h2 { margin:0; font-size:16px; }
 .dialog-heading small { display:block; }
@@ -185,8 +188,10 @@ dd { margin:0; font-variant-numeric:tabular-nums; }
 .week-nav,.week-actions { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
 .week-nav > button:not(:nth-child(2)) { width:32px; padding:0; }
 .range { margin-left:8px; font-weight:600; font-variant-numeric:tabular-nums; }
-.seg { display:inline-flex; padding:2px; background:var(--active); border-radius:var(--radius-control); }
+/* The track is laid over the workspace colour, so it is the same on a card, a dialog or a tinted background. */
+.seg { display:inline-flex; padding:2px; background:linear-gradient(var(--active), var(--active)), var(--ground); border-radius:var(--radius-control); }
 .seg button { border:0; min-height:28px; background:none; color:var(--muted); border-radius:4px; }
+.seg button:not([aria-pressed="true"]):is(:hover,:active):enabled { background:none; color:var(--text); }
 .seg button[aria-pressed="true"] { background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(0,0,0,.08); }
 .day { display:grid; grid-row:span 3; grid-template-rows:subgrid; border-right:1px solid var(--rule); min-width:0; }
 .day:last-child { border-right:0; }
@@ -195,11 +200,13 @@ dd { margin:0; font-variant-numeric:tabular-nums; }
 .day-deadlines { display:grid; gap:4px; align-content:start; min-height:36px; padding:6px; background:var(--raised); border-top:1px solid var(--rule); border-bottom:1px solid var(--rule); }
 .due { display:block; font-size:13px; line-height:1.4; padding:3px 6px 3px 8px; border:0; border-left:2px solid var(--text); border-radius:0 4px 4px 0; background:var(--surface); text-align:left; overflow-wrap:anywhere; white-space:normal; min-height:0; justify-content:flex-start; }
 button.due { width:100%; }
+/* A chip keeps its own ground under the hover fill, so the fill does not stack on the band. */
+button.due:is(:hover,:active):enabled { background:linear-gradient(var(--hover), var(--hover)), var(--surface); }
 .due.done { color:var(--muted); text-decoration:line-through; border-left-color:var(--border-strong); }
 .day-items { display:grid; gap:6px; align-content:start; padding:8px 6px; min-height:220px; }
 .empty-day { font-size:12px; padding:2px 4px; color:var(--faint); }
 .blk { display:grid; grid-template-columns:minmax(0,1fr); justify-content:stretch; justify-items:start; gap:2px; width:100%; min-height:0; padding:7px 8px; border:0; border-radius:var(--radius-control); background:var(--raised); text-align:left; font-size:13px; line-height:1.35; overflow-wrap:anywhere; white-space:normal; }
-.blk:hover:enabled { background:var(--active); }
+.blk:is(:hover,:active):enabled { background:var(--active); }
 .blk.manual { background:none; border:1px dashed var(--border-strong); }
 .blk .tt { font-weight:500; }
 .blk .tm,.blk .cr { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
@@ -218,7 +225,6 @@ button.due { width:100%; }
 .chat-list p { margin:8px 10px; font-size:13px; }
 .chat-list button { display:grid; grid-template-columns:minmax(0,1fr); justify-content:stretch; justify-items:start; gap:1px; flex-shrink:0; min-width:0; min-height:44px; padding:6px 10px; border:0; background:none; text-align:left; white-space:normal; }
 .chat-list button span { width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.chat-list button:hover:enabled { background:var(--hover); }
 .chat-list .chat-entry[aria-current="true"] { background:var(--active); }
 .chat-list .new-chat { min-height:32px; margin-bottom:6px; color:var(--text); border:1px solid var(--border); justify-items:center; }
 .conversation { display:flex; flex-direction:column; min-height:0; min-width:0; }
@@ -239,7 +245,9 @@ button.due { width:100%; }
 .chat-error { margin:0; padding:0 20px 12px; font-size:13px; }
 .chat-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; flex-shrink:0; border-radius:var(--radius-control); }
 .chat-row:hover { background:var(--hover); }
-.chat-list .chat-entry:hover:enabled { background:none; }
+/* The row carries the fill; the buttons inside it add none. */
+.chat-list :is(.chat-entry,.chat-delete):is(:hover,:active):enabled { background:none; }
+.chat-list .chat-delete:is(:hover,:active):enabled { color:var(--text); }
 .chat-row:has(.chat-entry[aria-current="true"]) { background:var(--active); }
 .chat-list .chat-entry[aria-current="true"] { background:none; }
 .chat-list .chat-delete { display:inline-flex; justify-content:center; width:28px; min-height:28px; padding:0; margin-right:4px; color:var(--muted); opacity:0; }
@@ -254,7 +262,7 @@ button.due { width:100%; }
 .chat-empty p { margin:0; }
 .suggestions { display:flex; flex-wrap:wrap; gap:8px; }
 .suggestions button { border-radius:16px; color:var(--muted); }
-.suggestions button:hover:enabled { color:var(--text); }
+.suggestions button:is(:hover,:active):enabled { color:var(--text); }
 .chat-form { align-items:flex-end; }
 .chat-form textarea { flex:1; min-height:36px; max-height:160px; field-sizing:content; resize:none; border-radius:18px; padding:7px 14px; line-height:1.45; }
 .chat-error { display:flex; flex-wrap:wrap; align-items:center; gap:8px; width:100%; max-width:800px; margin:0 auto; }
@@ -273,7 +281,7 @@ button.due { width:100%; }
 /* Course page: score block, tabs, then the assessment list. */
 .course-page { --ring-earned:var(--accent); --ring-rest:var(--track); overflow-wrap:anywhere; }
 .crumb { border:0; background:none; min-height:24px; padding:0; color:var(--muted); font-size:13px; margin-bottom:10px; }
-.crumb:hover:enabled { background:none; color:var(--text); }
+.crumb:is(:hover,:active):enabled { background:none; color:var(--text); }
 .chead { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; margin-bottom:20px; }
 .chead small { font-variant-numeric:tabular-nums; }
 .course-summary { padding:0; margin-bottom:28px; }
@@ -297,10 +305,9 @@ button.due { width:100%; }
 .tab-indicator { position:absolute; left:0; bottom:-1px; width:0; height:2px; background:var(--text); opacity:0; pointer-events:none;
   transition:transform var(--dur-2) var(--ease-out), width var(--dur-2) var(--ease-out), opacity var(--dur-1); }
 .tabs button { border:0; border-radius:0; background:none; min-height:40px; padding:0 2px; color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-1px; }
-.tabs button:hover:enabled { background:none; color:var(--text); }
+.tabs button:is(:hover,:active):enabled { background:none; color:var(--text); }
 .tabs button[aria-selected="true"] { color:var(--text); font-weight:500; }
 .arow { display:grid; grid-template-columns:minmax(0,2.2fr) minmax(0,1.4fr) 136px 120px minmax(0,.9fr) 96px; gap:12px; align-items:center; justify-items:stretch; width:100%; min-height:48px; padding:8px; border:0; border-bottom:1px solid var(--rule); border-radius:0; background:none; text-align:left; white-space:normal; font-size:14px; }
-button.arow:hover:enabled { background:var(--hover); }
 .arow.head { min-height:36px; font-size:12px; color:var(--muted); border-bottom-color:var(--border); }
 .arow > span { min-width:0; }
 .arow .num { text-align:right; font-variant-numeric:tabular-nums; }
@@ -406,9 +413,9 @@ dialog.drawer h3 { font-size:13px; margin:24px 0 6px; }
 .local-week-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
 .local-week-day { display:grid; grid-template-rows:auto 1fr; min-width:0; border-right:1px solid var(--rule); }
 .local-week-day:last-child { border-right:0; }
-/* A past day steps back by tone, not by opacity, so its text keeps 4.5:1. */
-.local-week-day.past :is(.local-week-heading,.blk) { color:var(--muted); }
-.local-week-day.past .blk :is(.tm,.cr) { color:var(--faint); }
+/* A past day steps back by tone, not by opacity, so its text keeps 4.5:1. The plan starts today (shared/planning.ts),
+   so a past day holds no plan blocks: only its heading and "No plan", which is already the faint tone. */
+.local-week-day.past .local-week-heading { color:var(--muted); }
 .local-week-day.today { box-shadow:inset 0 2px 0 var(--accent); }
 .local-week-heading { padding:10px 10px 8px; font-size:13px; }
 .local-week-heading b { font-weight:600; font-variant-numeric:tabular-nums; }
@@ -519,7 +526,7 @@ details[open] > summary .chevron,[aria-expanded="true"] .chevron { transform:rot
 .sync-tr > span { min-width:0; display:flex; align-items:center; gap:6px; overflow-wrap:anywhere; }
 .sync-tr > span.num { justify-content:flex-end; }
 .sync-th { min-height:32px; font-size:12px; color:var(--muted); border-bottom-color:var(--border); }
-button.sync-tr:hover:enabled { background:var(--hover); }
+button.sync-tr:is(:hover,:active):enabled { background:var(--hover); }
 .sync-run.open > .sync-tr { background:var(--raised); }
 .sync-sub { min-height:34px; color:var(--muted); background:var(--raised); font-size:12px; }
 .sync-more { margin-top:8px; }
@@ -588,7 +595,8 @@ button.sync-tr:hover:enabled { background:var(--hover); }
 :root[data-bg="tint"] .backdrop {
   background:
     radial-gradient(1100px 640px at 88% -12%, var(--tint), transparent 70%),
-    linear-gradient(160deg, var(--ground) 0%, var(--ground) 30%, color-mix(in srgb, var(--ground) 45%, var(--tint)) 100%); }
+    linear-gradient(160deg, transparent 30%, var(--tint) 100%),
+    var(--ground); }
 .backdrop-image { position:absolute; inset:0; background-size:cover; background-position:center; animation:fade-in var(--dur-3) var(--ease-out); }
 .backdrop-scrim { position:absolute; inset:0; background:var(--ground); }
 @keyframes fade-in { from { opacity:0; } }

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { smallestDifference } from './colour-math.js';
-import { modes, pairContrast, pairs, quietPairs, readTokens, weightTokens } from './palette-tokens.js';
+import { modes, pairContrast, pairs, quietPairs, readTokens, strayColours, weightTokens } from './palette-tokens.js';
 import { formerPaletteKeys, migratePaletteChoice } from '../web/src/palette.js';
 import { migrateStoragePrefix } from '../web/src/storage-prefix.js';
 import { migrateThemeChoice, readTheme } from '../web/src/theme.js';
@@ -108,20 +108,39 @@ describe('the colour tokens in style.css', () => {
       'text', 'muted', 'faint', 'accent', 'accent-hover', 'on-accent', 'focus', 'selection', 'signal', 'track', 'tint', 'scrim', ...weightTokens]) {
       expect(tokens[name], name).toBeDefined();
     }
-    // A colour token outside light-dark() would be the same in both themes; only none are meant to be.
-    const css = read('../web/src/style.css');
-    expect(css.match(/(?<![\w-])--[a-z][a-z0-9-]*\s*:\s*(?:#|rgb\()/g) ?? []).toEqual([]);
+    // A colour written out in any other custom property would be the same in both themes.
+    expect(strayColours()).toEqual([]);
   });
 
-  it('refuse a token that is declared twice', () => {
-    expect(() => readTokens(':root { --text:light-dark(#111, #eee); }\n[data-theme="dark"] { --text:#fff; }')).toThrow(/--text is declared more than once/);
+  it('refuse a token that is declared a second time, in whatever form and under whatever selector', () => {
+    const once = ':root { --text:light-dark(#111, #eee); }';
+    expect(Object.keys(readTokens(once))).toEqual(['text']);
+    for (const second of ['[data-theme="dark"] { --text:#fff; }', '[data-bg="image"] { --text:rgba(0, 0, 0, .5); }', '.card { --text: hsl(0 0% 100%); }',
+      '.card { --text:var(--muted); }', '.card { --text:color-mix(in srgb, var(--muted) 50%, transparent); }', '.card { --text:white }',
+      ':root { --text:light-dark(#222, #ddd); }']) {
+      expect(() => readTokens(`${once}\n${second}`), second).toThrow(/--text is declared more than once/);
+    }
+    // A mention in a comment is not a declaration.
+    expect(Object.keys(readTokens(`${once}\n/* --text:#fff; */`))).toEqual(['text']);
+  });
+
+  it('notice a colour written out in a custom property that is not a light-dark() token', () => {
+    const found = (declaration: string) => strayColours(`.card { ${declaration} }`).length;
+    for (const declaration of ['--edge:#fff;', '--edge:#0008;', '--edge:rgb(0 0 0 / .5);', '--edge:rgba(0, 0, 0, .5);', '--edge:hsl(0 0% 50%);', '--edge:oklch(60% 0.1 20);',
+      '--edge:color(srgb 1 0 0);', '--edge:white;', '--edge:1px solid RebeccaPurple;', '--edge:color-mix(in srgb, red 50%, var(--text));']) {
+      expect(found(declaration), declaration).toBe(1);
+    }
+    for (const declaration of ['--edge:var(--text);', '--edge:color-mix(in srgb, var(--surface) 50%, transparent);', '--gap:16px;', '--ease:cubic-bezier(.2,.8,.2,1);',
+      '--font:-apple-system,"Segoe UI","Linen Sans",sans-serif;', '--edge:currentColor;', '--tan-line:var(--tan-ground);', 'color:#fff;']) {
+      expect(found(declaration), declaration).toBe(0);
+    }
   });
 
   it('keep every text, mark and edge the page draws at its WCAG floor, light and dark', () => {
     const failures: string[] = [];
     for (const mode of modes) for (const pair of pairs) {
       const ratio = pairContrast(tokens, mode, pair);
-      if (ratio < pair.floor) failures.push(`${mode}: ${pair.what} (--${pair.ink} on ${pair.on.join(' + ')}) is ${ratio.toFixed(2)}:1, under ${pair.floor}:1`);
+      if (ratio < pair.floor) failures.push(`${mode}: ${pair.what} (--${pair.ink}${pair.over ? ` over ${pair.over.join(' + ')}` : ''} against ${pair.on.join(' + ')}) is ${ratio.toFixed(2)}:1, under ${pair.floor}:1`);
     }
     expect(failures).toEqual([]);
   });
@@ -140,5 +159,48 @@ describe('the colour tokens in style.css', () => {
         expect(smallestDifference([colour, tokens[other]![mode]]).value, `${mode}, against --${other}`).toBeGreaterThanOrEqual(20);
       }
     }
+  });
+
+  // The pairs above assume that the translucent fills never stack and that faint or alert text never sits on --active
+  // (decision #521). These are the rules in style.css that make it so.
+  describe('the rules that keep the fills from stacking', () => {
+    const css = read('../web/src/style.css');
+    const rule = (selector: string) => {
+      const start = css.split('\n').find(line => line.trimStart().startsWith(`${selector} {`));
+      expect(start, selector).toBeDefined();
+      return start!;
+    };
+
+    it('press with the hover fill, never the darker one', () => {
+      expect(rule('button:is(:hover,:active):enabled')).toContain('background:var(--hover)');
+      expect(css).not.toContain('button:active:enabled { background');
+      // The primary button keeps its own colours when pressed from the keyboard.
+      expect(rule('button.primary:is(:hover,:active):enabled')).toContain('background:var(--accent-hover)');
+    });
+
+    it('lay the segmented track over the workspace colour and leave its unselected half clear', () => {
+      expect(rule('.seg')).toContain('background:linear-gradient(var(--active), var(--active)), var(--ground)');
+      expect(rule('.seg button:not([aria-pressed="true"]):is(:hover,:active):enabled')).toContain('background:none');
+    });
+
+    it('keep a hovered deadline chip opaque on its band', () => {
+      expect(rule('button.due:is(:hover,:active):enabled')).toContain('background:linear-gradient(var(--hover), var(--hover)), var(--surface)');
+    });
+
+    it('add no fill to a row that already lies on the current-row fill', () => {
+      expect(rule('.nav-item[aria-current="page"]:is(:hover,:active):enabled')).toContain('background:none');
+      expect(rule('.chat-list :is(.chat-entry,.chat-delete):is(:hover,:active):enabled')).toContain('background:none');
+    });
+
+    it('keep the darker fill for a hovered plan block, which holds no faint or alert text', () => {
+      expect(rule('.blk:is(:hover,:active):enabled')).toContain('background:var(--active)');
+      // Faint text is set on placeholders, "No plan" and days outside the month; none of them is inside a plan block.
+      const faint = css.split('\n').filter(line => line.includes('color:var(--faint)')).map(line => line.slice(0, line.indexOf('{')).trim());
+      expect(faint).toEqual(['input::placeholder,textarea::placeholder', '.empty-day', '.cell.out .num']);
+    });
+  });
+
+  it('gives the dialog backdrop a literal colour for browsers whose ::backdrop does not inherit custom properties', () => {
+    expect(read('../web/src/style.css')).toContain('dialog::backdrop { background:var(--scrim, rgb(0 0 0 / 0.302)); }');
   });
 });

@@ -16,7 +16,7 @@ The scripts and the full dump are kept outside the repository, because they read
 
 ## Tokens
 
-Each token is written once as `light-dark(light, dark)`. Translucent values are laid over whatever surface they sit on, as in Codex.
+Each token is written once as `light-dark(light, dark)`. Translucent values are laid over whatever surface they sit on, as in Codex, and they never stack: a place is a surface, or a surface with one fill on it. A press therefore shows the hover fill, and a control inside a filled area brings its own ground or takes no fill.
 
 | Token | Used for | Light | Dark | Codex variable |
 | --- | --- | --- | --- | --- |
@@ -26,8 +26,8 @@ Each token is written once as `light-dark(light, dark)`. Translucent values are 
 | `--float` | Dialogs, the drawer, menus | `#ffffff` | `#282828` | `--color-surface-card` / `--color-surface-tertiary` (what Codex's settings dialog uses) |
 | `--field` | Inputs and selects | `#ffffff` | `#2d2d2d` | `--color-background-control-opaque` |
 | `--raised` | Quiet fill that stays: plan blocks, the deadline band, the weight strip, the sent chat message | ink 4.7% | white 5.1% | `--color-background-secondary-soft` |
-| `--hover` | Hovered rows and buttons | ink 5.5% | white 7.8% | `--color-token-list-hover-background` |
-| `--active` | Current row, a press, the segmented track | ink 12% | `#dfdfdf` 16% | `--color-background-secondary-ghost-active` |
+| `--hover` | Hovered and pressed rows and buttons | ink 5.5% | white 7.8% | `--color-token-list-hover-background` |
+| `--active` | Current row, the segmented track, a hovered plan block | ink 12% | `#dfdfdf` 16% | `--color-background-secondary-ghost-active` |
 | `--rule` | Row separators, the sidebar edge | ink 7.8% | white 8.2% | `--color-token-border-default` |
 | `--border` | Card, dialog and button outlines | ink 11.8% | white 15.7% | `--color-token-border-heavy` |
 | `--border-strong` | Edge of a field, dashed edge of a manual task | ink 50% | `#dfdfdf` 50% | `--input-outline-border-color-focus` |
@@ -40,7 +40,7 @@ Each token is written once as `light-dark(light, dark)`. Translucent values are 
 | `--signal` | The alert dot, the "No source" and conflict marks | `#ba2623` | `#ff6764` | `--color-text-danger-soft` / `--app-color-text-error` |
 | `--track` | Unfilled part of the ring and the weight bar | `#dfdfdf` | `#414141` | `--slider-track-color` |
 | `--weight-0` … `--weight-5` | The groups of the weight bar | see below | see below | see below |
-| `--tint` | The optional gradient background | `#e5f2ff` | `#0d273f` | `--app-color-background-accent` |
+| `--tint` | The optional gradient background | `#e5f2ff` at 60% | `#0d273f` at 60% | `--app-color-background-accent`, weakened (see below) |
 | `--scrim` | Behind dialogs and the drawer | black 30.2% | black 50.2% | `--modal-backdrop-background` |
 
 Ink is `#1a1c1f` (`rgb(26 28 31)`). On macOS the Codex sidebar is translucent over the system's window material, so its colour changes with the wallpaper; a web page cannot do that, and the sidebar here is the opaque token.
@@ -58,8 +58,9 @@ Text under 4.5:1, and marks or edges under 3:1, did not take Codex's value. Each
 | Secondary text on the segmented track inside a dialog, dark | `--color-text-secondary`, `#999999` on `#454545` | 3.35 | `--app-color-text-foreground-secondary`, `#bcbcbc` | 5.03 |
 | Alert text, dark | `--color-text-danger`, `#e02e2a` on `#181818` | 3.88 | `--app-color-text-error`, `#ff6764` | 6.24 |
 | Alert text on the weight strip and on a hovered row, dark | `--color-text-danger-soft`, `#fa423e` on `#242424` and `#2a2a2a` | 4.38 and 4.04 | `--app-color-text-error`, `#ff6764` | 5.47 and 5.04 |
-| Edge of a field, light | `--color-token-input-border`, ink 11.8% on white | 1.27 | `--input-outline-border-color-focus`, ink 50% | 3.30 |
-| Edge of a field, dark | `--color-token-input-border`, white 15.7% on `#181818` and `#282828` | 1.62 and 1.66 | `--input-outline-border-color-focus`, `#dfdfdf` 50% | 4.22 and 3.92 |
+| Edge of a field, light | `--color-token-input-border`, ink 11.8% over the white field | 1.27 | `--input-outline-border-color-focus`, ink 50% | 3.30 |
+| Edge of a field, dark | `--color-token-input-border`, white 15.7% over the `#2d2d2d` field: against the workspace, a dialog, the inside of the field | 2.13, 1.77, 1.65 | `--input-outline-border-color-focus`, `#dfdfdf` 50% | 4.88, 4.05, 3.78 |
+| Gradient background, light | `--app-color-background-accent`, `#e5f2ff`, at full strength: a field's edge against it | 2.91 | the same colour at 60% over the workspace, `#eff7ff` | 3.06 |
 | Green weight colour, light | `--color-chart-green`, `#04b84c` on the strip | 2.40 | `--green-500`, `#00a240` | 3.07 |
 | Yellow weight colour, light | `--color-chart-yellow`, `#ffc300` on the strip | 1.47 | `--yellow-800`, `#6e5400` | 6.53 |
 | Unfilled part of the ring | `--color-chart-empty`, `#f3f3f3` on white and `#303030` on `#181818` | 1.11 and 1.35 | `--slider-track-color`, `#dfdfdf` and `#414141` | 1.33 and 1.74 |
@@ -68,11 +69,11 @@ Two things here were decided for reasons other than a failing ratio. Codex's ora
 
 Codex's link blue (`--color-token-text-link-foreground`, `#339cff`, 2.86:1 on white) is not used either; links stay underlined ink, as before.
 
-One contrast fault that had nothing to do with Codex was fixed on the way: past days in the week view were dimmed with `opacity: .55`, which put their titles at 3.74:1. They now step back by tone (`--muted` for the title, `--faint` for the second line) and stay above 4.5:1.
+One contrast fault that had nothing to do with Codex was fixed on the way: past days in the week view were dimmed with `opacity: .55`, which put the day's heading at 4.17:1 in light and "No plan" at 2.23:1 in light and 2.58:1 in dark. A past day now steps back by tone: its heading is `--muted` (6.19 and 9.35) and "No plan" is the same `--faint` as on any other day (5.33 and 6.23). A past day holds nothing else, because the plan is laid out from today on.
 
 ## Measured contrast
 
-WCAG 2 contrast of every pairing the stylesheet produces, computed from the tokens (`test/palette-tokens.ts` lists the pairs; `test/palette.test.ts` fails when one drops under its floor). A translucent layer is composited over the surface below it first.
+WCAG 2 contrast of every pairing the stylesheet produces, computed from the tokens (`test/palette-tokens.ts` lists the pairs; `test/palette.test.ts` fails when one drops under its floor). A translucent layer is composited over the surface below it first. A border is painted over its own element's background, so a field's edge is composited over the field and then compared with what is outside the field and with its inside. The gradient background is measured where it is strongest. The same test checks the rules that keep fills from stacking, so the list of surfaces is complete.
 
 | What | Token on surface | Floor | Light | Dark |
 | --- | --- | --- | --- | --- |
@@ -80,64 +81,76 @@ WCAG 2 contrast of every pairing the stylesheet produces, computed from the toke
 | Text on sidebar, hovered row | `--text` on `--sidebar` + `--hover` | 4.5 | 14.19 | 11.31 |
 | Text on sidebar, current row | `--text` on `--sidebar` + `--active` | 4.5 | 12.43 | 9.28 |
 | Text on workspace | `--text` on `--ground` | 4.5 | 17.08 | 13.32 |
-| Text on workspace, hovered button | `--text` on `--ground` + `--hover` | 4.5 | 15.32 | 10.77 |
-| Text on workspace, gradient | `--text` on `--tint` | 4.5 | 15.02 | 11.43 |
-| Text on workspace, gradient, hovered button | `--text` on `--tint` + `--hover` | 4.5 | 13.51 | 9.09 |
+| Text on workspace, quiet fill | `--text` on `--ground` + `--raised` | 4.5 | 15.57 | 11.68 |
+| Text on workspace, hovered row | `--text` on `--ground` + `--hover` | 4.5 | 15.32 | 10.77 |
+| Text on gradient background | `--text` on `--ground` + `--tint` | 4.5 | 15.82 | 12.27 |
+| Text on gradient background, quiet fill | `--text` on `--ground` + `--tint` + `--raised` | 4.5 | 14.44 | 10.65 |
+| Text on gradient background, hovered row | `--text` on `--ground` + `--tint` + `--hover` | 4.5 | 14.21 | 9.79 |
 | Text on card | `--text` on `--surface` | 4.5 | 17.08 | 13.32 |
 | Text on card, quiet fill | `--text` on `--surface` + `--raised` | 4.5 | 15.57 | 11.68 |
 | Text on card, hovered row | `--text` on `--surface` + `--hover` | 4.5 | 15.32 | 10.77 |
-| Text on card, pressed or segmented track | `--text` on `--surface` + `--active` | 4.5 | 13.40 | 8.82 |
+| Text on card, current row or hovered plan block | `--text` on `--surface` + `--active` | 4.5 | 13.40 | 8.82 |
+| Text on segmented track | `--text` on `--ground` + `--active` | 4.5 | 13.40 | 8.82 |
 | Text on dialog | `--text` on `--float` | 4.5 | 17.08 | 11.06 |
 | Text on dialog, quiet fill | `--text` on `--float` + `--raised` | 4.5 | 15.57 | 9.49 |
 | Text on dialog, hovered row | `--text` on `--float` + `--hover` | 4.5 | 15.32 | 8.70 |
-| Text on dialog, segmented track | `--text` on `--float` + `--active` | 4.5 | 13.40 | 7.16 |
 | Text on field | `--text` on `--field` | 4.5 | 17.08 | 10.33 |
 | Muted text on sidebar | `--muted` on `--sidebar` | 4.5 | 5.73 | 9.70 |
 | Muted text on sidebar, hovered row | `--muted` on `--sidebar` + `--hover` | 4.5 | 5.15 | 7.93 |
 | Muted text on sidebar, current row | `--muted` on `--sidebar` + `--active` | 4.5 | 4.51 | 6.51 |
 | Muted text on workspace | `--muted` on `--ground` | 4.5 | 6.19 | 9.35 |
-| Muted text on workspace, hovered button | `--muted` on `--ground` + `--hover` | 4.5 | 5.56 | 7.56 |
-| Muted text on workspace, gradient | `--muted` on `--tint` | 4.5 | 5.45 | 8.02 |
-| Muted text on workspace, gradient, hovered button | `--muted` on `--tint` + `--hover` | 4.5 | 4.90 | 6.38 |
+| Muted text on workspace, quiet fill | `--muted` on `--ground` + `--raised` | 4.5 | 5.65 | 8.20 |
+| Muted text on workspace, hovered row | `--muted` on `--ground` + `--hover` | 4.5 | 5.56 | 7.56 |
+| Muted text on gradient background | `--muted` on `--ground` + `--tint` | 4.5 | 5.74 | 8.61 |
+| Muted text on gradient background, quiet fill | `--muted` on `--ground` + `--tint` + `--raised` | 4.5 | 5.24 | 7.47 |
+| Muted text on gradient background, hovered row | `--muted` on `--ground` + `--tint` + `--hover` | 4.5 | 5.15 | 6.87 |
 | Muted text on card | `--muted` on `--surface` | 4.5 | 6.19 | 9.35 |
 | Muted text on card, quiet fill | `--muted` on `--surface` + `--raised` | 4.5 | 5.65 | 8.20 |
 | Muted text on card, hovered row | `--muted` on `--surface` + `--hover` | 4.5 | 5.56 | 7.56 |
-| Muted text on card, pressed or segmented track | `--muted` on `--surface` + `--active` | 4.5 | 4.86 | 6.19 |
+| Muted text on card, current row or hovered plan block | `--muted` on `--surface` + `--active` | 4.5 | 4.86 | 6.19 |
+| Muted text on segmented track | `--muted` on `--ground` + `--active` | 4.5 | 4.86 | 6.19 |
 | Muted text on dialog | `--muted` on `--float` | 4.5 | 6.19 | 7.76 |
 | Muted text on dialog, quiet fill | `--muted` on `--float` + `--raised` | 4.5 | 5.65 | 6.66 |
 | Muted text on dialog, hovered row | `--muted` on `--float` + `--hover` | 4.5 | 5.56 | 6.10 |
-| Muted text on dialog, segmented track | `--muted` on `--float` + `--active` | 4.5 | 4.86 | 5.03 |
 | Muted text on field | `--muted` on `--field` | 4.5 | 6.19 | 7.25 |
 | Faint text on card | `--faint` on `--surface` | 4.5 | 5.33 | 6.23 |
-| Faint text on card, quiet fill | `--faint` on `--surface` + `--raised` | 4.5 | 4.86 | 5.46 |
+| Faint text on card, hovered row | `--faint` on `--surface` + `--hover` | 4.5 | 4.79 | 5.04 |
 | Faint text on field | `--faint` on `--field` | 4.5 | 5.33 | 4.83 |
-| Faint text on dialog | `--faint` on `--float` | 4.5 | 5.33 | 5.17 |
 | Alert text on workspace | `--signal` on `--ground` | 4.5 | 6.20 | 6.24 |
-| Alert text on workspace, gradient | `--signal` on `--tint` | 4.5 | 5.45 | 5.35 |
+| Alert text on workspace, quiet fill | `--signal` on `--ground` + `--raised` | 4.5 | 5.65 | 5.47 |
+| Alert text on workspace, hovered row | `--signal` on `--ground` + `--hover` | 4.5 | 5.56 | 5.04 |
+| Alert text on gradient background | `--signal` on `--ground` + `--tint` | 4.5 | 5.74 | 5.75 |
+| Alert text on gradient background, quiet fill | `--signal` on `--ground` + `--tint` + `--raised` | 4.5 | 5.24 | 4.98 |
+| Alert text on gradient background, hovered row | `--signal` on `--ground` + `--tint` + `--hover` | 4.5 | 5.16 | 4.58 |
 | Alert text on card | `--signal` on `--surface` | 4.5 | 6.20 | 6.24 |
 | Alert text on card, quiet fill | `--signal` on `--surface` + `--raised` | 4.5 | 5.65 | 5.47 |
 | Alert text on card, hovered row | `--signal` on `--surface` + `--hover` | 4.5 | 5.56 | 5.04 |
 | Alert text on dialog | `--signal` on `--float` | 4.5 | 6.20 | 5.18 |
 | Text on the primary button, today's date and the toast | `--on-accent` on `--accent` | 4.5 | 17.08 | 10.33 |
-| Text on the primary button, hovered | `--on-accent` on `--accent-hover` | 4.5 | 13.20 | 11.76 |
+| Text on the primary button, hovered or pressed | `--on-accent` on `--accent-hover` | 4.5 | 13.20 | 11.76 |
 | Selected text | `--text` on `--selection` | 4.5 | 14.70 | 10.44 |
 | Selected muted text | `--muted` on `--selection` | 4.5 | 5.33 | 7.32 |
-| Alert dot on sidebar | `--signal` on `--sidebar` | 3 | 5.73 | 6.47 |
 | Alert dot on workspace | `--signal` on `--ground` | 3 | 6.20 | 6.24 |
-| Alert dot on workspace, gradient | `--signal` on `--tint` | 3 | 5.45 | 5.35 |
+| Alert dot on gradient background | `--signal` on `--ground` + `--tint` | 3 | 5.74 | 5.75 |
 | Alert dot on card | `--signal` on `--surface` | 3 | 6.20 | 6.24 |
 | Alert dot on card, quiet fill | `--signal` on `--surface` + `--raised` | 3 | 5.65 | 5.47 |
+| Alert dot on card, hovered row | `--signal` on `--surface` + `--hover` | 3 | 5.56 | 5.04 |
 | Alert dot on dialog | `--signal` on `--float` | 3 | 6.20 | 5.18 |
+| Alert dot on dialog, quiet fill | `--signal` on `--float` + `--raised` | 3 | 5.65 | 4.44 |
+| Alert dot on dialog, hovered row | `--signal` on `--float` + `--hover` | 3 | 5.56 | 4.07 |
 | Earned arc, today marker, progress, deadline bar on card | `--accent` on `--surface` | 3 | 17.08 | 13.32 |
 | Earned arc, today marker, progress, deadline bar on card, quiet fill | `--accent` on `--surface` + `--raised` | 3 | 15.57 | 11.68 |
 | Earned arc, today marker, progress, deadline bar on dialog | `--accent` on `--float` | 3 | 17.08 | 11.06 |
 | Earned arc against the rest of the ring | `--accent` on `--track` | 3 | 12.81 | 7.66 |
-| Field edge on workspace | `--border-strong` on `--ground` | 3 | 3.30 | 4.22 |
-| Field edge on card | `--border-strong` on `--surface` | 3 | 3.30 | 4.22 |
-| Field edge on dialog | `--border-strong` on `--float` | 3 | 3.30 | 3.92 |
+| Field edge on workspace | `--border-strong` over `--field`, against `--ground` | 3 | 3.30 | 4.88 |
+| Field edge on gradient background | `--border-strong` over `--field`, against `--ground` + `--tint` | 3 | 3.06 | 4.49 |
+| Field edge on card | `--border-strong` over `--field`, against `--surface` | 3 | 3.30 | 4.88 |
+| Field edge on dialog | `--border-strong` over `--field`, against `--float` | 3 | 3.30 | 4.05 |
+| Field edge against the inside of the field | `--border-strong` on `--field` | 3 | 3.30 | 3.78 |
+| Dashed edge of a task added by hand, on card | `--border-strong` on `--surface` | 3 | 3.30 | 4.22 |
 | Focus ring on sidebar | `--focus` on `--sidebar` | 3 | 4.99 | 5.09 |
 | Focus ring on workspace | `--focus` on `--ground` | 3 | 5.39 | 4.91 |
-| Focus ring on workspace, gradient | `--focus` on `--tint` | 3 | 4.75 | 4.21 |
+| Focus ring on gradient background | `--focus` on `--ground` + `--tint` | 3 | 5.00 | 4.52 |
 | Focus ring on card | `--focus` on `--surface` | 3 | 5.39 | 4.91 |
 | Focus ring on dialog | `--focus` on `--float` | 3 | 5.39 | 4.07 |
 | Focus ring on field | `--focus` on `--field` | 3 | 5.39 | 3.80 |
@@ -192,8 +205,8 @@ StudyOrbit has no colour per course. A course is told apart by its code, which i
 | --- | --- | --- |
 | Earned arc of the grade ring and its legend swatch | `--accent` | 17.08 on the card in light, 13.32 in dark; 12.81 and 7.66 against the unfilled part |
 | Weight bar segments and legend swatches | `--weight-0` … `--weight-5` | 3.07 or more on the strip in both modes |
-| "Needs you" lines, sync errors, the result of a failed sync | `--signal` dot | 5.45 or more in light, 5.18 or more in dark, on every surface it appears on |
-| "No source" and conflict marks (11px text with a border) | `--signal` | 5.45 or more in light, 5.04 or more in dark |
+| "Needs you" lines, sync errors, the result of a failed sync | `--signal` dot | 5.56 or more in light, 4.07 or more in dark, on every surface it appears on |
+| "No source" and conflict marks (11px text with a border) | `--signal` | 5.16 or more in light, 4.58 or more in dark |
 | Outline of the sync-conflict panel | `--signal` | same values as the dot |
 | Deadline chip (a bar at its left edge), the exam tag's outline | `--text` | 15.57 or more in light, 11.68 or more in dark |
 | Finished deadline | `--muted` text, struck through, bar in `--border-strong` | text 5.65 or more; the strike-through carries the state |
@@ -202,8 +215,8 @@ StudyOrbit has no colour per course. A course is told apart by its code, which i
 
 ## Limits
 
-- The fills that show state follow Codex and are under 3:1 against their surroundings: the current sidebar row (1.27:1 against the sidebar in light), a hovered row, the selected half of a segmented control. The current row is also set in a heavier weight and in `--text` where the others are `--muted`; the segmented control marks its selected half with `aria-pressed` and the same change of text colour.
+- The fills that show state follow Codex and are under 3:1 against their surroundings: the current sidebar row (1.27:1 against the sidebar in light), a hovered row, the selected half of a segmented control. A press shows the same fill as a hover (buttons other than rows also shrink slightly); Codex's darker fill would put secondary and alert text under 4.5:1 on some surfaces. The current row is also set in a heavier weight and in `--text` where the others are `--muted`; the segmented control marks its selected half with `aria-pressed` and the same change of text colour.
 - Button outlines use Codex's border (1.27:1 in light). A button is found by its label, which is at 4.5:1 or more; a field has no label inside it, which is why fields alone take the stronger edge.
-- With an image background, text sits on panels that are 70 to 100% opaque over the picture, so its contrast depends on the picture. The table above covers the two backgrounds without a picture; the gradient is measured where it is strongest (the full tint).
-- `light-dark()` needs Chrome or Edge 123, Safari 17.5 or Firefox 120. The production build (`npm run build`) rewrites it for older browsers; the development server does not.
+- With an image background, text sits on panels that are 70 to 100% opaque over the picture, so its contrast depends on the picture. The table above covers the two backgrounds without a picture.
+- `light-dark()` needs Chrome or Edge 123, Safari 17.5 or Firefox 120. The production build (`npm run build`) rewrites it for older browsers; the development server does not. In browsers whose `::backdrop` does not inherit custom properties (before Chrome 122, Safari 17.4 and Firefox 120) the shade behind a dialog is the light value, black at 30.2%, in both modes. No older browser was run.
 - Contrast was computed from the tokens, and the pages were looked at in headless Chrome at 1440 and 390 wide. Safari and Firefox were not opened.
