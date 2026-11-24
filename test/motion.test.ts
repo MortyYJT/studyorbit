@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { closeDialog, drawArc, durations, easeOut, nextReveal, openDialog, pageFade, pageFadeFrom, placeholderDelay, reducedMotion, themeTransition, type Reveal } from '../web/src/motion.js';
+import { closeDialog, drawArc, durations, easeOut, nextReveal, openDialog, pageFade, pageFadeFrom, placeholderDelay, reducedMotion, revealFor, revealTimer, themeTransition, type Reveal } from '../web/src/motion.js';
+import { replyGuard, syncNeedsReload } from '../web/src/fresh.js';
 
 // The helpers touch a handful of browser globals; each test installs the stand-ins it needs.
 function motionPreference(reduce: boolean) {
@@ -142,6 +143,69 @@ describe('nextReveal', () => {
   it('waits a short, fixed time before any placeholder', () => {
     expect(placeholderDelay).toBeGreaterThanOrEqual(100);
     expect(placeholderDelay).toBeLessThanOrEqual(200);
+  });
+});
+
+describe('revealFor and revealTimer (what useReveal does between renders)', () => {
+  it('moves to the data as soon as it is ready, and back to waiting when it goes away', () => {
+    expect(revealFor('waiting', true)).toBe('shown');
+    expect(revealFor('placeholder', true)).toBe('faded');
+    expect(revealFor('shown', true)).toBe('shown');
+    expect(revealFor('faded', true)).toBe('faded');
+    expect(revealFor('shown', false)).toBe('waiting');
+    expect(revealFor('faded', false)).toBe('waiting');
+    expect(revealFor('waiting', false)).toBe('waiting');
+    expect(revealFor('placeholder', false)).toBe('placeholder');
+  });
+
+  it('times the placeholder and the end of the fade, and nothing else', () => {
+    expect(revealTimer('waiting')).toEqual({ event: 'delay', ms: placeholderDelay });
+    expect(revealTimer('faded')).toEqual({ event: 'done', ms: durations.short + 50 });
+    expect(revealTimer('placeholder')).toBeNull();
+    expect(revealTimer('shown')).toBeNull();
+  });
+
+  it('walks a slow load and a fast load to the right end', () => {
+    // Slow: the delay passes, then the data arrives, then the fade ends.
+    let state: Reveal = revealFor('waiting', false);
+    state = nextReveal(state, revealTimer(state)!.event);
+    state = revealFor(state, true);
+    expect(state).toBe('faded');
+    state = nextReveal(state, revealTimer(state)!.event);
+    expect(state).toBe('shown');
+    // Fast: the data arrives first; the timer that was pending has nothing to do.
+    state = revealFor('waiting', true);
+    expect(state).toBe('shown');
+    expect(nextReveal(state, 'delay')).toBe('shown');
+  });
+});
+
+describe('syncNeedsReload', () => {
+  const run = (running: boolean, ...courses: [string, string, string?][]) => ({ running, courses: courses.map(([id, status, file]) => ({ id, status, file })) });
+
+  it('takes the first read as the baseline when no sync is running', () => {
+    expect(syncNeedsReload(undefined, run(false, ['1', 'completed', 'a.json']))).toEqual({ reload: false, signature: JSON.stringify([['1', 'completed', 'a.json']]) });
+  });
+
+  it('reloads once when the first read finds a sync running: a course may have finished since the page read its data', () => {
+    expect(syncNeedsReload(undefined, run(true, ['1', 'completed', 'a.json'], ['2', 'running'])).reload).toBe(true);
+  });
+
+  it('reloads when a course result changes afterwards, and not when nothing changed', () => {
+    const first = syncNeedsReload(undefined, run(true, ['1', 'running']));
+    expect(syncNeedsReload(first.signature, run(true, ['1', 'running'])).reload).toBe(false);
+    expect(syncNeedsReload(first.signature, run(false, ['1', 'completed', 'a.json'])).reload).toBe(true);
+  });
+});
+
+describe('replyGuard', () => {
+  it('accepts a read that started after the last save, and drops one that started before it', () => {
+    const guard = replyGuard();
+    const early = guard.begin();
+    expect(guard.accepts(early)).toBe(true);
+    guard.saved();
+    expect(guard.accepts(early)).toBe(false);
+    expect(guard.accepts(guard.begin())).toBe(true);
   });
 });
 
@@ -289,12 +353,45 @@ describe('the motion rules in style.css', () => {
     for (const gone of ['page-in', 'page-out', 'rise-in', 'grow-x']) expect(css).not.toMatch(new RegExp(`@keyframes ${gone}\\b`));
   });
 
-  it('animate nothing but opacity and transform in keyframes', () => {
-    const frames = lines.filter(line => line.trimStart().startsWith('@keyframes'));
-    expect(frames.length).toBeGreaterThan(0);
-    for (const line of frames) {
-      const properties = [...line.slice(line.indexOf('{') + 1).matchAll(/([a-z-]+)\s*:/g)].map(match => match[1]);
-      expect(properties.filter(property => property !== 'opacity' && property !== 'transform'), line).toEqual([]);
+  /** Every @keyframes block, whole, however many lines it takes. */
+  function keyframeBlocks(source: string): { name: string; body: string }[] {
+    const blocks: { name: string; body: string }[] = [];
+    for (const match of source.matchAll(/@keyframes\s+([\w-]+)\s*\{/g)) {
+      let depth = 1, index = match.index + match[0].length;
+      const start = index;
+      while (depth > 0 && index < source.length) { if (source[index] === '{') depth += 1; else if (source[index] === '}') depth -= 1; index += 1; }
+      blocks.push({ name: match[1]!, body: source.slice(start, index - 1) });
     }
+    return blocks;
+  }
+  const animated = (body: string) => [...body.matchAll(/([a-z-]+)\s*:/g)].map(match => match[1]!).filter(property => property !== 'opacity' && property !== 'transform');
+
+  it('animate nothing but opacity and transform in keyframes', () => {
+    const blocks = keyframeBlocks(css);
+    expect(blocks.length).toBeGreaterThan(0);
+    expect(blocks.length).toBe(css.match(/@keyframes/g)!.length);
+    for (const block of blocks) expect(animated(block.body), block.name).toEqual([]);
+  });
+
+  it('read a keyframes block that spans several lines', () => {
+    const blocks = keyframeBlocks('@keyframes grow {\n  from { height:0; opacity:0; }\n  to {\n    height:10px;\n  }\n}\n.x { color:red; }');
+    expect(blocks).toHaveLength(1);
+    expect(animated(blocks[0]!.body)).toEqual(['height', 'height']);
+  });
+
+  /** Selectors of every :is() or :where() argument list that names a pseudo-element, which such a list silently drops. */
+  const pseudoInsideIs = (source: string) => [...source.matchAll(/:(?:is|where)\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g)].map(match => match[0]).filter(text => text.includes('::'));
+
+  it('never put a pseudo-element inside :is() or :where(), where it matches nothing', () => {
+    expect(pseudoInsideIs(':root[data-x] :is(*,*::before,*::after) { color:red; }')).toHaveLength(1);
+    expect(pseudoInsideIs(':is(.a,.b)::before { color:red; }')).toEqual([]);
+    expect(pseudoInsideIs(css)).toEqual([]);
+  });
+
+  it('fade the colours of ::before and ::after with the rest on a theme change', () => {
+    const rule = lines.find(line => line.startsWith(':root[data-theming]'));
+    expect(rule).toBeDefined();
+    const selectors = rule!.slice(0, rule!.indexOf('{')).split(',').map(part => part.trim());
+    expect(selectors).toEqual([':root[data-theming] *', ':root[data-theming] *::before', ':root[data-theming] *::after']);
   });
 });

@@ -19,7 +19,7 @@ How the page moves when you switch pages, wait for data, open a dialog or change
 
 Keyframes change opacity and transform only. No View Transition is used anywhere: while one runs, the browser shows a picture of the page and the page under it takes no clicks.
 
-With `prefers-reduced-motion: reduce` every animation and transition is off and each end state applies at once. Placeholders and the busy state of the Refresh button still show, without a fade. There is no motion setting in the app.
+With `prefers-reduced-motion: reduce` every animation and transition is off and each end state applies at once. Placeholders and the busy state of the Refresh button still show, without a fade. The busy Refresh button is `aria-disabled` and ignores clicks, so keyboard focus stays on it. There is no motion setting in the app.
 
 ## What was wrong before
 
@@ -41,7 +41,7 @@ The sliding indicator already worked (16 frames, ending exactly on the item) and
 
 - `go()` in `App.tsx` only sets the view. A layout effect scrolls to the top and calls `pageFade`, which cancels a fade still running before it starts the next.
 - `LocalPlanning` stays mounted behind the Agent page and holds the course data for the whole visit; coming back reads it again in the background without clearing what is shown. Each page has its own React key, so one page's elements are not reused as another's.
-- The first load reads the course reports once. The change log is read beside them; the corrections still wait for the reports, because the stored keys are migrated from them first. The week is recomputed when the time zone arrives instead of remounting the component, and nothing is drawn until the zone is known.
+- The first load reads the course reports once (twice when a sync is running at that moment, because a course may finish between the page's read and the first status read). The change log is read beside them; the corrections still wait for the reports, because the stored keys are migrated from them first. The week is recomputed when the time zone arrives instead of remounting the component, and nothing is drawn until the zone is known.
 - "Loaded" is a state. Before it, the sidebar reserves one row for each selected course (the count is in `localStorage`), the page body shows the placeholder, and the settings line reads "2 selected" without the codes.
 - Settings opens with its forms filled: the source settings are the ones the shell already read, the model settings are read once at start-up and kept for the visit, and the sync records are read when the owner menu opens. A fresh reply replaces a form unless it was edited meanwhile. A form that is still unknown shows a placeholder of the form's own height.
 - "Edit courses" reserves one row for each course already selected and the Save button's place.

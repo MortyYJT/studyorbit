@@ -94,7 +94,9 @@ button { cursor:pointer; display:inline-flex; align-items:center; justify-conten
   transition:background-color var(--dur-1), border-color var(--dur-1), color var(--dur-1), box-shadow var(--dur-1), opacity var(--dur-1), transform var(--dur-1) var(--ease-out); }
 /* A press does not darken further: the darker fill would put secondary and alert text under 4.5:1. */
 button:is(:hover,:active):enabled { background:var(--hover); }
-button:disabled { opacity:.45; cursor:default; }
+button:disabled,button[aria-disabled="true"] { opacity:.45; cursor:default; }
+/* Busy but still focusable (the Refresh button while it loads): it takes no hover fill and no press. */
+button[aria-disabled="true"]:is(:hover,:active):enabled { background:transparent; transform:none; }
 button.primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
 button.primary:is(:hover,:active):enabled { background:var(--accent-hover); border-color:var(--accent-hover); }
 button.ghost { border-color:transparent; background:transparent; color:var(--muted); }
@@ -661,7 +663,7 @@ button:active:enabled:not(.arow,.sync-tr,.nav-item,.tabs button,.blk,.chat-entry
 /* A theme or background change (motion.ts themeTransition): every colour fades to its new value together, so text
    and its ground never sit in different themes for a frame. This replaces each control's own shorter transition
    while it runs. */
-:root[data-theming] :is(*,*::before,*::after) { transition:background-color var(--dur-2) var(--ease-in-out), color var(--dur-2) var(--ease-in-out), border-color var(--dur-2) var(--ease-in-out), fill var(--dur-2) var(--ease-in-out), stroke var(--dur-2) var(--ease-in-out) !important; }
+:root[data-theming] *,:root[data-theming] *::before,:root[data-theming] *::after { transition:background-color var(--dur-2) var(--ease-in-out), color var(--dur-2) var(--ease-in-out), border-color var(--dur-2) var(--ease-in-out), fill var(--dur-2) var(--ease-in-out), stroke var(--dur-2) var(--ease-in-out) !important; }
 
 /* Placeholders: flat bars in the place the data will take. They are invisible until the delay has passed. */
 .skeleton { display:block; height:12px; border-radius:4px; background:var(--raised); }

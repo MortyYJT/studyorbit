@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Language } from './i18n.js';
+import { replyGuard } from './fresh.js';
 import { useReveal } from './motion.js';
 
 /** The reply of GET/PUT /api/local/source-settings (server/routes/source-settings.ts). */
@@ -59,6 +60,8 @@ export function SourceSettingsSection({ language, known, onSaved }: { language: 
   const [form, setForm] = useState<Form | undefined>(() => known && formFrom(known));
   const [loadError, setLoadError] = useState(false);
   const touched = useRef(false);
+  // The read made on mount is dropped if a save succeeds before it answers: it would put the older settings back.
+  const replies = useRef(replyGuard());
   const reveal = useReveal(reply !== undefined || loadError);
   const [busy, setBusy] = useState(false);
   const [opening, setOpening] = useState(false);
@@ -66,7 +69,8 @@ export function SourceSettingsSection({ language, known, onSaved }: { language: 
   const [status, setStatus] = useState<{ problem: boolean; text: string }>();
   useEffect(() => {
     let live = true;
-    void fetchSourceSettings().then(data => { if (!live || touched.current) return; if (data) { setReply(data); setForm(formFrom(data)); } else if (!known) setLoadError(true); });
+    const started = replies.current.begin();
+    void fetchSourceSettings().then(data => { if (!live || touched.current || !replies.current.accepts(started)) return; if (data) { setReply(data); setForm(formFrom(data)); } else if (!known) setLoadError(true); });
     return () => { live = false; };
   }, []);
   const title = <h3 id="source-settings-title">{zh ? '数据来源' : 'Data sources'}</h3>;
@@ -122,7 +126,7 @@ export function SourceSettingsSection({ language, known, onSaved }: { language: 
       if (!response.ok) throw new Error();
       const next = data as SourceSettingsReply;
       const moved = next.settings.institution !== reply.settings.institution || next.settings.canvasOrigin !== reply.settings.canvasOrigin;
-      touched.current = false;
+      replies.current.saved(); touched.current = false;
       setReply(next); setForm(formFrom(next)); onSaved(next);
       setStatus({ problem: moved, text: moved
         ? (zh ? '已保存。学校或 Canvas 地址已更改，请点击“立即同步”重新获取课程。' : 'Saved. The institution or Canvas address changed: click “Sync now” to fetch the courses again.')

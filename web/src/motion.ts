@@ -62,17 +62,25 @@ export function nextReveal(state: Reveal, event: 'ready' | 'delay' | 'done' | 'r
   if (event === 'done') return state === 'faded' ? 'shown' : state;
   return state === 'waiting' ? 'shown' : state === 'placeholder' ? 'faded' : state;
 }
-/** Follows `ready` through `nextReveal`, with the delay timer. `ready` true on mount means `shown`: no placeholder, no fade. */
+/** The state for this render: the data as soon as it is ready, and waiting again when it has gone away. */
+export function revealFor(state: Reveal, ready: boolean): Reveal {
+  const settled = state === 'shown' || state === 'faded';
+  return ready && !settled ? nextReveal(state, 'ready') : !ready && settled ? nextReveal(state, 'reset') : state;
+}
+/** The one timer a state needs: the placeholder delay while waiting, the end of the fade while fading. */
+export function revealTimer(state: Reveal): { event: 'delay' | 'done'; ms: number } | null {
+  return state === 'waiting' ? { event: 'delay', ms: placeholderDelay } : state === 'faded' ? { event: 'done', ms: durations.short + 50 } : null;
+}
+/** Follows `ready` through `nextReveal`, with its timers. `ready` true on mount means `shown`: no placeholder, no fade. */
 export function useReveal(ready: boolean): Reveal {
   const [state, setState] = useState<Reveal>(ready ? 'shown' : 'waiting');
   // Derived during render, so the data is never held back for a frame behind its placeholder.
-  const settled = state === 'shown' || state === 'faded';
-  const current = ready && !settled ? nextReveal(state, 'ready') : !ready && settled ? nextReveal(state, 'reset') : state;
+  const current = revealFor(state, ready);
   if (current !== state) setState(current);
   useEffect(() => {
-    if (current !== 'waiting' && current !== 'faded') return;
-    const timer = current === 'waiting' ? window.setTimeout(() => setState(value => nextReveal(value, 'delay')), placeholderDelay)
-      : window.setTimeout(() => setState(value => nextReveal(value, 'done')), durations.short + 50);
+    const timing = revealTimer(current);
+    if (!timing) return;
+    const timer = window.setTimeout(() => setState(value => nextReveal(value, timing.event)), timing.ms);
     return () => window.clearTimeout(timer);
   }, [current]);
   return current;

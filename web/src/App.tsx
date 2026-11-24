@@ -4,6 +4,7 @@ import { backgroundStorageKey, parseBackground, type BackgroundMode, type Backgr
 import { en, zh, type Language, type Theme } from './i18n.js';
 import { AgentChat, type AgentRequest } from './Agent.js';
 import { createAgentRequest } from './agent-request.js';
+import { replyGuard, syncNeedsReload } from './fresh.js';
 import { LocalCourseSelect } from './LocalCourseSelect.js';
 import { LocalPlanning, type SidebarCourse } from './LocalPlanning.js';
 import { closeDialog, openDialog, pageFade, themeTransition, useReveal, useSlidingIndicator } from './motion.js';
@@ -27,11 +28,17 @@ function selectionExists(): boolean { try { return localStorage.getItem('studyor
 function selectedCount(): number { try { const ids: unknown = JSON.parse(localStorage.getItem('studyorbit.selected-course-ids') ?? '[]'); return Array.isArray(ids) ? ids.length : 0; } catch { return 0; } }
 // The model settings last read, kept for this visit: Settings opens with its form instead of a loading line.
 let knownLlmConfig: PublicLlmConfig | undefined;
-async function fetchLlmConfig(): Promise<PublicLlmConfig> {
+// A read that started before a save must not put the older settings back, here or in the form.
+const llmReplies = replyGuard();
+/** Reads the model settings; resolves to null when a save has succeeded since the read started. */
+async function fetchLlmConfig(): Promise<PublicLlmConfig | null> {
+  const started = llmReplies.begin();
   const response = await fetch('/api/local/llm-config');
   if (!response.ok) throw new Error('unavailable');
-  knownLlmConfig = await response.json() as PublicLlmConfig;
-  return knownLlmConfig;
+  const config = await response.json() as PublicLlmConfig;
+  if (!llmReplies.accepts(started)) return null;
+  knownLlmConfig = config;
+  return config;
 }
 export function App() {
   const [language, setLanguage] = useState<Language>(() => preference('studyorbit.language') === 'en' ? 'en' : 'zh');
@@ -111,7 +118,8 @@ export function App() {
   useSlidingIndicator(sidebarBody, navIndicator, '.nav-item[aria-current="page"]', 'both', [pageKey, loadedCourses, navOpen]);
   const coursesReveal = useReveal(loadedCourses !== undefined);
   const reservedCourses = loadedCourses === undefined ? selectedCount() : 0;
-  // A refresh that outlasts the placeholder delay dims its button; a quick one shows nothing.
+  // A refresh that outlasts the placeholder delay dims its button; a quick one shows nothing. The button is
+  // aria-disabled, not disabled, so keyboard focus stays on it; clicks are ignored while the data loads.
   const refreshBusy = useReveal(!refreshing) === 'placeholder';
   const usageReveal = useReveal(panel !== 'status' || syncUsage !== undefined || usageError);
   // Dialog content stays as it was while the dialog animates out.
@@ -142,13 +150,12 @@ export function App() {
     return () => { stopped = true; window.clearInterval(timer); };
   }, []);
   // Reload the course data when a sync changes a course's result. The first run state read after the page loads is the
-  // baseline: the page has just loaded that data, so it is not a change.
+  // baseline, unless a sync is running then (fresh.ts syncNeedsReload).
   useEffect(() => {
     if (!courseRun) return;
-    const signature = JSON.stringify(courseRun.courses.map(course => [course.id, course.status, course.file]));
-    const known = resultSignature.current;
+    const { reload, signature } = syncNeedsReload(resultSignature.current, courseRun);
     resultSignature.current = signature;
-    if (known !== undefined && signature !== known) setCourseRefresh(value => value + 1);
+    if (reload) setCourseRefresh(value => value + 1);
   }, [courseRun]);
   useEffect(() => {
     if (!menu) return;
@@ -299,7 +306,7 @@ export function App() {
       {localSyncWarning && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{localSyncWarning}</p>}
       {backgroundLoadFailed && background.mode === 'image' && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{isZh ? '无法从浏览器存储读取背景图片，暂时不显示图片。可以在「设置 → 背景」重新选择图片。' : 'Could not read the background image from browser storage, so no image is shown for now. You can choose the image again in Settings → Background.'}<button className="small ghost" onClick={dismissLoadFailure}>{t.close}</button></p>}
       {courseRunError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{courseRunError}</p>}
-      {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1>{view.page !== 'agent' && <button className="ghost" aria-busy={refreshBusy} disabled={refreshBusy} onClick={() => setCourseRefresh(value => value + 1)}>{t.refresh}</button>}</div>}
+      {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1>{view.page !== 'agent' && <button className="ghost" aria-busy={refreshBusy} aria-disabled={refreshBusy} onClick={() => { if (!refreshing) setCourseRefresh(value => value + 1); }}>{t.refresh}</button>}</div>}
       {savedNotice > 0 && <div className="save-toast" role="status">{isZh ? '课程已经保存' : 'Courses saved'}</div>}
       {view.page === 'agent' && <AgentChat language={language} courses={sidebarCourses} request={agentRequest} onOpenSettings={() => open('settings')} />}
       {/* Stays mounted behind the Agent page: it holds the course data, which a page switch must not fetch again. */}
@@ -499,7 +506,7 @@ function AnalysisModelSettings({ language }: { language: Language }) {
   const [status, setStatus] = useState<{ problem: boolean; text: string }>();
   useEffect(() => {
     let live = true;
-    fetchLlmConfig().then(data => { if (live && !touched.current) { setConfig(data); setForm(formFrom(data)); } }).catch(() => { if (live && !knownLlmConfig) setLoadError(true); });
+    fetchLlmConfig().then(data => { if (live && data && !touched.current) { setConfig(data); setForm(formFrom(data)); } }).catch(() => { if (live && !knownLlmConfig) setLoadError(true); });
     return () => { live = false; };
   }, []);
   if (loadError) return <section className="settings-row model-settings"><div><h3>{zh ? '分析模型' : 'Analysis model'}</h3><p className="muted">{zh ? '无法读取模型设置（仅在本地开发服务器中可用）。' : 'Could not read model settings (local dev server only).'}</p></div></section>;
@@ -520,7 +527,7 @@ function AnalysisModelSettings({ language }: { language: Language }) {
       if (response.status === 400 && data && typeof data === 'object' && 'fieldErrors' in data) { setFieldErrors(data.fieldErrors as Record<string, string>); setStatus({ problem: true, text: zh ? '没有保存：请修正标出的字段。' : 'Not saved: fix the marked fields.' }); return; }
       if (!response.ok) throw new Error();
       const next = data as PublicLlmConfig;
-      knownLlmConfig = next; touched.current = false;
+      llmReplies.saved(); knownLlmConfig = next; touched.current = false;
       setConfig(next); setForm(formFrom(next));
       setStatus({ problem: next.keyRequired && !next.hasKey, text: next.keyRequired && !next.hasKey ? (zh ? '已保存，但还没有 API 密钥，同步会失败。' : 'Saved, but there is no API key yet; syncs will fail.') : (zh ? '已保存。下次同步开始时生效。' : 'Saved. Applies from the next sync.') });
     } catch { setStatus({ problem: true, text: zh ? '保存失败，请重试。' : 'Could not save. Please retry.' }); }
