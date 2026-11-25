@@ -27,6 +27,19 @@ export function parseDueInput(raw: string): DueInput {
   return { ok: false };
 }
 
+export type DueEdit = { ok: true; changed: false } | { ok: true; changed: true; value: string | null } | { ok: false };
+
+/**
+ * The due field of the correction form on save. `shown` is the value the form was filled with, which a sync or an
+ * earlier version may have stored in any form ("Week 12", a date-time without a zone). Left as it was, it is not
+ * read at all and no correction is written for it, so another field can be saved; only a changed value is parsed.
+ */
+export function dueEdit(raw: string, shown: string): DueEdit {
+  if (raw.trim() === shown.trim()) return { ok: true, changed: false };
+  const parsed = parseDueInput(raw);
+  return parsed.ok ? { ok: true, changed: true, value: parsed.value } : { ok: false };
+}
+
 export type NumberProblem = 'weight' | 'score' | 'outOf' | 'scoreOverMax';
 
 /** The first thing wrong with the weight, score and maximum typed into an assessment form, or null. Empty is allowed. */

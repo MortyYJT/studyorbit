@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assessmentJump, numberProblem, parseDueInput, statusOptions } from '../web/src/assessment-form.js';
+import { assessmentJump, dueEdit, numberProblem, parseDueInput, statusOptions } from '../web/src/assessment-form.js';
 
 describe('parseDueInput', () => {
   it('takes an empty value as "no due date"', () => {
@@ -19,6 +19,23 @@ describe('parseDueInput', () => {
   it('refuses anything the calendar cannot place', () => {
     for (const raw of ['12月10日', 'next Friday', '2026-13-01', '2026-02-30', '10/12/2026', '2026-12-10 23:59', '2026-12-10T23:59', '2026-12-10T25:00:00Z'])
       expect(parseDueInput(raw), raw).toEqual({ ok: false });
+  });
+});
+
+describe('dueEdit', () => {
+  it('leaves a value the form was filled with alone, whatever it is, so another field can still be saved', () => {
+    for (const shown of ['2026-11-27T23:59:00', 'Week 12', '12月10日', '2026-11-27T12:59:00Z', ''])
+      expect(dueEdit(shown, shown), shown).toEqual({ ok: true, changed: false });
+    expect(dueEdit('  Week 12 ', 'Week 12')).toEqual({ ok: true, changed: false });
+  });
+  it('reads a value that was changed', () => {
+    expect(dueEdit('2026/12/10', 'Week 12')).toEqual({ ok: true, changed: true, value: '2026-12-10' });
+    expect(dueEdit('', 'Week 12')).toEqual({ ok: true, changed: true, value: null });
+    expect(dueEdit('2026-12-10', '')).toEqual({ ok: true, changed: true, value: '2026-12-10' });
+  });
+  it('refuses a changed value the calendar cannot place', () => {
+    expect(dueEdit('Week 13', 'Week 12')).toEqual({ ok: false });
+    expect(dueEdit('12月10日', '')).toEqual({ ok: false });
   });
 });
 

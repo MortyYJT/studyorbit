@@ -26,7 +26,7 @@ export function AgentFrame({ language, courses, request, onOpenSettings }:
   const [contextSaved, setContextSaved] = useState(true);
   // The language DeepTutor was last told about; the frame waits for it, whether or not DeepTutor took it.
   const [languageTold, setLanguageTold] = useState<Language>();
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'done' | 'failed'>();
   const up = status?.state === 'running' || status?.state === 'external';
 
   // Status: asked on arrival and then on a timer while the page shows; never calls the model.
@@ -87,7 +87,11 @@ export function AgentFrame({ language, courses, request, onOpenSettings }:
   const reveal = useReveal(!(notice?.busy || waitingForTurn || waitingForLanguage));
   const session = turn && request && turn.nonce === request.nonce ? turn.sessionId : undefined;
   const src = up && !waitingForTurn && !waitingForLanguage ? frameUrl(status.url, window.location.hostname, session) : null;
-  const copyCommand = (text: string) => { void navigator.clipboard?.writeText(text).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 2000); }, () => setCopied(false)); };
+  // The clipboard is missing on a page that is not a secure context and can refuse; then the page says to select the lines.
+  const copyCommand = (text: string) => {
+    const write = navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject(new Error('no clipboard'));
+    write.then(() => { setCopied('done'); window.setTimeout(() => setCopied(current => current === 'done' ? undefined : current), 2000); }, () => setCopied('failed'));
+  };
   const focus = request?.courseId ? courses.find(course => course.id === request.courseId)?.code : undefined;
 
   return <section className="panel agent-frame-page" data-agent-state={status?.state ?? 'unknown'}>
@@ -110,7 +114,8 @@ export function AgentFrame({ language, courses, request, onOpenSettings }:
           <p>{notice.body}</p>
           {notice.detail && <p className="agent-frame-detail">{notice.detail}</p>}
           {notice.command && <pre className="agent-frame-command">{notice.command}</pre>}
-          {notice.command && notice.command.includes('\n') && <button className="small" onClick={() => copyCommand(notice.command!)}>{copied ? (zh ? '已复制' : 'Copied') : (zh ? '复制这几行' : 'Copy these lines')}</button>}
+          {notice.command && notice.command.includes('\n') && <button className="small" onClick={() => copyCommand(notice.command!)}>{copied === 'done' ? (zh ? '已复制' : 'Copied') : (zh ? '复制这几行' : 'Copy these lines')}</button>}
+          {copied === 'failed' && <p className="agent-frame-detail" role="alert">{zh ? '没能复制，请手动选中上面几行再复制。' : 'Could not copy. Select the lines above and copy them by hand.'}</p>}
           {notice.settings && <button onClick={onOpenSettings}>{zh ? '打开设置' : 'Open settings'}</button>}
         </div>
         // Nothing is painted for the first 150 ms: a status that arrives at once replaces this without a flash.
