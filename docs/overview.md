@@ -30,7 +30,7 @@ Updated 2026-11-24. StudyOrbit is a local prototype. `npm run dev` starts two pr
 5. **Change reminders:** after a sync saves a course file, `scripts/lib/course-changes-log.mjs` compares it with the previous valid file by stable ID using `diffSnapshots` in `shared/course-changes.ts`. Changed deadlines or weights are appended to `.local/lms/changes.jsonl` (scores are not logged; first syncs and incomplete syncs log nothing). The page reads the latest 200 entries from `GET /api/local/course-changes` and shows them under "Needs you" and at the top of the course page until you click "Got it" (「知道了」).
 6. **Calculation:** grades and the final-needed target are in `shared/course-calculations.ts`, the weekly plan in `shared/planning.ts`; both are pure functions with unit tests.
 7. **Assistant:** the Agent page (`web/src/AgentFrame.tsx`) shows DeepTutor's own interface in a frame. It saves the page context (course selection, the course it was opened from, the planning snapshot) through `PUT /api/local/agent-context` to `.local/agent-context.json`, which the MCP server reads on every call; DeepTutor calls the six course tools through that MCP server. A revision preset starts one DeepTutor session through `POST /api/local/deeptutor/turns`. Details and measurements: [Assistant](deeptutor.md).
-8. **Old chat and revision (kept until the assistant is validated, behind "Old chat" on the Agent page):** `web/src/Agent.tsx` streams chats through `/api/local/chats*`. DeepSeek, OpenAI-compatible and Anthropic answer with the read-only course tools (the 6 tools in `shared/course-tools.ts`, loop in `scripts/lib/chat-tool-loop.mjs`; an OpenAI-compatible service that rejects tools on the first request falls back to the full context). Codex still gets the selected courses' synced data in full in its context (`scripts/lib/chat-context.mjs`). Neither includes page corrections. The revision tab can send preset prompts; a finished reply in a single-course chat can be saved to revision (`/api/local/revision-notes`).
+8. **Revision:** the revision tab of a course lists its exams and offers three preset prompts, each of which starts a DeepTutor session. Notes saved from the former built-in chat are listed there and can be deleted (`/api/local/revision-notes`, `.local/revision/notes.json`); nothing creates new ones, DeepTutor has its own notebook.
 
 ## What is collected
 
@@ -47,8 +47,7 @@ No course files are downloaded and nothing is submitted. Coverage is not guarant
 | --- | --- |
 | `web/src/App.tsx`, `web/src/SourceSettings.tsx` | Shell, sidebar, sync dialog, settings (model, data sources, appearance, background) |
 | `web/src/LocalPlanning.tsx` | Course page (grades, assessments, revision) and week / month views (plan, needs you, time spent) |
-| `web/src/AgentFrame.tsx`, `agent-frame.ts`, `agent-request.ts` | Agent page: DeepTutor in a frame, the states when it is missing or stopped, the context hand-off; other pages open it with a course and a preset prompt |
-| `web/src/Agent.tsx` | The old self-built chat page |
+| `web/src/AgentFrame.tsx`, `agent-frame.ts`, `agent-request.ts`, `RichText.tsx` | Agent page: DeepTutor in a frame, the states when it is missing or stopped, the context hand-off; other pages open it with a course and a preset prompt; plain-text rendering of the saved revision notes |
 | `web/src/theme.ts`, `palette.ts`, `background.ts`, `BackgroundLayer.tsx` | Light/dark choice, clean-up of what the removed palette picker stored, background |
 | `web/src/motion.ts` | The page fade, the delayed placeholder, the sliding indicators, the arc of the grade ring, dialog exits, the theme fade (see [Motion](#motion)) |
 | `web/src/style.css` | Every style, and the colour tokens (see [Colours](#colours)) |
@@ -75,16 +74,14 @@ Entry points are `npm run dev` (`dev.mjs`) and `npm run sync:courses` (collects 
 | `browser/bridge.mjs`, `browser/applescript.mjs` | Browser bridge: can only open allowed addresses, check status, read in fixed ways and close; Edge or Chrome via AppleScript on macOS |
 | `browser/cdp-pipe.mjs`, `cdp-launch.mjs`, `cdp-host.mjs`, `cdp.mjs` | Dedicated browser (CDP, experimental): pipe transport (NUL-separated JSON) and command allow-list; finding the program and launching with its own profile and `--remote-debugging-pipe`, closing (`Browser.close`, forced after 5 seconds); the long-lived browser held by the server; the collector-side bridge over Node IPC |
 | `eval-course-analysis.mjs`, `lib/eval-score.mjs` | Course analysis evaluation and its pure scoring ([details](eval-course-analysis.md)) |
-| `eval-chat-qa.mjs`, `lib/qa-grade.mjs` | Chat Q&A evaluation and its pure grader ([details](eval-chat-qa.md)) |
 | `lib/deeptutor.mjs`, `deeptutor/guard_app.py`, `deeptutor/prepare_web.py`, `deeptutor/skill/SKILL.md` | The assistant: finds the DeepTutor install, writes its configuration (never the key), starts its API behind the guard and its web server on loopback, installs the house rules, stops what it started; the ASGI guard; the web-file preparation; the always-on rules ([Assistant](deeptutor.md)) |
 | `lib/agent-context.mjs` | Validates and stores the page context for the MCP server (`.local/agent-context.json`, atomic, mode 600) |
 | `mcp-server.mjs`, `lib/course-mcp.mjs` | Local stdio MCP server (`--project`, `--desktop`, `--courses` or `STUDYORBIT_COURSES`; writes nothing, calls no model, no network; with `--page-context`, which only DeepTutor's registration passes, it also reads the page context); one MCP tool per course tool, re-reading course files on every call ([setup](../README.md#use-from-an-mcp-client)) |
 | `lib/course-list.mjs` | Canvas course JSON parsing and course-code filtering |
 | `lib/course-analysis.mjs`, `lib/course-validation.mjs`, `lib/course-refs.mjs`, `lib/course-quotes.mjs`, `lib/normalise-text.mjs` | Analysis prompt and output schema; validation and the repair round; platform references and Handbook component parsing; quote verification; text normalisation |
 | `lib/course-reports.mjs` | Reads the selected courses and each course folder's newest valid course JSON |
-| `lib/llm-config.mjs`, `lib/llm-providers.mjs` | Model settings (`.local/config/llm.json`) and the four provider adapters |
-| `lib/chat-store.mjs`, `lib/chat-context.mjs`, `lib/chat-replies.mjs`, `lib/chat-reply.mjs`, `lib/chat-tool-loop.mjs`, `lib/chat-tools-prompt.mjs` | Chat storage, context-mode prompt, in-flight replies, one reply end to end, the bounded tool loop, the tool-mode prompt |
-| `lib/corrections-store.mjs`, `lib/course-changes-log.mjs`, `lib/revision-store.mjs`, `lib/source-settings.mjs` | Corrections store, change log, revision notes (`.local/revision/notes.json`), data source settings (`.local/config/sources.json`, atomic write, mode 600) |
+| `lib/llm-config.mjs`, `lib/llm-providers.mjs` | Model settings (`.local/config/llm.json`) and the four provider adapters for the course analysis and the connection test |
+| `lib/corrections-store.mjs`, `lib/course-changes-log.mjs`, `lib/revision-store.mjs`, `lib/source-settings.mjs` | Corrections store, change log, the revision notes left by the former chat (`.local/revision/notes.json`, list and delete), data source settings (`.local/config/sources.json`, atomic write, mode 600) |
 | `lib/local-origin.mjs`, `lib/server-lock.mjs`, `lib/sync-store.mjs` | Same-origin check; single-instance lock (`.local/server.lock`); sync database (`.local/studyorbit.db`: jobs, stage checkpoints, course snapshots) |
 | `lib/sync-pipeline.mjs`, `lib/sync-stages.mjs` | Staged sync per course (collect → analyse → validate → merge) with checkpoints, resume after failure, cancellation or interruption, usage records |
 | `lib/rate-limit.mjs`, `lib/collector-exit.mjs` | Per-platform limits and bounded retries (one collector at a time, at most 4 per model provider, at most 3 tries for HTTP 429/5xx and network errors); the collector's transient-failure exit code 75 |
@@ -100,7 +97,8 @@ Entry points are `npm run dev` (`dev.mjs`) and `npm run sync:courses` (collects 
 | Corrections, manual assessments, ordering, merge base and open conflicts (one file per course; file mode 600, folder 700) | `.local/corrections/<courseId>.json` |
 | Model settings (mode 600, keys write-only) | `.local/config/llm.json` |
 | Data source settings (mode 600, folder 700; delete to return to UniMelb + Edge) | `.local/config/sources.json` |
-| Chats of the old chat, revision notes | `.local/chat/`, `.local/revision/notes.json` |
+| Revision notes saved by the former built-in chat (listed and deletable in the revision tab) | `.local/revision/notes.json` |
+| Chats of the former built-in chat: no longer read by any code, safe to delete by hand | `.local/chat/` |
 | Page context for the assistant (course selection, course in focus, planning snapshot; mode 600; rewritten when the Agent page opens) | `.local/agent-context.json` |
 | DeepTutor's sessions, memory and settings; the PIDs of its running processes; this checkout's instance id | `.local/deeptutor/home/`, `.local/deeptutor/processes.json`, `.local/deeptutor/instance-id` |
 | Each course's course JSON | UniMelb `~/Desktop/墨尔本大学 <year> S<semester>/<code>/分数结构*.json`; other institutions `~/Desktop/StudyOrbit <semester>/<code>/分数结构*.json` (new files never overwrite old ones; the newest valid file is read) |
@@ -110,7 +108,7 @@ Entry points are `npm run dev` (`dev.mjs`) and `npm run sync:courses` (collects 
 
 `.local/` and `.local-backups/` are ignored by Git but contain personal data.
 
-Storage stays on this machine; during analysis and chat, course data is sent to the model provider you chose (`scripts/lib/llm-config.mjs` decides which). The assistant sends it to the same provider through the model proxy; two DeepTutor tools that can reach other sites cannot be switched off ([Assistant](deeptutor.md#what-can-leave-the-machine)).
+Storage stays on this machine; during analysis, course data is sent to the model provider you chose (`scripts/lib/llm-config.mjs` decides which). The assistant sends it to the same provider through the model proxy; two DeepTutor tools that can reach other sites cannot be switched off ([Assistant](deeptutor.md#what-can-leave-the-machine)).
 
 ## Theme
 
@@ -155,4 +153,4 @@ One rule set, written out with its measurements in [Motion](motion.md):
 
 ## Current limits
 
-Node.js 24+. Only macOS + Edge + UniMelb Canvas has been run for real. macOS Chrome, other institutions' Canvas and the Ed US and EU regions have synthetic tests only; the Windows and Linux dedicated browser (CDP) is experimental with unit tests only. "Today" and deadlines use the institution's time zone (Melbourne for UniMelb, the configured zone for a generic institution). `edstem` and model keys are external dependencies. Sync state lives in the database, so restarting Vite or the server loses nothing; a sync running when the server exits is marked interrupted and can be continued. The staged sync has not been run against real courses (only fake collectors and a fake model); the chat's tool mode has been tried for real only with DeepSeek; other providers' real calls have not been re-verified since v2; MCP has not been connected from Claude Code or Claude Desktop; it has been used for real from DeepTutor 1.7.4 with DeepSeek.
+Node.js 24+. Only macOS + Edge + UniMelb Canvas has been run for real. macOS Chrome, other institutions' Canvas and the Ed US and EU regions have synthetic tests only; the Windows and Linux dedicated browser (CDP) is experimental with unit tests only. "Today" and deadlines use the institution's time zone (Melbourne for UniMelb, the configured zone for a generic institution). `edstem` and model keys are external dependencies. Sync state lives in the database, so restarting Vite or the server loses nothing; a sync running when the server exits is marked interrupted and can be continued. The staged sync has not been run against real courses (only fake collectors and a fake model); the assistant has been tried for real only with DeepSeek; other providers' real calls for the analysis have not been re-verified since v2; MCP has not been connected from Claude Code or Claude Desktop; it has been used for real from DeepTutor 1.7.4 with DeepSeek.

@@ -60,7 +60,7 @@ describe('localApiProxy', () => {
       await held;
       if (!res.destroyed) res.end(`event: done\ndata: {}\n\n`);
     };
-    const { req, response } = open(webPort, '/api/local/chats/x/messages', { method: 'POST', headers: { host: page(), 'content-type': 'application/json' }, body: '{}' });
+    const { req, response } = open(webPort, '/api/local/stream', { method: 'POST', headers: { host: page(), 'content-type': 'application/json' }, body: '{}' });
     const events = eventReader(await response);
     // Arrives while the upstream response is still open.
     expect(await events.next()).toEqual({ event: 'delta', data: { text: 'one' } });

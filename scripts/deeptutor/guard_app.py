@@ -8,7 +8,7 @@ origin, or that the browser marks `Sec-Fetch-Site: cross-site`. Other programs r
 stopped by this (they send whatever headers they like).
 
 It also answers two things itself: `/studyorbit-guard/instance` (which checkout this DeepTutor belongs to) and, only
-when DeepTutor has no such route, an empty knowledge-base list (see `_empty_list_when_missing`).
+when DeepTutor has no such route, an empty knowledge-base list (see `KB_LIST_PATH` below).
 
 Run by the local API server with DeepTutor's own interpreter:
     python -m uvicorn guard_app:app --app-dir <this directory> --host 127.0.0.1 --port <api port>
@@ -58,21 +58,41 @@ INSTANCE_PATH = "/studyorbit-guard/instance"
 KB_LIST_PATH = "/api/knowledge-bases/list"
 
 
-def _empty_list_when_missing(send):
-    """Turns DeepTutor's 404 for the knowledge-base list into an empty list; any other answer passes unchanged.
+def route_state(app, path: str, method: str = "GET") -> str:
+    """Whether the wrapped application routes `path`: "present", "absent" or "unknown".
 
-    DeepTutor 1.7.4's web page asks for this list before it sends a chat message and gives up when the request fails.
-    The route belongs to the knowledge module, which StudyOrbit does not install (there is no embedding service), so
-    without this a message typed into the page is never sent. With the module installed DeepTutor answers 200 and
-    nothing is changed.
+    Asked the way Starlette itself decides, through each top-level route's public `matches(scope)` (which also covers
+    routers included by FastAPI): no route matching means the application would answer 404, so "absent". The answer is
+    "unknown", never "absent", whenever that cannot be established: no readable route table, a route that cannot be
+    asked, or a match by a mount or host route, which only says that something below a prefix may handle the path.
     """
+    routes = getattr(app, "routes", None)
+    if not isinstance(routes, (list, tuple)):
+        return "unknown"
+    scope = {"type": "http", "path": path, "method": method, "root_path": "", "query_string": b"", "headers": [], "path_params": {}}
+    present = False
+    for route in routes:
+        try:
+            match = route.matches(dict(scope))[0]
+        except Exception:
+            return "unknown"
+        if getattr(match, "value", match) == 0:
+            continue
+        if any(cls.__name__ in ("Mount", "Host") for cls in type(route).__mro__):
+            return "unknown"
+        present = True
+    return "present" if present else "absent"
+
+
+def _empty_list_when_missing(send):
+    """Turns a 404 into an empty list (one start and one body message); any other answer passes unchanged."""
     replaced = False
 
     async def wrapped(message):
         nonlocal replaced
         if message["type"] == "http.response.start" and message["status"] == 404:
             replaced = True
-            await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json"), (b"cache-control", b"no-store"), (b"content-length", b"2")]})
+            await send({"type": "http.response.start", "status": 200, "headers": EMPTY_LIST_HEADERS})
             await send({"type": "http.response.body", "body": b"[]"})
             return
         if replaced:
@@ -82,7 +102,12 @@ def _empty_list_when_missing(send):
     return wrapped
 
 
+EMPTY_LIST_HEADERS = [(b"content-type", b"application/json"), (b"cache-control", b"no-store"), (b"content-length", b"2")]
+
+
 def guard(inner, hosts: frozenset[str], origins: frozenset[str], instance: str = ""):
+    kb_route: str | None = None
+
     async def app(scope, receive, send):
         if scope["type"] not in ("http", "websocket"):
             await inner(scope, receive, send)
@@ -104,7 +129,22 @@ def guard(inner, hosts: frozenset[str], origins: frozenset[str], instance: str =
             await send({"type": "http.response.body", "body": body})
             return
         if reason is None and scope["type"] == "http" and scope.get("path") == KB_LIST_PATH and scope.get("method") == "GET":
-            await inner(scope, receive, _empty_list_when_missing(send))
+            # DeepTutor 1.7.4's web page asks for the knowledge-base list before it sends a chat message and gives up
+            # when the request fails. The route belongs to the knowledge module, which StudyOrbit does not install
+            # (there is no embedding service), so without an answer a typed message is never sent.
+            # Decided once, at the first such request (after start-up, when every module has registered its routes):
+            #   absent  - DeepTutor clearly has no such route: the guard answers an empty list itself;
+            #   present - DeepTutor answers, whatever it answers;
+            #   unknown - DeepTutor is asked and only a 404 is turned into an empty list. This is the fallback for
+            #             anything the route table does not settle, so a real list is never replaced by an empty one.
+            nonlocal kb_route
+            if kb_route is None:
+                kb_route = route_state(inner, KB_LIST_PATH)
+            if kb_route == "absent":
+                await send({"type": "http.response.start", "status": 200, "headers": EMPTY_LIST_HEADERS})
+                await send({"type": "http.response.body", "body": b"[]"})
+                return
+            await inner(scope, receive, _empty_list_when_missing(send) if kb_route == "unknown" else send)
             return
         if reason is None:
             await inner(scope, receive, send)

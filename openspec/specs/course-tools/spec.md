@@ -4,7 +4,7 @@
 A shared registry of read-only course tools (course and assessment lookup, grade calculation, final needed, upcoming deadlines, schedule) with validated inputs, errors returned as results and a bounded output size.
 ## Requirements
 ### Requirement: Shared read-only tool registry
-The system SHALL define the course tools once, in a pure module shared by the chat, the Q&A runner and the MCP server. Each tool SHALL have a name matching `^[a-z_]{1,64}$`, a description, a zod input schema and a function of its input and a tool context (`documents` in display shape, known `courses`, `scope`, `today`, optional `planning`). JSON Schemas for providers and MCP SHALL be generated from the zod schemas. Tools MUST NOT write files, change stored data, start a sync, read the clock or use the network, and every call within one reply SHALL see the same documents and date. Tools SHALL read synced course documents only; owner corrections are not applied.
+The system SHALL define the course tools once, in a pure module used by the MCP server. Each tool SHALL have a name matching `^[a-z_]{1,64}$`, a description, a zod input schema and a function of its input and a tool context (`documents` in display shape, known `courses`, `scope`, `today`, optional `planning`). JSON Schemas for providers and MCP SHALL be generated from the zod schemas. Tools MUST NOT write files, change stored data, start a sync, read the clock or use the network, and every call within one reply SHALL see the same documents and date. Tools SHALL read synced course documents only; owner corrections are not applied.
 
 #### Scenario: Six tools are registered
 - **WHEN** the registry is listed
@@ -17,7 +17,7 @@ The system SHALL define the course tools once, in a pure module shared by the ch
 ### Requirement: Inputs are validated and errors are returned as results
 The system SHALL parse every tool call's arguments with the tool's schema and SHALL return failures as a result `{ error: { code, message } }` with `ok: false` instead of throwing. Codes SHALL include `UNKNOWN_TOOL`, `INVALID_ARGUMENTS` (listing each issue as `path: message`), `COURSE_NOT_IN_SCOPE` (listing the allowed course IDs), `COURSE_NOT_SYNCED`, `UNKNOWN_ASSESSMENT` and `RESULT_TOO_LARGE`.
 
-#### Scenario: Course outside the chat scope
+#### Scenario: Course outside the scope
 - **WHEN** `get_assessments` is called with a course ID that is not in the context scope
 - **THEN** the result has code `COURSE_NOT_IN_SCOPE` and lists the scope course IDs
 
@@ -37,7 +37,7 @@ The system SHALL parse every tool call's arguments with the tool's schema and SH
 - **THEN** `get_assessments` returns it with `weight: null` and `weightUnsourced: true`
 
 ### Requirement: Grade calculation tool
-`calculate_grades` SHALL compute a course's graded weight, earned points, average and remaining weight with `calculateGrades` on the same grading inputs the chat context uses, and SHALL list each counted item with its earned points and each excluded item with a reason (`bonus`, `ungraded`, `alternative`, `zero-weight`, `no-mark`, `incomplete-group`). The counted items' earned points and weights MUST sum to the totals. An optional `whatIf` list of `{ assessmentId, percent }` SHALL apply hypothetical marks to a copy of the inputs only, and every entry SHALL be reported in `whatIfApplied` with `effect: 'counted'` when the item or its group is counted after applying, or `effect: 'none'` with a reason (`no-weight`, `parent-score-overrides`, `group-incomplete`, or the item's exclusion reason) when it cannot change the total.
+`calculate_grades` SHALL compute a course's graded weight, earned points, average and remaining weight with `calculateGrades` on the grading inputs derived from the display document (`gradingInputs`), and SHALL list each counted item with its earned points and each excluded item with a reason (`bonus`, `ungraded`, `alternative`, `zero-weight`, `no-mark`, `incomplete-group`). The counted items' earned points and weights MUST sum to the totals. An optional `whatIf` list of `{ assessmentId, percent }` SHALL apply hypothetical marks to a copy of the inputs only, and every entry SHALL be reported in `whatIfApplied` with `effect: 'counted'` when the item or its group is counted after applying, or `effect: 'none'` with a reason (`no-weight`, `parent-score-overrides`, `group-incomplete`, or the item's exclusion reason) when it cannot change the total.
 
 #### Scenario: Points group and a leaf item
 - **WHEN** a course has a 20% assessment scored 15/20 and a 30% `points` group whose two children scored 8/10 and 6/10
@@ -74,9 +74,9 @@ The system SHALL parse every tool call's arguments with the tool's schema and SH
 - **THEN** it is not listed unless `includeDone` is true
 
 ### Requirement: Schedule tool uses planning inputs only when provided
-`plan_schedule` SHALL compute the plan with `schedulePlan` (spec `weekly-plan`) from today over every task it is given, keeping each task's own key, and return only the days within the requested window (from `from`, default today, for `days`, default 7, at most 28), optionally only for the given `courseIds`, and the overflow. Filtering MUST apply to the output only, never to the tasks planned. Tasks SHALL come from the `tasks` argument, else the planning snapshot; availability from the argument, else the snapshot, else the default availability; the result SHALL say which source was used. When neither tasks nor a snapshot are available, it SHALL return `available: false` with a reason and no plan.
+`plan_schedule` SHALL compute the plan with `schedulePlan` (spec `weekly-plan`) from today over every task it is given, keeping each task's own key, and return only the days within the requested window (from `from`, default today, for `days`, default 7, at most 28), optionally only for the given `courseIds`, and the overflow. Filtering MUST apply to the output only, never to the tasks planned. Tasks SHALL come from the `tasks` argument, else the planning snapshot; availability from the argument, else the snapshot, else the default availability; the result SHALL say which source was used and, when the snapshot was used and its save time is known, SHALL include that time as `snapshotSavedAt`. When neither tasks nor a snapshot are available, it SHALL return `available: false` with a reason and no plan.
 
-#### Scenario: Chat with a snapshot
+#### Scenario: Plan from a snapshot
 - **WHEN** the snapshot holds a 180-minute task due in two days and availability is 120 minutes a day
 - **THEN** the plan places 120 minutes today and 60 minutes tomorrow, with `tasksSource: 'snapshot'`
 
@@ -88,10 +88,25 @@ The system SHALL parse every tool call's arguments with the tool's schema and SH
 - **WHEN** `plan_schedule` is called without `tasks` and the context has no planning snapshot
 - **THEN** the result is `available: false` with a reason that says to pass tasks
 
+#### Scenario: Snapshot age
+- **WHEN** the plan is computed from a snapshot saved at a known time
+- **THEN** the result carries that time as `snapshotSavedAt`
+
 ### Requirement: Tool output size limit
 Every tool result SHALL have its numbers rounded to two decimals and its serialised text SHALL be at most 8 000 characters. A larger result SHALL have its largest list cut and carry `truncated: { field, shown, total, hint }`; if it still does not fit, the result SHALL be `RESULT_TOO_LARGE`.
 
 #### Scenario: Large course
 - **WHEN** `get_assessments` would return more than 8 000 characters
 - **THEN** the assessment list is shortened, `truncated.total` gives the full count and the hint suggests passing `ids` or `kind`
+
+### Requirement: Course list can name a course in focus
+`list_courses` SHALL include `focus` with the ID and code of the course the owner is asking about when the tool context supplies one that is in scope, and SHALL omit `focus` otherwise.
+
+#### Scenario: Focus supplied
+- **WHEN** the context names course 101 as in focus and 101 is in scope
+- **THEN** the result contains `focus` with course 101's ID and code
+
+#### Scenario: Focus out of scope
+- **WHEN** the context names a course that is not in scope
+- **THEN** the result has no `focus`
 

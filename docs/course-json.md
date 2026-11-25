@@ -103,7 +103,7 @@ The highest-priority platform among `refs` decides: Canvas assignment → Ed les
 - **A rule is sourced** when its quote falls inside a unit.
 - **On failure:** the field and its quote become `null` and the field name goes into `unsourced`; the rest of the document is saved as usual. If clearing a child's weight leaves a `weighted` parent with a scored child without a positive weight, the parent's `scoring` becomes `none`. The course status is unchanged and `reason` gains 「N 项权重或规则无出处」 ("N weights or rules unsourced").
 
-The page shows 「无出处」 ("unsourced") next to such weights and rules, and the chat context writes 「权重无出处」 / 「规则无出处」. When you save a corrected value, the page uses it and drops the tag.
+The page shows 「无出处」 ("unsourced") next to such weights and rules. When you save a corrected value, the page uses it and drops the tag.
 
 ### Legacy ID map `legacyIds`
 
@@ -119,7 +119,7 @@ Every time the page reads course data, `migrateLocalKeys` in `shared/local-keys.
 
 ## Version 1 compatibility
 
-Version 1 files are never rewritten and are read as before. Every reader (course reports API, course page, chat context) converts through `toDisplayDocument` into one display shape: version 1 assessments get empty `refs`, `null` quotes and empty `unsourced`, and version 1 documents get empty `legacyIds`, so version 1 courses never show 「无出处」. When a folder holds both versions, the newest valid file by modification time is still used.
+Version 1 files are never rewritten and are read as before. Every reader (course reports API, course page, course tools) converts through `toDisplayDocument` into one display shape: version 1 assessments get empty `refs`, `null` quotes and empty `unsourced`, and version 1 documents get empty `legacyIds`, so version 1 courses never show 「无出处」. When a folder holds both versions, the newest valid file by modification time is still used.
 
 ## Other conventions
 

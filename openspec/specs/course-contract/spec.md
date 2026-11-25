@@ -19,7 +19,7 @@ The system SHALL store each synced course as a version 2 document whose assessme
 - **THEN** it fails `CourseDocumentSchema`
 
 ### Requirement: Version 1 documents stay readable
-The system SHALL accept documents with `version: 1` unchanged and SHALL convert either version into one display shape, where a version 1 assessment has empty `refs`, `null` quotes and empty `unsourced`, and a version 1 document has empty `legacyIds`. Every reader of course documents (course reports, the course page, the chat context) MUST use this conversion.
+The system SHALL accept documents with `version: 1` unchanged and SHALL convert either version into one display shape, where a version 1 assessment has empty `refs`, `null` quotes and empty `unsourced`, and a version 1 document has empty `legacyIds`. Every reader of course documents (course reports, the course page, the course tools) MUST use this conversion.
 
 #### Scenario: Version 1 file on the Desktop
 - **WHEN** the newest valid course file for a course is a version 1 document
@@ -38,7 +38,7 @@ The course page SHALL show a 「无出处」 tag beside the weight wherever the 
 
 #### Scenario: Weight cleared by verification
 - **WHEN** an assessment has `weight: null` and `unsourced: ['weight']`
-- **THEN** the course page shows the weight as unknown with a 「无出处」 tag and the chat context describes it with 「权重无出处」
+- **THEN** the course page shows the weight as unknown with a 「无出处」 tag
 
 #### Scenario: Verified weight with a quote
 - **WHEN** an assessment has `weight: 20` and `weightQuote: "Assignment 1 Week 6 20%"`

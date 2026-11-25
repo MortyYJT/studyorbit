@@ -72,7 +72,7 @@ export function eventReader(res: IncomingMessage) {
 }
 
 /**
- * A fake OpenAI-compatible chat endpoint streaming `parts` as content deltas. With `hold`, it sends the first part,
+ * A fake OpenAI-compatible chat-completions endpoint (used by the model connection test) streaming `parts` as content deltas. With `hold`, it sends the first part,
  * then waits for `release()` before the rest. `closed` counts upstream requests closed before the reply finished.
  */
 export async function fakeModel(parts: string[], { hold = false } = {}) {

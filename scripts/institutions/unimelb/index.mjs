@@ -35,10 +35,6 @@ export const unimelb = Object.freeze({
   /** Whether an Ed unit's session names the semester of `key` ("Semester 2", "Sem 2"). */
   edSessionMatches: (session, key) => key.session !== null && new RegExp(`(?:semester|sem)\\s*${key.session}\\b`, 'i').test(String(session)),
   wording: Object.freeze({
-    assistantIntro: Object.freeze({
-      zh: '你是一名墨尔本大学学生的学习助手，运行在他自己的课程管理工具里。',
-      en: 'You are a study assistant for one University of Melbourne student, inside their personal coursework tool.',
-    }),
     timeLabel: Object.freeze({ zh: '墨尔本时间', en: 'Melbourne' }),
     sourcesRule: 'Handbook 提供对应年份和学期的官方考核框架、权重和 hurdle；Canvas 补充具体考核与分组；Ed 补充考核说明。某来源缺失时使用其他来源，不捏造缺失来源。',
   }),

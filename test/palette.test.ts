@@ -189,7 +189,6 @@ describe('the colour tokens in style.css', () => {
 
     it('add no fill to a row that already lies on the current-row fill', () => {
       expect(rule('.nav-item[aria-current="page"]:is(:hover,:active):enabled')).toContain('background:none');
-      expect(rule('.chat-list :is(.chat-entry,.chat-delete):is(:hover,:active):enabled')).toContain('background:none');
     });
 
     it('keep the darker fill for a hovered plan block, which holds no faint or alert text', () => {

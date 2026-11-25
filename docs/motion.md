@@ -217,7 +217,7 @@ A second script walked 20 states on the desktop and 20 on the phone (loading, ea
 - Week ↔ month and previous / next change the height of the grid, so the task list under it moves (243 px and 47 px on the desktop). That is the content changing, not a load.
 - "Sync data" still grows if its records arrive after the dialog is open, which now needs the request to take longer than the time between opening the owner menu and choosing the item. The number of records is not known in advance.
 - "Edit courses" reserves the rows of the courses already selected. An account with more candidates than that still grows by the difference, and on the phone a course name that wraps makes a row 8 px taller than its placeholder.
-- The Agent page's own animations (a new message rising in, the caret) were not touched: that page is about to be replaced.
+- The Agent page's own animations (a new message rising in, the caret) were not touched; that page has since been replaced by DeepTutor's own interface in a frame, and the old one deleted.
 
 ## Limits
 

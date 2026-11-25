@@ -12,7 +12,7 @@ import { openSyncStore, type OpenResult } from '../scripts/lib/sync-store.mjs';
 import { DEFAULT_SOURCE_CONFIG } from '../scripts/sources/config.mjs';
 import { createLocalApi, type LocalApiOptions } from '../server/app.ts';
 import { TOKEN_HEADER } from '../server/guard.ts';
-import { call, closeServer, eventReader, fakeModel, listen, open, syntheticCourse, syntheticToken, writeSyntheticCourses } from './local-api-helpers.ts';
+import { call, closeServer, fakeModel, listen, syntheticCourse, syntheticToken, writeSyntheticCourses } from './local-api-helpers.ts';
 import { fakeCdpBrowsers } from './cdp-fakes.ts';
 import { fakeCollectors, fakeConfig, fakeModel as fakeAnalysisModel, syntheticCourse as pipelineCourse } from './sync-fakes.ts';
 
@@ -84,10 +84,10 @@ describe('access guard', () => {
 
   it('answers 403 with an empty body and runs no route without the token or with a wrong one', async () => {
     for (const value of [undefined, 'b2'.repeat(32), token.slice(1)]) {
-      const reply = await write('POST', '/api/local/revision-notes', { courseId: '900001', content: 'Synthetic note' }, { [TOKEN_HEADER]: value });
+      const reply = await write('PUT', '/api/local/agent-context', { selectedCourseIds: ['900001'] }, { [TOKEN_HEADER]: value });
       expect([reply.status, reply.body]).toEqual([403, '']);
     }
-    expect(existsSync(join(projectDir, '.local', 'revision'))).toBe(false);
+    expect(existsSync(join(projectDir, '.local', 'agent-context.json'))).toBe(false);
   });
 
   it('refuses DNS rebinding, another local origin, another port in Host and a write without Origin', async () => {
@@ -255,94 +255,33 @@ describe('deeptutor', () => {
 
 describe('revision-notes', () => {
   beforeEach(async () => { await start(); });
+  const id = '0b0e7c1e-3d5a-4f6b-8a9c-1d2e3f4a5b6c';
+  const seed = async () => {
+    await mkdir(join(projectDir, '.local', 'revision'), { recursive: true });
+    await writeFile(join(projectDir, '.local', 'revision', 'notes.json'), JSON.stringify([{ id, courseId: '900001', title: 'Synthetic note', content: 'Synthetic note', chatId: null, savedAt: '2026-10-01T00:00:00.000Z' }]));
+  };
 
-  it('creates, lists and deletes notes with the same codes as before', async () => {
+  it('lists and deletes the notes saved earlier, and has no way to create one', async () => {
     expect((await get('/api/local/revision-notes?courseId=900001')).json()).toEqual({ notes: [] });
-    const created = await write('POST', '/api/local/revision-notes', { courseId: '900001', content: 'Synthetic note' });
-    expect(created.status).toBe(201);
-    const id = created.json().id;
-    expect((await get('/api/local/revision-notes?courseId=900001')).json().notes).toHaveLength(1);
-    expect((await write('DELETE', `/api/local/revision-notes/${id}`, {})).json()).toEqual({ ok: true });
-    expect((await write('DELETE', `/api/local/revision-notes/${id}`, {})).json()).toEqual({ error: 'NOTE_NOT_FOUND' });
-    expect((await write('POST', '/api/local/revision-notes', '[1]')).json()).toEqual({ error: 'INVALID_JSON' });
-    expect((await write('POST', '/api/local/revision-notes', { courseId: '900001', content: ' ' })).json()).toEqual({ error: 'CONTENT_EMPTY' });
-    expect((await write('POST', '/api/local/revision-notes', 'x'.repeat(100001))).status).toBe(413);
+    await seed();
+    expect((await get('/api/local/revision-notes?courseId=900001')).json().notes.map((note: { id: string }) => note.id)).toEqual([id]);
+    expect((await get('/api/local/revision-notes?courseId=../x')).json()).toEqual({ error: 'INVALID_COURSE_ID' });
+    expect((await write('POST', '/api/local/revision-notes', { courseId: '900001', content: 'Synthetic note' })).json()).toEqual({ error: 'METHOD_NOT_ALLOWED' });
     expect((await write('PUT', '/api/local/revision-notes', {})).json()).toEqual({ error: 'METHOD_NOT_ALLOWED' });
     expect((await get('/api/local/revision-notes/a/b')).json()).toEqual({ error: 'NOT_FOUND' });
-    expect((await write('POST', '/api/local/revision-notes', { courseId: '900001', content: 'x' }, { origin: undefined })).status).toBe(403);
+    expect((await write('DELETE', `/api/local/revision-notes/${id}`, {}, { origin: undefined })).status).toBe(403);
+    expect((await write('DELETE', '/api/local/revision-notes/not-an-id', {})).json()).toEqual({ error: 'INVALID_NOTE_ID' });
+    expect((await write('DELETE', `/api/local/revision-notes/${id}`, {})).json()).toEqual({ ok: true });
+    expect((await write('DELETE', `/api/local/revision-notes/${id}`, {})).json()).toEqual({ error: 'NOTE_NOT_FOUND' });
   });
 });
 
-describe('chats', () => {
-  beforeEach(async () => { await start(); });
-  const configure = (url: string) => write('PUT', '/api/local/llm-config', { provider: 'openai-compatible', model: 'synthetic-model', baseUrl: url, apiKey: 'sk-synthetic-key' });
-  const send = (id: string, content: string) => open(port, `/api/local/chats/${id}/messages`, {
-    method: 'POST', headers: headers({ origin: page, 'content-type': 'application/json' }), body: JSON.stringify({ content }),
-  });
-
-  it('creates, reads, lists and deletes chats; refuses bad IDs, paths, methods and bodies', async () => {
-    const created = await write('POST', '/api/local/chats', { courseIds: [syntheticCourse.id] });
-    expect(created.status).toBe(201);
-    const id = created.json().id;
-    expect((await get(`/api/local/chats/${id}`)).json()).toMatchObject({ id, courseIds: [syntheticCourse.id], messages: [], running: false });
-    expect((await get('/api/local/chats')).json().chats).toHaveLength(1);
-    expect((await get('/api/local/chats/not-an-id')).json()).toEqual({ error: 'INVALID_CHAT_ID' });
-    expect((await get(`/api/local/chats/${id}/other`)).json()).toEqual({ error: 'NOT_FOUND' });
-    expect((await write('PUT', `/api/local/chats/${id}`, {})).json()).toEqual({ error: 'METHOD_NOT_ALLOWED' });
-    expect((await write('POST', '/api/local/chats', { courseIds: [1] })).json()).toEqual({ error: 'INVALID_COURSE_IDS' });
-    expect((await write('POST', '/api/local/chats', 'x'.repeat(200001))).status).toBe(413);
-    expect((await write('POST', `/api/local/chats/${id}/messages`, { content: ' ' })).json()).toEqual({ error: 'CONTENT_EMPTY' });
-    // Default settings: DeepSeek without a key.
-    expect((await write('POST', `/api/local/chats/${id}/messages`, { content: 'Hi' })).json()).toEqual({ error: 'ANALYSIS_KEY_MISSING' });
-    expect((await write('POST', `/api/local/chats/${id}/stop`, {})).json()).toEqual({ ok: true, stopped: false });
-    expect((await write('DELETE', `/api/local/chats/${id}`, {})).json()).toEqual({ ok: true });
-    expect((await get(`/api/local/chats/${id}`)).json()).toEqual({ error: 'CHAT_NOT_FOUND' });
-  });
-
-  it('streams a reply from a fake model as delta events, then done, and saves both messages', async () => {
-    const model = await fakeModel(['先做', ' A1。'], { hold: true });
-    extra.push(model.server);
-    await configure(model.url);
-    const id = (await write('POST', '/api/local/chats', {})).json().id;
-    const res = await send(id, 'What first?').response;
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['content-type']).toBe('text/event-stream; charset=utf-8');
-    const events = eventReader(res);
-    // The first delta arrives while the model still holds the rest of the reply.
-    expect(await events.next()).toEqual({ event: 'delta', data: { text: '先做' } });
-    model.release();
-    const rest = [];
-    for (let event = await events.next(); event; event = await events.next()) rest.push(event);
-    expect(rest.map(event => event.event)).toEqual(['delta', 'done']);
-    expect(rest[1]!.data).toMatchObject({ message: { role: 'assistant', content: '先做 A1。' }, model: 'synthetic-model', stopped: false });
-    const chat = (await get(`/api/local/chats/${id}`)).json();
-    expect(chat.messages.map((message: { role: string }) => message.role)).toEqual(['user', 'assistant']);
-  });
-
-  it('aborts the model request when the client closes the stream', async () => {
-    const model = await fakeModel(['Partial', ' rest'], { hold: true });
-    extra.push(model.server);
-    await configure(model.url);
-    const id = (await write('POST', '/api/local/chats', {})).json().id;
-    const { req, response } = send(id, 'Hi');
-    const events = eventReader(await response);
-    expect((await events.next())?.event).toBe('delta');
-    req.destroy();
-    await model.state.closed.promise;
-    expect(model.state.closedEarly).toBe(1);
-    // The partial reply is saved once the stop settles.
-    await expect.poll(async () => (await get(`/api/local/chats/${id}`)).json().running).toBe(false);
-    model.release();
-  });
-
-  it('saves no message when the source settings cannot be read', async () => {
-    await configure('https://model.example.invalid/v1/chat/completions');
-    const id = (await write('POST', '/api/local/chats', {})).json().id;
-    await mkdir(join(projectDir, '.local', 'config'), { recursive: true });
-    await writeFile(join(projectDir, '.local', 'config', 'sources.json'), '{not json');
-    const reply = await write('POST', `/api/local/chats/${id}/messages`, { content: 'Hi' });
-    expect([reply.status, reply.json()]).toEqual([500, { error: 'SOURCE_SETTINGS_UNREADABLE' }]);
-    expect((await get(`/api/local/chats/${id}`)).json().messages).toEqual([]);
+describe('the removed chat routes', () => {
+  it('answer 404 like any unknown route', async () => {
+    await start();
+    expect((await get('/api/local/chats')).status).toBe(404);
+    expect((await write('POST', '/api/local/chats', { courseIds: ['900001'] })).status).toBe(404);
+    expect(existsSync(join(projectDir, '.local', 'chat'))).toBe(false);
   });
 });
 

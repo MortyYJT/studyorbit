@@ -19,7 +19,7 @@
 - [x] 1.10 `web/src/AgentFrame.tsx`, `App.tsx`, `LocalPlanning.tsx`, `agent-request.ts`, `i18n.ts`: the frame, the four states with exact commands, "open in a new tab", context hand-off on entry and on change, presets through the turns route, "save to revision" removed from the new path, old chat kept behind a link; Chinese and English; motion rules of `docs/motion.md`
 - [x] 1.11 Screenshots (synthetic data; light and dark; 1440 and 390): DeepTutor running, not installed, not running
 - [x] 1.12 `docs/setup.md` (install, upgrade, ports, data directory, embedding note, where old chats are), `docs/overview.md`, `README.md`, `note/decisions.md` (#540 onwards)
-- [ ] 1.13 `NODE_DEBUG= bash .claude/check.sh`; diff scan for score-like strings and local paths; PR; coordinator review
+- [x] 1.13 `NODE_DEBUG= bash .claude/check.sh`; diff scan for score-like strings and local paths; PR; coordinator review
 
 ## 2. Real validation (after the integration PR is merged)
 
@@ -32,7 +32,7 @@
 
 ## 3. Deletion PR (`claude/remove-own-agent`)
 
-- [ ] 3.1 Delete the chat page, tool loop, chat storage, chat routes, chat evaluation, their tests and chat-only provider code; keep what `tsc` and the tests show is still used
-- [ ] 3.2 Mark `docs/eval-chat-qa.md` "superseded by DeepTutor" at the top; update README, `docs/overview.md`, `docs/setup.md`, `note/product.md`
-- [ ] 3.3 Archive this change; sync `openspec/specs/` (remove `agent-chat` and `chat-qa-eval`)
-- [ ] 3.4 `NODE_DEBUG= bash .claude/check.sh`; PR; coordinator review
+- [x] 3.1 Delete the chat page, tool loop, chat storage, chat routes, chat evaluation, their tests and chat-only provider code; keep what `tsc` and the tests show is still used
+- [x] 3.2 Mark `docs/eval-chat-qa.md` "superseded by DeepTutor" at the top; update README, `docs/overview.md`, `docs/setup.md`, `note/product.md`
+- [x] 3.3 Archive this change; sync `openspec/specs/` (remove `agent-chat` and `chat-qa-eval`)
+- [x] 3.4 `NODE_DEBUG= bash .claude/check.sh`; PR; coordinator review

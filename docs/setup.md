@@ -22,7 +22,7 @@ Open `http://localhost:5173/`. `npm run dev` (`scripts/dev.mjs`) starts the loca
 - Extra arguments go to Vite, for example `npm run dev -- --open`.
 - Every start generates a new random token that only the page server's proxy sends to the API; it is never written to disk or sent to the browser.
 - Only one local server can run per project folder (`.local/server.lock`).
-- `npm run build` builds the static page only. **A static build has no sync, chat or revision-note API**; those live in the local API server, which only `npm run dev` connects.
+- `npm run build` builds the static page only. **A static build has no sync, assistant or revision-note API**; those live in the local API server, which only `npm run dev` connects.
 
 ## Data sources
 
@@ -69,14 +69,14 @@ The US and EU API addresses come from the CLI's region table; the course link fo
 
 ## Model
 
-In Settings → Analysis model choose a provider, enter its key and click "Test connection". Sync analysis, the old chat and the assistant share this setting (the assistant works with DeepSeek only).
+In Settings → Analysis model choose a provider, enter its key and click "Test connection". Sync analysis and the assistant share this setting (the assistant works with DeepSeek only).
 
 | Provider | Notes |
 | --- | --- |
 | DeepSeek | The default (`deepseek-flash`) |
 | OpenAI-compatible API | Any base URL: OpenAI, Qwen, Kimi, a local Ollama and others |
 | Anthropic Claude | |
-| Codex CLI | Uses the installed Codex CLI; in chat it gets the course data in its context instead of the course tools |
+| Codex CLI | Uses the installed Codex CLI for the analysis; the assistant does not work with it |
 
 Settings are saved in `.local/config/llm.json` (mode 600); keys are write-only and never shown again. Settings win over environment variables, which win over the defaults. If the API address points to a local model, course data stays on your machine.
 
@@ -99,7 +99,7 @@ uv pip install --python ~/.local/share/studyorbit/deeptutor/venv/bin/python "dee
 - Upgrade: stop StudyOrbit, run the `uv pip install` command with the new version, start again. Only 1.7.4 has been tried; the page says so when another version is installed.
 - Remove: `rm -r ~/.local/share/studyorbit/deeptutor` and `rm -r .local/deeptutor`.
 
-Chats held with the earlier built-in chat are in `.local/chat/`; they stay readable through "Old chat" on the Agent page for now.
+StudyOrbit had a built-in chat before DeepTutor. It has been removed; the chats held with it are still in `.local/chat/` (one JSON file per chat). Nothing reads them any more and nothing deletes them: remove the folder by hand when you no longer want them (`rm -r .local/chat`). Revision notes saved from those chats stay in the revision tab.
 
 ## Environment variables
 
@@ -120,7 +120,7 @@ Chats held with the earlier built-in chat are in `.local/chat/`; they stay reada
 
 ## Start a sync
 
-Click "Sync now", tick your courses and save. **Saving the course selection starts a sync at once**, which uses the browser, Ed and model credit. The revision presets and the chat also use model credit. To collect only the course list, run `npm run sync:courses`.
+Click "Sync now", tick your courses and save. **Saving the course selection starts a sync at once**, which uses the browser, Ed and model credit. The revision presets and the assistant also use model credit. To collect only the course list, run `npm run sync:courses`.
 
 Before collecting, StudyOrbit checks the browser and the Canvas sign-in; if either fails, the whole sync stops before any model call and nothing is written. A sync that fails, is cancelled or is interrupted can be continued within 24 hours with "Resume last sync"; finished stages are reused. When a course's collection is incomplete and an earlier file exists, the earlier file stays in use and the reason is shown under "Needs you". Problems are also recorded in `.local/lms/sync-errors/`.
 

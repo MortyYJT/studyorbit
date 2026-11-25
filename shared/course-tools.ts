@@ -1,4 +1,5 @@
-// Read-only course tools shared by the Agent chat, the Q&A runner and the MCP server (decision #320).
+// Read-only course tools (decision #320), served by the MCP server, which is how the assistant (DeepTutor) and other
+// MCP clients reach them. They were written for StudyOrbit's own chat, since removed (decision #553).
 // Pure module: no I/O, no clock reads, no network. Every call sees the documents and date in its ToolContext.
 // Tools read synced documents only; owner corrections are not applied (#297, #321).
 import { z } from 'zod';
@@ -7,7 +8,7 @@ import type { DisplayAssessment, DisplayDocument } from './course-data.ts';
 import { defaultAvailability, parseAvailability, schedulePlan, type PlanTask } from './planning.ts';
 import { DEFAULT_INSTITUTION } from '../scripts/institutions/registry.mjs';
 
-/** Planning inputs the page keeps in localStorage, sent with a chat message (decision #322). */
+/** Planning inputs the page keeps in localStorage; the Agent page saves them for the MCP server (decisions #322, #546). */
 export type PlanningSnapshot = {
   /** The weekly page's own task set and keys; done tasks are normally left out. */
   tasks: { key: string; title: string; courseId: string; courseCode: string; due: string; minutes: number; spent?: number; done?: boolean }[];
@@ -185,7 +186,7 @@ function grade(original: DisplayDocument, entries: WhatIf): Graded | Failure {
 }
 
 // Tool descriptions name the institution's time zone with its English time label (`label`); for the default institution
-// they are the descriptions the chat Q&A evaluation was run with.
+// they are the descriptions the former chat's Q&A evaluation was run with (docs/eval-chat-qa.md).
 /** `focus` for `list_courses`: only a course in scope, with its code when known. */
 function focusOf(ctx: ToolContext): { focus?: { courseId: string; code: string | null } } {
   const id = ctx.focusCourseId;

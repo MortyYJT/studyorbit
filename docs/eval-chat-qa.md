@@ -1,5 +1,7 @@
 # Chat Q&A evaluation
 
+> **Superseded by DeepTutor (2026-11-24).** This page is the measured record of StudyOrbit's own chat, which has been removed; the Agent page now shows DeepTutor ([Assistant](deeptutor.md)). The script, the grader, the question file and their tests named below were deleted with the chat and are in Git history up to commit `5089382`; the two synthetic courses and the planning data remain in `test/fixtures/qa/`. Nothing below describes the current code. The numbers stand as measured.
+
 Compares the Agent chat's two modes on a synthetic question set: **context mode** (the approach before tool calling: the whole course data goes in the system prompt and the model does its own arithmetic) and **tool mode** (only a course index is given; grades, weight totals, the final-needed average and the schedule are computed by the tools in `shared/course-tools.ts`). Same model, same questions, same number of runs; every question is a fresh one-message chat.
 
 - Script: `scripts/eval-chat-qa.mjs`; grader: `scripts/lib/qa-grade.mjs` (a pure function). Requirements: `openspec/specs/chat-qa-eval/`.
