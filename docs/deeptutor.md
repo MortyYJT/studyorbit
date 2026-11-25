@@ -106,8 +106,11 @@ This is a prompt rule, not an enforcement. Two other things back it: DeepTutor's
 - A revision preset (including "10 practice questions") starts one DeepTutor chat session with the prompt through `POST /api/local/deeptutor/turns` and the frame opens that session. Measured: the session id came back at once, the frame showed the reply streaming, and the turn finished after StudyOrbit had closed its own connection. The presets use plain chat: DeepTutor's `deep_question` capability produced two questions only after seven protocol retries and one schema repair with `deepseek-flash` (120,846 tokens).
 - A request from another page is acted on once: leaving the Agent page and coming back does not send the prompt again.
 - The frame is created only while the Agent page is showing. Opening DeepTutor's chat page makes it ask the model for input suggestions (measured: two calls, 1,858 tokens).
-- DeepTutor's page follows the system's light or dark setting, not a theme picked in StudyOrbit's settings. Its interface language is its own setting (English by default).
-- DeepTutor's page still shows "Solve" and "Research" shortcuts although those modules are not installed. Not tried.
+- DeepTutor's page follows the system's light or dark setting, not a theme picked in StudyOrbit's settings. Measured 2026-11-25: its page ignores the `theme` saved through its settings API, in both directions.
+- Language: before the frame is created, the page sends its language to `PUT /api/local/deeptutor/language`, and the server sets `language` and `response_language` through DeepTutor's settings API (`PUT /api/settings/ui`). Measured 2026-11-25: with DeepTutor's setting at English, a new browser on a Chinese StudyOrbit page got a Chinese interface and Chinese replies, and on an English page English ones. It is a default, not a switch: DeepTutor stores its language in the browser once its page has been opened there and that value wins (a browser that had opened it in Chinese stayed Chinese after the server setting was changed to English).
+- The bar above the frame says that the assistant reads the courses, marks, deadlines and tasks in StudyOrbit and not the corrections made on a course page.
+- "Explain", "Solve", "Practice", "Plan" and "Research" under DeepTutor's composer are groups of prompt starters for the normal chat, not the modules of those names. Tried 2026-11-25: each shows four starters; the ones under "Solve" ask for one step at a time without the final answer.
+- Notes cannot be kept in DeepTutor as it is installed here. Tried 2026-11-25: "Notebook" in its sidebar opens `/co-writer` ("This module is not installed or disabled"), "Note" → "Create note" on a chat answers "Error: Not Found" (`POST /api/documents`, 404), replies offer Copy, Read aloud, Retry and Delete, and nothing adds to "Favorites" (`/notebooks`). `GET /api/tools` answers 500 (`No module named 'deeptutor.capabilities.notes'`). Not reported upstream.
 
 ## Validation on merged main (2026-11-24)
 
@@ -135,7 +138,7 @@ Also seen:
 
 - Tool round trips inside one session work: turns 2 to 5 each needed one tool round and one answer, on top of the tools loaded in turn 1.
 - The reply language follows DeepTutor's own interface language, not the language typed: session A answered Chinese questions in English, session B in Chinese.
-- Pressing Enter after programmatic text input did not send; the Send button did. Not tried with a physical keyboard.
+- Pressing Enter after programmatic text input did not send in that run; the Send button did. On 2026-11-25 it did send, both after a text-input event and after text typed key by key, with real key-down and key-up events ([Walk-through](walkthrough.md)). Not tried with a physical keyboard.
 - DeepTutor's page logs 404s for routes of modules that are not installed (`/api/reading/…`, `/api/partners`); they did not get in the way of anything tried here.
 
 **The owner's instance** (main checkout, page port 5173): `npm run dev`'s launcher brought StudyOrbit and DeepTutor up in about 4 s on 5175, 5195 and 5197, all on `127.0.0.1`; health ready, the MCP server registered for the main checkout and connected with six tools, `exec`, web search and the update check off, the rules installed, a foreign `Origin` refused, no port reachable from the LAN address. No page was opened and no model was called (no usage ledger was created); the data directory `.local/deeptutor` holds no session. Stopped with SIGTERM to the launcher: all five ports closed and the process record was removed. The Desktop shortcut was not run: its script passes `zsh -n`, and a zsh started with an empty environment plus the shortcut's own nvm lines gets Node 24 and `DEEPSEEK_API_KEY`, finds the installed DeepTutor 1.7.4 and resolves DeepSeek with a key. `uv` is not on that shell's `PATH`, which does not matter: the launcher runs the virtual environment's programs by path.
@@ -152,6 +155,10 @@ Run on the branch that removed StudyOrbit's own chat, same set-up as the validat
 | Input suggestions and titles | | 2,342 |
 
 12 calls, 91,946 tokens. `GET /api/local/chats` answers 404; the revision tab says where new notes are kept. Screenshots were taken at 1440 and at 390, light and dark; at 390 the StudyOrbit page had no horizontal overflow.
+
+## Walk-through as a student (2026-11-25)
+
+Six more questions were typed into the framed page during the walk-through: 52 calls and 307,441 tokens, of which 24 calls and 23,342 tokens were the suggestions and titles DeepTutor asks for each time its page loads. The table, and what the walk changed on the Agent page, are in [Walk-through](walkthrough.md).
 
 ## Token use
 

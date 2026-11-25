@@ -102,7 +102,7 @@ The Vite dev server SHALL listen on `localhost` (loopback) only and SHALL proxy 
 - **THEN** the route answers 400 and the previous file is unchanged
 
 ### Requirement: Assistant status and session start
-`GET /api/local/deeptutor/status` SHALL report the assistant's status (`not-installed`, `running`, `external`, `failed` with a reason, `unsupported-provider`) and the address of its page, without calling the model. `POST /api/local/deeptutor/turns` SHALL start one DeepTutor session with the given prompt and language and answer with the session id, and SHALL answer 503 when the assistant is not running.
+`GET /api/local/deeptutor/status` SHALL report the assistant's status (`not-installed`, `running`, `external`, `failed` with a reason, `unsupported-provider`) and the address of its page, without calling the model. `POST /api/local/deeptutor/turns` SHALL start one DeepTutor session with the given prompt and language and answer with the session id, and SHALL answer 503 when the assistant is not running. `PUT /api/local/deeptutor/language` SHALL set the assistant's interface and reply language to the page's (`zh` or `en`), answer 204, and answer 503 when the assistant is not running and 502 when it refuses.
 
 #### Scenario: Status while stopped
 - **WHEN** DeepTutor is installed but not running

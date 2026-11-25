@@ -44,6 +44,7 @@ if (args.includes('uvicorn')) {
       if (req.url === '/health/ready') return res.end('{"status":"ready"}');
       if (req.url === '/studyorbit-guard/instance') return res.end(JSON.stringify({ instance: process.env.STUDYORBIT_GUARD_INSTANCE }));
       if (req.url === '/api/skills/studyorbit' && req.method === 'GET') { res.statusCode = skills.studyorbit ? 200 : 404; return res.end('{}'); }
+      if (req.url === '/api/settings/ui' && req.method === 'PUT') { if (process.env.FAKE_UI_FAILS) { res.statusCode = 500; return res.end('{}'); } fs.writeFileSync(path.join(process.env.DEEPTUTOR_HOME, 'ui.json'), JSON.stringify({ body: JSON.parse(body), origin: req.headers.origin ?? null })); return res.end('{}'); }
       if (req.url.startsWith('/api/skills')) { skills.studyorbit = JSON.parse(body).content; fs.writeFileSync(path.join(process.env.DEEPTUTOR_HOME, 'skill.' + req.method + '.md'), skills.studyorbit); return res.end('{}'); }
       res.statusCode = 404; res.end();
     });
@@ -167,7 +168,26 @@ describe('lifecycle', { timeout: 30000 }, () => {
     expect(other.instance.status()).toEqual({ state: 'unsupported-provider' });
     expect(await recorded()).toEqual([]);
     expect(missing.proxies).toEqual([]);
+    // The terminal says why the Agent page will be empty; the page says the rest.
+    expect(missing.lines).toEqual([expect.stringMatching(/^\[assistant\] DeepTutor is not installed.*Agent page/)]);
+    expect(other.lines).toEqual([expect.stringMatching(/^\[assistant\] .*DeepSeek.*Agent page/)]);
+    await expect(missing.instance.setLanguage('zh')).rejects.toThrow();
     await missing.instance.stop(); await other.instance.stop();
+  });
+
+  it('sets DeepTutor\'s interface and reply language through its own settings API', async () => {
+    const { instance } = await assistant();
+    await instance.start();
+    const file = join(projectDir, '.local', 'deeptutor', 'home', 'ui.json');
+    await instance.setLanguage('zh');
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ body: { language: 'zh', response_language: 'zh' }, origin: null });
+    await instance.setLanguage('en');
+    expect(JSON.parse(await readFile(file, 'utf8')).body).toEqual({ language: 'en', response_language: 'en' });
+    await instance.stop();
+    const failing = await assistant({ FAKE_UI_FAILS: '1' });
+    await failing.instance.start();
+    await expect(failing.instance.setLanguage('zh')).rejects.toThrow(/500/);
+    await failing.instance.stop();
   });
 
   it('configures and starts both processes on loopback, installs the house rules, and stops them', async () => {

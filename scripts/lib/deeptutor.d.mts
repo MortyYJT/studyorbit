@@ -31,5 +31,7 @@ export function createAssistant(options: {
   start(): Promise<void>;
   status(): AssistantStatus;
   startTurn(input: { content: string; language: 'zh' | 'en' }): Promise<{ sessionId: string }>;
+  /** Sets DeepTutor's interface and reply language; rejects when it is not running or refuses. */
+  setLanguage(language: 'zh' | 'en'): Promise<void>;
   stop(): Promise<void>;
 };

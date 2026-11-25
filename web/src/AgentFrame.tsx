@@ -2,6 +2,7 @@
 // page's course context for the MCP server, asks the local server whether DeepTutor is up, and for a preset prompt
 // starts one DeepTutor session after the owner's click. When DeepTutor is missing or stopped, the page says what to
 // run. The frame exists only while this page is showing: DeepTutor's chat page calls the model when it opens.
+// Before the frame is created, DeepTutor is told the page's language, which a browser new to DeepTutor then starts in.
 import { useEffect, useState } from 'react';
 import { agentRequestClaimed, claimAgentRequest, type AgentRequest } from './agent-request.js';
 import { agentContextBody, describeStatus, frameUrl, statusPollMs, type AssistantStatus } from './agent-frame.js';
@@ -23,6 +24,9 @@ export function AgentFrame({ language, courses, request, onOpenSettings }:
   // The session a preset started, per request; `failed` when DeepTutor did not take the prompt.
   const [turn, setTurn] = useState<{ nonce: number; sessionId?: string; failed?: boolean }>();
   const [contextSaved, setContextSaved] = useState(true);
+  // The language DeepTutor was last told about; the frame waits for it, whether or not DeepTutor took it.
+  const [languageTold, setLanguageTold] = useState<Language>();
+  const [copied, setCopied] = useState(false);
   const up = status?.state === 'running' || status?.state === 'external';
 
   // Status: asked on arrival and then on a timer while the page shows; never calls the model.
@@ -54,6 +58,16 @@ export function AgentFrame({ language, courses, request, onOpenSettings }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseKey, request?.nonce]);
 
+  // DeepTutor's interface and reply language follow the page's. It keeps its own setting per browser once it has
+  // been opened there, so this decides the first visit; afterwards the language is changed in DeepTutor's settings.
+  useEffect(() => {
+    if (!up || languageTold === language) return;
+    let live = true;
+    const done = () => { if (live) setLanguageTold(language); };
+    fetch('/api/local/deeptutor/language', { method: 'PUT', headers: json, body: JSON.stringify({ language }) }).then(done, done);
+    return () => { live = false; };
+  }, [up, language, languageTold]);
+
   // A preset prompt: one session, started once per request, only when DeepTutor is up.
   useEffect(() => {
     if (!up || !request?.prompt || !claimAgentRequest(request.nonce)) return;
@@ -69,15 +83,18 @@ export function AgentFrame({ language, courses, request, onOpenSettings }:
   // that was claimed before this mount (the page was left and opened again) is not waited for and not sent again.
   const mine = turn?.nonce === request?.nonce;
   const waitingForTurn = !!request?.prompt && up && (mine ? !turn!.sessionId && !turn!.failed : !agentRequestClaimed(request.nonce));
-  const reveal = useReveal(!(notice?.busy || waitingForTurn));
+  const waitingForLanguage = up && languageTold === undefined;
+  const reveal = useReveal(!(notice?.busy || waitingForTurn || waitingForLanguage));
   const session = turn && request && turn.nonce === request.nonce ? turn.sessionId : undefined;
-  const src = up && !waitingForTurn ? frameUrl(status.url, window.location.hostname, session) : null;
+  const src = up && !waitingForTurn && !waitingForLanguage ? frameUrl(status.url, window.location.hostname, session) : null;
+  const copyCommand = (text: string) => { void navigator.clipboard?.writeText(text).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 2000); }, () => setCopied(false)); };
   const focus = request?.courseId ? courses.find(course => course.id === request.courseId)?.code : undefined;
 
   return <section className="panel agent-frame-page" data-agent-state={status?.state ?? 'unknown'}>
     <div className="agent-frame-bar">
       <span className="agent-frame-note">
         {focus ? (zh ? `从 ${focus} 打开` : `Opened from ${focus}`) : 'DeepTutor'}
+        {up && <> · {zh ? '助手读 StudyOrbit 里的课程、成绩、截止和任务，读不到课程页上的修正' : 'It reads the courses, marks, deadlines and tasks in StudyOrbit, not the corrections made on a course page'}</>}
         {!contextSaved && <> · {zh ? '课程上下文没有存下来，助手这次读不到你的任务' : 'The course context could not be saved; the assistant cannot read your tasks this time'}</>}
         {turn?.failed && turn.nonce === request?.nonce && <> · {zh ? '这条提示没能发出去，可以在下面直接输入' : 'The prompt could not be sent; type it below instead'}</>}
         {up && status.warning === 'solve-module' && <> · {zh ? '检测到 DeepTutor 的 solve 模块（会代做题）。卸载：uv pip uninstall deeptutor-solve' : 'DeepTutor\'s solve module is installed (it does the work for you). Remove it: uv pip uninstall deeptutor-solve'}</>}
@@ -93,6 +110,7 @@ export function AgentFrame({ language, courses, request, onOpenSettings }:
           <p>{notice.body}</p>
           {notice.detail && <p className="agent-frame-detail">{notice.detail}</p>}
           {notice.command && <pre className="agent-frame-command">{notice.command}</pre>}
+          {notice.command && notice.command.includes('\n') && <button className="small" onClick={() => copyCommand(notice.command!)}>{copied ? (zh ? '已复制' : 'Copied') : (zh ? '复制这几行' : 'Copy these lines')}</button>}
           {notice.settings && <button onClick={onOpenSettings}>{zh ? '打开设置' : 'Open settings'}</button>}
         </div>
         // Nothing is painted for the first 150 ms: a status that arrives at once replaces this without a flash.

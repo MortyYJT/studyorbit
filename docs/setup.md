@@ -86,16 +86,19 @@ The Agent page shows [DeepTutor](https://github.com/HKUDS/DeepTutor) 1.7.4. It i
 
 ```sh
 curl -LsSf https://astral.sh/uv/install.sh | sh   # installs uv into ~/.local/bin; skip if you have it
+export PATH="$HOME/.local/bin:$PATH"             # the installer leaves this shell's PATH alone; skip if uv is already found
 uv venv --python 3.12 ~/.local/share/studyorbit/deeptutor/venv
 uv pip install --python ~/.local/share/studyorbit/deeptutor/venv/bin/python "deeptutor[server,web,memory,questions,notebook]==1.7.4"
 ```
 
 - About 520 MB, plus 145 MB if `uv` downloads Python. Do not add the `solve` extra: it does assignments for you, and the Agent page warns when it is installed.
+- The four lines can be pasted as one block; the Agent page shows the same lines with a copy button while DeepTutor is missing, and the terminal says so in one line at start-up.
 - `npm run dev` then starts DeepTutor with StudyOrbit and stops it with StudyOrbit; nothing else needs configuring. The first start in a checkout copies DeepTutor's web files (123 MB) and takes longer.
 - Ports: DeepTutor's page 5175, its API 5195, the model proxy 5197 (5185, 5196 and 5199 for an instance whose page is not on 5173). All three listen on `127.0.0.1` only.
 - Data: `.local/deeptutor/home` in the checkout (sessions, memory, DeepTutor's settings). Delete the folder to start again.
 - Model: DeepSeek only, with the key StudyOrbit already uses (Settings → Analysis model, or `DEEPSEEK_API_KEY`). The key is not copied into DeepTutor's files; see [Assistant](deeptutor.md#the-model-key).
 - Knowledge bases are not set up: they need an embedding service, and DeepSeek has none.
+- Language: the first time a browser opens the Agent page, DeepTutor's interface and replies take the language of the StudyOrbit page. After that DeepTutor keeps its own setting in that browser; change it in DeepTutor's settings.
 - Upgrade: stop StudyOrbit, run the `uv pip install` command with the new version, start again. Only 1.7.4 has been tried; the page says so when another version is installed.
 - Remove: `rm -r ~/.local/share/studyorbit/deeptutor` and `rm -r .local/deeptutor`.
 

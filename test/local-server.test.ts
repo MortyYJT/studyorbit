@@ -230,6 +230,7 @@ describe('deeptutor', () => {
     await start({ assistant: {
       status: () => ({ state: 'running', url: 'http://localhost:5185' }),
       startTurn: async input => { turns.push(input); return { sessionId: 'unified_1_abc' }; },
+      setLanguage: async () => {},
       stop: async () => {},
     } });
     expect((await get('/api/local/deeptutor/status')).json()).toEqual({ state: 'running', url: 'http://localhost:5185' });
@@ -245,8 +246,33 @@ describe('deeptutor', () => {
     expect(turns).toHaveLength(1);
   });
 
+  it('passes the page language on to the assistant', async () => {
+    const seen: string[] = [];
+    let fail = false;
+    let state: 'running' | 'starting' = 'running';
+    await start({ assistant: {
+      status: () => state === 'running' ? { state, url: 'http://localhost:5185' } : { state },
+      startTurn: async () => ({ sessionId: 'x' }),
+      setLanguage: async language => { if (fail) throw new Error('secret detail'); seen.push(language); },
+      stop: async () => {},
+    } });
+    expect((await write('PUT', '/api/local/deeptutor/language', { language: 'zh' })).status).toBe(204);
+    expect((await write('PUT', '/api/local/deeptutor/language', { language: 'en' })).status).toBe(204);
+    expect(seen).toEqual(['zh', 'en']);
+    expect((await write('PUT', '/api/local/deeptutor/language', { language: 'fr' })).json()).toEqual({ error: 'INVALID_LANGUAGE' });
+    expect((await write('PUT', '/api/local/deeptutor/language', { language: 'zh' }, { origin: 'http://evil.example' })).status).toBe(403);
+    expect((await get('/api/local/deeptutor/language')).json()).toEqual({ error: 'METHOD_NOT_ALLOWED' });
+    fail = true;
+    const failed = await write('PUT', '/api/local/deeptutor/language', { language: 'zh' });
+    expect(failed.status).toBe(502);
+    expect(failed.body).toBe(JSON.stringify({ error: 'ASSISTANT_UNAVAILABLE' }));
+    state = 'starting';
+    expect((await write('PUT', '/api/local/deeptutor/language', { language: 'zh' })).status).toBe(503);
+    expect(seen).toEqual(['zh', 'en']);
+  });
+
   it('answers 502 with a fixed code when the assistant cannot start the turn', async () => {
-    await start({ assistant: { status: () => ({ state: 'running', url: 'http://localhost:5185' }), startTurn: async () => { throw new Error('secret detail'); }, stop: async () => {} } });
+    await start({ assistant: { status: () => ({ state: 'running', url: 'http://localhost:5185' }), startTurn: async () => { throw new Error('secret detail'); }, setLanguage: async () => {}, stop: async () => {} } });
     const reply = await write('POST', '/api/local/deeptutor/turns', { content: 'x', language: 'zh' });
     expect(reply.status).toBe(502);
     expect(reply.body).toBe(JSON.stringify({ error: 'ASSISTANT_UNAVAILABLE' }));
