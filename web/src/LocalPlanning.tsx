@@ -6,6 +6,7 @@ import type { RevisionNote } from '../../scripts/lib/revision-store.mjs';
 import { CourseDocumentSchema, toDisplayDocument } from '../../shared/course-data.js';
 import { bandTargets, calculateGrades, finalNeeded, parentGrade, type Band } from '../../shared/course-calculations.js';
 import { parseAvailability, schedulePlan } from '../../shared/planning.js';
+import { assessmentJump, dueEdit, numberProblem, statusOptions, type NumberProblem } from './assessment-form.js';
 import { applyChoiceToSlice, importCourse, migrateStoredKeys, migrationPlan, storageKeys, writeCourseSlice, type CorrectionsRequest, type CourseSlice } from './local-stores.js';
 import type { Conflict, CorrectionsView } from '../../shared/corrections.js';
 import { CHANGES_SEEN_KEY, CourseChangeSchema, courseDismissAt, newestAt, unseenChanges, type CourseChange } from '../../shared/course-changes.js';
@@ -228,6 +229,16 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
   if (shownZone !== timeZone) { setShownZone(timeZone); setWeek(thisWeek(timeZone)); }
   const [chosen, setChosen] = useState<Assessment>();
   const [chosenSiblings, setChosenSiblings] = useState<string[]>();
+  // A task or deadline clicked on the week page opens its assessment on the course page; the row that renders it
+  // registers how (with the same neighbours a click on the row would pass).
+  const [jump, setJump] = useState<{ courseId: string; key: string; group: boolean }>();
+  const jumpOpen = useRef<(() => void) | undefined>(undefined);
+  jumpOpen.current = undefined;
+  // A "Needs you" row about a task opens the task list at that task.
+  const [taskFocus, setTaskFocus] = useState<{ key: string; at: number }>();
+  const taskList = useRef<HTMLDetailsElement>(null);
+  // What the form last said: which form, whether it is a problem, and the sentence.
+  const [formNote, setFormNote] = useState<{ form: string; problem: boolean; text: string }>();
   const kindName: Record<Kind, string> = zh ? { exam: '考试', quiz: '测验', assignment: '作业', presentation: '展示', participation: '参与', hurdle: 'Hurdle', ungraded: '不计分', unknown: '其他' } : { exam: 'Exam', quiz: 'Quiz', assignment: 'Assignment', presentation: 'Presentation', participation: 'Participation', hurdle: 'Hurdle', ungraded: 'Ungraded', unknown: 'Other' };
   const groupName: Record<Kind, string> = zh ? { exam: '考试', quiz: '测验', assignment: '作业', presentation: '展示', participation: '参与', hurdle: 'Hurdle', ungraded: '其他项目', unknown: '其他' } : { exam: 'Exams', quiz: 'Quizzes', assignment: 'Assignments', presentation: 'Presentations', participation: 'Participation', hurdle: 'Hurdles', ungraded: 'Other items', unknown: 'Other' };
   // A score reads as a percentage when its maximum is known; the points stay in the drawer.
@@ -246,6 +257,8 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
   const revisions = useRef<Record<string, number>>({});
   const confirmed = useRef<Record<string, CourseSlice>>({});
   const sending = useRef(new Map<string, Promise<void>>());
+  // Whether the last write of each server-kept course landed; a form says "Saved" only after it did.
+  const outcomes = useRef<Record<string, boolean>>({});
   // Open disagreements between a sync and the owner's corrections, per migrated course (decisions #249, #293).
   const [conflicts, setConflicts] = useState<Record<string, Conflict[]>>({});
   // Due date and weight changes logged by syncs, and the newest change time dismissed with 「知道了」 (decision #296).
@@ -438,7 +451,7 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
     const changed = changedCourses(latest.current, next);
     for (const id of changed.filter(id => localCourses.current.has(id))) if (!writeCourseSlice(localStorage, id, sliceOf(next, id))) { setSaveError(true); return false; }
     commit(next); setSaveError(false);
-    for (const id of changed.filter(id => !localCourses.current.has(id))) queue(id, () => send(id));
+    for (const id of changed.filter(id => !localCourses.current.has(id))) queue(id, async () => { outcomes.current[id] = await send(id); });
     return true;
   }
   // 「用同步的」 (`sync`) or 「保留我的」 (`mine`) on one conflict (decision #293); the server applies it and returns the course.
@@ -472,9 +485,9 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
     sending.current.set(id, run);
   }
   // One request per course at a time, so a later edit carries the revision returned by the earlier one (decision #295).
-  async function send(id: string) {
+  async function send(id: string): Promise<boolean> {
     const slice = sliceOf(latest.current, id), sent = JSON.stringify(slice);
-    if (sent === JSON.stringify(confirmed.current[id] ?? { corrections: {}, manual: [], order: [] })) return;
+    if (sent === JSON.stringify(confirmed.current[id] ?? { corrections: {}, manual: [], order: [] })) return true;
     try {
       const response = await fetch(`/api/local/corrections/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: revisions.current[id] ?? 0, ...slice }) });
       const body = await response.json().catch(() => null) as (CorrectionsView & { current?: CorrectionsView }) | null;
@@ -482,14 +495,30 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
         // Take the server's normalised copy unless a newer edit is already waiting to be sent.
         adopt(id, body, JSON.stringify(sliceOf(latest.current, id)) === sent);
         setCorrectionsNotice(notice => notice === 'save' ? '' : notice);
-        return;
+        return true;
       }
-      if (response.status === 409 && body?.current) { adopt(id, body.current, true); setCorrectionsNotice('refreshed'); return; }
+      if (response.status === 409 && body?.current) { adopt(id, body.current, true); setCorrectionsNotice('refreshed'); return false; }
       throw new Error('save failed');
     } catch {
       commit(withSlice(latest.current, id, confirmed.current[id] ?? { corrections: {}, manual: [], order: [] }));
       setCorrectionsNotice('save');
+      return false;
     }
+  }
+  /**
+   * Runs a form's save and reports under that form. A course kept in this browser is saved when `save` returns; a
+   * course kept by the server is saved when its request has answered, and a refused or failed request (which puts
+   * the last saved values back) is reported as not saved.
+   */
+  function saveAndSay(form: string, id: string, save: () => boolean) {
+    const before = sending.current.get(id);
+    if (!save()) return;
+    const run = sending.current.get(id);
+    const saved = { form, problem: false, text: zh ? '已保存。' : 'Saved.' };
+    if (!run || run === before) { setFormNote(saved); return; }
+    setFormNote(undefined);
+    void run.then(() => setFormNote(current => current ?? (outcomes.current[id] ? saved
+      : { form, problem: true, text: zh ? '没有保存：修正没能写入，页面已回到上次保存的内容。确认 StudyOrbit 还在运行后再试。' : 'Not saved: the correction could not be written, and the page is back at the last saved values. Check that StudyOrbit is still running and try again.' })));
   }
   function saveCorrections(next: Record<string, Correction>): boolean { return persist({ ...latest.current, corrections: next }); }
   function saveManual(next: Record<string, Assessment[]>): boolean { return persist({ ...latest.current, manual: next }); }
@@ -534,7 +563,7 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
   const drawerTimer = useRef<number | undefined>(undefined);
   const cancelDrawerClose = () => { window.clearTimeout(drawerTimer.current); drawerTimer.current = undefined; };
   useEffect(() => cancelDrawerClose, []);
-  const openDrawer = (item: Assessment, siblings: string[] | undefined) => { cancelDrawerClose(); setDrawerClosing(false); setChosen(item); setChosenSiblings(siblings); };
+  const openDrawer = (item: Assessment, siblings: string[] | undefined) => { cancelDrawerClose(); setDrawerClosing(false); setFormNote(undefined); setChosen(item); setChosenSiblings(siblings); };
   const closeDrawer = () => {
     if (drawerTimer.current !== undefined) return;
     const finish = () => { drawerTimer.current = undefined; setChosen(undefined); setChosenSiblings(undefined); setDrawerClosing(false); };
@@ -547,13 +576,64 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
     wasHidden.current = hidden;
     if (hidden) { cancelDrawerClose(); setChosen(undefined); setChosenSiblings(undefined); setDrawerClosing(false); } else setVisits(value => value + 1);
   }, [hidden]);
+  // Esc closes the drawer, as it closes the dialogs.
+  useEffect(() => {
+    if (!chosen || hidden) return;
+    // Not while an input method is composing (Esc cancels its candidates), and not under a dialog, which takes its own Esc.
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229 && !document.querySelector('dialog[open]')) closeDrawer(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [chosen, hidden]);
+  // The assessment a task or deadline names, when it is on that course's page.
+  const jumpTarget = (id: string, key: string) => { const course = courses.find(item => item.course.id === id); return course?.available ? assessmentJump(key, id, visibleItems(withCorrections(course))) : null; };
+  const goTo = (id: string, key?: string) => { const target = key ? jumpTarget(id, key) : null; if (target) setJump({ courseId: id, ...target }); onCourse(id); };
+  // Runs after the course page has rendered the row that registered `jumpOpen`.
+  useEffect(() => {
+    if (!jump || hidden) return;
+    // The click that set it also opened its course, in the same render; anything else is a jump that was never taken.
+    if (jump.courseId !== courseId || !selected) { setJump(undefined); return; }
+    if (courseTab !== 'assessments') { setCourseTab('assessments'); return; }
+    const open = jumpOpen.current;
+    setJump(undefined);
+    open?.();
+  });
+  useEffect(() => {
+    if (!taskFocus) return;
+    // Left the week page, or the task is gone: the pointer is dropped, so coming back does not scroll or take focus again.
+    if (hidden || courseId) { setTaskFocus(undefined); return; }
+    const list = taskList.current;
+    const row = list && [...list.querySelectorAll<HTMLElement>('.task-row')].find(element => element.dataset.task === taskFocus.key);
+    if (!list || !row) { setTaskFocus(undefined); return; }
+    const wasOpen = list.open;
+    list.open = true;
+    const show = () => { row.scrollIntoView({ block: 'center' }); row.focus({ preventScroll: true }); };
+    show();
+    // The list opens over a few frames; the row's final place is known when it has.
+    const settle = wasOpen || reducedMotion() ? undefined : window.setTimeout(show, durations.medium + 50);
+    const clear = window.setTimeout(() => setTaskFocus(undefined), 2500);
+    return () => { window.clearTimeout(settle); window.clearTimeout(clear); };
+  }, [taskFocus, hidden, courseId]);
+  const problemText: Record<NumberProblem | 'due', string> = zh
+    ? { weight: '没有保存：占比要在 0 到 100 之间。', score: '没有保存：得分不能是负数。', outOf: '没有保存：满分不能是负数。', scoreOverMax: '没有保存：得分不能超过满分。', due: '没有保存：截止时间没看懂。写成 2026-12-10 这样的日期，或者留空。' }
+    : { weight: 'Not saved: the weight must be between 0 and 100.', score: 'Not saved: the score cannot be negative.', outOf: 'Not saved: the maximum cannot be negative.', scoreOverMax: 'Not saved: the score cannot be more than the maximum.', due: 'Not saved: the due date could not be read. Write it as 2026-12-10, or leave it empty.' };
+  const noteFor = (form: string) => formNote?.form === form ? <small className={`form-note${formNote.problem ? ' problem' : ''}`} role={formNote.problem ? 'alert' : 'status'}>{formNote.problem && <i className="signal" aria-hidden="true" />}{formNote.text}</small> : null;
+  // A note belongs to the course it was written on, and "Saved" does not stay after it has been read.
+  const [noteCourse, setNoteCourse] = useState(courseId);
+  if (noteCourse !== courseId) { setNoteCourse(courseId); setFormNote(undefined); }
+  useEffect(() => {
+    if (!formNote || formNote.problem) return;
+    const timer = window.setTimeout(() => setFormNote(current => current === formNote ? undefined : current), 4000);
+    return () => window.clearTimeout(timer);
+  }, [formNote]);
+  // The states the plan understands, by name; a stored value that is none of them stays selectable.
+  const statusSelect = (current: string) => <select name="status" defaultValue={current === 'unknown' ? '' : current}>{statusOptions(current).map(value => <option key={value} value={value}>{value === '' ? (zh ? '未设置' : 'Not set') : statusLabel(value, zh)}</option>)}</select>;
   if (hidden) return null;
   // Flat bars where the page's data will be; they are painted only when the wait outlasts the delay (motion.ts useReveal).
   const placeholder = <div className={`page-placeholder pending${reveal === 'placeholder' ? ' late' : ''}`} role="status" aria-busy="true" aria-label={zh ? '加载中…' : 'Loading…'}><i className="skeleton" /><i className="skeleton" /><i className="skeleton" /></div>;
   const filled = reveal === 'faded' ? ' fill-in' : '';
   // Each page has its own key, so one page's elements are never reused as another's.
   if (courseId) return <div className="course-page" key={`course:${courseId}`}>
-    <button className="crumb" onClick={onBack}>← {zh ? '计划' : 'Plan'}</button>
+    <button className="crumb" onClick={onBack}>← {zh ? '本周' : 'This week'}</button>
     {error && <p className="needs">{error}</p>}
     {selected ? <>
       <div className="chead"><h1>{selected.course.subjectCode}</h1><span className="muted">{selected.course.name}</span><small>{selected.course.term}</small>
@@ -565,7 +645,7 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
         <div className="course-changes-head"><h2>{zh ? '课程变更' : 'Course changes'}</h2>
           {courseDismissAt(unseen, selected.course.id) !== null && <button className="small ghost" type="button" onClick={() => dismissChanges(courseDismissAt(unseen, selected.course.id))}>{zh ? '知道了' : 'Got it'}</button>}</div>
         <p className="muted">{courseDismissAt(unseen, selected.course.id) !== null ? (zh ? '最近一次同步改了这些截止时间或权重。' : 'The latest syncs changed these deadlines or weights.')
-          : (zh ? '最近一次同步改了这些截止时间或权重；其他课程也有未读变更，请在计划页「需要你处理」里点「知道了」。' : 'The latest syncs changed these deadlines or weights. Other courses have unread changes too; use "Got it" under "Needs you" on the plan page.')}</p>
+          : (zh ? '最近一次同步改了这些截止时间或权重；其他课程也有未读变更，请在「本周」页的「需要你处理」里点「知道了」。' : 'The latest syncs changed these deadlines or weights. Other courses have unread changes too; use "Got it" under "Needs you" on the "This week" page.')}</p>
         {courseChanges.map((entry, index) => <div className="change-row" key={`${entry.at}:${entry.assessmentId}:${entry.field}:${index}`}>{changeText(entry)}</div>)}
       </section>}
       {courseConflicts.length > 0 && <section className="sync-conflicts card" aria-label={zh ? '同步冲突' : 'Sync conflicts'}>
@@ -588,26 +668,28 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
       </div>}
       <div className="tabs" role="tablist" ref={tabList}><span className="tab-indicator" ref={tabIndicator} aria-hidden="true" /><button role="tab" aria-selected={courseTab === 'assessments'} onClick={() => setCourseTab('assessments')}>{zh ? '考核' : 'Assessments'}</button><button role="tab" aria-selected={courseTab === 'revision'} onClick={() => setCourseTab('revision')}>{zh ? '复习' : 'Revision'}</button></div>
       {courseTab === 'assessments' ? <div className="assessment-list">
-        <div className="list-tools"><button className="small" onClick={() => setAdding(value => !value)}>{adding ? (zh ? '取消' : 'Cancel') : (zh ? '新增考核' : 'Add assessment')}</button></div>
+        <div className="list-tools"><button className="small" onClick={() => { setFormNote(undefined); setAdding(value => !value); }}>{adding ? (zh ? '取消' : 'Cancel') : (zh ? '新增考核' : 'Add assessment')}</button></div>
         {adding && <form className="local-confirm" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); const name = String(data.get('name') ?? '').trim(); if (!name) return;
-          const kind = String(data.get('kind') ?? 'unknown') as Kind; const weightText = String(data.get('weight') ?? '').trim(); const weight = weightText ? Number(weightText) : undefined;
-          if (weight !== undefined && (!Number.isFinite(weight) || weight < 0 || weight > 100)) return;
-          const scoreText = String(data.get('score') ?? '').trim(); const maxText = String(data.get('outOf') ?? '').trim(); const score = scoreText ? Number(scoreText) : undefined; const outOf = maxText ? Number(maxText) : undefined;
-          if ((score !== undefined && (!Number.isFinite(score) || score < 0)) || (outOf !== undefined && (!Number.isFinite(outOf) || outOf < 0)) || (score !== undefined && outOf !== undefined && score > outOf)) return;
+          const field = (key: string) => String(data.get(key) ?? '').trim();
+          const problem = numberProblem({ weight: field('weight'), score: field('score'), outOf: field('outOf') });
+          if (problem) { setFormNote({ form: `add:${selected.course.id}`, problem: true, text: problemText[problem] }); return; }
+          const amount = (key: string) => field(key) === '' ? undefined : Number(field(key));
+          const kind = String(data.get('kind') ?? 'unknown') as Kind; const weight = amount('weight'), score = amount('score'), outOf = amount('outOf');
           const item: Assessment = { key: `${selected.course.id}:manual:${crypto.randomUUID()}`, name, kind, due: String(data.get('due') ?? ''), weight: weight === undefined ? '' : `${weight}%`, weightValue: weight, sourceZero: weight === 0, score, outOf, group: '', parent: String(data.get('parent') ?? '').trim(), status: '', link: url(data.get('link')), sources: [], hurdle: kind === 'hurdle', ungraded: data.get('nature') === 'ungraded', bonus: data.get('nature') === 'bonus', caution: data.get('nature') === 'alternative' };
-          if (saveManual({ ...manual, [selected.course.id]: [...(manual[selected.course.id] ?? []), item] })) setAdding(false);
-        }}><label>{zh ? '名称' : 'Name'}<input name="name" required /></label><label>{zh ? '类型' : 'Type'}<select name="kind"><option value="assignment">{zh ? '作业' : 'Assignment'}</option><option value="quiz">Quiz</option><option value="exam">Test</option><option value="presentation">{zh ? '展示' : 'Presentation'}</option><option value="participation">{zh ? '参与' : 'Participation'}</option><option value="hurdle">Hurdle</option></select></label><label>{zh ? '性质' : 'Nature'}<select name="nature"><option value="regular">{zh ? '普通考核' : 'Regular'}</option><option value="bonus">{zh ? '加分' : 'Bonus'}</option><option value="ungraded">{zh ? '不计分' : 'Ungraded'}</option><option value="alternative">{zh ? '替代考试' : 'Alternative'}</option></select></label><label>{zh ? '占比 %' : 'Weight %'}<input type="number" name="weight" min="0" max="100" step="any" /></label><label>{zh ? '得分' : 'Score'}<input type="number" name="score" min="0" step="any" /></label><label>{zh ? '满分' : 'Out of'}<input type="number" name="outOf" min="0" step="any" /></label><label>{zh ? '截止日期' : 'Due date'}<input type="date" name="due" /></label><label>{zh ? '归属' : 'Parent'}<select name="parent"><option value="">{zh ? '无' : 'None'}</option>{primaryItems.filter(item => !item.parent).map(item => <option key={item.key} value={item.key}>{item.name}</option>)}</select></label><label>{zh ? '链接' : 'Link'}<input type="url" name="link" /></label><button type="submit">{zh ? '保存' : 'Save'}</button></form>}
+          if (saveManual({ ...manual, [selected.course.id]: [...(manual[selected.course.id] ?? []), item] })) { setAdding(false); setFormNote(undefined); }
+        }}><label>{zh ? '名称' : 'Name'}<input name="name" required /></label><label>{zh ? '类型' : 'Type'}<select name="kind">{(['assignment', 'quiz', 'exam', 'presentation', 'participation', 'hurdle'] as Kind[]).map(value => <option key={value} value={value}>{kindName[value]}</option>)}</select></label><label>{zh ? '性质' : 'Nature'}<select name="nature"><option value="regular">{zh ? '普通考核' : 'Regular'}</option><option value="bonus">{zh ? '加分' : 'Bonus'}</option><option value="ungraded">{zh ? '不计分' : 'Ungraded'}</option><option value="alternative">{zh ? '替代考试' : 'Alternative'}</option></select></label><label>{zh ? '占比 %' : 'Weight %'}<input type="number" name="weight" min="0" max="100" step="any" /></label><label>{zh ? '得分' : 'Score'}<input type="number" name="score" min="0" step="any" /></label><label>{zh ? '满分' : 'Out of'}<input type="number" name="outOf" min="0" step="any" /></label><label>{zh ? '截止日期' : 'Due date'}<input type="date" name="due" /></label><label>{zh ? '归属' : 'Parent'}<select name="parent"><option value="">{zh ? '无' : 'None'}</option>{primaryItems.filter(item => !item.parent).map(item => <option key={item.key} value={item.key}>{item.name}</option>)}</select></label><label>{zh ? '链接' : 'Link'}<input type="url" name="link" /></label><button type="submit">{zh ? '保存' : 'Save'}</button>{noteFor(`add:${selected.course.id}`)}</form>}
         {!selected.assessments.length && <p className="muted">{zh ? '暂未获取考核项目。' : 'No assessments found yet.'}</p>}
         {(() => {
           const kinds: Kind[] = ['quiz', 'assignment', 'exam', 'presentation', 'participation', 'hurdle', 'unknown', 'ungraded'];
           const visible = primaryItems;
           const childKeys = new Set(parents.flatMap(parent => [...parent.children.map(item => item.key), ...(parent.sourceKey ? [parent.sourceKey] : [])]));
           // One row per assessment, as in the 10-15 prototype: name and type, weight, score (or due date), status. Details open in the drawer.
-          const row = (item: Assessment, siblings: string[]) => <button key={item.key} className="arow" onClick={() => openDrawer(item, siblings)}>
+          const row = (item: Assessment, siblings: string[]) => { if (jump && !jump.group && jump.key === item.key) jumpOpen.current = () => openDrawer(item, siblings);
+            return <button key={item.key} className="arow" onClick={() => openDrawer(item, siblings)}>
             <span className="aname">{item.name}{item.kind !== 'unknown' && item.kind !== 'ungraded' && <span className={`kind ${item.kind}`}>{kindName[item.kind]}</span>}{item.bonus && <span className="kind">{zh ? '加分' : 'Bonus'}</span>}{work.some(entry => entry.key === item.key) && <span className="planned">{zh ? '已排期' : 'Planned'}</span>}</span>
             <span className="num">{item.bonus ? (item.outOf !== undefined ? `≤ ${item.outOf} ${zh ? '分' : 'pts'}` : '—') : item.sourceZero ? '0%' : item.weight || '—'}{item.unsourced?.includes('weight') && <Unsourced zh={zh} />}</span>
             <span className="num muted">{item.score !== undefined ? scoreText(item.score, item.outOf) : shortDue(item.due)}</span>
-            <span className="muted">{statusLabel(corrections[item.key]?.status || item.status || (item.score !== undefined ? 'graded' : 'unknown'), zh)}</span></button>;
+            <span className="muted">{statusLabel(corrections[item.key]?.status || item.status || (item.score !== undefined ? 'graded' : 'unknown'), zh)}</span></button>; };
           const scoredParticipation = (item: Assessment) => item.kind === 'participation' && !item.ungraded && (item.bonus === true || !item.sourceZero && (item.weightValue ?? 0) > 0);
           const standaloneHurdle = (item: Assessment) => item.kind === 'hurdle';
           const groupedItem = (kind: Kind) => visible.filter(item => !childKeys.has(item.key) && !item.caution && (kind === 'hurdle' ? standaloneHurdle(item) : !standaloneHurdle(item) && (kind === 'participation' ? scoredParticipation(item) : item.kind === kind && (!item.sourceZero || item.bonus) && !item.ungraded && item.kind !== 'ungraded')));
@@ -621,6 +703,9 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
           };
           // A parent with child items folds in place; the chevron and the item count say that it opens.
           const parentRow = (entry: { key: string; parent?: ParentAssessment }, siblingKeys: string[]) => { const parent = entry.parent!; const grade = parentGrade(parent); const children = sorted(parent.children, item => item.key); const childOrder = children.map(item => item.key);
+            const planGroup = () => openDrawer({ key: entry.key, name: parent.displayName || parent.name, due: parent.due || '', weight: parent.weight === undefined ? '' : `${parent.weight}%`, sourceZero: false, kind: 'assignment', group: parent.name, status: parent.status || '', link: '', sources: [], parent: '', caution: false, hurdle: false, unsourced: parent.weightUnsourced ? ['weight'] : [], weightQuote: parent.weightQuote }, undefined);
+            if (jump?.group && jump.key === parent.sourceKey) jumpOpen.current = planGroup;
+            const parentForm = `parent:${entry.key}`;
             return <details className="assessment-parent" key={entry.key}><summary className="arow">
               <span className="aname"><i className="chevron" aria-hidden="true" />{parent.displayName || parent.name}{parent.kind && parent.kind !== 'unknown' && parent.kind !== 'ungraded' && <span className={`kind ${parent.kind}`}>{kindName[parent.kind]}</span>}<small className="count">{parent.children.length} {zh ? '项' : 'items'}</small></span>
               <span className="num">{parent.weight === undefined ? '—' : `${parent.weight}%`}{parent.weightUnsourced && <Unsourced zh={zh} />}</span>
@@ -629,16 +714,17 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
               <div className="assessment-children">
                 {children.map(item => row(item, childOrder))}
                 <div className="parent-actions">
-                  <button className="small ghost" onClick={() => { openDrawer({ key: entry.key, name: parent.displayName || parent.name, due: parent.due || '', weight: parent.weight === undefined ? '' : `${parent.weight}%`, sourceZero: false, kind: 'assignment', group: parent.name, status: parent.status || '', link: '', sources: [], parent: '', caution: false, hurdle: false, unsourced: parent.weightUnsourced ? ['weight'] : [], weightQuote: parent.weightQuote }, undefined); }}>{zh ? '安排整个作业' : 'Plan assignment'}</button>
+                  <button className="small ghost" onClick={planGroup}>{zh ? '安排整个作业' : 'Plan assignment'}</button>
                   <button className="small ghost" type="button" disabled={siblingKeys.indexOf(entry.key) <= 0} onClick={() => move(entry.key, siblingKeys, -1)}>{zh ? '上移' : 'Move up'}</button>
                   <button className="small ghost" type="button" disabled={siblingKeys.indexOf(entry.key) >= siblingKeys.length - 1} onClick={() => move(entry.key, siblingKeys, 1)}>{zh ? '下移' : 'Move down'}</button>
                   <button className="small ghost" onClick={() => saveCorrections({ ...corrections, [parent.sourceKey!]: { ...corrections[parent.sourceKey!], hidden: true } })}>{zh ? '移除' : 'Remove'}</button>
                 </div>
                 <details className="assessment-edit"><summary>{zh ? '编辑父考核' : 'Edit parent'}</summary><form className="local-confirm" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); const name = String(data.get('name') ?? '').trim(); if (!name) return;
                   const w = String(data.get('weight') ?? '').trim(), n = String(data.get('score') ?? '').trim(), m = String(data.get('outOf') ?? '').trim(); const weight = w ? Number(w) : null, score = n ? Number(n) : null, outOf = m ? Number(m) : null;
-                  if ((weight !== null && (!Number.isFinite(weight) || weight < 0 || weight > 100)) || (score !== null && (!Number.isFinite(score) || score < 0)) || (outOf !== null && (!Number.isFinite(outOf) || outOf < 0)) || (score !== null && outOf !== null && score > outOf)) return;
-                  saveCorrections({ ...corrections, [parent.sourceKey!]: { ...corrections[parent.sourceKey!], nature: String(data.get('nature')) as Correction['nature'] }, [entry.key]: { ...corrections[entry.key], name, kind: String(data.get('kind')) as Kind, scoring: String(data.get('scoring')) as 'none' | 'points' | 'weighted', weight, score, outOf, due: String(data.get('due') ?? '') || null, status: String(data.get('status') ?? '').trim() } }); }}>
-                  <label>{zh ? '名称' : 'Name'}<input name="name" required defaultValue={parent.displayName || parent.name} /></label><label>{zh ? '类型' : 'Type'}<select name="kind" defaultValue={parent.kind ?? 'assignment'}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'hurdle', 'unknown'] as Kind[]).map(value => <option key={value} value={value}>{groupName[value]}</option>)}</select></label><label>{zh ? '性质' : 'Nature'}<select name="nature" defaultValue={(() => { const source = visible.find(item => item.key === parent.sourceKey); return source?.bonus ? 'bonus' : source?.caution ? 'alternative' : source?.ungraded ? 'ungraded' : 'regular'; })()}><option value="regular">{zh ? '普通考核' : 'Regular'}</option><option value="bonus">{zh ? '加分' : 'Bonus'}</option><option value="ungraded">{zh ? '不计分' : 'Ungraded'}</option><option value="alternative">{zh ? '替代考试' : 'Alternative'}</option></select></label><label>{zh ? '占比 %' : 'Weight %'}<input type="number" min="0" max="100" step="any" name="weight" defaultValue={parent.weight} /></label><label>{zh ? '子项计分方式' : 'Child scoring'}<select name="scoring" defaultValue={parent.scoringRule}><option value="none">{zh ? '不自动汇总' : 'No aggregation'}</option><option value="points">{zh ? '按分值' : 'By points'}</option><option value="weighted">{zh ? '按各项权重' : 'By weights'}</option></select></label><label>{zh ? '得分' : 'Score'}<input type="number" min="0" step="any" name="score" defaultValue={parent.score} /></label><label>{zh ? '满分' : 'Out of'}<input type="number" min="0" step="any" name="outOf" defaultValue={parent.outOf} /></label><label>{zh ? '日期' : 'Due date'}<input type="date" name="due" defaultValue={dateInput(parent.due, timeZone)} /></label><label>{zh ? '状态' : 'Status'}<input name="status" defaultValue={parent.status} /></label><button type="submit">{zh ? '保存' : 'Save'}</button></form></details>
+                  const problem = numberProblem({ weight: w, score: n, outOf: m });
+                  if (problem) { setFormNote({ form: parentForm, problem: true, text: problemText[problem] }); return; }
+                  saveAndSay(parentForm, selected.course.id, () => saveCorrections({ ...corrections, [parent.sourceKey!]: { ...corrections[parent.sourceKey!], nature: String(data.get('nature')) as Correction['nature'] }, [entry.key]: { ...corrections[entry.key], name, kind: String(data.get('kind')) as Kind, scoring: String(data.get('scoring')) as 'none' | 'points' | 'weighted', weight, score, outOf, due: String(data.get('due') ?? '') || null, status: String(data.get('status') ?? '').trim() } })); }}>
+                  <label>{zh ? '名称' : 'Name'}<input name="name" required defaultValue={parent.displayName || parent.name} /></label><label>{zh ? '类型' : 'Type'}<select name="kind" defaultValue={parent.kind ?? 'assignment'}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'hurdle', 'unknown'] as Kind[]).map(value => <option key={value} value={value}>{groupName[value]}</option>)}</select></label><label>{zh ? '性质' : 'Nature'}<select name="nature" defaultValue={(() => { const source = visible.find(item => item.key === parent.sourceKey); return source?.bonus ? 'bonus' : source?.caution ? 'alternative' : source?.ungraded ? 'ungraded' : 'regular'; })()}><option value="regular">{zh ? '普通考核' : 'Regular'}</option><option value="bonus">{zh ? '加分' : 'Bonus'}</option><option value="ungraded">{zh ? '不计分' : 'Ungraded'}</option><option value="alternative">{zh ? '替代考试' : 'Alternative'}</option></select></label><label>{zh ? '占比 %' : 'Weight %'}<input type="number" min="0" max="100" step="any" name="weight" defaultValue={parent.weight} /></label><label>{zh ? '子项计分方式' : 'Child scoring'}<select name="scoring" defaultValue={parent.scoringRule}><option value="none">{zh ? '不自动汇总' : 'No aggregation'}</option><option value="points">{zh ? '按分值' : 'By points'}</option><option value="weighted">{zh ? '按各项权重' : 'By weights'}</option></select></label><label>{zh ? '得分' : 'Score'}<input type="number" min="0" step="any" name="score" defaultValue={parent.score} /></label><label>{zh ? '满分' : 'Out of'}<input type="number" min="0" step="any" name="outOf" defaultValue={parent.outOf} /></label><label>{zh ? '日期' : 'Due date'}<input type="date" name="due" defaultValue={dateInput(parent.due, timeZone)} /></label><label>{zh ? '状态' : 'Status'}{statusSelect(parent.status ?? '')}</label><button type="submit">{zh ? '保存' : 'Save'}</button>{noteFor(parentForm)}</form></details>
               </div></details>; };
           const entries = (kind: Kind) => { const items = kind === 'ungraded' ? foldedItems : groupedItem(kind); const combined: { key: string; item?: Assessment; parent?: ParentAssessment }[] = [
             ...parents.filter(parent => kind === 'ungraded' ? foldedParent(parent) : !foldedParent(parent) && (parent.kind ?? 'assignment') === kind).map(parent => ({ key: `${selected.course.id}:group:${parent.name}`, parent })), ...items.map(item => ({ key: item.key, item })) ];
@@ -673,10 +759,13 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
               {item.rule ? <small className="muted block">{item.rule}</small> : item.unsourced?.includes('rule') && <small className="muted block">{zh ? '规则未知' : 'Rule unknown'}</small>}
               {item.unsourced?.includes('rule') && <Unsourced zh={zh} />}</span></div>)}</div>
             : <p className="muted">{zh ? '这门课还没有识别到考试。' : 'No exam has been identified for this course.'}</p>}
-          {onAsk && <div className="revision-actions">{prompts.map(item => <button key={item.label} className="small" onClick={() => onAsk(selected.course.id, item.prompt)} title={zh ? '打开对话页并发送，会使用模型额度' : 'Opens the Agent page and sends; uses model credit'}>{item.label}</button>)}</div>}
+          {onAsk && <div className="revision-actions">{prompts.map(item => <button key={item.label} className="small" onClick={() => onAsk(selected.course.id, item.prompt)} title={zh ? '打开对话页并发送，会使用模型额度' : 'Opens the Agent page and sends; uses model credit'}>{item.label}</button>)}
+            <small className="muted revision-cost">{zh ? '点一下就会在 Agent 页新开一个对话并把提示发出去，一次要用几万 token 的模型额度。' : 'One click opens a new conversation on the Agent page and sends the prompt; each one uses tens of thousands of tokens of model credit.'}</small></div>}
           <h2>{zh ? '复习笔记' : 'Revision notes'}</h2>
           {notesError && <p className="muted">{zh ? '无法读取复习笔记（仅在本地开发服务器中可用）。' : 'Could not load revision notes (dev server only).'}</p>}
-          {!notesError && notes && <p className="muted">{zh ? (notes.length ? '这些是以前从对话里存下来的笔记。新的笔记请存在 DeepTutor 自己的 Notebook 里。' : '这里没有笔记。新的笔记请存在 DeepTutor 自己的 Notebook 里（Agent 页左侧）。') : (notes.length ? 'These notes were saved from earlier chats. Keep new notes in DeepTutor\'s own Notebook.' : 'No notes here. Keep new notes in DeepTutor\'s own Notebook (left side of the Agent page).')}</p>}
+          {!notesError && notes && <p className="muted">{zh
+            ? (notes.length ? '这些是以前从对话里存下来的笔记。现在不能新存：回复由 DeepTutor 显示，而它的笔记功能需要没有安装的模块。聊过的内容都在 Agent 页的对话记录里。' : '这里没有笔记，现在也不能新存：回复由 DeepTutor 显示，而它的笔记功能需要没有安装的模块。聊过的内容都在 Agent 页的对话记录里，可以回去看或复制。')
+            : (notes.length ? 'These notes were saved from earlier chats. New ones cannot be saved for now: replies are shown by DeepTutor, and its note features need modules that are not installed. Your conversations stay in the list on the Agent page.' : 'No notes here, and none can be saved for now: replies are shown by DeepTutor, and its note features need modules that are not installed. Your conversations stay in the list on the Agent page, to read again or copy.')}</p>}
           {notes?.map(note => <details className="revision-note" key={note.id}><summary><i className="chevron" aria-hidden="true" /><span>{note.title || (zh ? '笔记' : 'Note')}</span>
             <small className="muted">{new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(note.savedAt))}</small></summary>
             <div className="revision-note-body"><RichText text={note.content} /><button type="button" className="link-button muted" onClick={() => void removeNote(note)}>{zh ? '删除' : 'Delete'}</button></div></details>)}
@@ -702,18 +791,23 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
         <form className="plan-form" key={item.key} onSubmit={schedule}><label>{zh ? '截止日期' : 'Due date'}<input name="due" type="date" required defaultValue={work.find(entry => entry.key === item.key)?.due ?? corrections[item.key]?.due ?? (/^\d{4}-\d{2}-\d{2}/.test(item.due) ? item.due.slice(0, 10) : undefined)} /></label><label>{zh ? '预计学习分钟数' : 'Estimated minutes'}<input name="minutes" type="number" min="1" max="100000" required defaultValue={work.find(entry => entry.key === item.key)?.minutes} /></label><button className="primary" type="submit">{zh ? '保存并排期' : 'Save and plan'}</button></form>
         {siblings && <>
           <h3>{zh ? '修正' : 'Corrections'}</h3>
-          <details className="assessment-edit"><summary>{zh ? '编辑这项考核' : 'Edit this assessment'}</summary><form className="local-confirm" key={`edit-${item.key}`} onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); const rawWeight = String(data.get('weight') ?? '').trim(); const newWeight = rawWeight === '' ? undefined : Number(rawWeight); if (newWeight !== undefined && (!Number.isFinite(newWeight) || newWeight < 0 || newWeight > 100)) return;
-            const name = String(data.get('name') ?? '').trim(); if (!name) return;
-            const scoreText = String(data.get('score') ?? '').trim(), maxText = String(data.get('outOf') ?? '').trim(); const score = scoreText ? Number(scoreText) : null, outOf = maxText ? Number(maxText) : null;
-            if ((score !== null && (!Number.isFinite(score) || score < 0)) || (outOf !== null && (!Number.isFinite(outOf) || outOf < 0)) || (score !== null && outOf !== null && score > outOf)) return;
-            const next: Correction = { ...corrections[item.key], name, kind: String(data.get('kind')) as Kind, nature: String(data.get('nature')) as Correction['nature'], rule: String(data.get('rule') ?? '').trim(), weight: newWeight ?? null, score, outOf, due: String(data.get('due') ?? '') || null, parent: String(data.get('parent') ?? '').trim(), status: String(data.get('status') ?? '').trim(), link: String(data.get('link') ?? '').trim() };
-            saveCorrections({ ...corrections, [item.key]: next }); }}>
+          <details className="assessment-edit"><summary>{zh ? '编辑这项考核' : 'Edit this assessment'}</summary><form className="local-confirm" key={`edit-${item.key}`} onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); const form = `edit:${item.key}`;
+            const field = (key: string) => String(data.get(key) ?? '').trim();
+            const name = field('name'); if (!name) return;
+            const problem = numberProblem({ weight: field('weight'), score: field('score'), outOf: field('outOf') });
+            if (problem) { setFormNote({ form, problem: true, text: problemText[problem] }); return; }
+            // The due value the form was filled with is left alone, whatever form a sync stored it in; only a change is read.
+            const due = dueEdit(field('due'), item.due);
+            if (!due.ok) { setFormNote({ form, problem: true, text: problemText.due }); return; }
+            const amount = (key: string) => field(key) === '' ? null : Number(field(key));
+            const next: Correction = { ...corrections[item.key], name, kind: String(data.get('kind')) as Kind, nature: String(data.get('nature')) as Correction['nature'], rule: field('rule'), weight: amount('weight'), score: amount('score'), outOf: amount('outOf'), ...(due.changed ? { due: due.value } : {}), parent: field('parent'), status: field('status'), link: field('link') };
+            saveAndSay(form, selected.course.id, () => saveCorrections({ ...corrections, [item.key]: next })); }}>
             <label>{zh ? '名称' : 'Name'}<input name="name" required defaultValue={item.name} /></label>
             <label>{zh ? '类型' : 'Type'}<select name="kind" defaultValue={item.kind}>{(['quiz', 'assignment', 'exam', 'presentation', 'participation', 'hurdle', 'unknown'] as Kind[]).map(kind => <option value={kind} key={kind}>{groupName[kind]}</option>)}</select></label>
             <label>{zh ? '性质' : 'Nature'}<select name="nature" defaultValue={item.bonus ? 'bonus' : item.caution ? 'alternative' : item.ungraded || item.kind === 'ungraded' ? 'ungraded' : 'regular'}><option value="regular">{zh ? '普通考核' : 'Regular'}</option><option value="bonus">{zh ? '加分' : 'Bonus'}</option><option value="ungraded">{zh ? '不计分' : 'Ungraded'}</option><option value="alternative">{zh ? '替代考试' : 'Alternative'}</option></select></label><label>{zh ? '规则' : 'Rule'}<input name="rule" defaultValue={item.rule ?? ''} /></label>
             <label>{zh ? '单项占比 %' : 'Item weight %'}<input name="weight" type="number" min="0" max="100" step="any" defaultValue={item.weightValue} /></label>
             <label>{zh ? '得分' : 'Score'}<input name="score" type="number" min="0" step="any" defaultValue={item.score} /></label><label>{zh ? '满分' : 'Out of'}<input name="outOf" type="number" min="0" step="any" defaultValue={item.outOf} /></label>
-            <label>{zh ? '截止时间' : 'Due'}<input name="due" defaultValue={item.due} placeholder="YYYY-MM-DD" /></label><label>{zh ? '归属' : 'Parent'}<select name="parent" defaultValue={item.parent}><option value="">{zh ? '无' : 'None'}</option>{visible.filter(candidate => candidate.key !== item.key && !candidate.parent && !visible.some(child => child.parent === item.key)).map(candidate => <option key={candidate.key} value={candidate.key}>{candidate.name}</option>)}</select></label><label>{zh ? '状态' : 'Status'}<input name="status" defaultValue={item.status} /></label><label>{zh ? '链接' : 'Link'}<input type="url" name="link" defaultValue={item.link} /></label><button type="submit">{zh ? '保存' : 'Save'}</button>
+            <label>{zh ? '截止时间' : 'Due'}<input name="due" defaultValue={item.due} placeholder="2026-12-10" /></label><label>{zh ? '归属' : 'Parent'}<select name="parent" defaultValue={item.parent}><option value="">{zh ? '无' : 'None'}</option>{visible.filter(candidate => candidate.key !== item.key && !candidate.parent && !visible.some(child => child.parent === item.key)).map(candidate => <option key={candidate.key} value={candidate.key}>{candidate.name}</option>)}</select></label><label>{zh ? '状态' : 'Status'}{statusSelect(item.status)}</label><label>{zh ? '链接' : 'Link'}<input type="url" name="link" defaultValue={item.link} /></label><button type="submit">{zh ? '保存' : 'Save'}</button>{noteFor(`edit:${item.key}`)}
           </form></details>
           <details className="assessment-edit"><summary>{zh ? '和另一项合并' : 'Merge with another'}</summary><div className="local-merge"><label>{zh ? '如果是同一个考核，合并到' : 'If this is the same assessment, merge into'}<select defaultValue="" onChange={event => { const target = event.target.value; if (!target) return; saveCorrections({ ...corrections, [item.key]: { ...corrections[item.key], mergeInto: target } }); close(); }}><option value="">{zh ? '选择考核' : 'Choose assessment'}</option>{visible.filter(other => other.key !== item.key && !all.some(child => corrections[child.key]?.mergeInto === item.key || child.parent === item.key)).map(other => <option value={other.key} key={other.key}>{other.name}</option>)}</select></label><small>{zh ? '来源保留，可撤销。已有排期不会自动移除。' : 'Sources remain and merges can be undone. Existing plans are not removed.'}</small></div></details>
           <div className="drawer-actions">
@@ -737,6 +831,7 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
   const shortDate = (day: string) => new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`));
   const currentMonth = week.slice(0, 7);
   const first = `${currentMonth}-01`;
+  const monthName = new Intl.DateTimeFormat(language, { year: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${first}T12:00:00Z`));
   const monthStart = addDays(first, -((new Date(`${first}T12:00:00Z`).getUTCDay() + 6) % 7));
   // Deadlines on the calendar: synced and manual assessments with the owner's corrections, then tasks not already shown.
   const dueDay = (due: string): string | undefined => { if (/^\d{4}-\d{2}-\d{2}$/.test(due)) return due; const date = dueDate(due); return date ? localDay(timeZone, date) : undefined; };
@@ -769,14 +864,18 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
   ];
   const deadlinesOn = (day: string) => deadlines.filter(entry => entry.day === day);
   const deadlineButton = (entry: Deadline, prefix: boolean) => { const label = `${prefix ? `${zh ? '截止' : 'Due'} · ` : ''}${entry.label}`;
-    return entry.courseId ? <button type="button" className={`due${entry.done ? ' done' : ''}`} key={entry.key} onClick={() => onCourse(entry.courseId)}>{label}</button>
+    return entry.courseId ? <button type="button" className={`due${entry.done ? ' done' : ''}`} key={entry.key} onClick={() => goTo(entry.courseId, entry.key)}>{label}</button>
       : <span className={`due${entry.done ? ' done' : ''}`} key={entry.key}>{label}</span>; };
   // Needs you: overflow and overdue tasks, failed syncs, and weighted assessments due within 7 days with no task.
+  // A row about a task (`task`) opens the task list at that task, where it can be ticked, timed or removed; a row
+  // about an assessment (`open`) opens that assessment on its course page; the rest open the course page, whose top
+  // holds the matching card.
+  type Need = { key: string; courseId: string; text: string; task?: string; open?: string };
   const weekEnd = addDays(today, 6);
   const codeOf = (id: string) => courses.find(item => item.course.id === id)?.course.subjectCode ?? id;
-  const needs = [
+  const needs: Need[] = [
     ...plan.overflow.flatMap(entry => { const task = workByKey.get(entry.key); if (!task) return [];
-      return [{ key: `plan:${entry.key}`, courseId: task.courseId, text: entry.overdue
+      return [{ key: `plan:${entry.key}`, courseId: task.courseId, task: entry.key, text: entry.overdue
         ? (entry.minutes > 0 ? (zh ? `已过截止 · ${codeOfWork(task)} · ${task.title}：还剩 ${entry.minutes} 分钟` : `Overdue · ${codeOfWork(task)} · ${task.title}: ${entry.minutes} min left`)
           : (zh ? `已过截止 · ${codeOfWork(task)} · ${task.title}：预计时间已用完，还没标完成` : `Overdue · ${codeOfWork(task)} · ${task.title}: estimate used up, not marked done`))
         : (zh ? `排不下 · ${codeOfWork(task)} · ${task.title}：${shortDate(task.due)} 截止前还差 ${entry.minutes} 分钟` : `Does not fit · ${codeOfWork(task)} · ${task.title}: ${entry.minutes} min short before ${shortDate(task.due)}`) }]; }),
@@ -789,7 +888,7 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
       && !['submitted', 'graded'].includes(item.status)
       && !tasks.some(task => covers(task, courseId, item.key) || (item.parent !== '' && covers(task, courseId, item.parent))))
       .sort((a, b) => a.day.localeCompare(b.day))
-      .map(({ item, day, courseId, code }) => ({ key: `soon:${item.key}`, courseId, text: zh ? `${shortDate(day)} 截止 · ${code} · ${item.name}：还没有安排` : `Due ${shortDate(day)} · ${code} · ${item.name}: not planned` })),
+      .map(({ item, day, courseId, code }) => ({ key: `soon:${item.key}`, courseId, open: item.key, text: zh ? `${shortDate(day)} 截止 · ${code} · ${item.name}：还没有安排` : `Due ${shortDate(day)} · ${code} · ${item.name}: not planned` })),
   ];
   function updateTask(key: string, change: Partial<Work>) { saveWork(work.map(item => item.key === key ? { ...item, ...change } : item)); }
   function saveAvailability(event: FormEvent<HTMLFormElement>) {
@@ -807,12 +906,12 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
     <div className="week-layout" key="week"><div className={`week-main${filled}`}>
       {!ready ? placeholder : <>
       <div className="week-toolbar"><div className="week-nav" role="group" aria-label={zh ? '周切换' : 'Navigate weeks'}>
-        <button onClick={() => shift(-1)}>‹</button><button onClick={() => setWeek(addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)))}>{zh ? '今天' : 'Today'}</button><button onClick={() => shift(1)}>›</button><span className="range">{mode === 'plan' ? `${shortDate(week)} – ${shortDate(addDays(week, 6))}` : currentMonth}</span></div>
+        <button onClick={() => shift(-1)}>‹</button><button onClick={() => setWeek(addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)))}>{zh ? '今天' : 'Today'}</button><button onClick={() => shift(1)}>›</button><span className="range">{mode === 'plan' ? `${shortDate(week)} – ${shortDate(addDays(week, 6))}` : monthName}</span></div>
         <div className="week-actions"><span className="muted">{zh ? '学期' : 'Term'}: {courses[0]?.course.term || '—'}</span><div className="seg" role="group" aria-label={zh ? '视图' : 'View'}><button aria-pressed={mode === 'plan'} onClick={() => { setWeek(addDays(week, -((new Date(`${week}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{zh ? '周视图' : 'Week'}</button><button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>{zh ? '月历' : 'Month'}</button></div><button aria-expanded={editingHours} onClick={() => setEditingHours(value => !value)}>{zh ? '每天可用时间' : 'Daily hours'}</button><button aria-expanded={addingTask} onClick={() => setAddingTask(value => !value)}>{addingTask ? (zh ? '取消' : 'Cancel') : (zh ? '添加任务' : 'Add task')}</button></div></div>
       {needs.length > 0 && <section className="needs" aria-label={zh ? '需要你处理' : 'Needs you'}><div className="needs-head"><h2>{zh ? '需要你处理' : 'Needs you'}</h2>
         {unseen.length > 0 && <button className="small ghost" type="button" title={zh ? '课程变更不再提示' : 'Stop showing these course changes'} onClick={() => dismissChanges(newestAt(unseen))}>{zh ? '知道了' : 'Got it'}</button>}</div>
-        {needs.map(entry => entry.courseId
-          ? <button type="button" className="needs-line ghost" key={entry.key} onClick={() => onCourse(entry.courseId)}><i className="signal" aria-hidden="true" /><span>{entry.text}</span><span className="needs-line-go">›</span></button>
+        {needs.map(entry => entry.task || entry.courseId
+          ? <button type="button" className="needs-line ghost" key={entry.key} onClick={() => entry.task ? setTaskFocus({ key: entry.task, at: Date.now() }) : goTo(entry.courseId, entry.open)}><i className="signal" aria-hidden="true" /><span>{entry.text}</span><span className="needs-line-go">›</span></button>
           : <div className="needs-line" key={entry.key}><i className="signal" aria-hidden="true" /><span>{entry.text}</span></div>)}</section>}
       {editingHours && <form className="local-confirm hours-form" onSubmit={saveAvailability}>
         {Array.from({ length: 7 }, (_, index) => <label key={index}>{weekdayName(index)}<input name={`day${index}`} type="number" min="0" max="1440" step="5" defaultValue={availability[index]} /></label>)}
@@ -830,19 +929,20 @@ export function LocalPlanning({ language, timeZone, zoneReady = true, hidden = f
           <div className="local-week-heading"><b>{dayName(day)}</b></div>
           <div className="local-week-body"><div className="day-deadlines">{due.map(entry => deadlineButton(entry, true))}</div>
           <div className="day-items">{entries.length ? entries.map(entry => { const body = <><span className="tm">{entry.minutes} min</span><span className="tt">{entry.work.title}</span><span className="cr">{codeOfWork(entry.work)}</span></>;
-            return entry.work.courseId ? <button className="blk" key={entry.work.key} onClick={() => onCourse(entry.work.courseId)}>{body}</button> : <div className="blk" key={entry.work.key}>{body}</div>; }) : <span className="muted empty-day">{zh ? '无计划' : 'No plan'}</span>}</div>
+            return entry.work.courseId ? <button className="blk" key={entry.work.key} onClick={() => goTo(entry.work.courseId, entry.work.key)}>{body}</button> : <div className="blk" key={entry.work.key}>{body}</div>; }) : <span className="muted empty-day">{zh ? '无计划' : 'No plan'}</span>}</div>
           </div>
         </section>; })}</div>
         : <div className="card month" role="grid"><div className="month-row" role="row">{Array.from({ length: 7 }, (_, i) => <div className="dow" key={i}>{weekdayName(i)}</div>)}</div>{Array.from({ length: 6 }, (_, row) => <div className="month-row" role="row" key={row}>{Array.from({ length: 7 }, (_, col) => { const day = addDays(monthStart, row * 7 + col); return <div role="gridcell" className={`cell${day.slice(0, 7) === currentMonth ? '' : ' out'}${day === today ? ' today' : ''}`} key={day}><button className="num" onClick={() => { setWeek(addDays(day, -((new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7))); setMode('plan'); }}>{Number(day.slice(8))}</button>{deadlinesOn(day).map(entry => deadlineButton(entry, false))}</div>; })}</div>)}</div>}
-      {tasks.length > 0 && <details className="task-list"><summary><i className="chevron" aria-hidden="true" />{zh ? '任务与用时' : 'Tasks and time'} ({tasks.length})</summary>
+      {tasks.length > 0 && <details className="task-list" ref={taskList}><summary><i className="chevron" aria-hidden="true" />{zh ? '任务与用时' : 'Tasks and time'} ({tasks.length})</summary>
         {[...tasks].sort((a, b) => Number(a.done) - Number(b.done) || a.due.localeCompare(b.due)).map(item => { const spent = item.spent ?? 0; const diff = item.minutes ? Math.round((spent - item.minutes) / item.minutes * 100) : 0;
-          return <div className={`task-row${item.done ? ' done' : ''}`} key={item.key}>
+          return <div className={`task-row${item.done ? ' done' : ''}${taskFocus?.key === item.key ? ' pointed' : ''}`} key={item.key} data-task={item.key} tabIndex={-1}>
             <span className="task-name">{codeOfWork(item)} · {item.title}<small className="muted block">{zh ? `截止 ${shortDate(item.due)} · 预计 ${item.minutes} 分钟` : `Due ${shortDate(item.due)} · estimate ${item.minutes} min`}{item.done && ` · ${zh ? '实际' : 'actual'} ${spent} ${zh ? '分钟' : 'min'} (${diff > 0 ? '+' : ''}${diff}%)`}</small></span>
             <span className="task-controls"><label className="inline">{zh ? '已用' : 'Spent'}<input key={`${item.key}:${spent}`} type="number" min="0" max="100000" step="5" defaultValue={item.spent ?? ''} aria-label={zh ? `${item.title} 已用分钟` : `${item.title} minutes spent`}
               onBlur={event => { const input = event.currentTarget; const raw = input.value.trim(); const value = raw === '' ? undefined : Math.round(Number(raw));
                 // A number input reports '' for text it cannot read, so badInput keeps the stored value instead of clearing it.
                 if (!input.validity.badInput && (value === undefined || (Number.isFinite(value) && value >= 0 && value <= 100000))) { if (value !== item.spent) updateTask(item.key, { spent: value }); } else input.value = String(item.spent ?? ''); }} /></label>
             <label className="inline"><input type="checkbox" checked={item.done === true} onChange={event => updateTask(item.key, { done: event.currentTarget.checked })} />{zh ? '完成' : 'Done'}</label>
+            {item.courseId && jumpTarget(item.courseId, item.key) && <button className="small ghost" title={zh ? '在课程页打开这项考核，改截止日期和预计时间' : 'Open this assessment on its course page to change the deadline and the estimate'} onClick={() => goTo(item.courseId, item.key)}>{zh ? '改计划' : 'Re-plan'}</button>}
             <button className="small ghost" onClick={() => saveWork(work.filter(row => row.key !== item.key))}>{zh ? '移除' : 'Remove'}</button></span></div>; })}</details>}
       </>}
       {saveError && <p role="alert">{zh ? '保存失败，请检查浏览器存储。' : 'Could not save; check browser storage.'}</p>}

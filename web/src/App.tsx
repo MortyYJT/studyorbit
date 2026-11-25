@@ -295,8 +295,8 @@ export function App() {
           {canResume && <button className="ghost" onClick={() => void resumeSync()}>{resumeLabel}</button>}
           <div className="owner" ref={menuRoot} onKeyDown={event => { if (event.key === 'Escape') { setMenu(false); avatar.current?.focus(); } }}>
             <button className="owner-button ghost" ref={avatar} aria-label={t.menu} aria-expanded={menu} aria-controls="owner-menu" onClick={() => { if (!menu) void loadSyncUsage(); setMenu(!menu); }}>
-              <span className="avatar" aria-hidden="true">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><span>{isZh ? '同步数据 · 设置' : 'Sync data · Settings'}</span></button>
-            {menu && <div id="owner-menu" className="menu"><button onClick={() => { setNavOpen(false); open('status'); }}>{isZh ? '同步数据' : 'Sync data'}</button><button onClick={() => { setNavOpen(false); open('settings'); }}>{t.settings}</button></div>}
+              <span className="avatar" aria-hidden="true">{avatarImage ? <img src={avatarImage} alt="" /> : <Mark />}</span><span>{isZh ? '同步记录 · 设置' : 'Sync records · Settings'}</span></button>
+            {menu && <div id="owner-menu" className="menu"><button onClick={() => { setNavOpen(false); open('status'); }}>{t.status}</button><button onClick={() => { setNavOpen(false); open('settings'); }}>{t.settings}</button></div>}
           </div>
         </div>
       </div>
@@ -306,7 +306,7 @@ export function App() {
       {localSyncWarning && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{localSyncWarning}</p>}
       {backgroundLoadFailed && background.mode === 'image' && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{isZh ? '无法从浏览器存储读取背景图片，暂时不显示图片。可以在「设置 → 背景」重新选择图片。' : 'Could not read the background image from browser storage, so no image is shown for now. You can choose the image again in Settings → Background.'}<button className="small ghost" onClick={dismissLoadFailure}>{t.close}</button></p>}
       {courseRunError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{courseRunError}</p>}
-      {view.page !== 'course' && <div className="page-heading"><h1>{title}</h1>{view.page !== 'agent' && <button className="ghost" aria-busy={refreshBusy} aria-disabled={refreshBusy} onClick={() => { if (!refreshing) setCourseRefresh(value => value + 1); }}>{t.refresh}</button>}</div>}
+      {view.page !== 'course' && <div className={`page-heading${view.page === 'agent' ? ' agent-heading' : ''}`}><h1>{title}</h1>{view.page !== 'agent' && <button className="ghost" aria-busy={refreshBusy} aria-disabled={refreshBusy} onClick={() => { if (!refreshing) setCourseRefresh(value => value + 1); }}>{t.refresh}</button>}</div>}
       {savedNotice > 0 && <div className="save-toast" role="status">{isZh ? '课程已经保存' : 'Courses saved'}</div>}
       {view.page === 'agent' && <AgentFrame language={language} courses={sidebarCourses} request={agentRequest} onOpenSettings={() => open('settings')} />}
       {/* Stays mounted behind the Agent page: it holds the course data, which a page switch must not fetch again. */}
@@ -315,9 +315,9 @@ export function App() {
         onAsk={(courseId, prompt) => { setAgentRequest(createAgentRequest(courseId, prompt)); go({ page: 'agent' }); }} />
     </main>
     <dialog ref={selectDialog} className="select-dialog" aria-labelledby="select-title" onCancel={event => { event.preventDefault(); setCoursePanelOpen(false); }} onClose={() => setSelectContent(false)}>
-      <div className="dialog-heading"><h2 id="select-title" tabIndex={-1} autoFocus>{isZh ? '修改选课' : 'Edit courses'}</h2><button className="ghost" onClick={() => setCoursePanelOpen(false)}>{t.close}</button></div>
+      <div className="dialog-heading"><h2 id="select-title" tabIndex={-1} autoFocus>{selectionExists() ? (isZh ? '修改选课' : 'Edit courses') : (isZh ? '选择课程' : 'Choose courses')}</h2><button className="ghost" onClick={() => setCoursePanelOpen(false)}>{t.close}</button></div>
       <p className="select-note"><i className="signal" aria-hidden="true" />{isZh ? '保存后会立即开始同步所选课程（会使用浏览器（Edge 或 Chrome）、Ed 和模型额度）。' : 'Saving starts a sync of the selected courses right away (uses the browser (Edge or Chrome), Ed and model quota).'}</p>
-      {(coursePanelOpen || selectContent) && <LocalCourseSelect language={language} refreshVersion={courseRefresh} onSaved={ids => { setCoursePanelOpen(false); setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); void startSelectedCourses(ids); }} />}
+      {(coursePanelOpen || selectContent) && <LocalCourseSelect language={language} refreshVersion={courseRefresh} syncing={!!running} onSync={() => { setCoursePanelOpen(false); void syncCourses(); }} onSaved={ids => { setCoursePanelOpen(false); setSavedNotice(Date.now()); setCourseRefresh(value => value + 1); void startSelectedCourses(ids); }} />}
     </dialog>
     <dialog ref={syncDialog} className="sync-dialog" aria-labelledby="sync-title" onCancel={event => event.preventDefault()}>
       <h2 id="sync-title">{language === 'zh' ? (modal === 'finished' ? '同步结果' : '正在同步课程') : (modal === 'finished' ? 'Sync results' : 'Syncing courses')}</h2>
@@ -333,7 +333,7 @@ export function App() {
       {modal === 'finished' ? <div className="sync-actions">{courseRun?.resumable && courseRun.jobId && <button onClick={() => void resumeSync()}>{resumeLabel}</button>}<button className={courseRun?.resumable ? 'ghost' : undefined} onClick={() => setSyncModal(undefined)}>{language === 'zh' ? '关闭' : 'Close'}</button></div> : <button disabled={modal === 'stopping'} onClick={() => void stopSync()}>{language === 'zh' ? '中止同步' : 'Stop sync'}</button>}
     </dialog>
     <dialog ref={dialog} onCancel={event => { event.preventDefault(); close(); }} onClose={() => { setPanel(undefined); avatar.current?.focus(); }} aria-labelledby="panel-title">
-      <div className="dialog-heading"><h2 id="panel-title" tabIndex={-1} autoFocus>{panel === 'status' ? (language === 'zh' ? '同步数据' : 'Sync data') : panel ? t[panel] : ''}</h2><button className="ghost" onClick={close}>{t.close}</button></div>
+      <div className="dialog-heading"><h2 id="panel-title" tabIndex={-1} autoFocus>{panel ? t[panel] : ''}</h2><button className="ghost" onClick={close}>{t.close}</button></div>
       {panel === 'status' && <>
         {usageError && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{language === 'zh' ? '无法读取同步记录。' : 'Could not read sync records.'}</p>}
         {!syncUsage && !usageError && <p className={`muted pending-line pending${usageReveal === 'placeholder' ? ' late' : ''}`} aria-busy="true"><span className="skeleton-text">{t.loading}</span></p>}
@@ -347,7 +347,7 @@ export function App() {
           <button disabled={courseRun?.running} onClick={() => { close(); setCoursePanelOpen(true); }}>{isZh ? '修改选课' : 'Edit courses'}</button></section>
         <AnalysisModelSettings language={language} />
         <SourceSettingsSection language={language} known={sourceReply} onSaved={sourceSettingsSaved} />
-        <div className="avatar-settings"><span className="avatar-preview">{avatarImage ? <img src={avatarImage} alt="" /> : 'Y'}</span><div><label className="avatar-upload">{language === 'zh' ? '上传头像' : 'Upload photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
+        <div className="avatar-settings"><span className="avatar-preview">{avatarImage ? <img src={avatarImage} alt="" /> : <Mark />}</span><div><label className="avatar-upload">{language === 'zh' ? '上传头像' : 'Upload photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
           const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!file) return;
           if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) { setAvatarError(language === 'zh' ? '请选择不超过 2 MB 的 JPG、PNG 或 WebP 图片。' : 'Choose a JPG, PNG or WebP image up to 2 MB.'); return; }
           const reader = new FileReader(); reader.onerror = () => setAvatarError(language === 'zh' ? '图片读取失败。' : 'Could not read the image.');
@@ -529,7 +529,7 @@ function AnalysisModelSettings({ language }: { language: Language }) {
       const next = data as PublicLlmConfig;
       llmReplies.saved(); knownLlmConfig = next; touched.current = false;
       setConfig(next); setForm(formFrom(next));
-      setStatus({ problem: next.keyRequired && !next.hasKey, text: next.keyRequired && !next.hasKey ? (zh ? '已保存，但还没有 API 密钥，同步会失败。' : 'Saved, but there is no API key yet; syncs will fail.') : (zh ? '已保存。下次同步开始时生效。' : 'Saved. Applies from the next sync.') });
+      setStatus({ problem: next.keyRequired && !next.hasKey, text: next.keyRequired && !next.hasKey ? (zh ? '已保存，但还没有 API 密钥，同步会失败。' : 'Saved, but there is no API key yet; syncs will fail.') : (zh ? '已保存。下次同步开始时生效；换了提供方的话，助手要重新启动 StudyOrbit 后才跟着变。' : 'Saved. Applies from the next sync; after a change of provider the assistant follows once StudyOrbit is started again.') });
     } catch { setStatus({ problem: true, text: zh ? '保存失败，请重试。' : 'Could not save. Please retry.' }); }
     finally { setBusy(undefined); }
   }
@@ -550,7 +550,7 @@ function AnalysisModelSettings({ language }: { language: Language }) {
   return <section className={`model-settings${reveal === 'faded' ? ' fill-in' : ''}`} aria-labelledby="model-settings-title">
     <h3 id="model-settings-title">{zh ? '分析模型' : 'Analysis model'}</h3>
     {config.providerInvalid && <p className="error-line" role="status"><i className="signal" aria-hidden="true" />{zh ? '环境变量 COURSE_ANALYSIS_PROVIDER 不可识别，同步不会启动。请在下面选择提供方并保存。' : 'COURSE_ANALYSIS_PROVIDER is not recognised; syncs will not start. Choose a provider below and save.'}</p>}
-    <p className="muted model-note">{zh ? '同步时用来整理课程数据的模型。课程和成绩会发送给所选服务，可能产生费用。' : 'The model that organises course data during a sync. Course data and grades are sent to the chosen service and may cost money.'}</p>
+    <p className="muted model-note">{zh ? '同步时整理课程数据用这个模型；Agent 页的助手也用这里的提供方和密钥，目前只支持 DeepSeek。课程和成绩会发送给所选服务，可能产生费用。' : 'The model that organises course data during a sync. The assistant on the Agent page uses the same provider and key, and works with DeepSeek only. Course data and grades are sent to the chosen service and may cost money.'}</p>
     <label className="model-row"><span className="k">{zh ? '提供方' : 'Provider'}</span>
       <select value={form.provider} onChange={event => changeProvider(event.target.value as LlmProvider)}>{(Object.keys(providerNames) as LlmProvider[]).map(value => <option key={value} value={value}>{pick(providerNames[value])}</option>)}</select>{errorFor('provider')}</label>
     <label className="model-row"><span className="k">{zh ? '模型' : 'Model'}</span>

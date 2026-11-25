@@ -188,6 +188,7 @@ Only **macOS + Microsoft Edge + University of Melbourne** (Canvas, Ed Australia,
 | [Course JSON](docs/course-json.md) | The v2 contract: what the model fills in, what code fills in, validation and quote checks |
 | [Sync optimisation](docs/sync-optimization.md) | Measured time and tokens of real syncs, resume versus restart, raw records |
 | [Course analysis evaluation](docs/eval-course-analysis.md) | Method and results of the repeated-run evaluation |
+| [Walk-through](docs/walkthrough.md) | The product walked as a student from first start to daily use: what was found, what was changed with the clicks before and after, what was left |
 | [Assistant](docs/deeptutor.md) | How DeepTutor runs next to StudyOrbit: key handling, the guard in front of its API, course context, measured turns and tokens |
 | [Chat Q&A evaluation](docs/eval-chat-qa.md) | Record of the built-in chat that DeepTutor replaced: context mode versus tool mode on a synthetic question set |
 

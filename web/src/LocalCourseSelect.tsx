@@ -12,7 +12,7 @@ function storedIds(): string[] {
 }
 
 /** A small local selection flow for the course discovery prototype. */
-export function LocalCourseSelect({ language, refreshVersion, onSaved }: { language: Language; refreshVersion: number; onSaved: (ids: string[]) => void }) {
+export function LocalCourseSelect({ language, refreshVersion, onSaved, onSync, syncing = false }: { language: Language; refreshVersion: number; onSaved: (ids: string[]) => void; /** Fetches the course list (the sidebar's "Sync now"); offered when there is no list to choose from. */ onSync?: () => void; syncing?: boolean }) {
   const [courses, setCourses] = useState<Course[]>();
   const [selected, setSelected] = useState<string[]>(storedIds);
   const [error, setError] = useState('');
@@ -50,10 +50,12 @@ export function LocalCourseSelect({ language, refreshVersion, onSaved }: { langu
       <button onClick={() => void load()}>{zh ? '刷新列表' : 'Refresh list'}</button></div>
     <p className="muted">{zh ? '勾选你要排期的课程，选择保存在当前浏览器中，可再次修改。' : 'Select courses to plan. Your choices are saved in this browser and can be changed later.'}</p>
     {error && <p role="status">{error === 'missing'
-      ? (zh ? '尚未获取课程，请点击“立即同步”。' : 'No course list yet. Click “Sync now”.')
-      : error === 'stale' ? (zh ? 'Canvas 地址已更改，请点击“立即同步”重新获取课程。' : 'The Canvas address changed. Click “Sync now” to fetch the courses again.')
+      ? (zh ? '还没有课程列表。「立即同步」先用已登录 Canvas 的浏览器（Edge 或 Chrome）读出你的课程，再让你勾选。' : 'No course list yet. "Sync now" reads your courses with the browser that is signed in to Canvas (Edge or Chrome), then lets you choose.')
+      : error === 'stale' ? (zh ? 'Canvas 地址已更改，要用「立即同步」重新读取课程。' : 'The Canvas address changed. Use "Sync now" to read the courses again.')
       : error === 'save' ? (zh ? '保存失败，请检查浏览器存储是否可用。' : 'Could not save your selection in this browser.')
       : (zh ? '无法读取课程列表，请确认开发服务器正在运行并刷新列表。' : 'Could not load the course list. Check the development server and refresh.')}</p>}
+    {/* The sidebar's button is behind this dialog, so the same action is offered here. */}
+    {onSync && (error === 'missing' || error === 'stale') && <button className="primary" onClick={onSync} disabled={syncing}>{zh ? '立即同步' : 'Sync now'}</button>}
     {/* While the list loads, the rows already selected and the button keep their place. */}
     {!courses && !error && <div className={`course-select-pending pending${reveal === 'placeholder' ? ' late' : ''}`} aria-busy="true">
       <div className="course-select">{Array.from({ length: Math.max(selected.length, 1) }, (_, index) => <div className="check-row" key={index}><i className="skeleton" /></div>)}</div><div className="button-space" /></div>}

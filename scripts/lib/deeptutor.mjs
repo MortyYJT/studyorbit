@@ -329,9 +329,10 @@ export function createAssistant({ projectDir, desktopDir, webPort, env = process
     try {
       ports = assistantPorts(env, webPort);
       const model = await resolveAnalysisConfig(projectDir, env);
-      if (model.provider !== 'deepseek') { status = { state: 'unsupported-provider' }; return; }
+      // Nothing is started in these two cases; the terminal says why, the Agent page says what to do.
+      if (model.provider !== 'deepseek') { status = { state: 'unsupported-provider' }; log('[assistant] not started: the assistant works with DeepSeek only and another provider is chosen. The Agent page says what to change; the other pages work without it.'); return; }
       const install = locateInstall(env, home);
-      if (!install) { status = { state: 'not-installed' }; return; }
+      if (!install) { status = { state: 'not-installed' }; log('[assistant] DeepTutor is not installed, so the Agent page shows how to install it. The other pages work without it.'); return; }
       await mkdir(dtHome, { recursive: true, mode: 0o700 });
       await stopLeftovers();
       const url = `http://localhost:${ports.web}`;
@@ -413,10 +414,23 @@ export function createAssistant({ projectDir, desktopDir, webPort, env = process
     });
   }
 
+  /**
+   * Makes DeepTutor's interface and its replies use the language of the StudyOrbit page. DeepTutor keeps the two in
+   * its own settings; a browser that has opened DeepTutor before keeps what it stored, so this is the default a new
+   * browser starts with, not a switch.
+   */
+  async function setLanguage(language) {
+    if (status.state !== 'running' && status.state !== 'external') throw new Error('DeepTutor is not running');
+    const reply = await fetch(`http://127.0.0.1:${ports.api}/api/settings/ui`, { method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ language, response_language: language }), signal: AbortSignal.timeout(5000) });
+    if (!reply.ok) throw new Error(`DeepTutor's settings answered ${reply.status}`);
+  }
+
   return {
     start,
     status: () => status,
     startTurn,
+    setLanguage,
     async stop() {
       stopped = true;
       await stopChildren();

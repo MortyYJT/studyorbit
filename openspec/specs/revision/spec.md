@@ -26,7 +26,7 @@ The Revision tab SHALL offer actions that open the Agent page on a new DeepTutor
 - **THEN** the Agent page shows how to start it and no prompt is sent
 
 ### Requirement: Revision notes persist locally
-Revision notes SHALL be stored under `.local/revision/` with owner-only file permissions, read and written only through `/api/local/revision-notes` behind the existing same-origin guard. The API SHALL list notes for one course newest first and delete a note by id. It SHALL reject a course id that is not 1–200 characters of letters, digits, `.`, `_`, `:` or `-`. Notes saved before the assistant was replaced SHALL stay listed in the Revision tab, which SHALL say that new notes are kept in the assistant's own notebook.
+Revision notes SHALL be stored under `.local/revision/` with owner-only file permissions, read and written only through `/api/local/revision-notes` behind the existing same-origin guard. The API SHALL list notes for one course newest first and delete a note by id. It SHALL reject a course id that is not 1–200 characters of letters, digits, `.`, `_`, `:` or `-`. Notes saved before the assistant was replaced SHALL stay listed in the Revision tab, which SHALL say that new notes cannot be saved while the assistant's note features are not installed, and where the conversations are kept.
 
 #### Scenario: Notes survive a restart
 - **WHEN** a note exists and the dev server restarts

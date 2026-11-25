@@ -47,6 +47,16 @@ describe('describeStatus', () => {
       expect(missing.command).not.toContain('solve');
       // The machine may not have uv either: the first line gets it.
       expect(missing.command!.split('\n')[0]).toBe('curl -LsSf https://astral.sh/uv/install.sh | sh');
+      // The installer does not change the PATH of the shell it ran in, so the lines after it would not find uv.
+      expect(missing.command!.split('\n')[1]).toBe('export PATH="$HOME/.local/bin:$PATH"');
+      expect(missing.command!.split('\n')).toHaveLength(4);
+      // Someone who started StudyOrbit from the Desktop shortcut never typed npm run dev: both ways are named.
+      for (const state of ['not-installed', 'unsupported-provider', 'off'] as const) {
+        const body = describeStatus({ state }, language)!.body;
+        expect(body).toContain('npm run dev');
+        expect(body).toContain(language === 'zh' ? '终端窗口' : 'Terminal window');
+      }
+      expect(describeStatus({ state: 'failed', reason: 'DeepTutor API exited' }, language)!.body).toContain(language === 'zh' ? '终端窗口' : 'Terminal window');
       expect(describeStatus({ state: 'failed', reason: 'DeepTutor API exited' }, language)).toMatchObject({ detail: 'DeepTutor API exited', command: 'npm run dev' });
       // A port taken by something else: the page names the two ways out instead of only "run it again".
       const taken = describeStatus({ state: 'failed', reason: 'port 5196 is in use by another DeepTutor or program' }, language)!;

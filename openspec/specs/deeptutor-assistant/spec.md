@@ -85,11 +85,15 @@ Web search SHALL be off, local code execution (`exec`) SHALL be off, the update 
 - **THEN** the tool answers that no provider is configured and no request leaves the machine
 
 ### Requirement: The Agent page shows DeepTutor or says how to get it
-The Agent page SHALL show DeepTutor's own web page in a frame when the assistant's status is `running` or `external`, with a control that opens it in a new tab. For `not-installed`, `failed` and `unsupported-provider` it SHALL show what is wrong and the exact command or setting to fix it, in Chinese and English. The frame SHALL be created only while the Agent page is showing. The status SHALL be read without calling the model.
+The Agent page SHALL show DeepTutor's own web page in a frame when the assistant's status is `running` or `external`, with a control that opens it in a new tab. For `not-installed`, `failed` and `unsupported-provider` it SHALL show what is wrong and the exact command or setting to fix it, in Chinese and English. The frame SHALL be created only while the Agent page is showing. The status SHALL be read without calling the model. Before the frame is created the page SHALL tell the assistant which language it is in, so that a browser new to DeepTutor starts in that language; the bar above the frame SHALL say that the assistant reads StudyOrbit's course data and tasks and not the corrections made on a course page.
 
 #### Scenario: Not installed
 - **WHEN** DeepTutor is not installed and the owner opens the Agent page
 - **THEN** the page shows the install command from `docs/setup.md` and the week view and course pages still work
+
+#### Scenario: Chinese page, new browser
+- **WHEN** the StudyOrbit page is in Chinese and the browser has never opened DeepTutor
+- **THEN** DeepTutor's page in the frame is in Chinese and its replies are in Chinese
 
 #### Scenario: Stopped while open
 - **WHEN** DeepTutor stops while the Agent page is showing
