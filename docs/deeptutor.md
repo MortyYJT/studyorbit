@@ -58,7 +58,7 @@ DeepTutor's page loaded in the frame and showed a streaming reply with the guard
 
 Not covered: a program running as the same user can call DeepTutor's API (it needs no token) and can send any headers; DeepTutor's web port serves its HTML and scripts to any `Host` (they contain no data). DeepTutor's own login was not used: it switches the installation to its multi-user layout.
 
-The guard answers two things itself: `/studyorbit-guard/instance`, and an empty knowledge-base list when DeepTutor has no such route (see the validation below for why). Whether the route exists is read from DeepTutor's own route table, once, at the first such request; with the knowledge module installed DeepTutor answers and nothing is changed.
+The guard answers two things itself: `/studyorbit-guard/instance`, and an empty knowledge-base list when DeepTutor has no such route (see the validation below for why). Whether DeepTutor has the route is decided once, at the first such request, by asking each of its top-level routes the way Starlette does (`matches`), which covers the routers FastAPI includes. Clearly absent: the guard answers `[]` itself. Present: DeepTutor answers, whatever it answers. Anything that does not settle it (no route table, a mount that covers the path, a route that cannot be asked): DeepTutor is asked and only a 404 becomes `[]`, so a real list is never replaced by an empty one. Checked with DeepTutor's own interpreter (FastAPI 0.165, Starlette 1.10): the installed app gives "absent" for this route and "present" for `/api/sessions`; a FastAPI app with the route in an included router gives "present", also when the route is hidden from the schema; the same app under a mount gives "unknown".
 
 ## Course data
 

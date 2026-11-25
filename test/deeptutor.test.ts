@@ -421,47 +421,85 @@ out["asgi"] = {
   "instance-evil": asyncio.run(drive("http", [(b"host", b"127.0.0.1:5196"), (b"origin", b"https://evil.example")], "/studyorbit-guard/instance")),
 }
 class Route:
-    def __init__(self, path): self.path = path
+    # Starlette's public contract: matches(scope) -> (Match, child_scope), Match.NONE == 0, PARTIAL == 1, FULL == 2.
+    def __init__(self, path, methods=("GET",)): self.path, self.methods = path, methods
+    def matches(self, scope):
+        if scope["path"] != self.path: return (0, {})
+        return (2 if scope["method"] in self.methods else 1, {})
+class Mount(Route):
+    def matches(self, scope): return (2 if scope["path"].startswith(self.path) else 0, {})
+class Broken(Route):
+    def matches(self, scope): raise RuntimeError("cannot say")
+class Opaque:
+    path = "/api/knowledge-bases/list"
 class Inner:
-    # A stand-in for DeepTutor's app: a route table, and a 404 in two body chunks for whatever it is asked.
-    def __init__(self, paths): self.routes = [Route(p) for p in paths]; self.calls = 0
+    # A stand-in for DeepTutor's app: answers 404 in two body chunks, or 200 with one knowledge base.
+    def __init__(self, routes, status=404):
+        self.calls, self.status = 0, status
+        if routes is not None: self.routes = routes
     async def __call__(self, scope, receive, send):
         self.calls += 1
+        if self.status == 200:
+            await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json"), (b"content-length", b"15")]})
+            await send({"type": "http.response.body", "body": b'[{"name":"kb"}]'})
+            return
         await send({"type": "http.response.start", "status": 404, "headers": [(b"content-type", b"application/json"), (b"content-length", b"22")]})
         await send({"type": "http.response.body", "body": b'{"detail":', "more_body": True})
         await send({"type": "http.response.body", "body": b'"Not Found"}'})
-async def answer(paths, path, method="GET", headers=None):
-    inner, sent = Inner(paths), []
+KB = "/api/knowledge-bases/list"
+async def answer(routes, path=KB, method="GET", headers=None, status=404):
+    inner, sent = Inner(routes, status), []
     async def send(message): sent.append(message)
     await g.guard(inner, hosts, origins, INSTANCE)({"type": "http", "path": path, "query_string": b"dt_workspace=", "method": method, "headers": headers or [(b"host", b"127.0.0.1:5196")]}, None, send)
     start = sent[0]
     return {"status": start["status"], "headers": sorted([k.decode(), v.decode()] for k, v in start.get("headers", [])), "messages": len(sent), "body": b"".join(m.get("body", b"") for m in sent).decode(), "reached": inner.calls}
-KB = "/api/knowledge-bases/list"
+other = [Route("/api/sessions")]
 out["kb"] = {
-  "no-route": asyncio.run(answer(["/api/sessions"], KB)),
-  "route-present-404": asyncio.run(answer(["/api/sessions", KB], KB)),
-  "other-path": asyncio.run(answer(["/api/sessions"], "/api/knowledge-bases/rag-providers")),
-  "post": asyncio.run(answer(["/api/sessions"], KB, method="POST")),
-  "evil": asyncio.run(answer(["/api/sessions"], KB, headers=[(b"host", b"127.0.0.1:5196"), (b"origin", b"https://evil.example")])),
+  "absent": asyncio.run(answer(other)),
+  "empty-table": asyncio.run(answer([])),
+  "present-404": asyncio.run(answer(other + [Route(KB)])),
+  "present-other-method": asyncio.run(answer(other + [Route(KB, ("POST",))])),
+  "no-table-404": asyncio.run(answer(None)),
+  "no-table-200": asyncio.run(answer(None, status=200)),
+  "mount-404": asyncio.run(answer(other + [Mount("/api")])),
+  "mount-200": asyncio.run(answer(other + [Mount("/api")], status=200)),
+  "broken-404": asyncio.run(answer(other + [Broken("/x")])),
+  "opaque-404": asyncio.run(answer(other + [Opaque()])),
+  "other-path": asyncio.run(answer(other, "/api/knowledge-bases/rag-providers")),
+  "post": asyncio.run(answer(other, method="POST")),
+  "evil": asyncio.run(answer(other, headers=[(b"host", b"127.0.0.1:5196"), (b"origin", b"https://evil.example")])),
 }
-out["has_route"] = [g.has_route(Inner([KB]), KB), g.has_route(Inner(["/x"]), KB), g.has_route(object(), KB)]
+out["route_state"] = {
+  "absent": g.route_state(Inner(other), KB), "present": g.route_state(Inner(other + [Route(KB)]), KB), "partial": g.route_state(Inner([Route(KB, ("POST",))]), KB),
+  "no-table": g.route_state(Inner(None), KB), "not-a-list": g.route_state(type("X", (), {"routes": 5})(), KB), "mount": g.route_state(Inner([Mount("/api")]), KB),
+  "mount-elsewhere": g.route_state(Inner([Mount("/static")]), KB), "broken": g.route_state(Inner([Broken("/x")]), KB), "opaque": g.route_state(Inner([Opaque()]), KB),
+}
 print(json.dumps(out))
 `;
     const dir = fileURLToPath(new URL('../scripts/deeptutor/', import.meta.url));
     const out = JSON.parse(execFileSync('python3', ['-B', '-c', script, dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim().split('\n').at(-1)!);
-    const { asgi, kb, has_route: _hasRoute, ...checks } = out;
+    const { asgi, kb, route_state: _routeState, ...checks } = out;
     // DeepTutor's page lists the knowledge bases before it sends a message and gives up when that route is missing,
     // which it is without the knowledge module. The guard answers an empty list in exactly that case.
     const passed = { status: 404, headers: [['content-length', '22'], ['content-type', 'application/json']], messages: 3, body: '{"detail":"Not Found"}', reached: 1 };
+    const ownAnswer = { status: 200, headers: [['cache-control', 'no-store'], ['content-length', '2'], ['content-type', 'application/json']], messages: 2, body: '[]' };
+    const real = { status: 200, headers: [['content-length', '15'], ['content-type', 'application/json']], messages: 2, body: '[{"name":"kb"}]', reached: 1 };
     expect(kb).toEqual({
-      // No such route in DeepTutor (decided from its route table, not from the status it answers): the guard answers
-      // by itself, with exactly one start and one body message and headers that match the two-byte body.
-      'no-route': { status: 200, headers: [['cache-control', 'no-store'], ['content-length', '2'], ['content-type', 'application/json']], messages: 2, body: '[]', reached: 0 },
-      // With the route present, DeepTutor's own answer passes untouched, even a 404 in several chunks.
-      'route-present-404': passed, 'other-path': passed, post: passed,
+      // The route table could be read and clearly has no such route: the guard answers by itself.
+      absent: { ...ownAnswer, reached: 0 }, 'empty-table': { ...ownAnswer, reached: 0 },
+      // The route exists (even for another method): DeepTutor's own answer passes untouched, a 404 in chunks included.
+      'present-404': passed, 'present-other-method': passed,
+      // Uncertain (no route table, a mount that covers the path, a route that cannot be asked): DeepTutor is asked, and
+      // only its 404 becomes an empty list, as one start and one body message; a real list passes untouched.
+      'no-table-404': { ...ownAnswer, reached: 1 }, 'no-table-200': real, 'mount-404': { ...ownAnswer, reached: 1 }, 'mount-200': real,
+      'broken-404': { ...ownAnswer, reached: 1 }, 'opaque-404': { ...ownAnswer, reached: 1 },
+      'other-path': passed, post: passed,
       evil: { status: 403, headers: [['content-length', '0']], messages: 2, body: '', reached: 0 },
     });
-    expect(out.has_route).toEqual([true, false, false]);
+    expect(out.route_state).toEqual({
+      absent: 'absent', present: 'present', partial: 'present', 'no-table': 'unknown', 'not-a-list': 'unknown', mount: 'unknown',
+      'mount-elsewhere': 'absent', broken: 'unknown', opaque: 'unknown',
+    });
     expect(checks).toEqual({
       ok: null, 'ok-web-host': null, 'ok-ipv6': null, 'ok-origin': null, 'ok-forwarded': null,
       'no-host': 'host', 'evil-host': 'host', 'wrong-port': 'host', 'bare-host': 'host', 'evil-origin': 'origin', 'null-origin': 'origin', 'cross-site': 'cross-site',

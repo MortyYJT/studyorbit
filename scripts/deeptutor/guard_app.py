@@ -58,13 +58,55 @@ INSTANCE_PATH = "/studyorbit-guard/instance"
 KB_LIST_PATH = "/api/knowledge-bases/list"
 
 
-def has_route(app, path: str) -> bool:
-    """Whether the wrapped application has a route with exactly this path (FastAPI lists full paths in `routes`)."""
-    return any(getattr(route, "path", None) == path for route in getattr(app, "routes", None) or [])
+def route_state(app, path: str, method: str = "GET") -> str:
+    """Whether the wrapped application routes `path`: "present", "absent" or "unknown".
+
+    Asked the way Starlette itself decides, through each top-level route's public `matches(scope)` (which also covers
+    routers included by FastAPI): no route matching means the application would answer 404, so "absent". The answer is
+    "unknown", never "absent", whenever that cannot be established: no readable route table, a route that cannot be
+    asked, or a match by a mount or host route, which only says that something below a prefix may handle the path.
+    """
+    routes = getattr(app, "routes", None)
+    if not isinstance(routes, (list, tuple)):
+        return "unknown"
+    scope = {"type": "http", "path": path, "method": method, "root_path": "", "query_string": b"", "headers": [], "path_params": {}}
+    present = False
+    for route in routes:
+        try:
+            match = route.matches(dict(scope))[0]
+        except Exception:
+            return "unknown"
+        if getattr(match, "value", match) == 0:
+            continue
+        if any(cls.__name__ in ("Mount", "Host") for cls in type(route).__mro__):
+            return "unknown"
+        present = True
+    return "present" if present else "absent"
+
+
+def _empty_list_when_missing(send):
+    """Turns a 404 into an empty list (one start and one body message); any other answer passes unchanged."""
+    replaced = False
+
+    async def wrapped(message):
+        nonlocal replaced
+        if message["type"] == "http.response.start" and message["status"] == 404:
+            replaced = True
+            await send({"type": "http.response.start", "status": 200, "headers": EMPTY_LIST_HEADERS})
+            await send({"type": "http.response.body", "body": b"[]"})
+            return
+        if replaced:
+            return
+        await send(message)
+
+    return wrapped
+
+
+EMPTY_LIST_HEADERS = [(b"content-type", b"application/json"), (b"cache-control", b"no-store"), (b"content-length", b"2")]
 
 
 def guard(inner, hosts: frozenset[str], origins: frozenset[str], instance: str = ""):
-    kb_route: bool | None = None
+    kb_route: str | None = None
 
     async def app(scope, receive, send):
         if scope["type"] not in ("http", "websocket"):
@@ -89,16 +131,21 @@ def guard(inner, hosts: frozenset[str], origins: frozenset[str], instance: str =
         if reason is None and scope["type"] == "http" and scope.get("path") == KB_LIST_PATH and scope.get("method") == "GET":
             # DeepTutor 1.7.4's web page asks for the knowledge-base list before it sends a chat message and gives up
             # when the request fails. The route belongs to the knowledge module, which StudyOrbit does not install
-            # (there is no embedding service), so without an answer a typed message is never sent. Whether the route
-            # exists is read once from DeepTutor's own route table, at the first such request (after start-up, when
-            # every module has registered its routes); when it exists, DeepTutor answers and nothing is changed.
+            # (there is no embedding service), so without an answer a typed message is never sent.
+            # Decided once, at the first such request (after start-up, when every module has registered its routes):
+            #   absent  - DeepTutor clearly has no such route: the guard answers an empty list itself;
+            #   present - DeepTutor answers, whatever it answers;
+            #   unknown - DeepTutor is asked and only a 404 is turned into an empty list. This is the fallback for
+            #             anything the route table does not settle, so a real list is never replaced by an empty one.
             nonlocal kb_route
             if kb_route is None:
-                kb_route = has_route(inner, KB_LIST_PATH)
-            if not kb_route:
-                await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json"), (b"cache-control", b"no-store"), (b"content-length", b"2")]})
+                kb_route = route_state(inner, KB_LIST_PATH)
+            if kb_route == "absent":
+                await send({"type": "http.response.start", "status": 200, "headers": EMPTY_LIST_HEADERS})
                 await send({"type": "http.response.body", "body": b"[]"})
                 return
+            await inner(scope, receive, _empty_list_when_missing(send) if kb_route == "unknown" else send)
+            return
         if reason is None:
             await inner(scope, receive, send)
             return

@@ -3,7 +3,6 @@
 // (the last three only from HTTP providers, for the sync's model limiter), stops after 15 minutes and can be
 // cancelled through `registerStop`. Keys are sent only in the provider's auth header and never logged or echoed.
 import { execFile, spawn } from 'node:child_process';
-import { tmpdir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { isAllowedEndpoint } from './llm-config.mjs';
 
